@@ -35,3 +35,39 @@ def thiet_ke_mcn_cau_web(data):
         "bc_cau": round(bc_cau, 2),
         "mo_phong": f"LC {w_lc}m | LỀ {w_le}m | {n_lan} LÀN x {w_lan}m | LỀ {w_le}m | LC {w_lc}m"
     }
+import matplotlib.pyplot as plt
+
+def ve_so_do_mcn_bridge(res_mcn):
+    # Tạo khung vẽ
+    fig, ax = plt.subplots(figsize=(10, 2.5))
+    
+    # Định nghĩa các khối từ trái sang phải
+    # Thứ tự: Lan can -> Lề -> Mặt đường -> Dải phân cách (nếu có) -> Mặt đường -> Lề -> Lan can
+    widths = [
+        res_mcn['w_lc'], 
+        res_mcn['w_le'], 
+        res_mcn['w_mat_tong']/2, 
+        res_mcn['w_dpc'], 
+        res_mcn['w_mat_tong']/2, 
+        res_mcn['w_le'], 
+        res_mcn['w_lc']
+    ]
+    labels = ['LC', 'Lề', 'Làn xe', 'DPC', 'Làn xe', 'Lề', 'LC']
+    colors = ['#7f8c8d', '#bdc3c7', '#34495e', '#e74c3c', '#34495e', '#bdc3c7', '#7f8c8d']
+    
+    current_x = 0
+    for w, label, color in zip(widths, labels, colors):
+        if w > 0: # Chỉ vẽ nếu bề rộng > 0
+            # Vẽ khối
+            ax.add_patch(plt.Rectangle((current_x, 0), w, 1, color=color, ec='white', lw=2))
+            # Ghi chữ chú thích
+            ax.text(current_x + w/2, 0.5, f"{label}\n{w}m", 
+                    ha='center', va='center', color='white', fontsize=9, fontweight='bold')
+            current_x += w
+            
+    # Tinh chỉnh trục tọa độ
+    ax.set_xlim(0, res_mcn['bc_cau'])
+    ax.set_ylim(0, 1.2)
+    ax.axis('off') # Ẩn các trục số cho đẹp
+    
+    return fig
