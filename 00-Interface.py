@@ -29,10 +29,10 @@ if 'design_data' not in st.session_state:
 st.title("🏗️ Hệ thống Tư vấn Thiết kế Cầu tự động (AI)")
 
 # Kiểm tra file ảnh trước khi hiển thị để tránh lỗi Crash
-if os.path.exists("images/test1.jpg"):
-    st.image("images/test1.jpg", caption="Ảnh minh họa dự án")
+if os.path.exists("Images/test1.jpg"):
+    st.image("Images/test1.jpg", caption="Ảnh minh họa dự án")
 else:
-    st.warning("📸 Chưa tìm thấy file ảnh images/test1.jpg trên GitHub.")
+    st.warning("📸 Chưa tìm thấy file ảnh Images/test1.jpg trên GitHub.")
 
 st.info("Quy trình: Tĩnh không ➔ Cấp đường ➔ Mặt cắt ngang ➔ Dự báo dầm bằng AI")
 
