@@ -5,7 +5,11 @@ import importlib
 
 # --- THIẾT LẬP TRANG ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
-
+# --- CHÈN NHẠC NỀN ĐƠN GIẢN ---
+music_path = "Sounds/Trungtv.mp3"
+if os.path.exists(music_path):
+    st.audio(music_path, loop=True, autoplay=False) 
+    st.caption("🎵 Nhấn Play để nghe nhạc nền trong lúc làm việc")
 # --- KẾT NỐI MODULES ---
 try:
     # Lưu ý: Đảm bảo các file này đã đổi tên trên GitHub, bỏ số đầu (vd: Tinh_khong.py)
@@ -135,7 +139,8 @@ with tab3:
                     )
                     
                     # 3. Hiển thị kết quả
-                    st.balloons()
+                  
+                  
                     st.subheader("KẾT QUẢ ĐỀ XUẤT TỪ AI")
                     res_col1, res_col2, res_col3 = st.columns(3)
                     
