@@ -2,17 +2,21 @@ import streamlit as st
 import pandas as pd
 import os
 import importlib
-import base64
 
 # --- THIẾT LẬP TRANG ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
-# --- HÀM PHÁT NHẠC AUTOPLAY ẨN ---
-music_path = "Sounds/Trungtv.mp3"
-if os.path.exists(music_path):
-    st.audio(music_path, loop=True, autoplay=True) 
-
-# Gọi hàm phát nhạc ngay đầu trang
-play_background_audio("Sounds/Trungtv.mp3")
+# --- 2. CHÈN NHẠC NỀN VÀO SIDEBAR  ---
+with st.sidebar:
+    st.title("🎵 Nhạc nền")
+    # Đường dẫn file nhạc trên GitHub của bạn
+    music_path = "Sounds/Trungtv.mp3" 
+    
+    if os.path.exists(music_path):
+        # Sử dụng lệnh tiêu chuẩn, autoplay=True sẽ phát ngay khi có tương tác
+        st.audio(music_path, loop=True, autoplay=True)
+        st.caption("Đang phát: Trungtv.mp3")
+    else:
+        st.error(f"⚠️ Không tìm thấy file: {music_path}")
 # --- KẾT NỐI MODULES ---
 try:
     # Lưu ý: Đảm bảo các file này đã đổi tên trên GitHub, bỏ số đầu (vd: Tinh_khong.py)
