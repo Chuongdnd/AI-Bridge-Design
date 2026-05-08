@@ -90,24 +90,28 @@ with tab1:
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
 with tab2:
-    st.header("Thiết kế Yếu tố hình học & Mặt cắt ngang")
-    c1, c2 = st.columns(2)
+    st.header("🛣️ Yếu tố hình học & Mặt cắt ngang")
     
-    with c1:
-        loai_d = st.selectbox("Cấp đường thiết kế:", ["Cao tốc", "O to", "Do thi"], index=1)
-        vtk = st.select_slider("Vận tốc thiết kế Vtk (km/h):", options=[40, 60, 80, 100, 120], value=60)
-        st.session_state.design_data['loai_duong'] = loai_d
-        st.session_state.design_data['vtk'] = vtk
+    # ... (Phần selectbox nhập loai_duong và vtk) ...
 
-    with c2:
-        n_lan = st.number_input("Số làn xe:", min_value=2, max_value=8, value=2)
-        w_lan = st.number_input("Bề rộng 1 làn xe (m):", value=3.5)
-
-    if st.button("Tính toán Mặt cắt ngang"):
-        # Giả lập gọi module MCN (Bạn cần sửa file MatCatNgang.py tương tự file Tinh_khong)
-        bc_du_kien = (n_lan * w_lan) + 2.5 # Cộng lề, lan can
-        st.session_state.design_data['bc'] = bc_du_kien
-        st.success(f"Bề rộng cầu xác định: Bc = {bc_du_kien} m")
+    if st.button("Tra cứu & Tính toán"):
+        # Gọi hàm từ file 02
+        ket_qua = YTHH.tra_cuu_tieu_chuan_hinh_hoc(loai_d, vtk)
+        
+        if ket_qua["status"] == "success":
+            data = ket_qua["data"]
+            # Hiển thị kết quả lên Web
+            col1, col2, col3 = st.columns(3)
+            col1.metric("Cấp đường", data["cap_duong"])
+            col2.metric("i_max (%)", f"{data['imax']}%")
+            col3.metric("R lồi min (m)", data["R_loi_min"])
+            
+            # Tính Bc và lưu vào session_state
+            bc_final = YTHH.tinh_toan_mat_cat_ngang(n_lan, w_lan, w_le)
+            st.session_state.design_data['bc'] = bc_final
+            st.success(f"🎯 Bề rộng cầu xác định: Bc = {bc_final} m")
+        else:
+            st.error(ket_qua["message"])
 
 # ==========================================
 # TAB 3: DỰ BÁO AI
