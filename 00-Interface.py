@@ -2,34 +2,40 @@ import streamlit as st
 import pandas as pd
 import os
 import importlib
-import streamlit as st
+
 # --- THIẾT LẬP TRANG ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
 
-# --- KẾT NỐI MODULES (Đảm bảo tên file đã đổi trên GitHub) ---
+# --- KẾT NỐI MODULES ---
 try:
+    # Lưu ý: Đảm bảo các file này đã đổi tên trên GitHub, bỏ số đầu (vd: Tinh_khong.py)
     TK = importlib.import_module("Tinh_khong")
     YTHH = importlib.import_module("Yeuto_Hinhhoc")
     MCN = importlib.import_module("MatCatNgang")
     GRD = importlib.import_module("Main_Girder")
 except Exception as e:
-    st.error(f"Lỗi kết nối Module: {e}. Vui lòng kiểm tra tên file trên GitHub (không để số ở đầu).")
+    st.error(f"⚠️ Lỗi kết nối Module: {e}. Kiểm tra lại tên file trên GitHub.")
 
-# --- QUẢN LÝ DỮ LIỆU PHIÊN CHẠY (Session State) ---
+# --- KHỞI TẠO SESSION STATE ---
 if 'design_data' not in st.session_state:
     st.session_state.design_data = {
         'khau_do_ngang': 20.0,
         'cao_do_day_dam': 0.0,
         'bc': 12.0,
-        'loai_duong': "Đường ô tô",
+        'loai_duong': "O to",
         'vtk': 60
     }
 
 st.title("🏗️ Hệ thống Tư vấn Thiết kế Cầu tự động (AI)")
-st.image("images/test1.png", caption="Con chó")
+
+# Kiểm tra file ảnh trước khi hiển thị để tránh lỗi Crash
+if os.path.exists("images/test1.png"):
+    st.image("images/test1.png", caption="Ảnh minh họa dự án")
+else:
+    st.warning("📸 Chưa tìm thấy file ảnh images/test1.png trên GitHub.")
+
 st.info("Quy trình: Tĩnh không ➔ Cấp đường ➔ Mặt cắt ngang ➔ Dự báo dầm bằng AI")
 
-# --- TẠO CÁC TABS ---
 tab1, tab2, tab3 = st.tabs(["🌊 1. Tĩnh không", "🛣️ 2. Hình học & MCN", "🤖 3. AI Dự báo Nhịp"])
 
 # ==========================================
@@ -43,7 +49,7 @@ with tab1:
         loai_c = st.radio("Loại cầu:", ["Vượt sông", "Vượt đường bộ"])
         if loai_c == "Vượt sông":
             mien = st.selectbox("Khu vực:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
-            cap_s = st.selectbox("Cấp sông:", ["1", "2", "3", "4", "5", "6"], index=2) # Mặc định cấp III
+            cap_s = st.selectbox("Cấp sông:", ["1", "2", "3", "4", "5", "6"], index=2)
             hinh_thuc = st.selectbox("Hình thức:", ["1", "2"], format_func=lambda x: "Kênh" if x=="1" else "Sông")
     
     with col2:
@@ -55,20 +61,19 @@ with tab1:
             cap_o = st.selectbox("Cấp đường bị vượt:", ["Cấp I, II, III", "Các cấp còn lại"])
 
     if st.button("Tra cứu Tĩnh không"):
+        # Xử lý gọi hàm an toàn để tránh lỗi thiếu biến
         if loai_c == "Vượt sông":
             res = TK.tra_cuu_tinh_khong_bridge(loai_c, mien=mien, cap_song=cap_s, loai_hinh_thuy=hinh_thuc, h1=h1, h5=h5)
         else:
             res = TK.tra_cuu_tinh_khong_bridge(loai_c, loai_duong_vuot=loai_v, cap_oto=cap_o)
         
-        if res['status'] == "success":
+        if res.get('status') == "success":
             st.session_state.design_data['khau_do_ngang'] = res['khau_do_ngang']
             st.session_state.design_data['cao_do_day_dam'] = res['cao_do_day_dam']
-            
             st.success(f"✅ {res['loai']}")
-            c1, c2 = st.columns(2)
-            c1.metric("Khẩu độ ngang (m)", res['khau_do_ngang'])
-            c2.metric("Cao độ đáy dầm min (m)", res['cao_do_day_dam'])
-            st.caption(f"Ghi chú: {res['ghi_chu']}")
+            st.metric("Khẩu độ ngang (m)", res['khau_do_ngang'])
+        else:
+            st.error(res.get('message', 'Lỗi không xác định'))
 
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
