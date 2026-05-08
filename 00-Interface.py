@@ -9,10 +9,10 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide
 # --- KẾT NỐI MODULES ---
 try:
     # Lưu ý: Đảm bảo các file này đã đổi tên trên GitHub, bỏ số đầu (vd: Tinh_khong.py)
-    TK = importlib.import_module("Tinh_khong")
-    YTHH = importlib.import_module("Yeuto_Hinhhoc")
-    MCN = importlib.import_module("MatCatNgang")
-    GRD = importlib.import_module("Main_Girder")
+    TK = importlib.import_module("01-Tinh_khong")
+    YTHH = importlib.import_module("02-Yeuto_Hinhhoc")
+    MCN = importlib.import_module("03-MatCatNgang")
+    GRD = importlib.import_module("04-Main_Girder")
 except Exception as e:
     st.error(f"⚠️ Lỗi kết nối Module: {e}. Kiểm tra lại tên file trên GitHub.")
 
@@ -151,3 +151,4 @@ with tab3:
 st.sidebar.markdown("---")
 st.sidebar.write("👤 **Tác giả:** Chương DND")
 st.sidebar.write("🎓 **Đề tài:** Ứng dụng AI trong thiết kế cầu")
+st.sidebar.write("🎓 **Giám sát tác giả:** Quang BN")
