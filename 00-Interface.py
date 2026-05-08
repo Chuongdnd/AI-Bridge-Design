@@ -92,94 +92,42 @@ with tab1:
 with tab2:
     st.header("🛣️ Thiết kế Hình học & Mặt cắt ngang Cầu")
     
-    # --- PHẦN 1: NHẬP LIỆU ---
     col_in1, col_in2 = st.columns(2)
-    
     with col_in1:
-        st.subheader("📋 Thông số Tuyến")
-        loai_d = st.selectbox("Loại đường thiết kế:", ["O to", "Cao tốc", "Do thi"], key="loai_duong_tab2")
-        
-        # Điều chỉnh dải vận tốc theo loại đường
-        if loai_d == "Cao tốc":
-            opts_v = [60, 80, 100, 120]
-        elif loai_d == "O to":
-            opts_v = [30, 40, 60, 80, 100, 120]
-        else:
-            opts_v = [30, 40, 50, 60, 80, 100]
-            
-        vtk = st.select_slider("Vận tốc thiết kế Vtk (km/h):", options=opts_v, value=opts_v[1] if len(opts_v)>1 else opts_v[0])
-        dia_hinh = st.radio("Loại địa hình (Chỉ áp dụng cho Đường ô tô):", ["1", "2"], 
-                            format_func=lambda x: "Đồng bằng / Đồi" if x=="1" else "Miền núi / Hiểm trở")
+        loai_d = st.selectbox("Loại đường thiết kế:", ["O to", "Cao tốc", "Do thi"])
+        vtk = st.select_slider("Vận tốc thiết kế Vtk (km/h):", options=[40, 60, 80, 100, 120], value=60)
+        dia_hinh = st.radio("Địa hình:", ["1", "2"], format_func=lambda x: "Đồng bằng" if x=="1" else "Miền núi")
 
     with col_in2:
-        st.subheader("📐 Quy mô Mặt cắt ngang")
-        n_lan = st.number_input("Số làn xe tổng cộng (n):", min_value=2, max_value=12, value=2, step=2)
-        w_le = st.number_input("Bề rộng dải an toàn / Lề (m):", min_value=0.25, max_value=3.0, value=0.5, step=0.25)
-        # Bề rộng làn xe mặc định theo loại đường nhưng cho phép sửa
-        w_lan_def = 3.5
-        if loai_d == "Cao tốc" and vtk >= 100: w_lan_def = 3.75
-        w_lan = st.number_input("Bề rộng 1 làn xe (m):", min_value=2.75, max_value=4.0, value=w_lan_def, step=0.25)
+        n_lan = st.number_input("Số làn xe:", min_value=2, value=2, step=2)
+        w_lan = st.number_input("Bề rộng 1 làn xe (m):", value=3.5, step=0.25)
+        w_le = st.number_input("Bề rộng dải an toàn (m):", value=0.5, step=0.25)
 
-    # --- PHẦN 2: NÚT BẤM KÍCH HOẠT ---
     if st.button("🚀 Tra cứu Tiêu chuẩn & Vẽ sơ đồ MCN"):
-        # 1. Gọi logic tra cứu hình học từ file 02 (YTHH)
+        # 1. Tra cứu hình học (YTHH từ file 02)
         res_hh = YTHH.tra_cuu_yeu_to_hinh_hoc(loai_d, vtk, dia_hinh)
         
-        # 2. Gọi logic tính toán chi tiết từ file 03 (MCN)
-        # Chuẩn bị input cho hàm xử lý ở file 03
-        data_mcn_input = {
-            "loai": loai_d,
-            "vtk": vtk,
-            "n_lan": n_lan,
-            "w_lan": w_lan,
-            "w_le": w_le
-        }
-        res_mcn = MCN.thiet_ke_mcn_cau_web(data_mcn_input) # Đảm bảo file 03 có hàm này
+        # 2. Tính toán & Vẽ MCN (MCN từ file 03)
+        data_input = {"loai": loai_d, "vtk": vtk, "n_lan": n_lan, "w_lan": w_lan, "w_le": w_le}
+        res_mcn = MCN.thiet_ke_mcn_cau_web(data_input)
 
         if res_hh["status"] == "success":
             st.divider()
-            
-            # --- HIỂN THỊ CHỈ SỐ KỸ THUẬT (METRICS) ---
-            st.subheader("✅ Kết quả Tra cứu Tiêu chuẩn")
+            # Hiển thị Metrics
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Cấp đường", res_hh['cap_duong'])
             m2.metric("i_max dọc", f"{res_hh['imax']}%")
-            m3.metric("R lồi min (m)", res_hh['R_loi_min'])
-            m4.metric("TỔNG BỀ RỘNG Bc", f"{res_mcn['bc_cau']} m")
+            m3.metric("R lồi min", f"{res_hh['R_loi_min']}m")
+            m4.metric("Tổng Bc", f"{res_mcn['bc_cau']}m")
 
-            # --- HIỂN THỊ SƠ ĐỒ ĐỒ HỌA (MATPLOTLIB) ---
-            st.subheader("🎨 Sơ đồ cấu tạo Mặt cắt ngang (Tỷ lệ thực)")
-            # Gọi hàm vẽ từ file 03
-            fig_mcn = MCN.ve_so_do_mcn_bridge(res_mcn) 
+            # HIỂN THỊ SƠ ĐỒ MATPLOTLIB
+            st.subheader("🎨 Sơ đồ mặt cắt ngang cầu")
+            fig_mcn = MCN.ve_so_do_mcn_bridge(res_mcn)
             st.pyplot(fig_mcn)
 
-            # --- BẢNG CHI TIẾT THÀNH PHẦN ---
-            st.subheader("📊 Bảng chi tiết thành phần kích thước")
-            col_t1, col_t2 = st.columns([1.5, 1])
-            
-            with col_t1:
-                df_out = pd.DataFrame({
-                    "Thành phần": ["Phần xe chạy", "Dải an toàn (Lề)", "Dải phân cách", "Gờ lan can", "Tổng bề rộng Bc"],
-                    "Chi tiết tính toán": [
-                        f"{n_lan} làn x {w_lan}m = {res_mcn['w_mat_tong']}m",
-                        f"2 bên x {w_le}m = {res_mcn['tong_w_le']}m",
-                        f"{res_mcn['w_dpc']} m",
-                        f"2 bên x {res_mcn['w_lc']}m = 1.0m",
-                        f"{res_mcn['bc_cau']} m"
-                    ]
-                })
-                st.table(df_out)
-            
-            with col_t2:
-                st.info(f"**Ghi chú kỹ thuật:**\n- Tiêu chuẩn: {res_hh.get('tieuchuan', 'TCVN')}\n- Sơ đồ mô phỏng: `{res_mcn['mo_phong']}`")
-                
-            # Cập nhật Session State để Tab 3 (AI) lấy dữ liệu
+            # Lưu dữ liệu cho Tab 3
             st.session_state.design_data['bc'] = res_mcn['bc_cau']
-            st.session_state.design_data['vtk'] = vtk
-            st.session_state.design_data['loai_duong'] = loai_d
-            st.success("🎯 Đã lưu thông số Bc để dự báo AI tại Tab 3!")
-        else:
-            st.error(f"Lỗi: {res_hh.get('message')}")
+            st.success("🎯 Đã lưu thông số Bc cho dự báo AI!")
 # ==========================================
 # TAB 3: DỰ BÁO AI
 # ==========================================
