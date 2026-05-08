@@ -12,7 +12,7 @@ try:
     TK = importlib.import_module("01-Tinh_khong")
     YTHH = importlib.import_module("02-Yeuto_Hinhhoc")
     MCN = importlib.import_module("03-MatCatNgang")
-    GRD = importlib.import_module("04-Main_Girder")
+    GRD = importlib.import_module("05-Main_Girder")
 except Exception as e:
     st.error(f"⚠️ Lỗi kết nối Module: {e}. Kiểm tra lại tên file trên GitHub.")
 
