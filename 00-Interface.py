@@ -92,27 +92,41 @@ with tab1:
 with tab2:
     st.header("🛣️ Yếu tố hình học & Mặt cắt ngang")
     
-    # ... (Phần selectbox nhập loai_duong và vtk) ...
+    col1, col2 = st.columns(2)
+    with col1:
+        loai_d = st.selectbox("Loại đường thiết kế:", ["O to", "Cao tốc", "Do thi"])
+        vtk = st.select_slider("Vận tốc thiết kế Vtk (km/h):", options=[30, 40, 50, 60, 80, 100, 120], value=60)
+        dia_hinh = st.radio("Loại địa hình:", ["1", "2"], format_func=lambda x: "Đồng bằng/Đồi" if x=="1" else "Miền núi/Hiểm trở")
+    
+    with col2:
+        n_lan = st.number_input("Số làn xe:", min_value=2, value=2)
+        w_lan = st.number_input("Bề rộng 1 làn xe (m):", value=3.5)
+        w_le = st.number_input("Bề rộng dải an toàn/lề (m):", value=0.5)
 
-    if st.button("Tra cứu & Tính toán"):
+    if st.button("🔍 Tra cứu & Tính toán MCN"):
         # Gọi hàm từ file 02
-        ket_qua = YTHH.tra_cuu_tieu_chuan_hinh_hoc(loai_d, vtk)
+        ket_qua = YTHH.tra_cuu_yeu_to_hinh_hoc(loai_d, vtk, dia_hinh)
         
         if ket_qua["status"] == "success":
-            data = ket_qua["data"]
-            # Hiển thị kết quả lên Web
-            col1, col2, col3 = st.columns(3)
-            col1.metric("Cấp đường", data["cap_duong"])
-            col2.metric("i_max (%)", f"{data['imax']}%")
-            col3.metric("R lồi min (m)", data["R_loi_min"])
+            data = ket_qua
+            st.divider()
             
-            # Tính Bc và lưu vào session_state
-            bc_final = YTHH.tinh_toan_mat_cat_ngang(n_lan, w_lan, w_le)
+            # Hiển thị Metrics (Các ô chỉ số)
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("Cấp đường", data['cap_duong'])
+            m2.metric("i_max (%)", f"{data['imax']}%")
+            m3.metric("R lồi min (m)", data['R_loi_min'])
+            m4.metric("R lõm min (m)", data['R_lom_min'])
+            
+            # Tính Bc
+            bc_final = YTHH.tinh_toan_mcn_cau(n_lan, w_lan, w_le)
             st.session_state.design_data['bc'] = bc_final
-            st.success(f"🎯 Bề rộng cầu xác định: Bc = {bc_final} m")
+            st.session_state.design_data['vtk'] = vtk
+            
+            st.success(f"✅ Tiêu chuẩn áp dụng: {data['tieuchuan']}")
+            st.info(f"📏 Bề rộng cầu xác định: **Bc = {bc_final} m** (Đã lưu cho Tab 3)")
         else:
             st.error(ket_qua["message"])
-
 # ==========================================
 # TAB 3: DỰ BÁO AI
 # ==========================================
