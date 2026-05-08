@@ -2,14 +2,35 @@ import streamlit as st
 import pandas as pd
 import os
 import importlib
+import base64
 
 # --- THIẾT LẬP TRANG ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
-# --- CHÈN NHẠC NỀN ĐƠN GIẢN ---
-music_path = "Sounds/Trungtv.mp3"
-if os.path.exists(music_path):
-    st.audio(music_path, loop=True, autoplay=False) 
-    st.caption("🎵 Nhấn Play để nghe nhạc nền trong lúc làm việc")
+# --- HÀM PHÁT NHẠC AUTOPLAY ẨN ---
+def play_background_audio(file_path):
+    if os.path.exists(file_path):
+        with open(file_path, "rb") as f:
+            data = f.read()
+            b64 = base64.b64encode(data).decode()
+            audio_html = f"""
+                <audio id="bg-audio" loop autoplay>
+                    <source src="data:audio/mp3;base64,{b64}" type="audio/mp3">
+                </audio>
+                <script>
+                    var audio = document.getElementById('bg-audio');
+                    audio.volume = 0.5; // Đặt âm lượng 50%
+                    // Buộc phát nhạc khi người dùng click bất kỳ đâu
+                    document.addEventListener('click', function() {{
+                        if (audio.paused) {{
+                            audio.play();
+                        }}
+                    }}, {{ once: true }});
+                </script>
+            """
+            st.markdown(audio_html, unsafe_allow_html=True)
+
+# Gọi hàm phát nhạc ngay đầu trang
+play_background_audio("Sounds/Trungtv.mp3")
 # --- KẾT NỐI MODULES ---
 try:
     # Lưu ý: Đảm bảo các file này đã đổi tên trên GitHub, bỏ số đầu (vd: Tinh_khong.py)
