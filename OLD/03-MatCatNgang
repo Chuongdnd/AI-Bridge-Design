@@ -1,0 +1,129 @@
+import importlib
+import sys
+
+# Bước 1: Kết nối với file 02-Yeuto_Hinhhoc.py
+try:
+    # Thử import nếu bạn đã đổi tên thành Yeuto_Hinhhoc.py
+    import Yeuto_Hinhhoc as YTHH
+except ImportError:
+    try:
+        # Sử dụng importlib cho tên file có dấu gạch ngang
+        YTHH = importlib.import_module("02-Yeuto_Hinhhoc")
+    except ModuleNotFoundError:
+        print("Lỗi: Không tìm thấy file 02-Yeuto_Hinhhoc.py trong cùng thư mục!")
+        sys.exit()
+
+def thiet_ke_mcn_cau(data):
+    if not data:
+        return
+    
+    loai = data.get("loai")
+    vtk = data.get("vtk")
+    cap = data.get("ten_cap")
+    
+    print("\n" + "="*75)
+    print("      KẾT QUẢ BỐ TRÍ MẶT CẮT NGANG CẦU THEO TIÊU CHUẨN")
+    print("="*75)
+    
+    if loai == "Cao toc":
+        # --- DỮ LIỆU TRA CỨU BẢNG 1 - TCVN 5729:2012 ---
+        # db_dpc: {Loại: {Vận tốc: [Chiều rộng DPC (W_dpc), Dải an toàn trong (W_at_trong)]}}
+        db_dpc = {
+            "1": {120: [0.75, 0.75], 100: [0.75, 0.75], 80: [0.50, 0.50], 60: [0.50, 0.50]},
+            "2": {120: [3.00, 0.75], 100: [3.00, 0.75], 80: [2.00, 0.50], 60: [2.00, 0.50]},
+            "3": {120: [3.00, 0.75], 100: [3.00, 0.75], 80: [3.00, 0.50], 60: [3.00, 0.50]}
+        }
+        
+        # db_ngoai: {Vận tốc: {Dải an toàn ngoài, Lề cỏ/Dải phụ, Mặt đường chuẩn cho 2 làn}}
+        db_ngoai = {
+            120: {"at_ngoai": 3.0, "le_co": 0.75, "mat_chuan": 7.5},
+            100: {"at_ngoai": 3.0, "le_co": 0.75, "mat_chuan": 7.5},
+            80:  {"at_ngoai": 2.5, "le_co": 0.75, "mat_chuan": 7.0},
+            60:  {"at_ngoai": 2.5, "le_co": 0.75, "mat_chuan": 7.0}
+        }
+
+        print(f"TIÊU CHUẨN: TCVN 5729:2012 | Vận tốc thiết kế: {vtk} km/h")
+        
+        # 1. Khai báo cấu tạo dải phân cách
+        print("\nCHỌN CẤU TẠO DẢI PHÂN CÁCH GIỮA (Tra cứu theo Bảng 1):")
+        print("  1. Loại 1: Có lớp phủ bề mặt, không bố trí trụ cầu")
+        print("  2. Loại 2: Không có lớp phủ bề mặt (trồng cỏ...)")
+        print("  3. Loại 3: Có bố trí trụ cầu hoặc công trình khác")
+        pick_dpc = input("=> Nhập lựa chọn (1-3): ").strip()
+        if pick_dpc not in db_dpc:
+            pick_dpc = "1"
+            print("(!) Lựa chọn không hợp lệ, hệ thống tự động chọn Loại 1.")
+
+        # 2. Khai báo số làn xe (Ràng buộc tối thiểu 2 làn)
+        user_lan = input(f"=> Nhập số làn xe mỗi chiều (tối thiểu 2 làn): ").strip()
+        so_lan = int(user_lan) if user_lan and int(user_lan) >= 2 else 2
+        if so_lan < 2:
+            print("Đường cao tốc tối thiểu 2 làn mỗi chiều. Tự động đặt về 2.")
+
+        # 3. Tra cứu và tính toán bề rộng
+        w_dpc, w_at_trong = db_dpc[pick_dpc][vtk]
+        cfg_ngoai = db_ngoai[vtk]
+        
+        # Dải giữa = W_dpc + 2 * W_at_trong
+        w_g = w_dpc + (2 * w_at_trong)
+        
+        # Tính toán mặt đường tăng thêm (3.75m hoặc 3.5m mỗi làn vượt quá 2)
+        w_mat_1_ben = cfg_ngoai["mat_chuan"]
+        if so_lan > 2:
+            delta = 3.75 if vtk >= 100 else 3.5
+            w_mat_1_ben += delta * (so_lan - 2)
+            
+        # Tổng bề rộng cầu (B_cầu = B_nền đường)
+        w_cau = (w_mat_1_ben * 2) + (cfg_ngoai["at_ngoai"] * 2) + w_g + (cfg_ngoai["le_co"] * 2)
+
+        # 4. Hiển thị kết quả chi tiết
+        print("-" * 55)
+        print(f"THÔNG SỐ MẶT CẮT NGANG CẦU:")
+        print(f"  + Số làn xe thiết kế: {so_lan} làn/chiều")
+        print(f"  + Chiều rộng mặt đường (1 bên): {w_mat_1_ben} m")
+        print(f"  + Dải an toàn ngoài (Lề gia cố): {cfg_ngoai['at_ngoai']} m")
+        print(f"  + Dải giữa (W_dpc={w_dpc}m + 2xW_at_trong={w_at_trong}m): {w_g} m")
+        print(f"  + Dải phụ đặt lan can (thay lề cỏ): {cfg_ngoai['le_co']} m")
+        print("-" * 35)
+        print(f"==> TỔNG BỀ RỘNG CẦU (B_nền): {w_cau} m")
+        
+     # 5. Logic Khuyến nghị tách đơn nguyên (Dựa trên W_dpc)
+        if w_dpc >= 1.5:
+            print(f"\n[KHUYẾN NGHỊ]: Vì kích thước dải phân cách (W_dpc = {w_dpc}m) >= 1.5m")
+            print("             => Nên thiết kế tách thành 2 đơn nguyên cầu riêng biệt.")
+            
+            # Khai báo bề rộng lan can (cho cả phía trái và phía phải của đơn nguyên)
+            # Nếu đã khai báo w_lc ở trên thì có thể tận dụng, nếu chưa thì thêm dòng nhập:
+            try:
+                w_lc_val = w_lc # Sử dụng biến w_lc nếu bạn đã khai báo ở phần nhập liệu chung
+            except NameError:
+                w_lc_val = float(input("=> Nhập bề rộng lan can cầu (m) để tính đơn nguyên (ví dụ 0.5): ") or 0.5)
+
+            # CÔNG THỨC CẬP NHẬT: 
+            # b_dn = [Lan can ngoài] + [AT ngoài] + [Mặt đường] + [AT trong] + [Lan can trong]
+            b_dn = w_lc_val + cfg_ngoai["at_ngoai"] + w_mat_1_ben + w_at_trong + w_lc_val
+            
+            print(f"             Bề rộng mỗi đơn nguyên cầu: {b_dn} m")
+            print(f"             (Gồm 02 dải lan can, mỗi bên rộng {w_lc_val}m)")
+
+    elif loai == "O to":
+        print(f"TIÊU CHUẨN: TCVN 4054:2005 | Cấp thiết kế: {cap}")
+        # Dữ liệu mẫu cho Đường ô tô (có thể mở rộng thêm)
+        config_oto = {
+            "I": {"w_mat": 22.5, "le_gc": 3.0, "nen": 32.5},
+            "III": {"w_mat": 7.0, "le_gc": 2.0, "nen": 12.0}
+        }
+        cfg = config_oto.get(cap, config_oto["III"])
+        print(f"1. Chiều rộng phần xe chạy: {cfg['w_mat']} m")
+        print(f"2. Chiều rộng lề gia cố: {cfg['le_gc']} m")
+        print(f"==> TỔNG BỀ RỘNG CẦU: {cfg['nen']} m")
+
+    print("="*75)
+
+if __name__ == "__main__":
+    # Nhận dữ liệu đầu vào từ file 02
+    try:
+        data_input = YTHH.chon_cap_duong()
+        thiet_ke_mcn_cau(data_input)
+    except Exception as e:
+        print(f"Đã xảy ra lỗi khi thực thi: {e}")
