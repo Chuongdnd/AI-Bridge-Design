@@ -1,75 +1,65 @@
-import pandas as pd
-
-def tra_cuu_tieu_chuan_hinh_hoc(loai_duong, vtk):
+def tra_cuu_yeu_to_hinh_hoc(loai, vtk, dia_hinh="1"):
     """
-    Hàm tra cứu các chỉ tiêu kỹ thuật hình học dựa trên TCVN 4054:2005 và TCVN 9436:2012.
+    Hàm tra cứu các chỉ tiêu kỹ thuật dựa trên TCVN.
+    loai: "O to", "Cao tốc", "Do thi"
+    vtk: Tốc độ thiết kế
+    dia_hinh: "1" (Đồng bằng), "2" (Miền núi)
     """
-    res = {
-        "status": "error",
-        "message": "",
-        "data": {}
-    }
-
-    # 1. Cơ sở dữ liệu cho ĐƯỜNG Ô TÔ (TCVN 4054:2005)
+    # Dữ liệu tra cứu cho Đường Ô tô (TCVN 4054:2005)
     db_oto = {
-        40: {"ten_cap": "Cấp IV", "imax": 7, "R_loi": [700, 450, 1200]}, # [R_loi_min, R_loi_tt, R_lom_min]
-        60: {"ten_cap": "Cấp III", "imax": 6, "R_loi": [2500, 1500, 2000]},
-        80: {"ten_cap": "Cấp II", "imax": 5, "R_loi": [5000, 3000, 3000]},
-        100: {"ten_cap": "Cấp I", "imax": 4, "R_loi": [10000, 6000, 5000]}
+        120: {"R": [11000, 17000], "imax": 4, "cap": "I"},
+        100: {"R": [6000, 10000],  "imax": 5, "cap": "II"},
+        80:  {"R": [4000, 5000],   "imax": 6, "cap": "III"},
+        60:  {"R": [2500, 4000],   "imax": 7, "cap": "IV"},
+        40:  {"R": [700, 1000],    "imax": 9, "cap": "V"},
+        30:  {"R": [400, 600],     "imax": 10, "cap": "VI"}
     }
-
-    # 2. Cơ sở dữ liệu cho ĐƯỜNG CAO TỐC (TCVN 5729:2012)
+    
+    # Dữ liệu tra cứu cho Cao tốc (TCVN 5729:2012)
     db_caotoc = {
-        60: {"ten_cap": "V60", "imax": 6, "R_loi": [2500, 1500, 2000]},
-        80: {"ten_cap": "V80", "imax": 5, "R_loi": [5000, 3000, 3000]},
-        100: {"ten_cap": "V100", "imax": 4, "R_loi": [10000, 6000, 5000]},
-        120: {"ten_cap": "V120", "imax": 4, "R_loi": [15000, 9000, 8000]}
+        120: {"R": [12000, 17000, 20000], "imax": 4, "cap": "120"},
+        100: {"R": [6000, 10000, 16000],  "imax": 5, "cap": "100"},
+        80:  {"R": [3000, 4500, 12000],   "imax": 6, "cap": "80"},
+        60:  {"R": [1500, 2000, 9000],    "imax": 6, "cap": "60"}
     }
-
-    # 3. Cơ sở dữ liệu cho ĐƯỜNG ĐÔ THỊ (TCVN 13592:2022)
+    
+    # Dữ liệu tra cứu cho Đường Đô thị (TCVN 13592:2022)
     db_dothi = {
-        30: {"ten_cap": "Đường phố nội bộ", "imax": 9, "R_loi": [400, 250, 400]},
-        40: {"ten_cap": "Đường thu gom", "imax": 8, "R_loi": [700, 450, 700]},
-        50: {"ten_cap": "Đường chính khu vực", "imax": 7, "R_loi": [1200, 800, 1000]},
-        60: {"ten_cap": "Đường trục chính đô thị", "imax": 6, "R_loi": [2500, 1500, 2000]}
+        100: {"R": [6500, 10000], "imax": 4, "cap": "Cao tốc ĐT"},
+        80:  {"R": [3000, 4500],  "imax": 5, "cap": "Trục chính"},
+        60:  {"R": [1400, 2000],  "imax": 6, "cap": "Chính thứ yếu"},
+        50:  {"R": [800, 1200],   "imax": 6, "cap": "Đường khu vực"},
+        40:  {"R": [450, 700],    "imax": 7, "cap": "Đường phố gom"},
+        30:  {"R": [250, 400],    "imax": 8, "cap": "Đường nội bộ"}
     }
 
-    try:
-        data_match = None
-        if loai_duong == "O to":
-            data_match = db_oto.get(vtk)
-        elif loai_duong == "Cao tốc":
-            data_match = db_caotoc.get(vtk)
-        elif loai_duong == "Do thi":
-            data_match = db_dothi.get(vtk)
+    res = None
+    if loai == "O to":
+        res = db_oto.get(vtk)
+    elif loai == "Cao tốc":
+        res = db_caotoc.get(vtk)
+    elif loai == "Do thi":
+        res = db_dothi.get(vtk)
 
-        if data_match:
-            res["status"] = "success"
-            res["data"] = {
-                "loai": loai_duong,
-                "cap_duong": data_match["ten_cap"],
-                "imax": data_match["imax"],
-                "R_loi_min": data_match["R_loi"][0],
-                "R_loi_tt": data_match["R_loi"][1],
-                "R_lom_min": data_match["R_loi"][2]
-            }
-        else:
-            res["message"] = f"Không tìm thấy dữ liệu cho vận tốc {vtk} km/h của loại đường này."
+    if res:
+        # Xử lý độ dốc dọc tối đa (i_max)
+        imax_val = res['imax']
+        if loai == "O to" and dia_hinh == "2":
+            imax_val += 1 # Tăng 1% cho miền núi
+            if imax_val > 11: imax_val = 11
 
-    except Exception as e:
-        res["message"] = f"Lỗi hệ thống: {str(e)}"
+        return {
+            "status": "success",
+            "cap_duong": res['cap'],
+            "imax": imax_val,
+            "R_loi_min": res['R'][0],
+            "R_loi_tt": res['R'][1]
+        }
+    return {"status": "error", "message": "Không có dữ liệu cho vận tốc này"}
 
-    return res
-
-def tinh_toan_mat_cat_ngang(n_lan, w_lan, w_le, w_dai_an_toan=0.5):
-    """
-    Tính toán bề rộng cầu tổng thể (Bc)
-    """
-    # Công thức cơ bản: Bc = n*W_lan + 2*W_an_toan + 2*W_lan_can
-    # Giả định bề rộng gờ lan can mỗi bên là 0.5m
-    w_lan_can = 0.5 
-    
-    bc_thong_thuy = (n_lan * w_lan) + (2 * w_le) + (2 * w_dai_an_toan)
-    bc_tong = bc_thong_thuy + (2 * w_lan_can)
-    
+def tinh_toan_mcn_cau(n_lan, w_lan, w_le, w_at=0.5):
+    """Tính toán bề rộng tổng cộng của cầu Bc"""
+    # Bc = n*W_lan + 2*W_le + 2*W_an_toan + 2*Gờ lan can (0.5m mỗi bên)
+    bc_thong_thuy = (n_lan * w_lan) + (2 * w_le) + (2 * w_at)
+    bc_tong = bc_thong_thuy + 1.0 # 0.5m x 2 gờ lan can
     return round(bc_tong, 2)

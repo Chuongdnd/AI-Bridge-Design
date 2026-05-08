@@ -95,36 +95,37 @@ with tab2:
     col1, col2 = st.columns(2)
     with col1:
         loai_d = st.selectbox("Loại đường thiết kế:", ["O to", "Cao tốc", "Do thi"])
-        vtk = st.select_slider("Vận tốc thiết kế Vtk (km/h):", options=[30, 40, 50, 60, 80, 100, 120], value=60)
-        dia_hinh = st.radio("Loại địa hình:", ["1", "2"], format_func=lambda x: "Đồng bằng/Đồi" if x=="1" else "Miền núi/Hiểm trở")
+        vtk = st.select_slider("Vận tốc thiết kế Vtk (km/h):", 
+                               options=[20, 30, 40, 50, 60, 80, 100, 120], value=60)
+        dia_hinh = st.radio("Loại địa hình:", ["1", "2"], 
+                            format_func=lambda x: "Đồng bằng/Đồi" if x=="1" else "Miền núi/Hiểm trở")
     
     with col2:
-        n_lan = st.number_input("Số làn xe:", min_value=2, value=2)
-        w_lan = st.number_input("Bề rộng 1 làn xe (m):", value=3.5)
-        w_le = st.number_input("Bề rộng dải an toàn/lề (m):", value=0.5)
+        n_lan = st.number_input("Số làn xe:", min_value=2, step=1, value=2)
+        w_lan = st.number_input("Bề rộng 1 làn xe (m):", min_value=2.75, step=0.25, value=3.5)
+        w_le = st.number_input("Bề rộng dải an toàn/lề (m):", min_value=0.0, step=0.25, value=0.5)
 
     if st.button("🔍 Tra cứu & Tính toán MCN"):
-        # Gọi hàm từ file 02
+        # GỌI ĐÚNG TÊN HÀM TRONG FILE 02
         ket_qua = YTHH.tra_cuu_yeu_to_hinh_hoc(loai_d, vtk, dia_hinh)
         
         if ket_qua["status"] == "success":
             data = ket_qua
             st.divider()
             
-            # Hiển thị Metrics (Các ô chỉ số)
+            # Hiển thị các ô chỉ số (Metrics)
             m1, m2, m3, m4 = st.columns(4)
             m1.metric("Cấp đường", data['cap_duong'])
-            m2.metric("i_max (%)", f"{data['imax']}%")
-            m3.metric("R lồi min (m)", data['R_loi_min'])
-            m4.metric("R lõm min (m)", data['R_lom_min'])
+            m2.metric("i_max dọc (%)", f"{data['imax']}%")
+            m3.metric("R lồi min (m)", f"{data['R_loi_min']} m")
+            m4.metric("R lồi TT (m)", f"{data['R_loi_tt']} m")
             
-            # Tính Bc
+            # Tính toán Bc và lưu vào session_state cho Tab 3 dùng
             bc_final = YTHH.tinh_toan_mcn_cau(n_lan, w_lan, w_le)
             st.session_state.design_data['bc'] = bc_final
             st.session_state.design_data['vtk'] = vtk
             
-            st.success(f"✅ Tiêu chuẩn áp dụng: {data['tieuchuan']}")
-            st.info(f"📏 Bề rộng cầu xác định: **Bc = {bc_final} m** (Đã lưu cho Tab 3)")
+            st.info(f"📏 Bề rộng cầu xác định: **Bc = {bc_final} m** (Giá trị này sẽ được dùng để dự báo AI)")
         else:
             st.error(ket_qua["message"])
 # ==========================================
