@@ -72,15 +72,16 @@ with tab1:
             st.divider()
             
             # 1. Hiển thị sơ đồ lớn (Đã thụt lề đúng vào trong)
-            st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
-            fig_tt = TK.ve_so_do_bo_tri_chung(res) 
-            st.pyplot(fig_tt)
-            
-            # 2. Hiển thị bảng số liệu ở dưới
             st.subheader("📊 Chi tiết thông số tĩnh không")
             data_table = {
                 "Thông số": ["Khổ thông thuyền B", "Tĩnh không đứng H", "Mực nước H1%", "Mực nước H5%", "Cao độ đáy dầm"],
-                "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['MNCN']:.3f} m", f"{res['MNTT']:.3f} m", f"{res['day_dam']} m"]
+                "Giá trị": [
+                    f"{res['B']} m", 
+                    f"{res['H']} m", 
+                    f"{res['H1']:.3f} m", # Sửa MNCN thành H1
+                    f"{res['H5']:.3f} m", # Sửa MNTT thành H5
+                    f"{res['day_dam']} m"
+                ]
             }
             st.table(pd.DataFrame(data_table))
             
