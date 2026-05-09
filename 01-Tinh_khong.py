@@ -1,4 +1,6 @@
-def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None, h1=0, h5=0, loai_duong_vuot=None, cap_oto=None):
+def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None, 
+                               h1=0, h5=0, h10=0, h98=0, 
+                               loai_duong_vuot=None, cap_oto=None):
     # --- DỮ LIỆU GỐC TỪ FORM MẪU V5.0 ---
     data_thuy = {
         "1": { # Bắc
