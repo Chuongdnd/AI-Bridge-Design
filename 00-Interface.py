@@ -104,7 +104,7 @@ with tab1:
                 # Gọi hàm xuất CAD từ file 01
                 doc_cad = TK.xuat_file_cad(res)
                 out_cad = io.StringIO()
-                doc_cad.write(out_cad)
+                dxf_string = out_cad.getvalue()
                 
                 st.download_button(
                     label="📐 Tải file CAD (.dxf)",
