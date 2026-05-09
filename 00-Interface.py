@@ -5,64 +5,48 @@ import importlib
 
 # --- THIẾT LẬP TRANG ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
-# --- 2. CHÈN NHẠC NỀN VÀO SIDEBAR  ---
+
+# --- 2. CHÈN NHẠC NỀN VÀO SIDEBAR ---
 with st.sidebar:
     st.title("🎵 Nhạc nền")
-    # Đường dẫn file nhạc trên GitHub của bạn
     music_path = "Sounds/Trungtv.mp3" 
-    
     if os.path.exists(music_path):
-        # Sử dụng lệnh tiêu chuẩn, autoplay=True sẽ phát ngay khi có tương tác
         st.audio(music_path, loop=True, autoplay=True)
         st.caption("Đang phát: Trungtv.mp3")
     else:
         st.error(f"⚠️ Không tìm thấy file: {music_path}")
+
 # --- KẾT NỐI MODULES ---
 try:
-    # Lưu ý: Đảm bảo các file này đã đổi tên trên GitHub, bỏ số đầu (vd: Tinh_khong.py)
     TK = importlib.import_module("01-Tinh_khong")
     YTHH = importlib.import_module("02-Yeuto_Hinhhoc")
     MCN = importlib.import_module("03-MatCatNgang")
     GRD = importlib.import_module("05-Main_Girder")
 except Exception as e:
-    st.error(f"⚠️ Lỗi kết nối Module: {e}. Kiểm tra lại tên file trên GitHub.")
+    st.error(f"Lỗi kết nối Module: {e}")
 
 # --- KHỞI TẠO SESSION STATE ---
 if 'design_data' not in st.session_state:
     st.session_state.design_data = {
-        'khau_do_ngang': 20.0,
-        'cao_do_day_dam': 0.0,
-        'bc': 12.0,
-        'loai_duong': "O to",
-        'vtk': 60
+        'day_dam': 0.0,
+        'khau_do_ngang': 0.0,
+        'bc': 0.0,
+        'loai_duong': "Do thi"
     }
 
-st.title("🏗️ Hệ thống Tư vấn Thiết kế Cầu tự động (AI)")
-
-# Kiểm tra file ảnh trước khi hiển thị để tránh lỗi Crash
-if os.path.exists("Images/test1.jpg"):
-    st.image("Images/test1.jpg", caption="Ảnh minh họa dự án")
-else:
-    st.warning("📸 Chưa tìm thấy file ảnh Images/test1.jpg trên GitHub.")
-
-st.info("Quy trình: Tĩnh không ➔ Cấp đường ➔ Mặt cắt ngang ➔ Dự báo dầm bằng AI")
-
-tab1, tab2, tab3 = st.tabs(["🌊 1. Tĩnh không", "🛣️ 2. Hình học & MCN", "🤖 3. AI Dự báo Nhịp"])
+# --- GIAO DIỆN CHÍNH ---
+tab1, tab2, tab3 = st.tabs(["🌊 Tĩnh không & Thủy văn", "📐 Hình học & MCN", "🤖 Dự báo AI"])
 
 # ==========================================
-# TAB 1: TĨNH KHÔNG
+# TAB 1: TĨNH KHÔNG & THỦY VĂN
 # ==========================================
-
 with tab1:
     st.header("🌊 Thông số Tĩnh không & Thủy văn thiết kế")
     
-    # --- PHẦN 1: NHẬP LIỆU ---
     col_in1, col_in2 = st.columns(2)
-    
     with col_in1:
         st.subheader("🚩 Loại hình & Cấp sông")
         loai_c = st.radio("Chọn đối tượng vượt:", ["Vượt sông", "Vượt đường bộ"], horizontal=True)
-        
         if loai_c == "Vượt sông":
             mien = st.selectbox("Khu vực địa lý:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
             cap_s = st.selectbox("Cấp sông (TCVN 5664):", ["1", "2", "3", "4", "5", "6"], 
@@ -80,10 +64,9 @@ with tab1:
             h10 = st.number_input("MNTC Thi công (H10%):", value=1.50, format="%.3f")
             h98 = st.number_input("MNTN Thấp nhất (H98%):", value=0.50, format="%.3f")
         else:
-            st.info("💡 Đối với cầu vượt đường, tĩnh không tính từ điểm cao nhất của mặt đường bị vượt.")
+            st.info("💡 Tĩnh không tính từ điểm cao nhất của mặt đường bị vượt.")
 
-    # --- PHẦN 2: XỬ LÝ & HIỂN THỊ ---
-    if st.button("🚀 Tra tĩnh không"):
+    if st.button("🚀 Tra cứu & Xác định Đáy dầm"):
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None,
             cap_num=cap_s if loai_c=="Vượt sông" else None,
@@ -96,44 +79,33 @@ with tab1:
             cap_oto=cap_o if loai_c=="Vượt đường bộ" else None
         )
         
-    if res["status"] == "success":
-        st.divider()
-        st.subheader(f"✅ Tổng hợp các thông số tĩnh không: {res['label']}")
-        
-        # Chia cột để hiển thị: Bảng bên trái, Sơ đồ bên phải (Thay thế hình con chó)
-        col_left, col_right = st.columns([1, 1.5])
-        
-        if loai_c == "Vượt sông":
-            # 1. Định nghĩa bảng dữ liệu (data_table)
-            data_table = {
-                "Thông số": ["Khổ thông thuyền B", "Chiều cao tĩnh không (H)", "Cao độ đáy dầm tối thiểu", 
-                            "Mực nước cao nhất (H1%)", "Mực nước thông thuyền (H5%)", 
-                            "Mực nước thi công (H10%)", "Mực nước thấp nhất (H98%)"],
-                "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['day_dam']} m", 
-                           f"{h1:.3f} m", f"{h5:.3f} m", f"{h10:.3f} m", f"{h98:.3f} m"],
-                "Ghi chú": ["TCVN 5664 : 2009", "TCVN 5664 : 2009", "H5% + H + 0.1", 
-                           "Tần suất 1%", "Tần suất 5%", "Tần suất 10%", "Tần suất 98%"]
-            }
+        # TOÀN BỘ PHẦN NÀY PHẢI THỤT LỀ VÀO TRONG NÚT BẤM
+        if res["status"] == "success":
+            st.divider()
+            col_res_left, col_res_right = st.columns([1, 1.8])
             
-            with col_left:
-                st.write("**📊 Bảng thông số chi tiết:**")
-                # Lệnh này bây giờ đã an toàn vì data_table nằm ngay phía trên
+            with col_res_left:
+                st.subheader("📊 Kết quả tính toán")
+                data_table = {
+                    "Thông số": ["Khổ ngang B", "Tĩnh không H", "MNCN H1%", "MNTT H5%", "MNTC H10%", "MNTN H98%", "Đáy dầm tối thiểu"],
+                    "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{h1:.3f} m", f"{h5:.3f} m", f"{h10:.3f} m", f"{h98:.3f} m", f"{res['day_dam']} m"],
+                }
                 st.table(pd.DataFrame(data_table))
+                st.info(f"💡 Công thức: H5% + H + 0.1 = {res['day_dam']} m")
             
-            with col_right:
-                st.write("**🖼️ Sơ đồ trắc dọc minh họa (Dầm giản đơn):**")
-                # GỌI HÀM VẼ TỪ MODULE TK ĐỂ THAY THẾ HÌNH CON CHÓ
-                fig = TK.ve_so_do_dam_gian_don_dong(res)
-                st.pyplot(fig) # Hiển thị trực tiếp sơ đồ động
-        
-        else:
-            # Hiển thị cho trường hợp vượt đường bộ
-            st.info(f"Chiều cao tĩnh không yêu cầu: {res['H']} m")
+            with col_res_right:
+                st.subheader("🖼️ Sơ đồ trắc dọc minh họa")
+                # Gọi hàm vẽ sơ đồ động (Đảm bảo đã thêm hàm này vào file 01-Tinh_khong.py)
+                try:
+                    fig = TK.ve_so_do_dam_gian_don_dong(res)
+                    st.pyplot(fig)
+                except Exception as e:
+                    st.warning("Đang chờ hàm vẽ từ Module 01...")
+            
+            st.session_state.design_data['day_dam'] = res['day_dam']
+            st.session_state.design_data['khau_do_ngang'] = res['B']
+            st.success("🎯 Dữ liệu đã được lưu cho các Tab tiếp theo!")
 
-        # Lưu session (giữ nguyên)
-        st.session_state.design_data['day_dam'] = res['day_dam']
-        st.session_state.design_data['khau_do_ngang'] = res['B']
-                       
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
