@@ -73,18 +73,36 @@ with tab1:
     if 'tinh_khong_res' in st.session_state:
         res = st.session_state.tinh_khong_res
         st.divider()
-        st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
         
-        # Gọi hàm vẽ từ file 01-Tinh_khong.py
+        # 1. Hiển thị bản vẽ (Đã hiện tốt)
+        st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
         fig_tt = TK.ve_so_do_bo_tri_chung(res)
         st.pyplot(fig_tt)
         
-        st.subheader("📊 Chi tiết thông số")
-        st.table(pd.DataFrame({
-            "Thông số": ["Khổ B", "Tĩnh không H", "MNCN (H1%)", "MNTT (H5%)", "Đáy dầm tối thiểu"],
-            "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['MNCN']:.3f} m", f"{res['MNTT']:.3f} m", f"{res['day_dam']} m"]
-        }))
+        # 2. Hiển thị bảng thông số (Phần bị mất)
+        st.subheader("📊 Chi tiết thông số kỹ thuật")
         
+        # Tạo DataFrame với các Key chuẩn từ file 01-Tinh_khong.py của bạn
+        df_data = {
+            "Thông số kỹ thuật": [
+                "Khổ thông thuyền ngang (B)", 
+                "Chiều cao tĩnh không đứng (H)", 
+                "Mực nước cao nhất (H1%)", 
+                "Mực nước thông thuyền (H5%)", 
+                "Mực nước thấp nhất (H98%)",
+                "Cao độ đáy dầm thiết kế"
+            ],
+            "Giá trị": [
+                f"{res.get('B', 0)} m",
+                f"{res.get('H', 0)} m",
+                f"{res.get('H1', 0):.3f} m",
+                f"{res.get('H5', 0):.3f} m",
+                f"{res.get('H98', 0):.3f} m",
+                f"{res.get('day_dam', 0)} m"
+            ]
+        }
+        st.table(pd.DataFrame(df_data))
+
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
