@@ -69,21 +69,20 @@ with tab1:
         )
         
         if res["status"] == "success":
-            st.divider()
-            col_res_l, col_res_r = st.columns([1, 1.8])
-            with col_res_l:
-                st.subheader("📊 Kết quả")
-                data_table = {
-                    "Thông số": ["Khổ B", "Tĩnh không H", "Đáy dầm tối thiểu"],
-                    "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['day_dam']} m"]
-                }
-                st.table(pd.DataFrame(data_table))
-            with col_res_r:
-                st.subheader("🖼️ Sơ đồ minh họa")
-                fig = TK.ve_so_do_dam_gian_don_dong(res)
-                st.pyplot(fig) # Sơ đồ động hiện ra ở đây thay cho hình con chó
-            
-            st.session_state.design_data.update({'day_dam': res['day_dam'], 'khau_do_ngang': res['B']})
+    st.divider()
+    
+    # Hiển thị sơ đồ lớn ở trên
+    st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
+    fig_tt = TK.ve_so_do_bo_tri_chung(res) # Gọi hàm vẽ mới
+    st.pyplot(fig_tt)
+    
+    # Hiển thị bảng số liệu ở dưới
+    st.subheader("📊 Chi tiết thông số tĩnh không")
+    data_table = {
+        "Thông số": ["Khổ thông thuyền B", "Tĩnh không đứng H", "Mực nước H1%", "Mực nước H5%", "Cao độ đáy dầm"],
+        "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{h1:.3f} m", f"{h5:.3f} m", f"{res['day_dam']} m"]
+    }
+    st.table(pd.DataFrame(data_table))
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
