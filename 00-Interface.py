@@ -52,67 +52,85 @@ tab1, tab2, tab3 = st.tabs(["🌊 1. Tĩnh không", "🛣️ 2. Hình học & MC
 # ==========================================
 # TAB 1: TĨNH KHÔNG
 # ==========================================
+# ==========================================
+# TAB 1: TĨNH KHÔNG & THỦY VĂN
+# ==========================================
 with tab1:
-    st.subheader("📋 Nhập thông số Tĩnh không")
+    st.header("🌊 Thông số Tĩnh không & Thủy văn thiết kế")
     
+    # --- PHẦN 1: NHẬP LIỆU ---
     col_in1, col_in2 = st.columns(2)
     
     with col_in1:
-        loai_c = st.radio("Chọn loại công trình:", ["Vượt sông", "Vượt đường bộ"])
+        st.subheader("🚩 Loại hình & Cấp sông")
+        loai_c = st.radio("Chọn đối tượng vượt:", ["Vượt sông", "Vượt đường bộ"], horizontal=True)
         
         if loai_c == "Vượt sông":
-            mien = st.selectbox("Chọn miền:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
-            cap_s = st.selectbox("Chọn cấp sông:", ["1", "2", "3", "4", "5", "6"], 
+            mien = st.selectbox("Khu vực địa lý:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
+            cap_s = st.selectbox("Cấp sông (TCVN 5664):", ["1", "2", "3", "4", "5", "6"], 
                                 format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
-            loai_h = st.selectbox("Loại hình thủy đạo:", ["1", "2"], format_func=lambda x: "Kênh" if x=="1" else "Sông")
+            loai_h = st.selectbox("Loại hình chạy tàu:", ["1", "2"], format_func=lambda x: "Kênh (Thủy đạo nhân tạo)" if x=="1" else "Sông (Thủy đạo tự nhiên)")
         else:
             loai_v = st.selectbox("Loại đường bị vượt:", ["Cao tốc", "Đường ô tô"])
-            cap_o = "1"
-            if loai_v == "Đường ô tô":
-                cap_o = st.selectbox("Cấp đường bị vượt:", ["1", "2"], format_func=lambda x: "Cấp I, II, III" if x=="1" else "Các cấp còn lại")
+            cap_o = st.selectbox("Cấp đường bị vượt:", ["1", "2"], format_func=lambda x: "Cấp I, II, III" if x=="1" else "Các cấp còn lại")
 
     with col_in2:
+        st.subheader("💧 Mực nước thiết kế (m)")
         if loai_c == "Vượt sông":
-            h1 = st.number_input("Cao độ mực nước H1% (m):", value=1.0, step=0.1)
-            h5 = st.number_input("Cao độ mực nước H5% (m):", value=2.0, step=0.1)
+            h1 = st.number_input("MNCN Cao nhất (H1%):", value=3.50, format="%.3f")
+            h5 = st.number_input("MNTT Thông thuyền (H5%):", value=2.00, format="%.3f")
+            h10 = st.number_input("MNTC Thi công (H10%):", value=1.50, format="%.3f")
+            h98 = st.number_input("MNTN Thấp nhất (H98%):", value=0.50, format="%.3f")
         else:
-            st.info("💡 Đối với cầu vượt đường bộ, cao độ đáy dầm phụ thuộc vào cao độ trắc dọc mặt đường bị vượt + H.")
+            st.info("💡 Đối với cầu vượt đường, tĩnh không tính từ điểm cao nhất của mặt đường bị vượt.")
 
-    if st.button("🔍 Tra cứu kết quả V5.0"):
+    # --- PHẦN 2: XỬ LÝ & HIỂN THỊ ---
+    if st.button("🚀 Tra cứu & Xác định Đáy dầm"):
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None,
             cap_num=cap_s if loai_c=="Vượt sông" else None,
             loai_hinh=loai_h if loai_c=="Vượt sông" else None,
             h1=h1 if loai_c=="Vượt sông" else 0,
             h5=h5 if loai_c=="Vượt sông" else 0,
+            h10=h10 if loai_c=="Vượt sông" else 0,
+            h98=h98 if loai_c=="Vượt sông" else 0,
             loai_duong_vuot=loai_v if loai_c=="Vượt đường bộ" else None,
             cap_oto=cap_o if loai_c=="Vượt đường bộ" else None
         )
         
         if res["status"] == "success":
             st.divider()
-            st.subheader(f"📊 Kết quả: {res['label']}")
+            st.subheader(f"✅ Kết quả: {res['label']}")
             
-            # Hiển thị Metrics (Các chỉ số quan trọng)
+            # 1. Các chỉ số quan trọng
             m1, m2, m3 = st.columns(3)
-            m1.metric("Khẩu độ ngang (B)", f"{res['B']} m")
-            m2.metric("Chiều cao tĩnh không (H)", f"{res['H']} m")
-            
+            m1.metric("Khổ ngang B", f"{res['B']} m")
+            m2.metric("Tĩnh không đứng H", f"{res['H']} m")
+            m3.metric("Đáy dầm Min", f"{res['day_dam']} m", delta="H5 + H + 0.1")
+
+            # 2. Bảng tổng hợp chi tiết
             if loai_c == "Vượt sông":
-                m3.metric("Đáy dầm tối thiểu", f"{res['day_dam']} m")
+                st.write("**Bảng tổng hợp cao độ & kích thước:**")
+                data_table = {
+                    "Thông số": ["Khổ thông thuyền B", "Chiều cao tĩnh không H", "Mực nước cao nhất H1%", 
+                                "Mực nước thông thuyền H5%", "Mực nước thi công H10%", 
+                                "Mực nước thấp nhất H98%", "Cao độ đáy dầm tối thiểu"],
+                    "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{h1:.3f} m", 
+                               f"{h5:.3f} m", f"{h10:.3f} m", 
+                               f"{h98:.3f} m", f"{res['day_dam']} m"],
+                    "Ghi chú": ["Tra bảng TCVN", "Tra bảng TCVN", "Tần suất 1%", 
+                               "Tần suất 5%", "Tần suất 10%", 
+                               "Tần suất 98%", "Công thức H5 + H + 0.1"]
+                }
+                st.table(pd.DataFrame(data_table))
                 
-                # Bảng chi tiết
-                df_res = pd.DataFrame({
-                    "Hạng mục": ["Khẩu độ ngang thông thuyền tối thiểu (B)", "Chiều cao tĩnh không (H)", "Mực nước thông thuyền (MNTT)", "Cao độ đáy dầm tối thiểu"],
-                    "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['MNTT']:.2f} m", f"{res['day_dam']} m"]
-                })
-                st.table(df_res)
-            else:
-                m3.metric("Yêu cầu H", f"H >= {res['H']} m")
+                # Minh họa sơ đồ bằng hình ảnh (nếu có)
+                
             
-            # Lưu vào session_state để các Tab sau sử dụng
-            st.session_state.design_data['khau_do_ngang'] = res['B'] if isinstance(res['B'], (int, float)) else 20.0
-            st.success("🎯 Dữ liệu đã được cập nhật cho hệ thống!")
+            # Lưu session để Tab sau sử dụng
+            st.session_state.design_data['day_dam'] = res['day_dam']
+            st.session_state.design_data['khau_do_ngang'] = res['B']
+            st.success("🎯 Dữ liệu đã được lưu để tính toán trắc dọc và kết cấu!")
 
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG

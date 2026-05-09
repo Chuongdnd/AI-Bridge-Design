@@ -27,7 +27,10 @@ def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None,
                 "status": "success",
                 "B": B,
                 "H": H,
-                "MNTT": h5,
+                "MNCN": h1,   # Mực nước cao nhất
+                "MNTT": h5,   # Mực nước thông thuyền
+                "MNTC": h10,  # Mực nước thi công
+                "MNTN": h98,  # Mực nước thấp nhất
                 "day_dam": round(cao_do_day_dam, 2),
                 "label": f"Cầu vượt {('Kênh' if loai_hinh=='1' else 'Sông')} - Cấp {cap_num}"
             }
