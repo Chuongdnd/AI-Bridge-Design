@@ -26,70 +26,65 @@ def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None,
     return {"status": "error"}
 
 def ve_so_do_bo_tri_chung(res):
-    # Tạo khổ ảnh rộng (Panorama) để giống bản vẽ kỹ thuật
     fig, ax = plt.subplots(figsize=(16, 8))
     
-    # 1. Lấy thông số từ kết quả
-    h1, h5, h98 = res.get('H1', 0), res.get('H5', 0), res.get('H98', 0)
-    h_dam = res.get('day_dam', 0)
-    H_tk, B = res.get('H', 0), res.get('B', 0)
+    # Lấy thông số từ res
+    h1, h5, h10, h98 = res['MNCN'], res['MNTT'], res['MNTC'], res['MNTN']
+    h_dam = res['day_dam']
+    H_tk, B = res['H'], res['B']
     
-    # Giả định các thông số hình học để vẽ sơ đồ (tỉ lệ m)
-    L_tong = 120
-    L_nhip = B + 20 # Nhịp chính rộng hơn khổ B
-    x_center = L_tong / 2
+    # 1. TẠO ĐƯỜNG TỰ NHIÊN (N_tn) nhấp nhô
+    x = np.linspace(0, 120, 200)
+    # Hàm tạo đáy sông dốc ở giữa
+    y_tn = h98 - 2 + 3 * (1 - np.exp(-((x - 60)**2) / 800)) 
+    ax.plot(x, y_tn, color='#556B2F', linestyle='--', lw=1.5, label='Đường tự nhiên')
+    ax.fill_between(x, -5, y_tn, color='#D2B48C', alpha=0.3) # Tô màu đất
+
+    # 2. VẼ ĐƯỜNG ĐỎ (N_đỏ) - Cao độ mặt cầu
+    h_mat_cau = h_dam + 2.5 
+    ax.plot([0, 120], [h_mat_cau, h_mat_cau], color='red', lw=2.5)
+    ax.text(5, h_mat_cau + 0.5, "ĐƯỜNG ĐỎ (MẶT CẦU)", color='red', fontweight='bold')
+
+    # 3. VẼ CẤU TẠO CẦU CHI TIẾT
+    # Vẽ Trụ (Pier) - Có thân trụ và bệ trụ
+    for x_tru in [40, 80]:
+        # Thân trụ
+        ax.add_patch(patches.Rectangle((x_tru-1.5, y_tn[int(x_tru*200/120)]), 3, h_dam - y_tn[int(x_tru*200/120)], color='#7F8C8D'))
+        # Xà mũ trụ
+        ax.add_patch(patches.Rectangle((x_tru-4, h_dam-0.8), 8, 0.8, color='#95A5A6'))
+
+    # Vẽ Mố cầu (Abutment)
+    ax.add_patch(patches.Polygon([[0, h_mat_cau], [15, h_mat_cau], [20, y_tn[33]], [0, y_tn[0]]], color='#7F8C8D'))
+    ax.add_patch(patches.Polygon([[105, h_mat_cau], [120, h_mat_cau], [120, y_tn[-1]], [100, y_tn[166]]], color='#7F8C8D'))
+
+    # Vẽ Dầm (Girder) - Chia làm các nhịp
+    nhip = [ (15, 40), (40, 80), (80, 105) ]
+    for start, end in nhip:
+        ax.add_patch(patches.Rectangle((start+0.2, h_dam), end-start-0.4, 1.8, color='#BDC3C7', ec='black'))
+
+    # 4. VẼ CÁC MỰC NƯỚC VÀ KHUNG TĨNH KHÔNG
+    ax.fill_between(x, y_tn, h1, color='#AED6F1', alpha=0.4) # Màu nước
     
-    # 2. Vẽ ĐƯỜNG TỰ NHIÊN (Màu xanh lá, nét đứt)
-    x_ground = np.linspace(0, L_tong, 100)
-    y_ground = h98 - 3 + 2 * np.sin(x_ground/20) # Tạo độ nhấp nhô giả lập
-    ax.plot(x_ground, y_ground, color='#2ecc71', linestyle='--', lw=2, label='Cao độ tự nhiên')
+    # Khung tĩnh không tím
+    ax.add_patch(patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='purple', ls='--', lw=2))
+    ax.text(60, h5 + H_tk/2, f"KHUNG TĨNH KHÔNG\nB={B}m x H={H_tk}m", ha='center', color='purple', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
-    # 3. Vẽ ĐƯỜNG ĐỎ / MẶT CẦU (Màu đỏ, nét liền)
-    h_mat_cau = h_dam + 2.5 # Giả định dầm + bản mặt cầu dày 2.5m
-    ax.plot([0, L_tong], [h_mat_cau, h_mat_cau], color='red', lw=3, label='Đường đỏ (Mặt cầu)')
+    # 5. ĐIỀN THÔNG SỐ MNCN, MNTT... CÓ MŨI TÊN
+    levels = [
+        (h1, f'MNCN H1%: {h1:.3f}m', 'red'),
+        (h5, f'MNTT H5%: {h5:.3f}m', 'blue'),
+        (h10, f'MNTC H10%: {h10:.3f}m', 'green'),
+        (h98, f'MNTN H98%: {h98:.3f}m', '#E67E22')
+    ]
+    for val, txt, col in levels:
+        ax.axhline(y=val, color=col, ls='-', lw=1, alpha=0.6)
+        ax.annotate(txt, xy=(115, val), xytext=(122, val), color=col, fontweight='bold', arrowprops=dict(arrowstyle='->', color=col))
 
-    # 4. Vẽ KẾT CẤU DẦM GIẢN ĐƠN (Các nhịp)
-    # Nhịp biên trái, Nhịp chính, Nhịp biên phải
-    nhip_coords = [(0, 30), (30, 30+L_nhip), (30+L_nhip, L_tong)]
-    for start, end in nhip_coords:
-        rect = patches.Rectangle((start + 0.5, h_dam), (end - start - 1), 2.0, 
-                                 linewidth=1.5, edgecolor='black', facecolor='#95a5a6', alpha=0.8)
-        ax.add_patch(rect)
+    # 6. DIM ĐÁY DẦM TỐI THIỂU
+    ax.annotate('', xy=(60+B/2+2, h5), xytext=(60+B/2+2, h_dam), arrowprops=dict(arrowstyle='<->', color='black'))
+    ax.text(60+B/2+3, (h5+h_dam)/2, f"Đáy dầm TT: {h_dam}m", fontweight='bold', rotation=90, va='center')
 
-    # 5. Vẽ MỐ & TRỤ CẦU
-    # Trụ 1 và Trụ 2 (Pier)
-    ax.add_patch(patches.Rectangle((30 - 2, y_ground[25]), 4, h_dam - y_ground[25], color='#7f8c8d')) 
-    ax.add_patch(patches.Rectangle((30 + L_nhip - 2, y_ground[75]), 4, h_dam - y_ground[75], color='#7f8c8d'))
-    # Mố cầu (Abutment) - Vẽ đơn giản dạng hình thang
-    ax.fill([0, 10, 10, 0], [h_dam, h_dam, y_ground[0], y_ground[0]], color='#7f8c8d')
-    ax.fill([L_tong-10, L_tong, L_tong, L_tong-10], [h_dam, h_dam, y_ground[-1], y_ground[-1]], color='#7f8c8d')
-
-    # 6. Vẽ VÙNG NƯỚC & CÁC MỰC NƯỚC
-    ax.fill_between([10, L_tong-10], h98 - 1, h1, color='#E3F2FD', alpha=0.4)
-    
-    # MNCN H1%
-    ax.axhline(y=h1, xmin=0.1, xmax=0.9, color='blue', linestyle='-', lw=1)
-    ax.text(L_tong-5, h1, f"MNCN H1%: {h1:.3f}m", color='blue', fontsize=9, fontweight='bold')
-    
-    # 7. Vẽ KHUNG TĨNH KHÔNG (H x B) - Hình chữ nhật nét đứt màu tím
-    tk_rect = patches.Rectangle((x_center - B/2, h5), B, H_tk, 
-                                linewidth=2, edgecolor='magenta', facecolor='none', linestyle='--')
-    ax.add_patch(tk_rect)
-    
-    # Ghi chú Tĩnh không trong khung
-    ax.text(x_center, h5 + H_tk/2, f"Tĩnh không\nHtk = {H_tk}m\nB = {B}m", 
-            ha='center', va='center', color='magenta', fontweight='bold', bbox=dict(facecolor='white', alpha=0.8))
-
-    # 8. Đường DIM Cao độ đáy dầm tối thiểu
-    ax.annotate('', xy=(x_center + B/2 + 5, h_dam), xytext=(x_center + B/2 + 5, h5),
-                arrowprops=dict(arrowstyle='<->', color='black', lw=1))
-    ax.text(x_center + B/2 + 6, (h_dam + h5)/2, f"H_thực = {h_dam-h5:.3f}m", fontweight='bold')
-
-    # Thiết lập khung nhìn
-    ax.set_xlim(-5, L_tong + 20)
-    ax.set_ylim(min(y_ground) - 2, h_mat_cau + 5)
+    ax.set_xlim(0, 150)
+    ax.set_ylim(h98-5, h_mat_cau+5)
     ax.axis('off')
-    ax.set_title(f"SƠ ĐỒ BỐ TRÍ CHUNG MẶT CẮT DỌC CẦU (DẦM GIẢN ĐƠN)\nKhổ thông thuyền: B={B}m, H={H_tk}m", 
-                 fontsize=16, fontweight='bold', pad=20)
-
     return fig
