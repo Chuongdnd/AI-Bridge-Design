@@ -26,65 +26,66 @@ def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None,
     return {"status": "error"}
 
 def ve_so_do_bo_tri_chung(res):
+    # Thiết lập khổ ảnh panorama
     fig, ax = plt.subplots(figsize=(16, 8))
     
-    # Lấy thông số từ res
-    h1, h5, h10, h98 = res['MNCN'], res['MNTT'], res['MNTC'], res['MNTN']
-    h_dam = res['day_dam']
-    H_tk, B = res['H'], res['B']
+    # ĐỒNG BỘ BIẾN: Sử dụng đúng key từ res
+    h1 = res.get('H1', 0)
+    h5 = res.get('H5', 0)
+    h10 = res.get('H10', 0)
+    h98 = res.get('H98', 0)
+    h_dam = res.get('day_dam', 0)
+    H_tk = res.get('H', 0)
+    B = res.get('B', 0)
     
-    # 1. TẠO ĐƯỜNG TỰ NHIÊN (N_tn) nhấp nhô
+    # 1. TẠO ĐƯỜNG TỰ NHIÊN (Đường xanh lá nét đứt)
     x = np.linspace(0, 120, 200)
-    # Hàm tạo đáy sông dốc ở giữa
-    y_tn = h98 - 2 + 3 * (1 - np.exp(-((x - 60)**2) / 800)) 
-    ax.plot(x, y_tn, color='#556B2F', linestyle='--', lw=1.5, label='Đường tự nhiên')
-    ax.fill_between(x, -5, y_tn, color='#D2B48C', alpha=0.3) # Tô màu đất
+    # Hàm mô phỏng lòng sông trũng ở giữa x=60
+    y_tn = h98 - 1.5 + 2.5 * (1 - np.exp(-((x - 60)**2) / 1000)) 
+    ax.plot(x, y_tn, color='#27ae60', linestyle='--', lw=1.5, label='Đường tự nhiên')
+    ax.fill_between(x, -10, y_tn, color='#f1e7d0', alpha=0.5) # Tô màu đất
 
-    # 2. VẼ ĐƯỜNG ĐỎ (N_đỏ) - Cao độ mặt cầu
-    h_mat_cau = h_dam + 2.5 
+    # 2. VẼ ĐƯỜNG ĐỎ (Mặt đường - Màu đỏ)
+    h_mat_cau = h_dam + 2.0 # Độ dày dầm + bản mặt cầu
     ax.plot([0, 120], [h_mat_cau, h_mat_cau], color='red', lw=2.5)
     ax.text(5, h_mat_cau + 0.5, "ĐƯỜNG ĐỎ (MẶT CẦU)", color='red', fontweight='bold')
 
-    # 3. VẼ CẤU TẠO CẦU CHI TIẾT
-    # Vẽ Trụ (Pier) - Có thân trụ và bệ trụ
+    # 3. VẼ CẤU TẠO CẦU (Mố, Trụ, Dầm)
+    # Vẽ Trụ cầu (Pier)
     for x_tru in [40, 80]:
         # Thân trụ
-        ax.add_patch(patches.Rectangle((x_tru-1.5, y_tn[int(x_tru*200/120)]), 3, h_dam - y_tn[int(x_tru*200/120)], color='#7F8C8D'))
-        # Xà mũ trụ
-        ax.add_patch(patches.Rectangle((x_tru-4, h_dam-0.8), 8, 0.8, color='#95A5A6'))
+        idx = int(x_tru * 200 / 120)
+        ax.add_patch(patches.Rectangle((x_tru-1.5, y_tn[idx]), 3, h_dam - y_tn[idx], color='#7f8c8d'))
+        # Bệ trụ/Móng (Min minh họa)
+        ax.add_patch(patches.Rectangle((x_tru-3, y_tn[idx]-1.5), 6, 1.5, color='#95a5a6'))
 
     # Vẽ Mố cầu (Abutment)
-    ax.add_patch(patches.Polygon([[0, h_mat_cau], [15, h_mat_cau], [20, y_tn[33]], [0, y_tn[0]]], color='#7F8C8D'))
-    ax.add_patch(patches.Polygon([[105, h_mat_cau], [120, h_mat_cau], [120, y_tn[-1]], [100, y_tn[166]]], color='#7F8C8D'))
+    ax.add_patch(patches.Polygon([[0, h_mat_cau], [15, h_mat_cau], [20, y_tn[33]], [0, y_tn[0]]], color='#7f8c8d'))
+    ax.add_patch(patches.Polygon([[105, h_mat_cau], [120, h_mat_cau], [120, y_tn[-1]], [100, y_tn[166]]], color='#7f8c8d'))
 
-    # Vẽ Dầm (Girder) - Chia làm các nhịp
-    nhip = [ (15, 40), (40, 80), (80, 105) ]
-    for start, end in nhip:
-        ax.add_patch(patches.Rectangle((start+0.2, h_dam), end-start-0.4, 1.8, color='#BDC3C7', ec='black'))
+    # Vẽ Dầm (Girder) giản đơn
+    ax.add_patch(patches.Rectangle((15, h_dam), 90, 1.8, color='#bdc3c7', ec='black', lw=1.5))
 
-    # 4. VẼ CÁC MỰC NƯỚC VÀ KHUNG TĨNH KHÔNG
-    ax.fill_between(x, y_tn, h1, color='#AED6F1', alpha=0.4) # Màu nước
+    # 4. VẼ VÙNG NƯỚC & KHUNG TĨNH KHÔNG
+    ax.fill_between(x, y_tn, h1, color='#add8e6', alpha=0.4) # Màu nước xanh nhạt
     
-    # Khung tĩnh không tím
-    ax.add_patch(patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='purple', ls='--', lw=2))
-    ax.text(60, h5 + H_tk/2, f"KHUNG TĨNH KHÔNG\nB={B}m x H={H_tk}m", ha='center', color='purple', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+    # Khung tĩnh không (Nét đứt tím)
+    ax.add_patch(patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2))
+    ax.text(60, h5 + H_tk/2, f"TĨNH KHÔNG\nHtk={H_tk}m, B={B}m", ha='center', va='center', color='magenta', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
-    # 5. ĐIỀN THÔNG SỐ MNCN, MNTT... CÓ MŨI TÊN
-    levels = [
-        (h1, f'MNCN H1%: {h1:.3f}m', 'red'),
-        (h5, f'MNTT H5%: {h5:.3f}m', 'blue'),
-        (h10, f'MNTC H10%: {h10:.3f}m', 'green'),
-        (h98, f'MNTN H98%: {h98:.3f}m', '#E67E22')
-    ]
+    # 5. GHI CHÚ CAO ĐỘ (MNCN, MNTT...)
+    levels = [(h1, 'MNCN H1%', 'red'), (h5, 'MNTT H5%', 'blue'), (h10, 'MNTC H10%', 'green'), (h98, 'MNTN H98%', '#d35400')]
     for val, txt, col in levels:
         ax.axhline(y=val, color=col, ls='-', lw=1, alpha=0.6)
-        ax.annotate(txt, xy=(115, val), xytext=(122, val), color=col, fontweight='bold', arrowprops=dict(arrowstyle='->', color=col))
+        ax.text(122, val, f"{txt}: {val:.3f}m", color=col, fontweight='bold', va='center')
 
-    # 6. DIM ĐÁY DẦM TỐI THIỂU
-    ax.annotate('', xy=(60+B/2+2, h5), xytext=(60+B/2+2, h_dam), arrowprops=dict(arrowstyle='<->', color='black'))
-    ax.text(60+B/2+3, (h5+h_dam)/2, f"Đáy dầm TT: {h_dam}m", fontweight='bold', rotation=90, va='center')
+    # 6. DIM ĐÁY DẦM
+    ax.annotate('', xy=(60+B/2+5, h5), xytext=(60+B/2+5, h_dam), arrowprops=dict(arrowstyle='<->', color='black'))
+    ax.text(60+B/2+6, (h5+h_dam)/2, f"H_thực = {h_dam-h5:.3f}m", fontweight='bold', rotation=90, va='center')
 
-    ax.set_xlim(0, 150)
+    ax.set_xlim(-5, 155)
     ax.set_ylim(h98-5, h_mat_cau+5)
     ax.axis('off')
+    ax.set_title("BỐ TRÍ CHUNG MẶT CẮT DỌC CẦU (DẦM SPT GIẢN ĐƠN)", fontsize=16, fontweight='bold', pad=20)
+    
     return fig
