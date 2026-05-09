@@ -42,30 +42,21 @@ tab1, tab2, tab3 = st.tabs(["🌊 Tĩnh không & Thủy văn", "📐 Hình học
 # ==========================================
 with tab1:
     st.header("🌊 Thông số Tĩnh không & Thủy văn thiết kế")
-    
     col_in1, col_in2 = st.columns(2)
     with col_in1:
-        st.subheader("🚩 Loại hình & Cấp sông")
         loai_c = st.radio("Chọn đối tượng vượt:", ["Vượt sông", "Vượt đường bộ"], horizontal=True)
         if loai_c == "Vượt sông":
-            mien = st.selectbox("Khu vực địa lý:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
-            cap_s = st.selectbox("Cấp sông (TCVN 5664):", ["1", "2", "3", "4", "5", "6"], 
-                                format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
-            loai_h = st.selectbox("Loại hình chạy tàu:", ["1", "2"], format_func=lambda x: "Kênh" if x=="1" else "Sông")
-        else:
-            loai_v = st.selectbox("Loại đường bị vượt:", ["Cao tốc", "Đường ô tô"])
-            cap_o = st.selectbox("Cấp đường bị vượt:", ["1", "2"], format_func=lambda x: "Cấp I, II, III" if x=="1" else "Các cấp còn lại")
-
+            mien = st.selectbox("Khu vực:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
+            cap_s = st.selectbox("Cấp sông:", ["1", "2", "3", "4", "5", "6"], format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
+            loai_h = st.selectbox("Loại hình:", ["1", "2"], format_func=lambda x: "Kênh" if x=="1" else "Sông")
     with col_in2:
-        st.subheader("💧 Mực nước thiết kế (m)")
         if loai_c == "Vượt sông":
-            h1 = st.number_input("MNCN Cao nhất (H1%):", value=3.50, format="%.3f")
-            h5 = st.number_input("MNTT Thông thuyền (H5%):", value=2.00, format="%.3f")
-            h10 = st.number_input("MNTC Thi công (H10%):", value=1.50, format="%.3f")
-            h98 = st.number_input("MNTN Thấp nhất (H98%):", value=0.50, format="%.3f")
-        else:
-            st.info("💡 Tĩnh không tính từ điểm cao nhất của mặt đường bị vượt.")
+            h1 = st.number_input("MNCN (H1%):", value=3.50, format="%.3f")
+            h5 = st.number_input("MNTT (H5%):", value=2.00, format="%.3f")
+            h10 = st.number_input("MNTC (H10%):", value=1.50, format="%.3f")
+            h98 = st.number_input("MNTN (H98%):", value=0.50, format="%.3f")
 
+    # QUAN TRỌNG: Mọi hiển thị kết quả phải nằm TRONG khối lệnh button này
     if st.button("🚀 Tra cứu & Xác định Đáy dầm"):
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None,
@@ -74,36 +65,25 @@ with tab1:
             h1=h1 if loai_c=="Vượt sông" else 0,
             h5=h5 if loai_c=="Vượt sông" else 0,
             h10=h10 if loai_c=="Vượt sông" else 0,
-            h98=h98 if loai_c=="Vượt sông" else 0,
-            loai_duong_vuot=loai_v if loai_c=="Vượt đường bộ" else None,
-            cap_oto=cap_o if loai_c=="Vượt đường bộ" else None
+            h98=h98 if loai_c=="Vượt sông" else 0
         )
         
         if res["status"] == "success":
             st.divider()
-            # Chia làm 2 cột: Trái hiện bảng, Phải hiện sơ đồ động
-            col_res_left, col_res_right = st.columns([1, 1.8])
-            
-            with col_res_left:
-                st.subheader("📊 Kết quả tính toán")
+            col_res_l, col_res_r = st.columns([1, 1.8])
+            with col_res_l:
+                st.subheader("📊 Kết quả")
                 data_table = {
-                    "Thông số": ["Khổ ngang B", "Tĩnh không H", "MNCN H1%", "MNTT H5%", "MNTC H10%", "MNTN H98%", "Đáy dầm tối thiểu"],
-                    "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{h1:.3f} m", f"{h5:.3f} m", f"{h10:.3f} m", f"{h98:.3f} m", f"{res['day_dam']} m"],
+                    "Thông số": ["Khổ B", "Tĩnh không H", "Đáy dầm tối thiểu"],
+                    "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['day_dam']} m"]
                 }
                 st.table(pd.DataFrame(data_table))
-                st.info(f"💡 Công thức: H5% + H + 0.1 = {res['day_dam']} m")
-            
-            with col_res_right:
-                st.subheader("🖼️ Sơ đồ trắc dọc minh họa")
-                # ĐÃ ĐỒNG BỘ TÊN HÀM: ve_so_do_dam_gian_don_dong
+            with col_res_r:
+                st.subheader("🖼️ Sơ đồ minh họa")
                 fig = TK.ve_so_do_dam_gian_don_dong(res)
-                st.pyplot(fig)
+                st.pyplot(fig) # Sơ đồ động hiện ra ở đây thay cho hình con chó
             
-            # Lưu session_state
-            st.session_state.design_data['day_dam'] = res['day_dam']
-            st.session_state.design_data['khau_do_ngang'] = res['B']
-            st.success("🎯 Dữ liệu đã được lưu cho các Tab tiếp theo!")
-
+            st.session_state.design_data.update({'day_dam': res['day_dam'], 'khau_do_ngang': res['B']})
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
