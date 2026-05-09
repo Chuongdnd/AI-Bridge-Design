@@ -69,7 +69,7 @@ with tab1:
             mien = st.selectbox("Khu vực địa lý:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
             cap_s = st.selectbox("Cấp sông (TCVN 5664):", ["1", "2", "3", "4", "5", "6"], 
                                 format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
-            loai_h = st.selectbox("Loại hình chạy tàu:", ["1", "2"], format_func=lambda x: "Kênh (Thủy đạo nhân tạo)" if x=="1" else "Sông (Thủy đạo tự nhiên)")
+            loai_h = st.selectbox("Loại hình chạy tàu:", ["1", "2"], format_func=lambda x: "Kênh" if x=="1" else "Sông")
         else:
             loai_v = st.selectbox("Loại đường bị vượt:", ["Cao tốc", "Đường ô tô"])
             cap_o = st.selectbox("Cấp đường bị vượt:", ["1", "2"], format_func=lambda x: "Cấp I, II, III" if x=="1" else "Các cấp còn lại")
@@ -85,7 +85,7 @@ with tab1:
             st.info("💡 Đối với cầu vượt đường, tĩnh không tính từ điểm cao nhất của mặt đường bị vượt.")
 
     # --- PHẦN 2: XỬ LÝ & HIỂN THỊ ---
-    if st.button("🚀 Tra cứu & Xác định Đáy dầm"):
+    if st.button("🚀 Tra tĩnh không"):
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None,
             cap_num=cap_s if loai_c=="Vượt sông" else None,
@@ -100,25 +100,18 @@ with tab1:
         
         if res["status"] == "success":
             st.divider()
-            st.subheader(f"✅ Kết quả: {res['label']}")
+            st.subheader(f"✅ Tổng hợp các thông số tĩnh không: {res['label']}")
             
-            # 1. Các chỉ số quan trọng
-            m1, m2, m3 = st.columns(3)
-            m1.metric("Khổ ngang B", f"{res['B']} m")
-            m2.metric("Tĩnh không đứng H", f"{res['H']} m")
-            m3.metric("Đáy dầm Min", f"{res['day_dam']} m", delta="H5 + H + 0.1")
-
             # 2. Bảng tổng hợp chi tiết
             if loai_c == "Vượt sông":
-                st.write("**Bảng tổng hợp cao độ & kích thước:**")
-                data_table = {
+                            data_table = {
                     "Thông số": ["Khổ thông thuyền B", "Chiều cao tĩnh không H", "Mực nước cao nhất H1%", 
                                 "Mực nước thông thuyền H5%", "Mực nước thi công H10%", 
                                 "Mực nước thấp nhất H98%", "Cao độ đáy dầm tối thiểu"],
                     "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{h1:.3f} m", 
                                f"{h5:.3f} m", f"{h10:.3f} m", 
                                f"{h98:.3f} m", f"{res['day_dam']} m"],
-                    "Ghi chú": ["Tra bảng TCVN", "Tra bảng TCVN", "Tần suất 1%", 
+                    "Ghi chú": ["TCVN 5664 : 2009", "TCVN 5664 : 2009", "Tần suất 1%", 
                                "Tần suất 5%", "Tần suất 10%", 
                                "Tần suất 98%", "Công thức H5 + H + 0.1"]
                 }
