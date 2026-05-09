@@ -51,31 +51,42 @@ def ve_so_do_bo_tri_chung(res):
     ax.fill_between(x, h98 - 6, y_tn, color='#f1e7d0', alpha=0.5)
 
     # --- PHẦN 2: KÝ HIỆU MỰC NƯỚC (TAM GIÁC) ---
-    # Sắp xếp vị trí x để các tam giác không đè lên nhau
     ve_ky_hieu_muc_nuoc(ax, 15, h1, "MNCN H1%", "red")
     ve_ky_hieu_muc_nuoc(ax, 35, h10, "MNTC H10%", "green")
     ve_ky_hieu_muc_nuoc(ax, 85, h5, "MNTT H5%", "blue")
     ve_ky_hieu_muc_nuoc(ax, 105, h98, "MNTN H98%", "#d35400")
 
-    # --- PHẦN 3: ĐƯỜNG ĐỎ & KẾT CẤU CẦU ---
-    h_mat_cau = h_dam + 2.0
-    ax.plot([0, 120], [h_mat_cau, h_mat_cau], color='red', lw=2.5)
-    ax.text(2, h_mat_cau + 0.5, "ĐƯỜNG ĐỎ", color='red', fontweight='bold')
+    # --- PHẦN 3: ĐƯỜNG ĐỎ VÀ CAO ĐỘ ĐÁY DẦM ---
+    h_mat_cau = h_dam + 2.0  # Giả sử chiều cao dầm + mặt đường là 2m
     
-    # Dầm và Trụ
-    ax.add_patch(patches.Rectangle((15, h_dam), 90, 1.6, color='#bdc3c7', ec='black', zorder=3))
-    for x_tru in [40, 80]:
-        idx = int(x_tru * 200 / 120)
-        ax.add_patch(patches.Rectangle((x_tru-1.5, y_tn[idx]), 3, h_dam - y_tn[idx], color='#7f8c8d'))
+    # Vẽ ĐƯỜNG ĐỎ (Mặt cầu)
+    ax.plot([0, 120], [h_mat_cau, h_mat_cau], color='red', lw=2.5, label="Đường đỏ")
+    ax.text(2, h_mat_cau + 0.5, "ĐƯỜNG ĐỎ (MẶT CẦU)", color='red', fontweight='bold', fontsize=10)
+    
+    # Vẽ ĐƯỜNG ĐÁY DẦM (Nét đứt màu đen/xám)
+    ax.plot([0, 120], [h_dam, h_dam], color='#555555', linestyle='-.', lw=1.5, label="Đáy dầm")
+    ax.text(2, h_dam - 1.2, f"CAO ĐỘ ĐÁY DẦM: {h_dam:.3f}m", color='#333333', fontweight='bold', fontsize=10)
 
     # --- PHẦN 4: KHUNG TĨNH KHÔNG ---
-    ax.add_patch(patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2))
-    ax.text(60, h5 + H_tk/2, f"KHUNG TĨNH KHÔNG\n{B}m x {H_tk}m", ha='center', color='magenta', fontweight='bold')
+    # Vẽ khung tĩnh không Magenta nét đứt
+    rect_tk = patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2)
+    ax.add_patch(rect_tk)
+    
+    # Chú thích kích thước trong khung
+    ax.text(60, h5 + H_tk/2, f"KHUNG TĨNH KHÔNG\nB={B}m x H={H_tk}m", 
+            ha='center', va='center', color='magenta', fontweight='bold', 
+            bbox=dict(facecolor='white', alpha=0.6, edgecolor='none'))
+
+    # Vẽ đường DIM đứng thể hiện tĩnh không thực tế (từ MNTT đến Đáy dầm)
+    ax.annotate('', xy=(60 + B/2 + 2, h5), xytext=(60 + B/2 + 2, h_dam),
+                arrowprops=dict(arrowstyle='<->', color='black', lw=1.5))
+    ax.text(60 + B/2 + 3, (h5 + h_dam)/2, f"H_thực = {h_dam - h5:.3f}m", 
+            va='center', fontweight='bold', fontsize=10)
 
     # Cấu hình trục
     ax.set_xlim(-5, 125)
     ax.set_ylim(h98 - 5, h_mat_cau + 5)
     ax.axis('off')
-    ax.set_title("SƠ HỌA TRẮC DỌC CẦU & THỦY VĂN", fontsize=15, fontweight='bold')
+    ax.set_title("SƠ ĐỒ CAO ĐỘ ĐƯỜNG ĐỎ, ĐÁY DẦM VÀ THỦY VĂN", fontsize=15, fontweight='bold', pad=20)
     
     return fig
