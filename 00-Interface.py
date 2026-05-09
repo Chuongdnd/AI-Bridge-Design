@@ -79,9 +79,9 @@ with tab1:
             cap_oto=cap_o if loai_c=="Vượt đường bộ" else None
         )
         
-        # TOÀN BỘ PHẦN NÀY PHẢI THỤT LỀ VÀO TRONG NÚT BẤM
         if res["status"] == "success":
             st.divider()
+            # Chia làm 2 cột: Trái hiện bảng, Phải hiện sơ đồ động
             col_res_left, col_res_right = st.columns([1, 1.8])
             
             with col_res_left:
@@ -95,13 +95,11 @@ with tab1:
             
             with col_res_right:
                 st.subheader("🖼️ Sơ đồ trắc dọc minh họa")
-                # Gọi hàm vẽ sơ đồ động (Đảm bảo đã thêm hàm này vào file 01-Tinh_khong.py)
-                try:
-                    fig = TK.ve_so_do_dam_gian_don_dong(res)
-                    st.pyplot(fig)
-                except Exception as e:
-                    st.warning("Đang chờ hàm vẽ từ Module 01...")
+                # ĐÃ ĐỒNG BỘ TÊN HÀM: ve_so_do_dam_gian_don_dong
+                fig = TK.ve_so_do_dam_gian_don_dong(res)
+                st.pyplot(fig)
             
+            # Lưu session_state
             st.session_state.design_data['day_dam'] = res['day_dam']
             st.session_state.design_data['khau_do_ngang'] = res['B']
             st.success("🎯 Dữ liệu đã được lưu cho các Tab tiếp theo!")
