@@ -105,13 +105,13 @@ with tab1:
             # 2. Bảng tổng hợp chi tiết
             if loai_c == "Vượt sông":
                 data_table = {
-                    "Thông số": ["Khổ thông thuyền B", "Chiều cao tĩnh không H", "Cao độ đáy dầm tối thiểu", "Mực nước cao nhất H1%", 
-                                "Mực nước thông thuyền H5%", "Mực nước thi công H10%", 
-                                "Mực nước thấp nhất H98%"],
+                    "Thông số": ["Khổ thông thuyền B", "Chiều cao tĩnh không (H)", "Cao độ đáy dầm tối thiểu", "Mực nước cao nhất (H1%)", 
+                                "Mực nước thông thuyền (H5%)", "Mực nước thi công (H10%)", 
+                                "Mực nước thấp nhất (H98%)"],
                     "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['day_dam']} m", 
                                f"{h1:.3f} m", f"{h5:.3f} m", 
                                f"{h10:.3f} m", f"{h98:.3f} m"],
-                    "Ghi chú": ["TCVN 5664 : 2009", "TCVN 5664 : 2009", "Công thức H5 + H + 0.1", "Tần suất 1%", 
+                    "Ghi chú": ["TCVN 5664 : 2009", "TCVN 5664 : 2009", "H5% + H + 0.1", "Tần suất 1%", 
                                "Tần suất 5%", "Tần suất 10%", 
                                "Tần suất 98%"]
                 }
