@@ -21,7 +21,7 @@ def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None,
             
             # Tính toán cao độ đáy dầm tối thiểu
             cao_do_dat_goi = h1 + 0.5
-            cao_do_day_dam = max(h5 + H + 0.1, cao_do_dat_goi)
+            cao_do_day_dam = max(h5+H+0.1, cao_do_dat_goi)
             
             return {
                 "status": "success",
