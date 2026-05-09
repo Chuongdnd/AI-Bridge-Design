@@ -21,6 +21,7 @@ try:
     YTHH = importlib.import_module("02-Yeuto_Hinhhoc")
     MCN = importlib.import_module("03-MatCatNgang")
     GRD = importlib.import_module("05-Main_Girder")
+    PLOT = importlib.import_module("00-Drawing_Utils")
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
 
@@ -75,7 +76,7 @@ with tab1:
         
         # 1. Hiển thị bản vẽ
         st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
-        fig_tt = TK.ve_so_do_bo_tri_chung(res)
+        fig_tt = PLOT.ve_trac_doc_cau(res)
         st.pyplot(fig_tt)
         
         # 2. Hiển thị bảng thông số
