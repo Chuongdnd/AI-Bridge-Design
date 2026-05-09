@@ -69,7 +69,7 @@ with tab1:
         )
         
         if res["status"] == "success":
-    st.divider()
+            st.divider()
     
     # Hiển thị sơ đồ lớn ở trên
     st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
