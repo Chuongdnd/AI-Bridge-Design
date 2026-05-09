@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import os
 import importlib
-import io
 # --- THIẾT LẬP TRANG ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
 
@@ -94,28 +93,7 @@ with tab1:
             ]
         }
         st.table(pd.DataFrame(df_data))
-
-        # 3. XUẤT DỮ LIỆU BẢN VẼ (Phải nằm TRONG khối if này)
-        st.subheader("💾 Xuất dữ liệu bản vẽ")
-        col_dl1, col_dl2 = st.columns(2)
-        
-        with col_dl1:
-            try:
-                # Gọi hàm xuất CAD từ file 01
-                doc_cad = TK.xuat_file_cad(res)
-                out_cad = io.StringIO()
-                dxf_string = out_cad.getvalue()
-                
-                st.download_button(
-                    label="📐 Tải file CAD (.dxf)",
-                    data=out_cad.getvalue(),
-                    file_name="Ban_ve_Tinh_khong.dxf",
-                    mime="application/dxf"
-                )
-            except Exception as e:
-                st.error(f"Lỗi xuất CAD: {e}")
-
-# ==========================================
+    # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
 with tab2:
