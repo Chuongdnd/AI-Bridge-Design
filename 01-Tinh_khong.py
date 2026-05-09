@@ -84,7 +84,7 @@ def xuat_file_cad(res):
     import numpy as np
     from ezdxf.enums import TextEntityAlignment
 
-    doc = ezdxf.new('R2010')
+    doc = ezdxf.new('R2018')
     msp = doc.modelspace()
 
     # 1. Lấy thông số chung (Cực kỳ quan trọng để khớp dữ liệu)
