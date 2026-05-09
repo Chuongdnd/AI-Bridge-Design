@@ -62,32 +62,29 @@ with tab1:
             loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None,
             cap_num=cap_s if loai_c=="Vượt sông" else None,
             loai_hinh=loai_h if loai_c=="Vượt sông" else None,
-            h1=h1 if loai_c=="Vượt sông" else 0,
-            h5=h5 if loai_c=="Vượt sông" else 0,
-            h10=h10 if loai_c=="Vượt sông" else 0,
-            h98=h98 if loai_c=="Vượt sông" else 0
+            h1=h1, h5=h5, h10=h10, h98=h98
         )
-        
         if res["status"] == "success":
-            st.divider()
-            
-            # 1. Hiển thị sơ đồ lớn (Đã thụt lề đúng vào trong)
-            st.subheader("📊 Chi tiết thông số tĩnh không")
-            data_table = {
-                "Thông số": ["Khổ thông thuyền B", "Tĩnh không đứng H", "Mực nước H1%", "Mực nước H5%", "Cao độ đáy dầm"],
-                "Giá trị": [
-                    f"{res['B']} m", 
-                    f"{res['H']} m", 
-                    f"{res['H1']:.3f} m", # Sửa MNCN thành H1
-                    f"{res['H5']:.3f} m", # Sửa MNTT thành H5
-                    f"{res['day_dam']} m"
-                ]
-            }
-            st.table(pd.DataFrame(data_table))
-            
-            # Lưu dữ liệu vào session
-            st.session_state.design_data['day_dam'] = res['day_dam']
-            st.session_state.design_data['khau_do_ngang'] = res['B']
+            # LƯU KẾT QUẢ VÀO SESSION STATE
+            st.session_state.tinh_khong_res = res
+            st.session_state.design_data.update({'day_dam': res['day_dam'], 'khau_do_ngang': res['B']})
+
+    # HIỂN THỊ KẾT QUẢ (Nằm ngoài nút bấm nhưng kiểm tra session_state)
+    if 'tinh_khong_res' in st.session_state:
+        res = st.session_state.tinh_khong_res
+        st.divider()
+        st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
+        
+        # Gọi hàm vẽ từ file 01-Tinh_khong.py
+        fig_tt = TK.ve_so_do_bo_tri_chung(res)
+        st.pyplot(fig_tt)
+        
+        st.subheader("📊 Chi tiết thông số")
+        st.table(pd.DataFrame({
+            "Thông số": ["Khổ B", "Tĩnh không H", "MNCN (H1%)", "MNTT (H5%)", "Đáy dầm tối thiểu"],
+            "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['MNCN']:.3f} m", f"{res['MNTT']:.3f} m", f"{res['day_dam']} m"]
+        }))
+        
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
