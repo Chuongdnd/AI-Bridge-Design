@@ -53,38 +53,66 @@ tab1, tab2, tab3 = st.tabs(["🌊 1. Tĩnh không", "🛣️ 2. Hình học & MC
 # TAB 1: TĨNH KHÔNG
 # ==========================================
 with tab1:
-    st.header("Xác định Tĩnh không & Cao độ đáy dầm")
-    col1, col2 = st.columns(2)
+    st.subheader("📋 Nhập thông số Tĩnh không")
     
-    with col1:
-        loai_c = st.radio("Loại cầu:", ["Vượt sông", "Vượt đường bộ"])
-        if loai_c == "Vượt sông":
-            mien = st.selectbox("Khu vực:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
-            cap_s = st.selectbox("Cấp sông:", ["1", "2", "3", "4", "5", "6"], index=2)
-            hinh_thuc = st.selectbox("Hình thức:", ["1", "2"], format_func=lambda x: "Kênh" if x=="1" else "Sông")
+    col_in1, col_in2 = st.columns(2)
     
-    with col2:
-        if loai_c == "Vượt sông":
-            h1 = st.number_input("Mực nước thiết kế H1% (m):", value=2.0)
-            h5 = st.number_input("Mực nước thông thuyền H5% (m):", value=1.5)
-        else:
-            loai_v = st.selectbox("Đường bị vượt là:", ["Cao tốc", "Đường ô tô"])
-            cap_o = st.selectbox("Cấp đường bị vượt:", ["Cấp I, II, III", "Các cấp còn lại"])
-
-    if st.button("Tra cứu Tĩnh không"):
-        # Xử lý gọi hàm an toàn để tránh lỗi thiếu biến
-        if loai_c == "Vượt sông":
-            res = TK.tra_cuu_tinh_khong_bridge(loai_c, mien=mien, cap_song=cap_s, loai_hinh_thuy=hinh_thuc, h1=h1, h5=h5)
-        else:
-            res = TK.tra_cuu_tinh_khong_bridge(loai_c, loai_duong_vuot=loai_v, cap_oto=cap_o)
+    with col_in1:
+        loai_c = st.radio("Chọn loại công trình:", ["Vượt sông", "Vượt đường bộ"])
         
-        if res.get('status') == "success":
-            st.session_state.design_data['khau_do_ngang'] = res['khau_do_ngang']
-            st.session_state.design_data['cao_do_day_dam'] = res['cao_do_day_dam']
-            st.success(f"✅ {res['loai']}")
-            st.metric("Khẩu độ ngang (m)", res['khau_do_ngang'])
+        if loai_c == "Vượt sông":
+            mien = st.selectbox("Chọn miền:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
+            cap_s = st.selectbox("Chọn cấp sông:", ["1", "2", "3", "4", "5", "6"], 
+                                format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
+            loai_h = st.selectbox("Loại hình thủy đạo:", ["1", "2"], format_func=lambda x: "Kênh" if x=="1" else "Sông")
         else:
-            st.error(res.get('message', 'Lỗi không xác định'))
+            loai_v = st.selectbox("Loại đường bị vượt:", ["Cao tốc", "Đường ô tô"])
+            cap_o = "1"
+            if loai_v == "Đường ô tô":
+                cap_o = st.selectbox("Cấp đường bị vượt:", ["1", "2"], format_func=lambda x: "Cấp I, II, III" if x=="1" else "Các cấp còn lại")
+
+    with col_in2:
+        if loai_c == "Vượt sông":
+            h1 = st.number_input("Cao độ mực nước H1% (m):", value=1.0, step=0.1)
+            h5 = st.number_input("Cao độ mực nước H5% (m):", value=2.0, step=0.1)
+        else:
+            st.info("💡 Đối với cầu vượt đường bộ, cao độ đáy dầm phụ thuộc vào cao độ trắc dọc mặt đường bị vượt + H.")
+
+    if st.button("🔍 Tra cứu kết quả V5.0"):
+        res = TK.tra_cuu_tinh_khong_bridge(
+            loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None,
+            cap_num=cap_s if loai_c=="Vượt sông" else None,
+            loai_hinh=loai_h if loai_c=="Vượt sông" else None,
+            h1=h1 if loai_c=="Vượt sông" else 0,
+            h5=h5 if loai_c=="Vượt sông" else 0,
+            loai_duong_vuot=loai_v if loai_c=="Vượt đường bộ" else None,
+            cap_oto=cap_o if loai_c=="Vượt đường bộ" else None
+        )
+        
+        if res["status"] == "success":
+            st.divider()
+            st.subheader(f"📊 Kết quả: {res['label']}")
+            
+            # Hiển thị Metrics (Các chỉ số quan trọng)
+            m1, m2, m3 = st.columns(3)
+            m1.metric("Khẩu độ ngang (B)", f"{res['B']} m")
+            m2.metric("Chiều cao tĩnh không (H)", f"{res['H']} m")
+            
+            if loai_c == "Vượt sông":
+                m3.metric("Đáy dầm tối thiểu", f"{res['day_dam']} m")
+                
+                # Bảng chi tiết
+                df_res = pd.DataFrame({
+                    "Hạng mục": ["Khẩu độ ngang thông thuyền (B)", "Chiều cao tĩnh không (H)", "Mực nước thông thuyền (MNTT)", "Cao độ đáy dầm tối thiểu"],
+                    "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['MNTT']:.2f} m", f"{res['day_dam']} m"]
+                })
+                st.table(df_res)
+            else:
+                m3.metric("Yêu cầu H", f"H >= {res['H']} m")
+            
+            # Lưu vào session_state để các Tab sau sử dụng
+            st.session_state.design_data['khau_do_ngang'] = res['B'] if isinstance(res['B'], (int, float)) else 20.0
+            st.success("🎯 Dữ liệu đã được cập nhật cho hệ thống!")
 
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
