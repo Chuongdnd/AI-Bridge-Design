@@ -52,9 +52,7 @@ tab1, tab2, tab3 = st.tabs(["🌊 1. Tĩnh không", "🛣️ 2. Hình học & MC
 # ==========================================
 # TAB 1: TĨNH KHÔNG
 # ==========================================
-# ==========================================
-# TAB 1: TĨNH KHÔNG & THỦY VĂN
-# ==========================================
+
 with tab1:
     st.header("🌊 Thông số Tĩnh không & Thủy văn thiết kế")
     
@@ -100,6 +98,20 @@ with tab1:
         
         if res["status"] == "success":
             st.divider()
+            
+            # Chia làm 2 cột: Cột trái hiện bảng, cột phải hiện ảnh động
+            col_table, col_plot = st.columns([1, 1.2])
+            
+            with col_table:
+                st.subheader("📊 Bảng thông số")
+                # (Đoạn code hiện bảng data_table của bạn giữ nguyên ở đây)
+                st.table(pd.DataFrame(data_table))
+            
+            with col_plot:
+                st.subheader("🖼️ Sơ đồ minh họa động")
+                # Gọi hàm vẽ từ module TK (01-Tinh_khong)
+                fig_dong = TK.ve_so_do_thuy_van_dong(res)
+                st.pyplot(fig_dong) # Hiển thị hình ảnh lên Web
             st.subheader(f"✅ Tổng hợp các thông số tĩnh không: {res['label']}")
             
             # 2. Bảng tổng hợp chi tiết
