@@ -103,7 +103,7 @@ with tab1:
                 
                 # Bảng chi tiết
                 df_res = pd.DataFrame({
-                    "Hạng mục": ["Khẩu độ ngang thông thuyền (B)", "Chiều cao tĩnh không (H)", "Mực nước thông thuyền (MNTT)", "Cao độ đáy dầm tối thiểu"],
+                    "Hạng mục": ["Khẩu độ ngang thông thuyền tối thiểu (B)", "Chiều cao tĩnh không (H)", "Mực nước thông thuyền (MNTT)", "Cao độ đáy dầm tối thiểu"],
                     "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['MNTT']:.2f} m", f"{res['day_dam']} m"]
                 })
                 st.table(df_res)
