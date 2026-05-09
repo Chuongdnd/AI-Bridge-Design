@@ -96,47 +96,44 @@ with tab1:
             cap_oto=cap_o if loai_c=="Vượt đường bộ" else None
         )
         
-        if res["status"] == "success":
-            st.divider()
+    if res["status"] == "success":
+        st.divider()
+        st.subheader(f"✅ Tổng hợp các thông số tĩnh không: {res['label']}")
+        
+        # Chia cột để hiển thị: Bảng bên trái, Sơ đồ bên phải (Thay thế hình con chó)
+        col_left, col_right = st.columns([1, 1.5])
+        
+        if loai_c == "Vượt sông":
+            # 1. Định nghĩa bảng dữ liệu (data_table)
+            data_table = {
+                "Thông số": ["Khổ thông thuyền B", "Chiều cao tĩnh không (H)", "Cao độ đáy dầm tối thiểu", 
+                            "Mực nước cao nhất (H1%)", "Mực nước thông thuyền (H5%)", 
+                            "Mực nước thi công (H10%)", "Mực nước thấp nhất (H98%)"],
+                "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['day_dam']} m", 
+                           f"{h1:.3f} m", f"{h5:.3f} m", f"{h10:.3f} m", f"{h98:.3f} m"],
+                "Ghi chú": ["TCVN 5664 : 2009", "TCVN 5664 : 2009", "H5% + H + 0.1", 
+                           "Tần suất 1%", "Tần suất 5%", "Tần suất 10%", "Tần suất 98%"]
+            }
             
-            # Chia làm 2 cột: Cột trái hiện bảng, cột phải hiện ảnh động
-            col_table, col_plot = st.columns([1, 1.2])
-            
-            with col_table:
-                st.subheader("📊 Bảng thông số")
-                # (Đoạn code hiện bảng data_table của bạn giữ nguyên ở đây)
+            with col_left:
+                st.write("**📊 Bảng thông số chi tiết:**")
+                # Lệnh này bây giờ đã an toàn vì data_table nằm ngay phía trên
                 st.table(pd.DataFrame(data_table))
             
-            with col_plot:
-                st.subheader("🖼️ Sơ đồ minh họa động")
-                # Gọi hàm vẽ từ module TK (01-Tinh_khong)
-                fig_dong = TK.ve_so_do_thuy_van_dong(res)
-                st.pyplot(fig_dong) # Hiển thị hình ảnh lên Web
-            st.subheader(f"✅ Tổng hợp các thông số tĩnh không: {res['label']}")
-            
-            # 2. Bảng tổng hợp chi tiết
-            if loai_c == "Vượt sông":
-                data_table = {
-                    "Thông số": ["Khổ thông thuyền B", "Chiều cao tĩnh không (H)", "Cao độ đáy dầm tối thiểu", "Mực nước cao nhất (H1%)", 
-                                "Mực nước thông thuyền (H5%)", "Mực nước thi công (H10%)", 
-                                "Mực nước thấp nhất (H98%)"],
-                    "Giá trị": [f"{res['B']} m", f"{res['H']} m", f"{res['day_dam']} m", 
-                               f"{h1:.3f} m", f"{h5:.3f} m", 
-                               f"{h10:.3f} m", f"{h98:.3f} m"],
-                    "Ghi chú": ["TCVN 5664 : 2009", "TCVN 5664 : 2009", "H5% + H + 0.1", "Tần suất 1%", 
-                               "Tần suất 5%", "Tần suất 10%", 
-                               "Tần suất 98%"]
-                }
-                st.table(pd.DataFrame(data_table))
-                
-                # Minh họa sơ đồ bằng hình ảnh (nếu có)
-                
-            
-            # Lưu session để Tab sau sử dụng
-            st.session_state.design_data['day_dam'] = res['day_dam']
-            st.session_state.design_data['khau_do_ngang'] = res['B']
-            st.success("🎯 Dữ liệu đã được lưu để tính toán trắc dọc và kết cấu!")
+            with col_right:
+                st.write("**🖼️ Sơ đồ trắc dọc minh họa (Dầm giản đơn):**")
+                # GỌI HÀM VẼ TỪ MODULE TK ĐỂ THAY THẾ HÌNH CON CHÓ
+                fig = TK.ve_so_do_dam_gian_don_dong(res)
+                st.pyplot(fig) # Hiển thị trực tiếp sơ đồ động
+        
+        else:
+            # Hiển thị cho trường hợp vượt đường bộ
+            st.info(f"Chiều cao tĩnh không yêu cầu: {res['H']} m")
 
+        # Lưu session (giữ nguyên)
+        st.session_state.design_data['day_dam'] = res['day_dam']
+        st.session_state.design_data['khau_do_ngang'] = res['B']
+                       
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
