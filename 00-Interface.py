@@ -74,46 +74,49 @@ with tab1:
         res = st.session_state.tinh_khong_res
         st.divider()
         
-        # 1. Hiển thị bản vẽ
+        # 1. Hiển thị bản vẽ (Đã hiện tốt)
         st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
         fig_tt = TK.ve_so_do_bo_tri_chung(res)
         st.pyplot(fig_tt)
         
-        # 2. Hiển thị bảng thông số
+        # 2. Hiển thị bảng thông số (Phần bị mất)
         st.subheader("📊 Chi tiết thông số kỹ thuật")
+        
+        # Tạo DataFrame với các Key chuẩn từ file 01-Tinh_khong.py của bạn
         df_data = {
             "Thông số kỹ thuật": [
-                "Khổ thông thuyền ngang (B)", "Chiều cao tĩnh không đứng (H)", 
-                "Mực nước cao nhất (H1%)", "Mực nước thông thuyền (H5%)", 
-                "Mực nước thấp nhất (H98%)", "Cao độ đáy dầm thiết kế"
+                "Khổ thông thuyền ngang (B)", 
+                "Chiều cao tĩnh không đứng (H)", 
+                "Mực nước cao nhất (H1%)", 
+                "Mực nước thông thuyền (H5%)", 
+                "Mực nước thấp nhất (H98%)",
+                "Cao độ đáy dầm thiết kế"
             ],
             "Giá trị": [
-                f"{res.get('B', 0)} m", f"{res.get('H', 0)} m",
-                f"{res.get('H1', 0):.3f} m", f"{res.get('H5', 0):.3f} m",
-                f"{res.get('H98', 0):.3f} m", f"{res.get('day_dam', 0)} m"
+                f"{res.get('B', 0)} m",
+                f"{res.get('H', 0)} m",
+                f"{res.get('H1', 0):.3f} m",
+                f"{res.get('H5', 0):.3f} m",
+                f"{res.get('H98', 0):.3f} m",
+                f"{res.get('day_dam', 0)} m"
             ]
         }
         st.table(pd.DataFrame(df_data))
-
-        # 3. XUẤT DỮ LIỆU BẢN VẼ (Phải nằm TRONG khối if này)
         st.subheader("💾 Xuất dữ liệu bản vẽ")
-        col_dl1, col_dl2 = st.columns(2)
+    col_dl1, col_dl2 = st.columns(2)
+    
+    with col_dl1:
+        # Xuất DXF
+        doc_cad = TK.xuat_file_cad(res)
+        out_cad = io.StringIO()
+        doc_cad.write(out_cad)
         
-        with col_dl1:
-            try:
-                # Gọi hàm xuất CAD từ file 01
-                doc_cad = TK.xuat_file_cad(res)
-                out_cad = io.StringIO()
-                doc_cad.write(out_cad)
-                
-                st.download_button(
-                    label="📐 Tải file CAD (.dxf)",
-                    data=out_cad.getvalue(),
-                    file_name="Ban_ve_Tinh_khong.dxf",
-                    mime="application/dxf"
-                )
-            except Exception as e:
-                st.error(f"Lỗi xuất CAD: {e}")
+        st.download_button(
+            label="📐 Tải file CAD (.dxf)",
+            data=out_cad.getvalue(),
+            file_name="Ban_ve_Tinh_khong.dxf",
+            mime="application/dxf"
+        )
 
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
