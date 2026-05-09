@@ -104,7 +104,7 @@ with tab1:
             
             # 2. Bảng tổng hợp chi tiết
             if loai_c == "Vượt sông":
-                            data_table = {
+                data_table = {
                     "Thông số": ["Khổ thông thuyền B", "Chiều cao tĩnh không H", "Mực nước cao nhất H1%", 
                                 "Mực nước thông thuyền H5%", "Mực nước thi công H10%", 
                                 "Mực nước thấp nhất H98%", "Cao độ đáy dầm tối thiểu"],
