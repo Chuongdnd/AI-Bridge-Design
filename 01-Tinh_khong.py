@@ -1,7 +1,8 @@
 import matplotlib.pyplot as plt
 import matplotlib.patches as patches
 import numpy as np
-
+import ezdxf
+from ezdxf.enums import TextEntityAlignment
 def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None, 
                                h1=0, h5=0, h10=0, h98=0, 
                                loai_duong_vuot=None, cap_oto=None):
@@ -78,3 +79,56 @@ def ve_so_do_bo_tri_chung(res):
     ax.set_title("SƠ HỌA TRẮC DỌC CẦU & THỦY VĂN", fontsize=15, fontweight='bold')
     
     return fig
+def xuat_file_cad(res):
+    # 1. Khởi tạo bản vẽ DXF
+    doc = ezdxf.new('R2010') # Định dạng AutoCAD 2010
+    msp = doc.modelspace()
+
+    # Tạo các Layer để quản lý bản vẽ chuyên nghiệp
+    doc.layers.new(name='DUONG_DO', dxfattribs={'color': 1}) # Red
+    doc.layers.new(name='TU_NHIEN', dxfattribs={'color': 3}) # Green
+    doc.layers.new(name='THUY_VAN', dxfattribs={'color': 5}) # Blue
+    doc.layers.new(name='KET_CAU', dxfattribs={'color': 7})  # White/Black
+    doc.layers.new(name='GHI_CHU', dxfattribs={'color': 6})  # Magenta
+
+    # Lấy thông số
+    h1, h5, h98 = res.get('H1', 0), res.get('H5', 0), res.get('H98', 0)
+    h_dam, H_tk, B = res.get('day_dam', 0), res.get('H', 0), res.get('B', 0)
+    L_tong = 120
+
+    # 2. VẼ ĐƯỜNG ĐỎ (Mặt cầu)
+    h_mat_cau = h_dam + 2.0
+    msp.add_line((0, h_mat_cau), (L_tong, h_mat_cau), dxfattribs={'layer': 'DUONG_DO'})
+    msp.add_text("DUONG DO", dxfattribs={'layer': 'DUONG_DO', 'height': 0.5}).set_placement((5, h_mat_cau + 0.5))
+
+    # 3. VẼ ĐƯỜNG TỰ NHIÊN (Sử dụng Polyline)
+    # Giả lập đường tự nhiên nhấp nhô
+    points = []
+    for x in range(0, L_tong + 1, 2):
+        y = h98 - 1.5 + 2.5 * (1 - ( ( (x-60)**2 ) / 1000 ) ) # Đơn giản hóa hàm exp cho CAD
+        points.append((x, y))
+    msp.add_lwpolyline(points, dxfattribs={'layer': 'TU_NHIEN', 'linetype': 'DASHED'})
+
+    # 4. VẼ KẾT CẤU CẦU
+    # Dầm (Hình chữ nhật)
+    msp.add_lwpolyline([(15, h_dam), (105, h_dam), (105, h_dam+1.8), (15, h_dam+1.8), (15, h_dam)], 
+                       dxfattribs={'layer': 'KET_CAU', 'closed': True})
+    
+    # Trụ cầu (Pier)
+    for x_tru in [40, 80]:
+        msp.add_lwpolyline([(x_tru-1.5, h_dam), (x_tru+1.5, h_dam), (x_tru+1.5, h98-5), (x_tru-1.5, h98-5), (x_tru-1.5, h_dam)], 
+                           dxfattribs={'layer': 'KET_CAU', 'closed': True})
+
+    # 5. VẼ KÝ HIỆU MỰC NƯỚC (Tam giác)
+    def ve_tam_giac_cad(x, y, label):
+        msp.add_lwpolyline([(x-1, y+1), (x+1, y+1), (x, y), (x-1, y+1)], dxfattribs={'layer': 'THUY_VAN'})
+        msp.add_text(f"{label}: {y:.3f}m", dxfattribs={'layer': 'THUY_VAN', 'height': 0.4}).set_placement((x, y+1.5), align=TextEntityAlignment.CENTER)
+
+    ve_tam_giac_cad(15, h1, "MNCN")
+    ve_tam_giac_cad(85, h5, "MNTT")
+
+    # 6. KHUNG TĨNH KHÔNG
+    msp.add_lwpolyline([(60-B/2, h5), (60+B/2, h5), (60+B/2, h5+H_tk), (60-B/2, h5+H_tk), (60-B/2, h5)], 
+                       dxfattribs={'layer': 'GHI_CHU', 'linetype': 'DOTTED'})
+
+    return doc

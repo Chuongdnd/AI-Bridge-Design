@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import importlib
-
+import io
 # --- THIẾT LẬP TRANG ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
 
@@ -102,6 +102,21 @@ with tab1:
             ]
         }
         st.table(pd.DataFrame(df_data))
+        st.subheader("💾 Xuất dữ liệu bản vẽ")
+    col_dl1, col_dl2 = st.columns(2)
+    
+    with col_dl1:
+        # Xuất DXF
+        doc_cad = TK.xuat_file_cad(res)
+        out_cad = io.StringIO()
+        doc_cad.write(out_cad)
+        
+        st.download_button(
+            label="📐 Tải file CAD (.dxf)",
+            data=out_cad.getvalue(),
+            file_name="Ban_ve_Tinh_khong.dxf",
+            mime="application/dxf"
+        )
 
 # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
