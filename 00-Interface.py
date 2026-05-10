@@ -83,14 +83,14 @@ with tab1:
         st.subheader("📊 Chi tiết thông số kỹ thuật")
         df_data = {
             "Thông số kỹ thuật": [
-                "Khổ thông thuyền ngang (B)", "Chiều cao tĩnh không đứng (H)", 
-                "Mực nước cao nhất (H1%)", "Mực nước thông thuyền (H5%)", 
-                "Mực nước thấp nhất (H98%)", "Cao độ đáy dầm thiết kế"
+                "Khổ thông thuyền ngang (B)", "Chiều cao tĩnh không đứng (H)", "Cao độ đáy dầm thiết kế",
+                "Mực nước cao nhất (H1%)", "Mực nước thông thuyền (H5%)", "Mực nước thi công (H10%)",
+                "Mực nước thấp nhất (H98%)"
             ],
             "Giá trị": [
-                f"{res.get('B', 0)} m", f"{res.get('H', 0)} m",
-                f"{res.get('H1', 0):.3f} m", f"{res.get('H5', 0):.3f} m",
-                f"{res.get('H98', 0):.3f} m", f"{res.get('day_dam', 0)} m"
+                f"{res.get('B', 0)} m", f"{res.get('H', 0)} m", f"{res.get('day_dam', 0)} m"
+                f"{res.get('h1', 0):.3f} m", f"{res.get('h5', 0):.3f} m", f"{res.get('h10', 0):.3f} m",
+                f"{res.get('h98', 0):.3f} m"
             ]
         }
         st.table(pd.DataFrame(df_data))

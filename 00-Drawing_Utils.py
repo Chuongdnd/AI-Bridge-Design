@@ -14,7 +14,7 @@ def ve_ky_hieu_muc_nuoc(ax, x_pos, y_val, label, color):
 
 def ve_trac_doc_cau(res):
     fig, ax = plt.subplots(figsize=(16, 7))
-    h1, h5, h10, h98 = res.get('H1', 0), res.get('H5', 0), res.get('H10', 0), res.get('H98', 0)
+    h1, h5, h10, h98 = res.get('h1', 0), res.get('h5', 0), res.get('h10', 0), res.get('h98', 0)
     h_dam, H_tk, B = res.get('day_dam', 0), res.get('H', 0), res.get('B', 0)
     
     # 1. Vẽ địa hình
