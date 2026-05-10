@@ -84,17 +84,17 @@ with tab1:
         df_data = {
             "Thông số kỹ thuật": [
                 "Khổ thông thuyền ngang (B)", "Chiều cao tĩnh không đứng (H)", "Cao độ đáy dầm thiết kế",
-                "Mực nước cao nhất (H1%)", "Mực nước thông thuyền (H5%)", "Mực nước thi công (H10%)",
-                "Mực nước thấp nhất (H98%)"
+                "Mực nước cao nhất (MNCN)", "Mực nước thông thuyền (MNTT)", "Mực nước thi công (MNTC)",
+                "Mực nước thấp nhất (MNTN)"
             ],
             "Giá trị": [
                 f"{res.get('B', 0)} m", 
                 f"{res.get('H', 0)} m", 
                 f"{res.get('day_dam', 0)} m", # Thêm dấu phẩy ở đây
-                f"{res.get('MNCN', 0):.3f} m", # Đổi h1 thành MNCN
-                f"{res.get('MNTT', 0):.3f} m", # Đổi h5 thành MNTT
-                f"{res.get('MNTC', 0):.3f} m", # Đổi h10 thành MNTC
-                f"{res.get('MNTN', 0):.3f} m"  # Đổi h98 thành MNTN
+                f"{res.get('MNCN', 0):.3f} m", 
+                f"{res.get('MNTT', 0):.3f} m", 
+                f"{res.get('MNTC', 0):.3f} m", 
+                f"{res.get('MNTN', 0):.3f} m"
             ]
         }
         st.table(pd.DataFrame(df_data))
