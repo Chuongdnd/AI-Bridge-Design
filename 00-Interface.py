@@ -88,9 +88,13 @@ with tab1:
                 "Mực nước thấp nhất (H98%)"
             ],
             "Giá trị": [
-                f"{res.get('B', 0)} m", f"{res.get('H', 0)} m", f"{res.get('day_dam', 0)} m"
-                f"{res.get('h1', 0):.3f} m", f"{res.get('h5', 0):.3f} m", f"{res.get('h10', 0):.3f} m",
-                f"{res.get('h98', 0):.3f} m"
+                f"{res.get('B', 0)} m", 
+                f"{res.get('H', 0)} m", 
+                f"{res.get('day_dam', 0)} m", # Thêm dấu phẩy ở đây
+                f"{res.get('MNCN', 0):.3f} m", # Đổi h1 thành MNCN
+                f"{res.get('MNTT', 0):.3f} m", # Đổi h5 thành MNTT
+                f"{res.get('MNTC', 0):.3f} m", # Đổi h10 thành MNTC
+                f"{res.get('MNTN', 0):.3f} m"  # Đổi h98 thành MNTN
             ]
         }
         st.table(pd.DataFrame(df_data))
