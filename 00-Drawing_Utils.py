@@ -14,11 +14,10 @@ def ve_ky_hieu_muc_nuoc(ax, x_pos, y_val, label, color):
 
 def ve_trac_doc_cau(res):
     fig, ax = plt.subplots(figsize=(16, 7))
-    h1 = res.get('MNCN', 0)   # Mực nước cao nhất
-    h5 = res.get('MNTT', 0)   # Mực nước thông thuyền
-    h10 = res.get('MNTC', 0)  # Mực nước thi công
-    h98 = res.get('MNTN', 0)  # Mực nước thấp nhất
-    
+    h1 = res.get('MNCN', 0)
+    h5 = res.get('MNTT', 0)
+    h10 = res.get('MNTC', 0)
+    h98 = res.get('MNTN', 0)
     h_dam = res.get('day_dam', 0)
     H_tk = res.get('H', 0)
     # 1. Vẽ địa hình
@@ -28,8 +27,10 @@ def ve_trac_doc_cau(res):
     ax.fill_between(x, h98 - 5, y_tn, color='#f1e7d0', alpha=0.5)
 
     # 2. Vẽ Thủy văn
-    ve_ky_hieu_muc_nuoc(ax, 15, h1, "MNCN 1%", "red")
-    ve_ky_hieu_muc_nuoc(ax, 85, h5, "MNTT 5%", "blue")
+    ve_ky_hieu_muc_nuoc(ax, 15, h1, "MNCN H1%", "red")
+    ve_ky_hieu_muc_nuoc(ax, 85, h5, "MNTT H5%", "blue")
+    ve_ky_hieu_muc_nuoc(ax, 85, h10, "MNTC H10%", "blue")
+    ve_ky_hieu_muc_nuoc(ax, 85, h98, "MNTN H98%", "blue")
 
     # 3. Vẽ Kết cấu (Chỉ vẽ các đường mức như bạn yêu cầu)
     h_mat_cau = h_dam + 2.0
