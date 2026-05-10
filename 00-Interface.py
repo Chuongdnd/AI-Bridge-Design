@@ -22,6 +22,7 @@ try:
     MCN = importlib.import_module("03-MatCatNgang")
     GRD = importlib.import_module("05-Main_Girder")
     PLOT = importlib.import_module("00-Drawing_Utils")
+    importlib.reload(PLOT)
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
 

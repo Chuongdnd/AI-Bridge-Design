@@ -16,14 +16,14 @@ def ve_ky_hieu_muc_nuoc(ax, x_pos, y_val, label, color):
         facecolor='none', edgecolor=color, lw=1.2, zorder=5)
     ax.add_patch(triangle)
     
-    # 2. Vẽ đường gạch ngang chính (Mặt nước)
+    # 2. Vẽ đường gạch ngang chính 
     ax.plot([x_pos - 3, x_pos + 3], [y_val, y_val], color=color, lw=1.2, zorder=4)
     
     # 3. Vẽ 3 gạch nhỏ bên dưới (Ký hiệu sóng nước chuẩn kỹ thuật)
     # Các nét gạch ngắn dần và cách nhau một khoảng nhỏ
     dash_widths = [2.0, 1.2, 0.5] # Độ dài các nét gạch
     for i, w in enumerate(dash_widths):
-        y_dash = y_val - (i + 1) * 0.25  # Khoảng cách xuống dưới
+        y_dash = y_val - (i + 1) * 0.25  
         ax.plot([x_pos - w/2, x_pos + w/2], [y_dash, y_dash], color=color, lw=0.8)
 
     # 4. Ghi chú Text cao độ
