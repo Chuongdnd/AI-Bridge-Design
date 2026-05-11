@@ -49,10 +49,10 @@ def ve_trac_doc_cau(res):
         ax.text(5, h1 + 0.2, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=9, fontweight='bold')
     else:
         # Nếu VƯỢT SÔNG: Vẽ lòng sông trũng như cũ
-        y_tn = h98 - 1.5 + 2.5 * (1 - np.exp(-((x - 60)**2) / 1000))
-        ax.plot(x, y_tn, color='#27ae60', ls='--', lw=1.5)
-        ax.fill_between(x, min(h98, y_tn.min()) - 5, y_tn, color='#f1e7d0', alpha=0.5)
-
+        y_tn_flat = np.full_like(x, h_tn_tb)
+        ax.plot(x, y_tn_flat, color='#27ae60', ls='-', lw=2.0, label="Đường tự nhiên trung bình")
+        ax.fill_between(x, h_tn_tb - 5, h_tn_tb, color='#f1e7d0', alpha=0.5)
+        ax.text(5, h_tn_tb + 0.3, f"Cao độ tự nhiên TB: {h_tn_tb:.3f}m", color='#27ae60', fontsize=9, fontweight='bold')
     # --- 3. VẼ KÝ HIỆU MỰC NƯỚC (Chỉ vẽ khi vượt sông) ---
     if not is_duong_bo:
         ve_ky_hieu_muc_nuoc(ax, 15, h1, "MNCN H1%", "red")
