@@ -60,6 +60,8 @@ with tab1:
     ])
             # Ô NHẬP BỀ RỘNG B THEO KHAI BÁO NGƯỜI DÙNG
             b_khai_bao = st.number_input("Bề rộng tĩnh không khai báo (B) - m:", value=20.0, step=0.5)
+        st.markdown("---")
+        l_hinhhoc = st.selectbox("Cấp thiết kế đường trên cầu:", ["O to", "Cao tốc", "Do thi"], key="geo_l")
     with col_in2:
         if loai_c == "Vượt sông":
             h_tn_tb = st.number_input("Cao độ tự nhiên trung bình (m):", value=0.00, format="%.3f")
@@ -72,6 +74,11 @@ with tab1:
             h1 = st.number_input("Cao độ mặt đường bị vượt (m):", value=5.00, format="%.3f")
             # Các giá trị khác ẩn hoặc để mặc định để tránh lỗi hàm
             h5, h10, h98 = h1, h1, h1
+        st.markdown("---")
+        v_list = [120, 100, 80, 60, 40, 30] if l_hinhhoc != "Do thi" else [100, 80, 60, 50, 40, 30]
+        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", v_list, key="geo_v")
+        d_hinhhoc = st.radio("Địa hình:", [("1", "Đồng bằng"), ("2", "Miền núi")], 
+                                 format_func=lambda x: x[1], horizontal=True, key="geo_d")[0]
     # QUAN TRỌNG: Mọi hiển thị kết quả phải nằm TRONG khối lệnh button này
     if st.button("🚀 Tra cứu & Xác định Đáy dầm"):
         res = TK.tra_cuu_tinh_khong_bridge(
@@ -145,6 +152,26 @@ with tab1:
             }
             
         st.table(pd.DataFrame(df_data))
+        st.divider()
+        st.subheader("🛣️ Kết quả Yếu tố Hình học (TCVN)")
+            
+            # Gọi hàm tra cứu từ file 02-Yeuto_Hinhhoc.py
+        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
+            
+        if res_geo:
+                # Hiển thị nhanh các chỉ số quan trọng
+                g_col1, g_col2, g_col3 = st.columns(3)
+                g_col1.metric("Cấp đường thiết kế", res_geo['cap'])
+                g_col2.metric("Độ dốc dọc Max (i%)", f"{res_geo['imax']}%")
+                g_col3.metric("Bán kính R_min (m)", f"{res_geo['R'][0]} m")
+                
+                # Hiển thị chi tiết hơn trong expander
+                with st.expander("📝 Chi tiết phạm vi Bán kính cong (R)"):
+                    st.write(f"Dựa trên vận tốc **{v_hinhhoc} km/h**, bán kính đường cong nằm tối thiểu:")
+                    st.write(f"- Bán kính tối thiểu không siêu cao: **{res_geo['R'][1]} m**")
+                    st.write(f"- Bán kính tối thiểu giới hạn (Rmin): **{res_geo['R'][0]} m**")
+        else:
+                st.error("Không tìm thấy dữ liệu hình học phù hợp.")
     # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
