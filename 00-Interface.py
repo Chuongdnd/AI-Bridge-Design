@@ -115,36 +115,37 @@ with tab1:
             # Gọi hàm tra cứu từ file 02-Yeuto_Hinhhoc.py
         res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
             
-        if res_geo:
-                # 1. Truyền dữ liệu vào res để PLOT có thể vẽ đường cong đứng
-                res['R_hinh_hoc'] = res_geo['R'][0]  # Lấy Rmin
-                res['i_max_hinh_hoc'] = res_geo['imax']
+        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
+
+            # --- ĐOẠN THAY THẾ AN TOÀN ---
+        if res_geo and res_geo.get("status") == "success":
+                # Lấy đúng phím 'R_loi_min' từ kết quả của 02-Yeuto_Hinhhoc.py
+                res['R_hinh_hoc'] = res_geo.get('R_loi_min', 5000)
+                res['i_max_hinh_hoc'] = res_geo.get('imax', 4)
                 
-                # 2. Hiển thị sơ họa
+                # Hiển thị sơ họa (Phải gọi sau khi đã gán R_hinh_hoc để vẽ đường cong)
                 st.subheader("🖼️ Sơ họa trắc dọc và Tĩnh không")
-                fig_tt = PLOT.ve_trac_doc_cau(res)
-                st.pyplot(fig_tt)
+                st.pyplot(PLOT.ve_trac_doc_cau(res))
 
-                # 3. Hiển thị bảng kết quả Tĩnh không (đã có trong code cũ của bạn)
-                st.table(pd.DataFrame(df_data)) 
+                # Hiển thị bảng thông số tĩnh không
+                st.table(pd.DataFrame(df_data))
 
-                # 4. Hiển thị Yếu tố Hình học ngay bên dưới
+                # Hiển thị kết quả Hình học
                 st.divider()
                 st.subheader("🛣️ Kết quả Yếu tố Hình học (TCVN)")
                 g_col1, g_col2, g_col3 = st.columns(3)
                 
-                # Sử dụng .get() để an toàn, khớp với key 'cap' và 'imax' trong file 02-Yeuto_Hinhhoc
-                g_col1.metric("Cấp đường thiết kế", res_geo.get('cap', "N/A"))
+                # Khớp với phím 'cap_duong' và 'R_loi_min' trong logic của bạn
+                g_col1.metric("Cấp đường thiết kế", res_geo.get('cap_duong', "N/A"))
                 g_col2.metric("Độ dốc dọc Max (i%)", f"{res_geo.get('imax', 0)}%")
-                g_col3.metric("Bán kính R_min (m)", f"{res_geo['R'][0]} m")
+                g_col3.metric("Bán kính R_min (m)", f"{res_geo.get('R_loi_min', 0)} m")
 
                 with st.expander("📝 Chi tiết phạm vi Bán kính cong (R)"):
-                    st.write(f"Dựa trên vận tốc **{v_hinhhoc} km/h**, bán kính đường cong nằm tối thiểu:")
-                    st.write(f"- Bán kính tối thiểu giới hạn (Rmin): **{res_geo['R'][0]} m**")
-                    st.write(f"- Bán kính tối thiểu không siêu cao: **{res_geo['R'][1]} m**")
+                    st.write(f"Dựa trên vận tốc **{v_hinhhoc} km/h**, bán kính đường cong đứng tối thiểu:")
+                    st.write(f"- Bán kính tối thiểu giới hạn (Rmin): **{res_geo.get('R_loi_min')} m**")
+                    st.write(f"- Bán kính tối thiểu thông thường: **{res_geo.get('R_loi_tt')} m**")
         else:
-                st.error("Không tìm thấy dữ liệu hình học phù hợp cho vận tốc này.")
-
+                st.error(f"Lỗi: {res_geo.get('message', 'Không tìm thấy dữ liệu cho vận tốc này')}")
         st.divider()
         # 2. Hiển thị bảng thông số
         st.subheader("📊 Chi tiết thông số kỹ thuật")
