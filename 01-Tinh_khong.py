@@ -20,31 +20,23 @@ def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None,
             target = data_thuy[mien][cap_num]
             B = target.get(loai_hinh, "N/A")
             H = target["H"]
+            
+            # Tính toán cao độ đáy dầm tối thiểu
             cao_do_dat_goi = h1 + 0.5
-            cao_do_day_dam = max(h5 + H + 0.1, cao_do_dat_goi)
+            cao_do_day_dam = max(h5+H+0.1, cao_do_dat_goi)
             
             return {
                 "status": "success",
-                "B": B, "H": H,
-                "MNCN": h1, "MNTT": h5, "MNTC": h10, "MNTN": h98,
-                "H_TN_TB": h_tn_tb,  # QUAN TRỌNG: Trả về giá trị này để vẽ
+                "B": B,
+                "H": H,
+                "H_TN_TB": h_tn_tb,
+                "MNCN": h1,   # Mực nước cao nhất
+                "MNTT": h5,   # Mực nước thông thuyền
+                "MNTC": h10,  # Mực nước thi công
+                "MNTN": h98,  # Mực nước thấp nhất
                 "day_dam": round(cao_do_day_dam, 2),
                 "label": f"Cầu vượt {('Kênh' if loai_hinh=='1' else 'Sông')} - Cấp {cap_num}"
             }
-            
-    elif loai_cau == "Vượt đường bộ":
-        H = 4.75 if loai_duong_vuot in ["Cao tốc", "Cấp I", "Cấp II"] else 4.5
-        B = cap_oto if cap_oto else 0 
-        cao_do_day_dam = h1 + H + 0.25 
-        
-        return {
-            "status": "success",
-            "B": B, "H": H,
-            "MNCN": h1, "MNTT": h1, 
-            "H_TN_TB": h1, # Với đường bộ, lấy mặt đường làm đường tham chiếu
-            "day_dam": round(cao_do_day_dam, 2),
-            "label": f"Cầu vượt đường bộ - {loai_duong_vuot}"
-        }
             
     elif loai_cau == "Vượt đường bộ":
         # 1. Chiều cao tĩnh không quy định theo hình ảnh bạn gửi
