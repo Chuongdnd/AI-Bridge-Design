@@ -203,6 +203,7 @@ with tab3:
                 else:
                     st.error("Lỗi trong quá trình huấn luyện AI.")
 
+st.image("Images/UTH.jpg", width=150)
 st.sidebar.markdown("---")
 st.sidebar.write("👤 **SVTH:** Chương DND")
 st.sidebar.write("🎓 **GVHD:** T.S Nguyễn Văn Hiển")
