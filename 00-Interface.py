@@ -104,7 +104,8 @@ with tab1:
     if 'tinh_khong_res' in st.session_state:
         res = st.session_state.tinh_khong_res
         st.divider()
-    
+    if res_geo["status"] == "success":
+        res['R_hinh_hoc'] = res_geo['R_loi_min']
         # 1. Hiển thị bản vẽ
         st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
         fig_tt = PLOT.ve_trac_doc_cau(res)
