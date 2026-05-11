@@ -78,26 +78,47 @@ def ve_trac_doc_cau(res):
 
     # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM ---
     if B > 0:
-        # Khung tĩnh không Magenta
-        rect = patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2, zorder=3)
+        # Tọa độ X của khung tĩnh không (tâm tại vị trí 60m)
+        x_start = 60 - B/2
+        x_end = 60 + B/2
+        
+        # Vẽ Khung tĩnh không Magenta nét đứt
+        rect = patches.Rectangle((x_start, h5), B, H_tk, fill=False, 
+                                 edgecolor='magenta', ls='--', lw=2.5, zorder=3)
         ax.add_patch(rect)
         
-        # DIM Bề rộng B (Dời lên cao h5 + 3.0)
-        y_dim_b = h5 + H_tk/2
-        ax.annotate('', xy=(60 + B/2, y_dim_b), xytext=(60 - B/2, y_dim_b),
+        # DIM Bề rộng B: Đặt tại cao độ trung tâm của khung tĩnh không (h5 + H_tk/2)
+        y_dim_b = h5 + H_tk / 2
+        ax.annotate('', xy=(x_end, y_dim_b), xytext=(x_start, y_dim_b),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        ax.text(60, y_dim_b + 0.2, f"B = {B}m", ha='center', va='bottom', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        ax.text(60, y_dim_b + 0.2, f"B = {B}m", ha='center', va='bottom', 
+                fontweight='bold', fontsize=11,
+                bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
 
-        # DIM Chiều cao H
-        ax.annotate('', xy=(60 + B/2 + 3, h5 + H_tk), xytext=(60 + B/2 + 3, h5),
+        # DIM Chiều cao H: Đặt cách cạnh phải của khung tĩnh không 3m
+        x_dim_h = x_end + 3.0
+        ax.annotate('', xy=(x_dim_h, h5 + H_tk), xytext=(x_dim_h, h5),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        ax.text(60 + B/2 + 3.5, h5 + H_tk/2, f"H = {H_tk}m", ha='left', va='center', rotation=90, fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        ax.text(x_dim_h + 0.5, h5 + H_tk / 2, f"H = {H_tk}m", 
+                ha='left', va='center', rotation=90, 
+                fontweight='bold', fontsize=10,
+                bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
 
-    # Cấu hình trục
+    # --- CẤU HÌNH TRỤC CHUNG (Cố định tỷ lệ 120m) ---
+    # Thiết lập khung nhìn từ -5 đến 125 để bản vẽ luôn cân đối
     ax.set_xlim(-5, 125)
-    ax.set_ylim(min(h98, h1) - 5, h_mat_cau + 5)
+    
+    # Thiết lập trục Y linh hoạt theo mực nước thấp nhất và mặt cầu
+    # Sử dụng h5 (MNTT) trong hàm min để đảm bảo khung tĩnh không không bị cắt mất
+    y_min_plot = min(h98, h1, h5) - 5
+    ax.set_ylim(y_min_plot, h_mat_cau + 5)
+    
+    # Ẩn các trục tọa độ để tạo bản vẽ sơ họa sạch sẽ
     ax.axis('off')
-    ax.set_title(label_res.upper() if label_res else "SƠ HỌA TRẮC DỌC CẦU", fontsize=16, fontweight='bold', pad=20)
+    
+    # Tiêu đề bản vẽ
+    ax.set_title(label_res.upper() if label_res else "SƠ HỌA TRẮC DỌC CẦU", 
+                 fontsize=16, fontweight='bold', pad=20)
     
     return fig
 
