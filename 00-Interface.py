@@ -7,11 +7,11 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide
 
 # --- 2. CHÈN NHẠC NỀN VÀO SIDEBAR ---
 with st.sidebar:
-    st.title("🎵 Nhạc nền")
-    music_path = "Sounds/Trungtv.mp3" 
+    st.title("🎵 Sound")
+    music_path = "Sounds/S1.mp3" 
     if os.path.exists(music_path):
         st.audio(music_path, loop=True, autoplay=True)
-        st.caption("Đang phát: Trungtv.mp3")
+        st.caption("Đang phát:S1.mp3")
     else:
         st.error(f"⚠️ Không tìm thấy file: {music_path}")
 
@@ -204,6 +204,6 @@ with tab3:
                     st.error("Lỗi trong quá trình huấn luyện AI.")
 
 st.sidebar.markdown("---")
-st.sidebar.write("👤 **Tác giả:** Chương DND")
+st.sidebar.write("👤 **SVTH:** Chương DND")
+st.sidebar.write("🎓 **GVHD:** T.S Nguyễn Văn Hiển")
 st.sidebar.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
-st.sidebar.write("🎓 **Giáo viên hướng dẫn:** T.S Nguyễn Văn Hiển")
