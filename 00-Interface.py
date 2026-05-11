@@ -104,8 +104,7 @@ with tab1:
     if 'tinh_khong_res' in st.session_state:
         res = st.session_state.tinh_khong_res
         st.divider()
-    if res_geo["status"] == "success":
-        res['R_hinh_hoc'] = res_geo['R_loi_min']
+    
         # 1. Hiển thị bản vẽ
         st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
         fig_tt = PLOT.ve_trac_doc_cau(res)
@@ -124,6 +123,8 @@ with tab1:
                 g_col2.metric("Độ dốc dọc Max (i%)", f"{res_geo['imax']}%")
                 # Thay 'R' thành 'R_loi_min'
                 g_col3.metric("Bán kính R_min (m)", f"{res_geo['R_loi_min']} m")
+                res['R_hinh_hoc'] = res_geo['R_loi_min']
+                res['i_max_hinh_hoc'] = res_geo['imax']
                 
                 # Hiển thị chi tiết hơn trong expander
                 with st.expander("📝 Chi tiết phạm vi Bán kính cong (R)"):
