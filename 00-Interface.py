@@ -59,7 +59,7 @@ with tab1:
         "Đường xe thô sơ"
     ])
             # Ô NHẬP BỀ RỘNG B THEO KHAI BÁO NGƯỜI DÙNG
-            b_khai_bao = st.number_input("Bề rộng tĩnh không khai báo (B) - m:", value=12.0, step=0.5)
+            b_khai_bao = st.number_input("Bề rộng tĩnh không khai báo (B) - m:", value=20.0, step=0.5)
     with col_in2:
         if loai_c == "Vượt sông":
             h_tn_tb = st.number_input("Cao độ tự nhiên trung bình (m):", value=0.00, format="%.3f")
