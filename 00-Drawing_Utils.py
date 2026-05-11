@@ -42,16 +42,19 @@ def ve_trac_doc_cau(res):
 
     # --- 2. VẼ ĐỊA HÌNH ---
     if is_duong_bo:
-        # Nếu VƯỢT ĐƯỜNG: Vẽ mặt đường bằng phẳng màu xám
-        y_nen = np.full_like(x, h1)
-        ax.plot(x, y_nen, color='#7f8c8d', ls='-', lw=2.5, label="Mặt đường bị vượt")
-        ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.6)
-        ax.text(5, h1 + 0.2, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=9, fontweight='bold')
+        # Nếu là đường bộ: Chỉ vẽ vùng không gian bao quanh B
+        # Tạo lề trái/phải mỗi bên bằng 20% của B
+        le = B * 0.2 if B > 0 else 5
+        x_min = 60 - B/2 - le
+        x_max = 60 + B/2 + le
+        
+        ax.set_xlim(x_min, x_max)
+        # Cập nhật lại đường Đỏ và Đáy dầm cho vừa khít khung nhìn mới
+        ax.plot([x_min, x_max], [h_mat_cau, h_mat_cau], color='red', lw=3)
+        ax.plot([x_min, x_max], [h_dam, h_dam], color='#34495e', ls='-.', lw=1.5)
     else:
-        # Nếu VƯỢT SÔNG: Vẽ lòng sông trũng như cũ
-        y_tn = h98 - 1.5 + 2.5 * (1 - np.exp(-((x - 60)**2) / 1000))
-        ax.plot(x, y_tn, color='#27ae60', ls='--', lw=1.5)
-        ax.fill_between(x, min(h98, y_tn.min()) - 5, y_tn, color='#f1e7d0', alpha=0.5)
+        # Nếu là vượt sông: Giữ nguyên khung cảnh 120m để thấy lòng sông
+        ax.set_xlim(-5, 125)
 
     # --- 3. VẼ KÝ HIỆU MỰC NƯỚC (Chỉ vẽ khi vượt sông) ---
     if not is_duong_bo:
