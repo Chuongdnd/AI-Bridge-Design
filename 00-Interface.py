@@ -52,12 +52,12 @@ with tab1:
             loai_h = st.selectbox("Loại hình:", ["1", "2"], format_func=lambda x: "Kênh" if x=="1" else "Sông")
         else: # Trường hợp Vượt đường bộ
             loai_duong_v = st.selectbox("Cấp đường bị vượt:", [
-                "Đường ô tô (Cấp I, II, III)", 
-                "Đường ô tô (Cấp còn lại)", 
-                "Đường cao tốc", 
-                "Đường cải tạo", 
-                "Đường xe thô sơ"
-            ])
+        "Đường ô tô (Cấp I, II, III)", 
+        "Đường ô tô (Cấp còn lại)", 
+        "Đường cao tốc", 
+        "Đường cải tạo", 
+        "Đường xe thô sơ"
+    ])
             # Ô NHẬP BỀ RỘNG B THEO KHAI BÁO NGƯỜI DÙNG
             b_khai_bao = st.number_input("Bề rộng tĩnh không khai báo (B) - m:", value=12.0, step=0.5)
     with col_in2:

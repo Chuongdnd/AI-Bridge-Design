@@ -41,9 +41,16 @@ def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None,
     elif loai_cau == "Vượt đường bộ":
         # 1. Chiều cao tĩnh không quy định theo hình ảnh bạn gửi
         # Cao tốc, Cấp I, Cấp II: 4.75m | Các loại khác: 4.5m
-        if loai_duong_vuot in ["Cao tốc", "Cấp I", "Cấp II"]:
+        if loai_duong_vuot == "Đường cao tốc":
+            H = 5.0
+        elif loai_duong_vuot == "Đường ô tô (Cấp I, II, III)":
             H = 4.75
+        elif loai_duong_vuot == "Đường cải tạo":
+            H = 4.3  # Theo yêu cầu H > 4.3m
+        elif loai_duong_vuot == "Đường xe thô sơ":
+            H = 2.5
         else:
+            # Các cấp đường ô tô còn lại
             H = 4.5
         
         # 2. Bề rộng tĩnh không (B): Lấy theo khai báo của người dùng
@@ -61,10 +68,9 @@ def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None,
             "status": "success",
             "B": B,
             "H": H,
-            "MNCN": h1,      # Ở đây hiểu là cao độ mặt đường vuốt
-            "MNTT": h1,      # Đường bộ không có mực nước nên gán bằng h1 để vẽ
-            "MNTC": h1,
-            "MNTN": h1,
+            "MNCN": h1,      # Cao độ mặt đường bị vượt dùng để vẽ nền
+            "MNTT": h1,      # Đường bộ dùng h1 làm mốc bắt đầu khung tĩnh không
+            "H_TN_TB": h1,   # Đường bộ coi mặt đường là cao độ tự nhiên trung bình
             "day_dam": round(cao_do_day_dam, 2),
-            "label": f"Cầu vượt đường bộ: {loai_duong_vuot}"
+            "label": f"Cầu vượt đường bộ - {loai_duong_vuot}"
         }
