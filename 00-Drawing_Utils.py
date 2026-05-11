@@ -83,7 +83,7 @@ def ve_trac_doc_cau(res):
         ax.add_patch(rect)
         
         # DIM Bề rộng B (Dời lên cao h5 + 3.0)
-        y_dim_b = h5 + 3.0
+        y_dim_b = h5 + H_tk/2
         ax.annotate('', xy=(60 + B/2, y_dim_b), xytext=(60 - B/2, y_dim_b),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
         ax.text(60, y_dim_b + 0.2, f"B = {B}m", ha='center', va='bottom', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
