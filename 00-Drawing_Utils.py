@@ -30,10 +30,33 @@ def ve_ky_hieu_muc_nuoc(ax, x_pos, y_val, label, color):
     ax.text(x_pos, y_val + d_y + 0.3, f"{label}\n{y_val:.3f}m", 
             ha='center', va='bottom', color=color, fontsize=9, fontweight='bold',
             bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=0))
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+import numpy as np
+
+def ve_ky_hieu_muc_nuoc(ax, x_pos, y_val, label, color):
+    """Vẽ tam giác ngược và các nét gạch sóng nước chuẩn kỹ thuật"""
+    d_x, d_y = 1.2, 0.8
+    triangle = patches.Polygon([
+        (x_pos - d_x, y_val + d_y), 
+        (x_pos + d_x, y_val + d_y), 
+        (x_pos, y_val)], 
+        facecolor='none', edgecolor=color, lw=1.2, zorder=5)
+    ax.add_patch(triangle)
+    ax.plot([x_pos - 3, x_pos + 3], [y_val, y_val], color=color, lw=1.2, zorder=4)
+    dash_widths = [2.0, 1.2, 0.5] 
+    for i, w in enumerate(dash_widths):
+        y_dash = y_val - (i + 1) * 0.25  
+        ax.plot([x_pos - w/2, x_pos + w/2], [y_dash, y_dash], color=color, lw=0.8)
+    ax.text(x_pos, y_val + d_y + 0.3, f"{label}\n{y_val:.3f}m", 
+            ha='center', va='bottom', color=color, fontsize=9, fontweight='bold',
+            bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=0))
+
 def ve_trac_doc_cau(res):
+    """Vẽ sơ họa trắc dọc cầu - Tự động nhận diện Vượt sông hoặc Vượt đường"""
     fig, ax = plt.subplots(figsize=(16, 7))
     
-    # 1. Lấy dữ liệu
+    # --- 1. LẤY DỮ LIỆU ---
     h1 = res.get('MNCN', 0)
     h5 = res.get('MNTT', 0)
     h10 = res.get('MNTC', 0)
@@ -41,36 +64,36 @@ def ve_trac_doc_cau(res):
     h_dam = res.get('day_dam', 0)
     H_tk = res.get('H', 0)
     B = res.get('B', 0)
-    label_cau = res.get('label', "")
+    label_res = res.get('label', "")
 
-    # KIỂM TRA LOẠI CẦU ĐỂ THAY ĐỔI HIỂN THỊ
-    is_duong_bo = "Cầu vượt" in label_cau
-
+    # Kiểm tra loại cầu: Nếu là vượt đường bộ, các mực nước thường bằng nhau hoặc label chứa chữ 'Vượt'
+    is_duong_bo = (h1 == h5 == h10 == h98) or ("Vượt đường" in label_res)
+    
+    if isinstance(B, str): B = 0
     x = np.linspace(0, 120, 200)
 
     # --- 2. VẼ ĐỊA HÌNH ---
     if is_duong_bo:
-        # Nếu là ĐƯỜNG BỘ: Vẽ nền đường phẳng
-        y_nen = np.full_like(x, h1) 
-        ax.plot(x, y_nen, color='#7f8c8d', ls='-', lw=2)
-        ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.5)
-        ax.text(5, h1 + 0.2, f"Cao độ mặt đường: {h1:.3f}m", color='#34495e', fontsize=9)
+        # Nếu VƯỢT ĐƯỜNG: Vẽ mặt đường bằng phẳng màu xám
+        y_nen = np.full_like(x, h1)
+        ax.plot(x, y_nen, color='#7f8c8d', ls='-', lw=2.5, label="Mặt đường bị vượt")
+        ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.6)
+        ax.text(5, h1 + 0.2, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=9, fontweight='bold')
     else:
-        # Nếu là VƯỢT SÔNG: Trả về lòng sông trũng NHƯ CŨ
+        # Nếu VƯỢT SÔNG: Vẽ lòng sông trũng như cũ
         y_tn = h98 - 1.5 + 2.5 * (1 - np.exp(-((x - 60)**2) / 1000))
         ax.plot(x, y_tn, color='#27ae60', ls='--', lw=1.5)
         ax.fill_between(x, min(h98, y_tn.min()) - 5, y_tn, color='#f1e7d0', alpha=0.5)
 
-    # --- 3. VẼ THỦY VĂN (Chỉ vẽ khi VƯỢT SÔNG) ---
+    # --- 3. VẼ KÝ HIỆU MỰC NƯỚC (Chỉ vẽ khi vượt sông) ---
     if not is_duong_bo:
-        # Trả về các ký hiệu mực nước có nét gạch nhỏ như cũ
         ve_ky_hieu_muc_nuoc(ax, 15, h1, "MNCN H1%", "red")
         ve_ky_hieu_muc_nuoc(ax, 45, h5, "MNTT H5%", "blue")
         ve_ky_hieu_muc_nuoc(ax, 75, h10, "MNTC H10%", "green")
         ve_ky_hieu_muc_nuoc(ax, 105, h98, "MNTN H98%", "orange")
 
-    # --- 4. VẼ KẾT CẤU CẦU (Giữ nguyên cho cả 2 loại) ---
-    h_mat_cau = h_dam + 2.0
+    # --- 4. VẼ KẾT CẤU CẦU ---
+    h_mat_cau = h_dam + 2.0 
     ax.plot([0, 120], [h_mat_cau, h_mat_cau], color='red', lw=3)
     ax.plot([0, 120], [h_dam, h_dam], color='#34495e', ls='-.', lw=1.5)
     ax.text(2, h_mat_cau + 0.3, "ĐƯỜNG ĐỎ (MẶT CẦU)", color='red', fontweight='bold', fontsize=10)
@@ -78,26 +101,26 @@ def ve_trac_doc_cau(res):
 
     # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM ---
     if B > 0:
-        # Vẽ khung nét đứt Magenta
+        # Khung tĩnh không Magenta
         rect = patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2, zorder=3)
         ax.add_patch(rect)
-
-        # DIM Bề rộng B (Dời lên cao để không đè mực nước)
-        y_dim_b = h5 + 2.5
-        ax.annotate('', xy=(60+B/2, y_dim_b), xytext=(60-B/2, y_dim_b),
+        
+        # DIM Bề rộng B (Dời lên cao h5 + 3.0)
+        y_dim_b = h5 + 3.0
+        ax.annotate('', xy=(60 + B/2, y_dim_b), xytext=(60 - B/2, y_dim_b),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        ax.text(60, y_dim_b + 0.2, f"B = {B}m", ha='center', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        ax.text(60, y_dim_b + 0.2, f"B = {B}m", ha='center', va='bottom', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
         # DIM Chiều cao H
-        ax.annotate('', xy=(60+B/2+3, h5+H_tk), xytext=(60+B/2+3, h5),
+        ax.annotate('', xy=(60 + B/2 + 3, h5 + H_tk), xytext=(60 + B/2 + 3, h5),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        ax.text(60+B/2+3.5, h5+H_tk/2, f"H = {H_tk}m", rotation=90, va='center', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        ax.text(60 + B/2 + 3.5, h5 + H_tk/2, f"H = {H_tk}m", ha='left', va='center', rotation=90, fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
     # Cấu hình trục
     ax.set_xlim(-5, 125)
     ax.set_ylim(min(h98, h1) - 5, h_mat_cau + 5)
     ax.axis('off')
-    ax.set_title(label_cau.upper(), fontsize=14, fontweight='bold', pad=20)
+    ax.set_title(label_res.upper() if label_res else "SƠ HỌA TRẮC DỌC CẦU", fontsize=16, fontweight='bold', pad=20)
     
     return fig
 
