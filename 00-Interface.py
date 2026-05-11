@@ -123,7 +123,7 @@ with tab1:
                 g_col2.metric("Độ dốc dọc Max (i%)", f"{res_geo['imax']}%")
                 # Thay 'R' thành 'R_loi_min'
                 g_col3.metric("Bán kính R_min (m)", f"{res_geo['R_loi_min']} m")
-                res['R_hinh_hoc'] = res_geo.get('R_loi_min', 5000) 
+                res['R_hinh_hoc'] = res_geo['R'][0] 
                 res['i_max_hinh_hoc'] = res_geo.get('imax', 4)
 
                 # Hiển thị chi tiết hơn trong expander

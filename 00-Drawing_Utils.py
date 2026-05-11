@@ -112,7 +112,13 @@ def ve_trac_doc_cau(res):
 
     # Cấu hình trục
     ax.set_xlim(-5, 125)
-    ax.set_ylim(min(h98, h1) - 5, h_mat_cau + 5)
+    # Tính toán cao độ mặt cầu cao nhất để đặt giới hạn trục Y
+    h_mat_cau_max = h_dam + 2.0 
+    
+    # Thiết lập giới hạn trục Y an toàn
+    y_min = min(h98, h1, h5) - 5
+    y_max = h_mat_cau_max + 5
+    ax.set_ylim(y_min, y_max)
     ax.axis('off')
     ax.set_title(label_res.upper() if label_res else "SƠ HỌA TRẮC DỌC CẦU", fontsize=16, fontweight='bold', pad=20)
     
