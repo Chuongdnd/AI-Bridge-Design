@@ -104,48 +104,44 @@ with tab1:
     if 'tinh_khong_res' in st.session_state:
         res = st.session_state.tinh_khong_res
         st.divider()
-    
-        # 1. Hiển thị bản vẽ
-        st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
-        fig_tt = PLOT.ve_trac_doc_cau(res)
-        st.pyplot(fig_tt)
-        
-        st.subheader("🛣️ Kết quả Yếu tố Hình học (TCVN)")
-            
-            # Gọi hàm tra cứu từ file 02-Yeuto_Hinhhoc.py
-        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
-            
-        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
 
-            # --- ĐOẠN THAY THẾ AN TOÀN ---
-        if res_geo and res_geo.get("status") == "success":
-                # Lấy đúng phím 'R_loi_min' từ kết quả của 02-Yeuto_Hinhhoc.py
-                res['R_hinh_hoc'] = res_geo.get('R_loi_min', 5000)
-                res['i_max_hinh_hoc'] = res_geo.get('imax', 4)
-                
-                # Hiển thị sơ họa (Phải gọi sau khi đã gán R_hinh_hoc để vẽ đường cong)
-                st.subheader("🖼️ Sơ họa trắc dọc và Tĩnh không")
-                st.pyplot(PLOT.ve_trac_doc_cau(res))
-
-                # Hiển thị bảng thông số tĩnh không
-                st.table(pd.DataFrame(df_data))
-
-                # Hiển thị kết quả Hình học
-                st.divider()
-                st.subheader("🛣️ Kết quả Yếu tố Hình học (TCVN)")
-                g_col1, g_col2, g_col3 = st.columns(3)
-                
-                # Khớp với phím 'cap_duong' và 'R_loi_min' trong logic của bạn
-                g_col1.metric("Cấp đường thiết kế", res_geo.get('cap_duong', "N/A"))
-                g_col2.metric("Độ dốc dọc Max (i%)", f"{res_geo.get('imax', 0)}%")
-                g_col3.metric("Bán kính R_min (m)", f"{res_geo.get('R_loi_min', 0)} m")
-
-                with st.expander("📝 Chi tiết phạm vi Bán kính cong (R)"):
-                    st.write(f"Dựa trên vận tốc **{v_hinhhoc} km/h**, bán kính đường cong đứng tối thiểu:")
-                    st.write(f"- Bán kính tối thiểu giới hạn (Rmin): **{res_geo.get('R_loi_min')} m**")
-                    st.write(f"- Bán kính tối thiểu thông thường: **{res_geo.get('R_loi_tt')} m**")
+        # --- BƯỚC A: CHUẨN BỊ DỮ LIỆU BẢNG TRƯỚC (Để tránh lỗi NameError) ---
+        if "vượt đường bộ" in res.get('label', "").lower():
+            df_data = {
+                "Thông số kỹ thuật": ["Loại đường bị vượt", "Bề rộng (B)", "Tĩnh không (H)", "Cao độ mặt đường", "Cao độ đáy dầm"],
+                "Giá trị": [res.get('label', "").split("-")[-1].strip(), f"{res.get('B', 0)} m", f"{res.get('H', 0)} m", f"{res.get('MNCN', 0):.3f} m", f"{res.get('day_dam', 0):.3f} m"]
+            }
         else:
-                st.error(f"Lỗi: {res_geo.get('message', 'Không tìm thấy dữ liệu cho vận tốc này')}")
+            df_data = {
+                "Thông số kỹ thuật": ["Khổ thông thuyền (B)", "Tĩnh không (H)", "Cao độ đáy dầm thiết kế", "MNCN (H1%)", "MNTT (H5%)", "MNTC (H10%)", "MNTN (H98%)"],
+                "Giá trị": [f"{res.get('B', 0)} m", f"{res.get('H', 0)} m", f"{res.get('day_dam', 0):.3f} m", f"{res.get('MNCN', 0):.3f} m", f"{res.get('MNTT', 0):.3f} m", f"{res.get('MNTC', 0):.3f} m", f"{res.get('MNTN', 0):.3f} m"]
+            }
+
+        # --- BƯỚC B: TRA CỨU HÌNH HỌC VÀ VẼ HÌNH ---
+        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
+        
+        if res_geo and res_geo.get("status") == "success":
+            # Gán dữ liệu bán kính vào res để PLOT vẽ đường cong
+            res['R_hinh_hoc'] = res_geo['R_loi_min']
+            res['i_max_hinh_hoc'] = res_geo['imax']
+            
+            st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
+            st.pyplot(PLOT.ve_trac_doc_cau(res))
+            
+            # Hiển thị bảng tĩnh không đã chuẩn bị ở Bước A
+            st.subheader("📊 Chi tiết thông số kỹ thuật tĩnh không")
+            st.table(pd.DataFrame(df_data))
+
+            # Hiển thị bảng hình học
+            st.divider()
+            st.subheader("🛣️ Kết quả Yếu tố Hình học (TCVN)")
+            g1, g2, g3 = st.columns(3)
+            g1.metric("Cấp đường", res_geo['cap_duong'])
+            g2.metric("Độ dốc dọc max", f"{res_geo['imax']}%")
+            g3.metric("Bán kính Rmin", f"{res_geo['R_loi_min']} m")
+        else:
+            st.error("Không tìm thấy dữ liệu hình học phù hợp.")
+
         st.divider()
         # 2. Hiển thị bảng thông số
         st.subheader("📊 Chi tiết thông số kỹ thuật")
