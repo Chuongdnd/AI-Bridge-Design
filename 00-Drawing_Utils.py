@@ -101,35 +101,37 @@ def ve_trac_doc_cau(res):
 
     # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM ---
     if B > 0:
-        # Tọa độ X để khung luôn nằm chính giữa (Center = 60)
+        # Xác định tọa độ X sao cho khung nằm chính giữa cầu (tâm là 60)
         x_start = 60 - B/2
         x_end = 60 + B/2
         
-        # Vẽ khung nét đứt Magenta - Đảm bảo tỷ lệ chuẩn theo đơn vị trục X
+        # A. Vẽ khung tĩnh không Magenta nét đứt
+        # Quan trọng: Độ rộng B và chiều cao H_tk sẽ ăn theo đơn vị thực của trục tọa độ
         rect = patches.Rectangle((x_start, h5), B, H_tk, 
-                                fill=False, edgecolor='magenta', ls='--', lw=2.5, zorder=10)
+                                 fill=False, edgecolor='magenta', ls='--', lw=2.5, zorder=10)
         ax.add_patch(rect)
-        
-        # --- DIM Bề rộng B (Căn theo x_start và x_end) ---
-        y_dim_b = h5 + H_tk + 1.5  # Đẩy lên trên nóc khung tĩnh không để dễ nhìn
+
+        # B. VẼ NÉT DIM BỀ RỘNG B (Đưa lên cao hẳn để không dính vào khung)
+        y_dim_b = h5 + H_tk + 1.5 # Đặt trên nóc khung tĩnh không 1.5m
         ax.annotate('', 
-                    xy=(x_end, y_dim_b), 
-                    xytext=(x_start, y_dim_b),
+                    xy=(x_end, y_dim_b),     
+                    xytext=(x_start, y_dim_b), 
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.5, mutation_scale=15))
         
         ax.text(60, y_dim_b + 0.3, f"B = {B}m", 
-                ha='center', va='bottom', fontweight='bold', fontsize=11,
+                ha='center', va='bottom', color='black', fontweight='bold', fontsize=11,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
 
-        # --- DIM Chiều cao H ---
-        x_dim_h = x_end + 2.0 # Đẩy nét DIM H ra ngoài cạnh phải của khung
+        # C. VẼ NÉT DIM CHIỀU CAO H (Đưa ra cạnh bên phải của khung)
+        x_dim_h = x_end + 3.0 # Cách lề phải khung tĩnh không 3m
         ax.annotate('', 
                     xy=(x_dim_h, h5 + H_tk), 
-                    xytext=(x_dim_h, h5),
+                    xytext=(x_dim_h, h5),    
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.5, mutation_scale=15))
         
         ax.text(x_dim_h + 0.5, h5 + H_tk/2, f"H = {H_tk}m", 
-                rotation=90, va='center', fontweight='bold', fontsize=10,
+                ha='left', va='center', color='black', fontweight='bold', fontsize=10,
+                rotation=90,
                 bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
 
     # Cấu hình trục
