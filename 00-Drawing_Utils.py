@@ -84,11 +84,11 @@ def ve_trac_doc_cau(res):
         # --- DIM Bề rộng tĩnh không B ---
         # Đường gióng và mũi tên B (xytext đến xy)
         ax.annotate('', 
-                    xy=(60 + B/2, h5 + 1.0),     # Điểm cuối mũi tên phải
-                    xytext=(60 - B/2, h5 + 1.0), # Điểm đầu mũi tên trái
+                    xy=(60 + B/2, h5 + 3.0),     # Điểm cuối mũi tên phải
+                    xytext=(60 - B/2, h5 + 3.0), # Điểm đầu mũi tên trái
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
         # Text giá trị B ở giữa
-        ax.text(60, h5 + 1.2, f"B = {B}m", 
+        ax.text(60, h5 + 3.2, f"B = {B}m", 
                 ha='center', va='bottom', color='black', fontweight='bold', fontsize=10,
                 bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
