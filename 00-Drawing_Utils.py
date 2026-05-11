@@ -79,7 +79,7 @@ def ve_trac_doc_cau(res):
     # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM ---
     if B > 0:
         # Khung tĩnh không Magenta
-        rect = patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2, zorder=3)
+        rect = patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2.5, zorder=3)
         ax.add_patch(rect)
         
         # DIM Bề rộng B (Dời lên cao h5 + 3.0)
