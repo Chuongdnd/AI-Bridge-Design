@@ -202,9 +202,9 @@ with tab3:
                         st.json(res_ai)
                 else:
                     st.error("Lỗi trong quá trình huấn luyện AI.")
-
-st.image("Images/UTH.jpg", width=150)
+with st.sidebar:
+    st.image("Images/UTH.jpg", width=150)
 st.sidebar.markdown("---")
 st.sidebar.write("👤 **SVTH:** Chương DND")
-st.sidebar.write("🎓 **GVHD:** T.S Nguyễn Văn Hiển")
+st.sidebar.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
 st.sidebar.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
