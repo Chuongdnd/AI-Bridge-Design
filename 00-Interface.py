@@ -104,14 +104,12 @@ with tab1:
     if 'tinh_khong_res' in st.session_state:
         res = st.session_state.tinh_khong_res
         st.divider()
-        
+    
         # 1. Hiển thị bản vẽ
         st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
         fig_tt = PLOT.ve_trac_doc_cau(res)
         st.pyplot(fig_tt)
         
-        st.table(pd.DataFrame(df_data))
-        st.divider()
         st.subheader("🛣️ Kết quả Yếu tố Hình học (TCVN)")
             
             # Gọi hàm tra cứu từ file 02-Yeuto_Hinhhoc.py
@@ -134,7 +132,8 @@ with tab1:
                     st.write(f"- Bán kính tối thiểu giới hạn (Rmin): **{res_geo['R_loi_min']} m**")
         else:
                 st.error(f"Lỗi: {res_geo.get('message', 'Không tìm thấy dữ liệu')}")
-        
+                
+        st.divider()
         # 2. Hiển thị bảng thông số
         st.subheader("📊 Chi tiết thông số kỹ thuật")
         
@@ -176,8 +175,8 @@ with tab1:
                 ]
             }
             
-        
-    # ==========================================
+        st.table(pd.DataFrame(df_data))
+            # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
 with tab2:
