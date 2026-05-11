@@ -68,6 +68,9 @@ def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None,
             "status": "success",
             "B": B,
             "H": H,
+            "MNCN": h1,      # Cao độ mặt đường bị vượt dùng để vẽ nền
+            "MNTT": h1,      # Đường bộ dùng h1 làm mốc bắt đầu khung tĩnh không
+            "H_TN_TB": h1,   # Đường bộ coi mặt đường là cao độ tự nhiên trung bình
             "day_dam": round(cao_do_day_dam, 2),
             "label": f"Cầu vượt đường bộ - {loai_duong_vuot}"
         }
