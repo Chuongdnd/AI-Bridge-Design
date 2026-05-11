@@ -79,6 +79,7 @@ with tab1:
             cap_num=cap_s if loai_c=="Vượt sông" else None,
             loai_hinh=loai_h if loai_c=="Vượt sông" else None,
             loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
+            h_tn_tb=h_tn_tb if loai_c=="Vượt sông" else None,
             cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None, # Truyền B vào đây
             h1=h1, h5=h5, h10=h10, h98=h98
         )
