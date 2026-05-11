@@ -35,7 +35,7 @@ def ve_trac_doc_cau(res):
     label_res = res.get('label', "")
 
     # Kiểm tra loại cầu: Nếu là vượt đường bộ, các mực nước thường bằng nhau hoặc label chứa chữ 'Vượt'
-    is_duong_bo = "Vượt đường bộ" in label_res
+    is_duong_bo = "vượt đường bộ" in label_res.lower()
     
     if isinstance(B, str): B = 0
     x = np.linspace(0, 120, 200)
