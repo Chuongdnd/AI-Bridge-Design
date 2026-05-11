@@ -32,63 +32,68 @@ def ve_trac_doc_cau(res):
     label_res = res.get('label', "")
 
     # Kiểm tra loại cầu
-    is_duong_bo = ("Cầu vượt" in label_res) or (res.get('MNCN') == res.get('MNTN'))
-    
-    # 2. THIẾT LẬP KHUNG NHÌN (ZOOM) THEO B
-    if is_duong_bo:
-        padding = B * 0.3 if B > 0 else 10 # Lề 30% bề rộng B
-        x_min, x_max = 60 - B/2 - padding, 60 + B/2 + padding
-    else:
-        x_min, x_max = -5, 125 # Vượt sông giữ nguyên 120m
+    is_duong_bo = ("Cầu vượt" in label_res)
 
-    x = np.linspace(x_min, x_max, 200)
+    # 2. THIẾT LẬP PHẠM VI VẼ (X) VÀ KHUNG NHÌN (xlim)
+    if is_duong_bo:
+        padding = B * 0.3 if B > 0 else 10
+        x_min_view, x_max_view = 60 - B/2 - padding, 60 + B/2 + padding
+        # Đường bộ vẽ trong phạm vi zoom
+        x_draw = np.linspace(x_min_view, x_max_view, 200)
+    else:
+        # Vượt sông: Trả về phạm vi 120m chuẩn
+        x_min_view, x_max_view = -5, 125
+        x_draw = np.linspace(0, 120, 200)
 
     # 3. VẼ ĐỊA HÌNH
     if is_duong_bo:
-        y_nen = np.full_like(x, h1)
-        ax.plot(x, y_nen, color='#7f8c8d', ls='-', lw=2.5)
-        ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.6)
-        ax.text(x_min + 1, h1 + 0.2, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=10, fontweight='bold')
+        # ĐƯỜNG BỘ: Vẽ nền thẳng
+        y_nen = np.full_like(x_draw, h1)
+        ax.plot(x_draw, y_nen, color='#7f8c8d', ls='-', lw=2.5)
+        ax.fill_between(x_draw, h1 - 5, h1, color='#ecf0f1', alpha=0.6)
+        ax.text(x_min_view + 1, h1 + 0.2, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=10, fontweight='bold')
     else:
-        # Vẽ lòng sông (giữ nguyên logic cũ của bạn)
+        # VƯỢT SÔNG: Vẽ lòng sông trũng (Dùng lại công thức gốc của bạn)
         h98 = res.get('MNTN', 0)
-        y_tn = h98 - 1.5 + 2.5 * (1 - np.exp(-((x - 60)**2) / 1000))
-        ax.plot(x, y_tn, color='#27ae60', ls='--', lw=1.5)
-        ax.fill_between(x, y_tn.min() - 5, y_tn, color='#f1e7d0', alpha=0.5)
+        # Công thức tạo lòng sông hình chuông tại vị trí 60m
+        y_tn = h98 - 1.5 + 2.5 * (1 - np.exp(-((x_draw - 60)**2) / 1000))
+        ax.plot(x_draw, y_tn, color='#27ae60', ls='--', lw=1.5)
+        ax.fill_between(x_draw, y_tn.min() - 5, y_tn, color='#f1e7d0', alpha=0.5)
 
     # 4. VẼ THỦY VĂN (Chỉ khi vượt sông)
     if not is_duong_bo:
         ve_ky_hieu_muc_nuoc(ax, 15, h1, "MNCN", "red")
         ve_ky_hieu_muc_nuoc(ax, 45, h5, "MNTT", "blue")
+        ve_ky_hieu_muc_nuoc(ax, 75, res.get('MNTC', 0), "MNTC", "green")
+        ve_ky_hieu_muc_nuoc(ax, 105, res.get('MNTN', 0), "MNTN", "orange")
 
-    # 5. VẼ KẾT CẤU CẦU (ĐƯỜNG ĐỎ & ĐÁY DẦM)
+    # 5. VẼ KẾT CẤU CẦU (Luôn vẽ theo khung nhìn hiện tại)
     h_mat_cau = h_dam + 2.0
-    ax.plot([x_min, x_max], [h_mat_cau, h_mat_cau], color='red', lw=3)
-    ax.plot([x_min, x_max], [h_dam, h_dam], color='#34495e', ls='-.', lw=1.5)
-    ax.text(x_min + 1, h_mat_cau + 0.3, "ĐƯỜNG ĐỎ (MẶT CẦU)", color='red', fontweight='bold')
+    ax.plot([x_min_view, x_max_view], [h_mat_cau, h_mat_cau], color='red', lw=3)
+    ax.plot([x_min_view, x_max_view], [h_dam, h_dam], color='#34495e', ls='-.', lw=1.5)
+    ax.text(x_min_view + 1, h_mat_cau + 0.3, "ĐƯỜNG ĐỎ (MẶT CẦU)", color='red', fontweight='bold')
 
-    # 6. KHUNG TĨNH KHÔNG & DIM (CHUẨN TỶ LỆ)
+    # 6. KHUNG TĨNH KHÔNG & DIM
     if B > 0:
         x_s, x_e = 60 - B/2, 60 + B/2
-        # Vẽ khung
         rect = patches.Rectangle((x_s, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2.5, zorder=10)
         ax.add_patch(rect)
         
-        # DIM B (Nằm trên nóc khung)
+        # DIM B
         y_dim_b = h5 + H_tk + 0.5
         ax.annotate('', xy=(x_e, y_dim_b), xytext=(x_s, y_dim_b),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.5, mutation_scale=15))
         ax.text(60, y_dim_b + 0.1, f"B = {B}m", ha='center', va='bottom', fontweight='bold', fontsize=12)
 
-        # DIM H (Nằm sát lề phải khung)
-        x_dim_h = x_e + (padding * 0.2)
+        # DIM H
+        x_dim_h = x_e + ( (x_max_view - x_e) * 0.3 )
         ax.annotate('', xy=(x_dim_h, h5 + H_tk), xytext=(x_dim_h, h5),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.5, mutation_scale=15))
         ax.text(x_dim_h + 0.2, h5 + H_tk/2, f"H = {H_tk}m", rotation=90, va='center', fontweight='bold', fontsize=11)
 
-    # Cấu hình trục và hiển thị
-    ax.set_xlim(x_min, x_max)
-    ax.set_ylim(h1 - 3, h_mat_cau + 4)
+    # Thiết lập trục
+    ax.set_xlim(x_min_view, x_max_view)
+    ax.set_ylim(h1 - 4, h_mat_cau + 4)
     ax.axis('off')
     ax.set_title(label_res.upper(), fontsize=16, fontweight='bold', pad=20)
     
