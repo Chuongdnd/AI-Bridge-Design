@@ -127,11 +127,7 @@ with tab1:
             
             st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
             st.pyplot(PLOT.ve_trac_doc_cau(res))
-            
-            # Hiển thị bảng tĩnh không đã chuẩn bị ở Bước A
-            st.subheader("📊 Chi tiết thông số kỹ thuật tĩnh không")
-            st.table(pd.DataFrame(df_data))
-
+    
             # Hiển thị bảng hình học
             st.divider()
             st.subheader("🛣️ Kết quả Yếu tố Hình học (TCVN)")
