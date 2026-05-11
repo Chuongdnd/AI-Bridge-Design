@@ -110,6 +110,31 @@ with tab1:
         fig_tt = PLOT.ve_trac_doc_cau(res)
         st.pyplot(fig_tt)
         
+        st.table(pd.DataFrame(df_data))
+        st.divider()
+        st.subheader("🛣️ Kết quả Yếu tố Hình học (TCVN)")
+            
+            # Gọi hàm tra cứu từ file 02-Yeuto_Hinhhoc.py
+        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
+            
+        if res_geo["status"] == "success": # Kiểm tra thêm status từ file logic
+                # Hiển thị nhanh các chỉ số quan trọng
+                g_col1, g_col2, g_col3 = st.columns(3)
+                # Thay 'cap' thành 'cap_duong'
+                g_col1.metric("Cấp đường thiết kế", res_geo['cap_duong']) 
+                g_col2.metric("Độ dốc dọc Max (i%)", f"{res_geo['imax']}%")
+                # Thay 'R' thành 'R_loi_min'
+                g_col3.metric("Bán kính R_min (m)", f"{res_geo['R_loi_min']} m")
+                
+                # Hiển thị chi tiết hơn trong expander
+                with st.expander("📝 Chi tiết phạm vi Bán kính cong (R)"):
+                    st.write(f"Dựa trên vận tốc **{v_hinhhoc} km/h**, bán kính đường cong nằm tối thiểu:")
+                    # Thay 'R' thành 'R_loi_tt'
+                    st.write(f"- Bán kính tối thiểu không siêu cao: **{res_geo['R_loi_tt']} m**")
+                    st.write(f"- Bán kính tối thiểu giới hạn (Rmin): **{res_geo['R_loi_min']} m**")
+        else:
+                st.error(f"Lỗi: {res_geo.get('message', 'Không tìm thấy dữ liệu')}")
+        
         # 2. Hiển thị bảng thông số
         st.subheader("📊 Chi tiết thông số kỹ thuật")
         
@@ -151,30 +176,7 @@ with tab1:
                 ]
             }
             
-        st.table(pd.DataFrame(df_data))
-        st.divider()
-        st.subheader("🛣️ Kết quả Yếu tố Hình học (TCVN)")
-            
-            # Gọi hàm tra cứu từ file 02-Yeuto_Hinhhoc.py
-        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
-            
-        if res_geo["status"] == "success": # Kiểm tra thêm status từ file logic
-                # Hiển thị nhanh các chỉ số quan trọng
-                g_col1, g_col2, g_col3 = st.columns(3)
-                # Thay 'cap' thành 'cap_duong'
-                g_col1.metric("Cấp đường thiết kế", res_geo['cap_duong']) 
-                g_col2.metric("Độ dốc dọc Max (i%)", f"{res_geo['imax']}%")
-                # Thay 'R' thành 'R_loi_min'
-                g_col3.metric("Bán kính R_min (m)", f"{res_geo['R_loi_min']} m")
-                
-                # Hiển thị chi tiết hơn trong expander
-                with st.expander("📝 Chi tiết phạm vi Bán kính cong (R)"):
-                    st.write(f"Dựa trên vận tốc **{v_hinhhoc} km/h**, bán kính đường cong nằm tối thiểu:")
-                    # Thay 'R' thành 'R_loi_tt'
-                    st.write(f"- Bán kính tối thiểu không siêu cao: **{res_geo['R_loi_tt']} m**")
-                    st.write(f"- Bán kính tối thiểu giới hạn (Rmin): **{res_geo['R_loi_min']} m**")
-        else:
-                st.error(f"Lỗi: {res_geo.get('message', 'Không tìm thấy dữ liệu')}")
+        
     # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
