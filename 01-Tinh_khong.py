@@ -29,6 +29,7 @@ def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None,
                 "status": "success",
                 "B": B,
                 "H": H,
+                "H_TN_TB": h_tn_tb,
                 "MNCN": h1,   # Mực nước cao nhất
                 "MNTT": h5,   # Mực nước thông thuyền
                 "MNTC": h10,  # Mực nước thi công

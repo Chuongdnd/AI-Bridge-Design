@@ -62,6 +62,7 @@ with tab1:
             b_khai_bao = st.number_input("Bề rộng tĩnh không khai báo (B) - m:", value=12.0, step=0.5)
     with col_in2:
         if loai_c == "Vượt sông":
+            h_tn_tb = st.number_input("Cao độ tự nhiên trung bình (m):", value=0.00, format="%.3f")
             h1 = st.number_input("MNCN (H1%):", value=3.50, format="%.3f")
             h5 = st.number_input("MNTT (H5%):", value=2.00, format="%.3f")
             h10 = st.number_input("MNTC (H10%):", value=1.50, format="%.3f")
