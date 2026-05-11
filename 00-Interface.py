@@ -105,22 +105,45 @@ with tab1:
         
         # 2. Hiển thị bảng thông số
         st.subheader("📊 Chi tiết thông số kỹ thuật")
-        df_data = {
-            "Thông số kỹ thuật": [
-                "Khổ thông thuyền ngang (B)", "Chiều cao tĩnh không đứng (H)", "Cao độ đáy dầm thiết kế",
-                "Mực nước cao nhất (MNCN)", "Mực nước thông thuyền (MNTT)", "Mực nước thi công (MNTC)",
-                "Mực nước thấp nhất (MNTN)"
-            ],
-            "Giá trị": [
-                f"{res.get('B', 0)} m", 
-                f"{res.get('H', 0)} m", 
-                f"{res.get('day_dam', 0)} m", # Thêm dấu phẩy ở đây
-                f"{res.get('MNCN', 0):.3f} m", 
-                f"{res.get('MNTT', 0):.3f} m", 
-                f"{res.get('MNTC', 0):.3f} m", 
-                f"{res.get('MNTN', 0):.3f} m"
-            ]
-        }
+        
+        # Kiểm tra loại cầu dựa trên label kết quả
+        if "vượt đường bộ" in res.get('label', "").lower():
+            # NỘI DUNG CHO VƯỢT ĐƯỜNG BỘ
+            df_data = {
+                "Thông số kỹ thuật": [
+                    "Loại đường bị vượt", 
+                    "Bề rộng tĩnh không (B)", 
+                    "Chiều cao tĩnh không (H)", 
+                    "Cao độ mặt đường", 
+                    "Cao độ đáy dầm thiết kế"
+                ],
+                "Giá trị": [
+                    res.get('label', "").split("-")[-1].strip(), # Lấy tên loại đường từ label
+                    f"{res.get('B', 0)} m", 
+                    f"{res.get('H', 0)} m", 
+                    f"{res.get('MNCN', 0):.3f} m", 
+                    f"{res.get('day_dam', 0):.3f} m"
+                ]
+            }
+        else:
+            # GIỮ NGUYÊN NỘI DUNG VƯỢT SÔNG CỦA BẠN
+            df_data = {
+                "Thông số kỹ thuật": [
+                    "Khổ thông thuyền ngang (B)", "Chiều cao tĩnh không đứng (H)", "Cao độ đáy dầm thiết kế",
+                    "Mực nước cao nhất (MNCN)", "Mực nước thông thuyền (MNTT)", "Mực nước thi công (MNTC)",
+                    "Mực nước thấp nhất (MNTN)"
+                ],
+                "Giá trị": [
+                    f"{res.get('B', 0)} m", 
+                    f"{res.get('H', 0)} m", 
+                    f"{res.get('day_dam', 0):.3f} m", 
+                    f"{res.get('MNCN', 0):.3f} m", 
+                    f"{res.get('MNTT', 0):.3f} m", 
+                    f"{res.get('MNTC', 0):.3f} m", 
+                    f"{res.get('MNTN', 0):.3f} m"
+                ]
+            }
+            
         st.table(pd.DataFrame(df_data))
     # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
