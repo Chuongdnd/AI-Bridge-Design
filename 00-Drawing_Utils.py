@@ -31,84 +31,71 @@ def ve_ky_hieu_muc_nuoc(ax, x_pos, y_val, label, color):
             ha='center', va='bottom', color=color, fontsize=9, fontweight='bold',
             bbox=dict(facecolor='white', alpha=0.6, edgecolor='none', pad=0))
 def ve_trac_doc_cau(res):
-    """Vẽ sơ họa trắc dọc cầu với đầy đủ DIM tĩnh không"""
+    """Vẽ sơ họa trắc dọc cầu - Tự động thích ứng Vượt Sông hoặc Đường Bộ"""
     fig, ax = plt.subplots(figsize=(16, 7))
     
-    # --- 1. LẤY DỮ LIỆU ĐÃ ĐỒNG BỘ KEY ---
+    # 1. Lấy dữ liệu
     h1 = res.get('MNCN', 0)
     h5 = res.get('MNTT', 0)
-    h10 = res.get('MNTC', 0)
-    h98 = res.get('MNTN', 0)
     h_dam = res.get('day_dam', 0)
     H_tk = res.get('H', 0)
     B = res.get('B', 0)
-    
-    # Xử lý an toàn cho B
-    if isinstance(B, str): B = 0
+    # Lấy nhãn để phân biệt loại cầu
+    label_cau = res.get('label', "")
+    is_duong_bo = "Cầu vượt" in label_cau # Kiểm tra nếu là cầu vượt đường bộ
 
-    # --- 2. VẼ ĐỊA HÌNH VÀ TỰ NHIÊN ---
+    # 2. VẼ ĐỊA HÌNH / MẶT ĐƯỜNG BỊ VƯỢT
     x = np.linspace(0, 120, 200)
-    # Hàm mô phỏng lòng sông trũng
-    y_tn = h98 - 1.5 + 2.5 * (1 - np.exp(-((x - 60)**2) / 1000))
-    ax.plot(x, y_tn, color='#27ae60', ls='--', lw=1.5)
-    # Tô màu đất
-    ax.fill_between(x, min(h98, y_tn.min()) - 5, y_tn, color='#f1e7d0', alpha=0.5)
+    if is_duong_bo:
+        # Nếu là đường bộ: Vẽ đường thẳng nằm ngang (mặt đường bên dưới)
+        y_nen = np.full_like(x, h1) 
+        ax.plot(x, y_nen, color='#7f8c8d', ls='-', lw=2, label="Mặt đường bị vượt")
+        # Tô màu xám mô phỏng đường nhựa/bê tông
+        ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.5)
+    else:
+        # Nếu là vượt sông: Vẽ lòng sông trũng như cũ
+        y_tn = h1 - 2.5 + 2.5 * (1 - np.exp(-((x - 60)**2) / 1000))
+        ax.plot(x, y_tn, color='#27ae60', ls='--', lw=1.5)
+        ax.fill_between(x, h1 - 5, y_tn, color='#f1e7d0', alpha=0.5)
 
-    # --- 3. VẼ KÝ HIỆU MỰC NƯỚC (FIX LỖI TRÙNG LẤN) ---
-    # Phân bổ lại vị trí x để các ký hiệu không đè lên nhau
-    ve_ky_hieu_muc_nuoc(ax, 15, h1, "MNCN H1%", "red")
-    ve_ky_hieu_muc_nuoc(ax, 45, h5, "MNTT H5%", "blue")
-    ve_ky_hieu_muc_nuoc(ax, 75, h10, "MNTC H10%", "green")
-    ve_ky_hieu_muc_nuoc(ax, 105, h98, "MNTN H98%", "orange")
+    # 3. VẼ THỦY VĂN (Chỉ vẽ nếu KHÔNG PHẢI đường bộ)
+    if not is_duong_bo:
+        ve_ky_hieu_muc_nuoc(ax, 15, res.get('MNCN', 0), "MNCN", "red")
+        ve_ky_hieu_muc_nuoc(ax, 45, res.get('MNTT', 0), "MNTT", "blue")
+        ve_ky_hieu_muc_nuoc(ax, 75, res.get('MNTC', 0), "MNTC", "green")
+        ve_ky_hieu_muc_nuoc(ax, 105, res.get('MNTN', 0), "MNTN", "orange")
+    else:
+        # Nếu là đường bộ, chỉ vẽ một ký hiệu cao độ mặt đường tại vị trí biên
+        ax.text(5, h1 + 0.2, f"Cao độ mặt đường: {h1:.3f}m", color='#34495e', fontsize=9)
 
-    # --- 4. VẼ KẾT CẤU CẦU ---
-    h_mat_cau = h_dam + 2.0  # Giả sử chiều dày kết cấu nhịp là 2m
-    # Đường đỏ (mặt cầu)
-    ax.plot([0, 120], [h_mat_cau, h_mat_cau], color='red', lw=3, label="Mặt cầu")
-    # Cao độ đáy dầm
+    # 4. VẼ KẾT CẤU CẦU (ĐƯỜNG ĐỎ) - Giữ nguyên
+    h_mat_cau = h_dam + 2.0
+    ax.plot([0, 120], [h_mat_cau, h_mat_cau], color='red', lw=3)
     ax.plot([0, 120], [h_dam, h_dam], color='#34495e', ls='-.', lw=1.5)
-    # Chú thích
-    ax.text(2, h_mat_cau + 0.3, "ĐƯỜNG ĐỎ (MẶT CẦU)", color='red', fontweight='bold', fontsize=10)
-    ax.text(2, h_dam - 0.8, f"CAO ĐỘ ĐÁY DẦM: {h_dam:.3f}m", color='#34495e', fontsize=9)
+    ax.text(2, h_mat_cau + 0.3, "ĐƯỜNG ĐỎ (MẶT CẦU)", color='red', fontweight='bold')
 
-    # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM (YÊU CẦU MỚI) ---
+    # 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM
     if B > 0:
-        # A. Vẽ khung tĩnh không Magenta nét đứt
-        rect = patches.Rectangle((60 - B/2, h5), B, H_tk, 
-                                 fill=False, edgecolor='magenta', ls='--', lw=2, zorder=3)
+        # Khung tĩnh không nét đứt Magenta
+        rect = patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2)
         ax.add_patch(rect)
-        ax.text(60, h5 + 0.3, "H5", ha='center', va='bottom', color='magenta', fontweight='bold')
-
-        # B. BỔ SUNG NÉT DIM (MŨI TÊN KÍCH THƯỚC)
         
-        # --- DIM Bề rộng tĩnh không B ---
-        # Đường gióng và mũi tên B (xytext đến xy)
-        ax.annotate('', 
-                    xy=(60 + B/2, h5 + 3.0),     # Điểm cuối mũi tên phải
-                    xytext=(60 - B/2, h5 + 3.0), # Điểm đầu mũi tên trái
+        # DIM Bề rộng B (Dời lên cao h5 + 2.5)
+        y_dim_b = h5 + 2.5
+        ax.annotate('', xy=(60+B/2, y_dim_b), xytext=(60-B/2, y_dim_b),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        # Text giá trị B ở giữa
-        ax.text(60, h5 + 3.2, f"B = {B}m", 
-                ha='center', va='bottom', color='black', fontweight='bold', fontsize=10,
-                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        ax.text(60, y_dim_b + 0.2, f"B = {B}m", ha='center', fontweight='bold', bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
 
-        # --- DIM Chiều cao tĩnh không H ---
-        # Đường gióng và mũi tên H ( xytext đến xy)
-        ax.annotate('', 
-                    xy=(60 + B/2 + 3, h5 + H_tk), # Điểm trên của mũi tên
-                    xytext=(60 + B/2 + 3, h5),    # Điểm dưới của mũi tên
+        # DIM Chiều cao H
+        ax.annotate('', xy=(60+B/2+3, h5+H_tk), xytext=(60+B/2+3, h5),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        # Text giá trị H bên cạnh
-        ax.text(60 + B/2 + 3.5, h5 + H_tk/2, f"H = {H_tk}m", 
-                ha='left', va='center', color='black', fontweight='bold', fontsize=10,
-                rotation=90, # Xoay dọc text
-                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        ax.text(60+B/2+3.5, h5+H_tk/2, f"H = {H_tk}m", rotation=90, va='center', fontweight='bold', bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
 
     # Cấu hình trục
     ax.set_xlim(-5, 125)
-    ax.set_ylim(min(h98, y_tn.min(), h5) - 5, h_mat_cau + 5)
+    ax.set_ylim(h1 - 4, h_mat_cau + 5)
     ax.axis('off')
-    ax.set_title("SƠ HỌA TRẮC DỌC CẦU", fontsize=16, fontweight='bold', pad=20)
+    ax.set_title(label_cau.upper(), fontsize=14, fontweight='bold')
     
     return fig
 

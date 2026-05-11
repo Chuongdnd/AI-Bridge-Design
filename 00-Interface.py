@@ -4,14 +4,14 @@ import os
 import importlib
 # --- THIẾT LẬP TRANG ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
-
+with st.sidebar:
+    st.image("Images/UTH.jpg", width=300)
 # --- 2. CHÈN NHẠC NỀN VÀO SIDEBAR ---
 with st.sidebar:
     st.title("🎵 Sound")
     music_path = "Sounds/S1.mp3" 
     if os.path.exists(music_path):
         st.audio(music_path, loop=True, autoplay=True)
-        st.caption("Đang phát:S1.mp3")
     else:
         st.error(f"⚠️ Không tìm thấy file: {music_path}")
 
@@ -50,19 +50,35 @@ with tab1:
             mien = st.selectbox("Khu vực:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
             cap_s = st.selectbox("Cấp sông:", ["1", "2", "3", "4", "5", "6"], format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
             loai_h = st.selectbox("Loại hình:", ["1", "2"], format_func=lambda x: "Kênh" if x=="1" else "Sông")
+        else: # Trường hợp Vượt đường bộ
+            loai_duong_v = st.selectbox("Cấp đường bị vượt:", [
+                "Đường ô tô (Cấp I, II, III)", 
+                "Đường ô tô (Cấp còn lại)", 
+                "Đường cao tốc", 
+                "Đường cải tạo", 
+                "Đường xe thô sơ"
+            ])
+            # Ô NHẬP BỀ RỘNG B THEO KHAI BÁO NGƯỜI DÙNG
+            b_khai_bao = st.number_input("Bề rộng tĩnh không khai báo (B) - m:", value=12.0, step=0.5)
     with col_in2:
         if loai_c == "Vượt sông":
             h1 = st.number_input("MNCN (H1%):", value=3.50, format="%.3f")
             h5 = st.number_input("MNTT (H5%):", value=2.00, format="%.3f")
             h10 = st.number_input("MNTC (H10%):", value=1.50, format="%.3f")
             h98 = st.number_input("MNTN (H98%):", value=0.50, format="%.3f")
-
+        else:
+            # Đối với đường bộ, h1 đóng vai trò là cao độ mặt đường bị vượt
+            h1 = st.number_input("Cao độ mặt đường bị vượt (m):", value=5.00, format="%.3f")
+            # Các giá trị khác ẩn hoặc để mặc định để tránh lỗi hàm
+            h5, h10, h98 = h1, h1, h1
     # QUAN TRỌNG: Mọi hiển thị kết quả phải nằm TRONG khối lệnh button này
     if st.button("🚀 Tra cứu & Xác định Đáy dầm"):
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None,
             cap_num=cap_s if loai_c=="Vượt sông" else None,
             loai_hinh=loai_h if loai_c=="Vượt sông" else None,
+            loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
+            cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None, # Truyền B vào đây
             h1=h1, h5=h5, h10=h10, h98=h98
         )
         if res["status"] == "success":
@@ -202,8 +218,7 @@ with tab3:
                         st.json(res_ai)
                 else:
                     st.error("Lỗi trong quá trình huấn luyện AI.")
-with st.sidebar:
-    st.image("Images/UTH.jpg", width=150)
+
 st.sidebar.markdown("---")
 st.sidebar.write("👤 **SVTH:** Chương DND")
 st.sidebar.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")

@@ -38,21 +38,32 @@ def tra_cuu_tinh_khong_bridge(loai_cau, mien=None, cap_num=None, loai_hinh=None,
             }
             
     elif loai_cau == "Vượt đường bộ":
-        H = 0
-        ten = ""
-        if loai_duong_vuot == "Cao tốc":
-            H = 5.0
-            ten = "Đường Cao tốc"
+        # 1. Chiều cao tĩnh không quy định theo hình ảnh bạn gửi
+        # Cao tốc, Cấp I, Cấp II: 4.75m | Các loại khác: 4.5m
+        if loai_duong_vuot in ["Cao tốc", "Cấp I", "Cấp II"]:
+            H = 4.75
         else:
-            H = 4.75 if cap_oto == "1" else 4.5
-            ten = "Đường Ô tô"
-            
+            H = 4.5
+        
+        # 2. Bề rộng tĩnh không (B): Lấy theo khai báo của người dùng
+        # Giả sử người dùng nhập B qua một tham số hoặc lấy mặc định nếu chưa nhập
+        # Trong hàm này, ta sẽ ưu tiên lấy giá trị cap_oto (đang được dùng để truyền B từ Interface)
+        # Nếu không có, mặc định là 0 để người dùng tự điền.
+        B = cap_oto if cap_oto else 0 
+
+        # 3. Tính toán cao độ đáy dầm
+        # Với đường bộ, cao độ đáy dầm = Cao độ mặt đường vuot + H + 0.1 (phòng sai số)
+        # Giả sử h1 ở đây đóng vai trò là cao độ mặt đường bên dưới
+        cao_do_day_dam = h1 + H + 0.1
+        
         return {
             "status": "success",
-            "B": "Theo quy mô mặt cắt ngang",
+            "B": B,
             "H": H,
-            "day_dam": "Tính theo cao độ mặt đường bị vượt",
-            "label": f"Cầu vượt {ten}"
+            "MNCN": h1,      # Ở đây hiểu là cao độ mặt đường vuốt
+            "MNTT": h1,      # Đường bộ không có mực nước nên gán bằng h1 để vẽ
+            "MNTC": h1,
+            "MNTN": h1,
+            "day_dam": round(cao_do_day_dam, 2),
+            "label": f"Cầu vượt đường bộ: {loai_duong_vuot}"
         }
-    
-    return {"status": "error", "message": "Dữ liệu không hợp lệ"}
