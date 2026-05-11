@@ -158,20 +158,23 @@ with tab1:
             # Gọi hàm tra cứu từ file 02-Yeuto_Hinhhoc.py
         res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
             
-        if res_geo:
+        if res_geo["status"] == "success": # Kiểm tra thêm status từ file logic
                 # Hiển thị nhanh các chỉ số quan trọng
                 g_col1, g_col2, g_col3 = st.columns(3)
-                g_col1.metric("Cấp đường thiết kế", res_geo['cap'])
+                # Thay 'cap' thành 'cap_duong'
+                g_col1.metric("Cấp đường thiết kế", res_geo['cap_duong']) 
                 g_col2.metric("Độ dốc dọc Max (i%)", f"{res_geo['imax']}%")
-                g_col3.metric("Bán kính R_min (m)", f"{res_geo['R'][0]} m")
+                # Thay 'R' thành 'R_loi_min'
+                g_col3.metric("Bán kính R_min (m)", f"{res_geo['R_loi_min']} m")
                 
                 # Hiển thị chi tiết hơn trong expander
                 with st.expander("📝 Chi tiết phạm vi Bán kính cong (R)"):
                     st.write(f"Dựa trên vận tốc **{v_hinhhoc} km/h**, bán kính đường cong nằm tối thiểu:")
-                    st.write(f"- Bán kính tối thiểu không siêu cao: **{res_geo['R'][1]} m**")
-                    st.write(f"- Bán kính tối thiểu giới hạn (Rmin): **{res_geo['R'][0]} m**")
+                    # Thay 'R' thành 'R_loi_tt'
+                    st.write(f"- Bán kính tối thiểu không siêu cao: **{res_geo['R_loi_tt']} m**")
+                    st.write(f"- Bán kính tối thiểu giới hạn (Rmin): **{res_geo['R_loi_min']} m**")
         else:
-                st.error("Không tìm thấy dữ liệu hình học phù hợp.")
+                st.error(f"Lỗi: {res_geo.get('message', 'Không tìm thấy dữ liệu')}")
     # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
