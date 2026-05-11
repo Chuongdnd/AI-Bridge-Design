@@ -80,7 +80,7 @@ with tab1:
         d_hinhhoc = st.radio("Địa hình:", [("1", "Đồng bằng"), ("2", "Miền núi")], 
                                  format_func=lambda x: x[1], horizontal=True, key="geo_d")[0]
     # QUAN TRỌNG: Mọi hiển thị kết quả phải nằm TRONG khối lệnh button này
-    if st.button("🚀 Tra cứu & Xác định Đáy dầm"):
+    if st.button("🚀 Let's go"):
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, 
             mien=mien if loai_c=="Vượt sông" else None,
@@ -132,7 +132,7 @@ with tab1:
                     st.write(f"- Bán kính tối thiểu giới hạn (Rmin): **{res_geo['R_loi_min']} m**")
         else:
                 st.error(f"Lỗi: {res_geo.get('message', 'Không tìm thấy dữ liệu')}")
-                
+
         st.divider()
         # 2. Hiển thị bảng thông số
         st.subheader("📊 Chi tiết thông số kỹ thuật")
