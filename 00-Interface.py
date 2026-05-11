@@ -75,14 +75,19 @@ with tab1:
     # QUAN TRỌNG: Mọi hiển thị kết quả phải nằm TRONG khối lệnh button này
     if st.button("🚀 Tra cứu & Xác định Đáy dầm"):
         res = TK.tra_cuu_tinh_khong_bridge(
-            loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None,
+            loai_cau=loai_c, 
+            mien=mien if loai_c=="Vượt sông" else None,
             cap_num=cap_s if loai_c=="Vượt sông" else None,
             loai_hinh=loai_h if loai_c=="Vượt sông" else None,
             loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
-            h_tn_tb=h_tn_tb if loai_c=="Vượt sông" else None,
-            cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None, # Truyền B vào đây
-            h1=h1, h5=h5, h10=h10, h98=h98
+            cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None,
+            h1=h1, 
+            h5=h5, 
+            h10=h10, 
+            h98=h98,
+            h_tn_tb=h_tn_tb if loai_c=="Vượt sông" else h1 # TRUYỀN THÊM BIẾN NÀY
         )
+    
         if res["status"] == "success":
             # LƯU KẾT QUẢ VÀO SESSION STATE
             st.session_state.tinh_khong_res = res
