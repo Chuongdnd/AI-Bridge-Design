@@ -205,5 +205,5 @@ with tab3:
 
 st.sidebar.markdown("---")
 st.sidebar.write("👤 **Tác giả:** Chương DND")
-st.sidebar.write("🎓 **Đề tài:** Ứng dụng AI trong thiết kế cầu")
-st.sidebar.write("🎓 **Giám sát tác giả:** Quang BN")
+st.sidebar.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
+st.sidebar.write("🎓 **Giáo viên hướng dẫn:** T.S Nguyễn Văn Hiển")
