@@ -115,7 +115,7 @@ with tab1:
             # Gọi hàm tra cứu từ file 02-Yeuto_Hinhhoc.py
         res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
             
-        if res_geo["status"] == "success": # Kiểm tra thêm status từ file logic
+        if res_geo and res_geo.get("status") == "success":
                 # Hiển thị nhanh các chỉ số quan trọng
                 g_col1, g_col2, g_col3 = st.columns(3)
                 # Thay 'cap' thành 'cap_duong'
@@ -123,9 +123,9 @@ with tab1:
                 g_col2.metric("Độ dốc dọc Max (i%)", f"{res_geo['imax']}%")
                 # Thay 'R' thành 'R_loi_min'
                 g_col3.metric("Bán kính R_min (m)", f"{res_geo['R_loi_min']} m")
-                res['R_hinh_hoc'] = res_geo['R_loi_min']
-                res['i_max_hinh_hoc'] = res_geo['imax']
-                
+                res['R_hinh_hoc'] = res_geo.get('R_loi_min', 5000) 
+                res['i_max_hinh_hoc'] = res_geo.get('imax', 4)
+
                 # Hiển thị chi tiết hơn trong expander
                 with st.expander("📝 Chi tiết phạm vi Bán kính cong (R)"):
                     st.write(f"Dựa trên vận tốc **{v_hinhhoc} km/h**, bán kính đường cong nằm tối thiểu:")
