@@ -78,52 +78,26 @@ def ve_trac_doc_cau(res):
 
     # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM ---
     if B > 0:
-        # Xác định vị trí X của khung tĩnh không (tâm tại 60m)
-        x_s, x_e = 60 - B/2, 60 + B/2
-        
-        # Vẽ Khung tĩnh không Magenta nét đứt
-        rect = patches.Rectangle((x_s, h5), B, H_tk, fill=False, 
-                                 edgecolor='magenta', ls='--', lw=2.5, zorder=3)
+        # Khung tĩnh không Magenta
+        rect = patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2, zorder=3)
         ax.add_patch(rect)
         
-        # DIM Bề rộng B: Nằm chính giữa chiều cao khung tĩnh không (h5 + H_tk/2)
-        y_dim_b = h5 + H_tk / 2
-        ax.annotate('', xy=(x_e, y_dim_b), xytext=(x_s, y_dim_b),
+        # DIM Bề rộng B (Dời lên cao h5 + 3.0)
+        y_dim_b = h5 + H_tk/2
+        ax.annotate('', xy=(60 + B/2, y_dim_b), xytext=(60 - B/2, y_dim_b),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        ax.text(60, y_dim_b + 0.2, f"B = {B}m", ha='center', va='bottom', 
-                fontweight='bold', fontsize=11,
-                bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
+        ax.text(60, y_dim_b + 0.2, f"B = {B}m", ha='center', va='bottom', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
-        # DIM Chiều cao H: Cách cạnh phải của khung một khoảng linh hoạt
-        x_dim_h = x_e + (3.0 if not is_duong_bo else B * 0.2)
-        ax.annotate('', xy=(x_dim_h, h5 + H_tk), xytext=(x_dim_h, h5),
+        # DIM Chiều cao H
+        ax.annotate('', xy=(60 + B/2 + 3, h5 + H_tk), xytext=(60 + B/2 + 3, h5),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        ax.text(x_dim_h + 0.5, h5 + H_tk / 2, f"H = {H_tk}m", 
-                ha='left', va='center', rotation=90, 
-                fontweight='bold', fontsize=10,
-                bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', pad=1))
+        ax.text(60 + B/2 + 3.5, h5 + H_tk/2, f"H = {H_tk}m", ha='left', va='center', rotation=90, fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
-    # --- THIẾT LẬP TỶ LỆ VÀ KHUNG NHÌN LINH HOẠT ---
-    # Ép tỉ lệ thực 1:1 để B và H không bị méo mó
-    ax.set_aspect('equal', adjustable='datalim') 
-
-    if is_duong_bo:
-        # Nếu VƯỢT ĐƯỜNG: Zoom lại gần để hình ảnh to rõ như bên vượt sông
-        # Lấy khoảng nhìn bằng 2 lần bề rộng B để khung hình cân đối
-        zoom_margin = B if B > 0 else 10
-        ax.set_xlim(60 - zoom_margin, 60 + zoom_margin)
-        
-        # Căn chỉnh chiều cao hiển thị để bớt khoảng trắng thừa
-        ax.set_ylim(h1 - 2, h_mat_cau + 3)
-    else:
-        # Nếu VƯỢT SÔNG: Giữ khung nhìn rộng 120m để thấy toàn cảnh lòng sông
-        ax.set_xlim(-5, 125)
-        ax.set_ylim(min(h98, h1, h5) - 5, h_mat_cau + 5)
-
-    # Ẩn các trục tọa độ và đặt tiêu đề
+    # Cấu hình trục
+    ax.set_xlim(-5, 125)
+    ax.set_ylim(min(h98, h1) - 5, h_mat_cau + 5)
     ax.axis('off')
-    ax.set_title(label_res.upper() if label_res else "SƠ HỌA TRẮC DỌC CẦU", 
-                 fontsize=16, fontweight='bold', pad=20)
+    ax.set_title(label_res.upper() if label_res else "SƠ HỌA TRẮC DỌC CẦU", fontsize=16, fontweight='bold', pad=20)
     
     return fig
 
