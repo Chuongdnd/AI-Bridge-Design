@@ -69,12 +69,29 @@ def ve_trac_doc_cau(res):
         ve_ky_hieu_muc_nuoc(ax, 75, h10, "MNTC H10%", "green")
         ve_ky_hieu_muc_nuoc(ax, 105, h98, "MNTN H98%", "orange")
 
-    # --- 4. VẼ KẾT CẤU CẦU ---
-    h_mat_cau = h_dam + 2.0 
-    ax.plot([0, 120], [h_mat_cau, h_mat_cau], color='red', lw=3)
-    ax.plot([0, 120], [h_dam, h_dam], color='#34495e', ls='-.', lw=1.5)
-    ax.text(2, h_mat_cau + 0.3, "ĐƯỜNG ĐỎ (MẶT CẦU)", color='red', fontweight='bold', fontsize=10)
-    ax.text(2, h_dam - 0.8, f"CAO ĐỘ ĐÁY DẦM: {h_dam:.3f}m", color='#34495e', fontsize=9)
+    # --- 4. VẼ KẾT CẤU CẦU (ĐƯỜNG ĐỎ ĐƯỜNG CONG ĐỨNG) ---
+    # Lấy bán kính R từ kết quả YTHH (mặc định 5000m nếu không có)
+    # Lưu ý: res_geo cần được truyền vào hoặc nằm trong res
+    R_curve = res.get('R_hinh_hoc', 5000) 
+    
+    # Phương trình đường cong đứng Parabol: y = y_dinh - (x - x_dinh)^2 / (2R)
+    x_dinh = 60
+    y_dinh_mat_cau = h_dam + 2.0  # Cao độ đỉnh mặt cầu tại tim cầu
+    
+    # Tính toán tọa độ y cho mặt cầu và đáy dầm theo đường cong
+    y_mat_cau = y_dinh_mat_cau - (x - x_dinh)**2 / (2 * R_curve)
+    y_day_dam = (y_dinh_mat_cau - 2.0) - (x - x_dinh)**2 / (2 * R_curve)
+    
+    # Vẽ Đường đỏ (Mặt cầu) - Đường cong màu đỏ
+    ax.plot(x, y_mat_cau, color='red', lw=3, label="Đường đỏ")
+    
+    # Vẽ Đáy dầm - Đường cong nét đứt phía dưới
+    ax.plot(x, y_day_dam, color='#34495e', ls='-.', lw=1.5)
+    
+    # Ghi chú tại vị trí đỉnh cầu
+    ax.text(x_dinh, y_dinh_mat_cau + 0.5, f"ĐƯỜNG ĐỎ (R={R_curve}m)", 
+            color='red', fontweight='bold', fontsize=10, ha='center')
+    ax.text(2, h_dam - 0.8, f"CAO ĐỘ ĐÁY DẦM TẠI TIM: {h_dam:.3f}m", color='#34495e', fontsize=9)
 
     # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM ---
     if B > 0:
