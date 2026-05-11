@@ -69,28 +69,50 @@ def ve_trac_doc_cau(res):
 
     # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM ---
     if B > 0:
-        # Khung tĩnh không Magenta
-        rect = patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2, zorder=3)
-        ax.add_patch(rect)
+        # Thiết lập vùng vẽ bao quanh khung tĩnh không để nhìn đúng tỷ lệ
+        # Chúng ta sẽ cho lề hai bên rộng thêm khoảng 20% của B để hình đẹp
+        margin = B * 0.2
+        x_min_view = 60 - (B/2 + margin)
+        x_max_view = 60 + (B/2 + margin)
         
-        # DIM Bề rộng B (Dời lên cao h5 + 3.0)
-        y_dim_b = h5 + 3.0
-        ax.annotate('', xy=(60 + B/2, y_dim_b), xytext=(60 - B/2, y_dim_b),
-                    arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        ax.text(60, y_dim_b + 0.2, f"B = {B}m", ha='center', va='bottom', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        # Tọa độ thực của khung
+        x_start = 60 - B/2
+        x_end = 60 + B/2
+        
+        # A. Vẽ khung tĩnh không Magenta nét đứt
+        rect = patches.Rectangle((x_start, h5), B, H_tk, 
+                                 fill=False, edgecolor='magenta', ls='--', lw=2.5, zorder=10)
+        ax.add_patch(rect)
 
-        # DIM Chiều cao H
-        ax.annotate('', xy=(60 + B/2 + 3, h5 + H_tk), xytext=(60 + B/2 + 3, h5),
-                    arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        ax.text(60 + B/2 + 3.5, h5 + H_tk/2, f"H = {H_tk}m", ha='left', va='center', rotation=90, fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        # B. VẼ NÉT DIM BỀ RỘNG B (Nằm ngay trên nóc khung)
+        y_dim_b = h5 + H_tk + 0.5 
+        ax.annotate('', 
+                    xy=(x_end, y_dim_b),     
+                    xytext=(x_start, y_dim_b), 
+                    arrowprops=dict(arrowstyle='<->', color='black', lw=1.5, mutation_scale=15))
+        
+        ax.text(60, y_dim_b + 0.1, f"B = {B}m", 
+                ha='center', va='bottom', color='black', fontweight='bold', fontsize=12)
 
-    # Cấu hình trục
-    ax.set_xlim(-5, 125)
-    ax.set_ylim(min(h98, h1) - 5, h_mat_cau + 5)
+        # C. VẼ NÉT DIM CHIỀU CAO H (Nằm sát cạnh phải khung)
+        x_dim_h = x_end + (margin * 0.3) # Đặt nét DIM trong khoảng lề
+        ax.annotate('', 
+                    xy=(x_dim_h, h5 + H_tk), 
+                    xytext=(x_dim_h, h5),    
+                    arrowprops=dict(arrowstyle='<->', color='black', lw=1.5, mutation_scale=15))
+        
+        ax.text(x_dim_h + 0.2, h5 + H_tk/2, f"H = {H_tk}m", 
+                ha='left', va='center', color='black', fontweight='bold', fontsize=11, rotation=90)
+
+        # --- QUAN TRỌNG: THIẾT LẬP LẠI TRỤC TỌA ĐỘ THEO B ---
+        ax.set_xlim(x_min_view, x_max_view)
+    else:
+        # Nếu không có B (hoặc vượt sông mặc định), dùng khung nhìn cũ
+        ax.set_xlim(-5, 125)
+
+    # Cập nhật giới hạn trục Y cho cân đối
+    ax.set_ylim(h1 - 2, h_mat_cau + 3)
     ax.axis('off')
-    ax.set_title(label_res.upper() if label_res else "SƠ HỌA TRẮC DỌC CẦU", fontsize=16, fontweight='bold', pad=20)
-    
-    return fig
 
 def ve_mat_cat_ngang(res_mcn):
     fig, ax = plt.subplots(figsize=(10, 5))
