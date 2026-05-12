@@ -4,13 +4,23 @@ import os
 import importlib
 import google.generativeai as genai
 # --- THIẾT LẬP TRANG ---
-API_KEY = "AIzaSyBR7yPz7bWWoRkH8HC_NKpgXhVZTdZBl1E"
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        API_KEY = st.secrets["GEMINI_API_KEY"]
+        genai.configure(api_key=API_KEY)
+        # Sử dụng model cơ bản để tránh lỗi 404
+        gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+    else:
+        st.error("❌ Không tìm thấy GEMINI_API_KEY trong file secrets.toml")
+except Exception as e:
+    st.error(f"Lỗi cấu hình AI: {e}")
 try:
     genai.configure(api_key=API_KEY)
-    gemini_model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
 except Exception as e:
     st.error(f"Lỗi cấu hình AI: {e}")
 
+    
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
 
 current_dir = os.path.dirname(os.path.abspath(__file__)) # Lấy thư mục gốc của dự án
