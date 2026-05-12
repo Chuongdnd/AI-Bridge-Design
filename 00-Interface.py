@@ -87,6 +87,8 @@ if 'design_data' not in st.session_state:
     }
 if 'messages' not in st.session_state:
     st.session_state.messages = []
+if 'show_chat' not in st.session_state:
+    st.session_state.show_chat = False
 # --- GIAO DIỆN CHÍNH ---
 tab1, tab2, tab3 = st.tabs(["🌊 Tĩnh không & Thủy văn", "📐 Hình học & MCN", "🤖 Dự báo AI"])
 
@@ -94,7 +96,14 @@ tab1, tab2, tab3 = st.tabs(["🌊 Tĩnh không & Thủy văn", "📐 Hình học
 # TAB 1: TĨNH KHÔNG & THỦY VĂN
 # ==========================================
 with tab1:
-    st.header("🌊 Thông số Tĩnh không & Thủy văn thiết kế")
+    # --- CHÈN MỚI: CHIA CỘT ---
+    col_main, col_chat_area = st.columns([7, 3]) if st.session_state.show_chat else (st.container(), None)
+
+    with col_main:
+        st.header("🌊 Thông số Tĩnh không & Thủy văn thiết kế")
+        if st.button("💬 " + ("Đóng Trợ lý" if st.session_state.show_chat else "Mở Trợ lý AI"), key="btn_chat_t1"):
+            st.session_state.show_chat = not st.session_state.show_chat
+            st.rerun()
     col_in1, col_in2 = st.columns(2)
     with col_in1:
         loai_c = st.radio("Chọn đối tượng vượt:", ["Vượt sông", "Vượt đường bộ"], horizontal=True)
@@ -356,49 +365,48 @@ st.markdown("""
     """, unsafe_allow_html=True)
 
 # --- 3. KHUNG CHAT (Phiên bản đã sửa lỗi kết nối) ---
-with st.popover("💬 Trợ lý Kỹ thuật"):
-    st.markdown("### 🤖 Bridge AI Assistant")
-    
-    # Khởi tạo messages nếu chưa có để tránh lỗi AttributeError
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+if col_chat_area:
+    with col_chat_area:
+        st.subheader("🤖 Bridge AI Assistant")
+        
+        # Khung chứa nội dung chat
+        chat_container = st.container(height=500, border=True)
+        
+        with chat_container:
+            for msg in st.session_state.messages:
+                st.chat_message(msg["role"]).write(msg["content"])
 
-    chat_box = st.container(height=350)
-    
-    # Hiển thị lịch sử chat
-    for msg in st.session_state.messages:
-        chat_box.chat_message(msg["role"]).write(msg["content"])
-
-    if prompt := st.chat_input("Hỏi tôi về thiết kế cầu..."):
-    # 1. Hiển thị tin nhắn người dùng
-        st.session_state.messages.append({"role": "user", "content": prompt})
-    chat_box.chat_message("user").write(prompt)
-    
-    # 2. Xử lý AI
-    try:
-        # Kiểm tra xem có dữ liệu module chưa để tránh lỗi
-        design_info = st.session_state.get('design_data', "Chưa có dữ liệu thiết kế cụ thể.")
-        
-        # Tạo bối cảnh kết hợp tri thức từ PDF và dữ liệu trên Web
-        system_message = f"""
-        Bạn là chuyên gia tư vấn thiết kế cầu của UTH. 
-        Sử dụng tri thức sau để trả lời: {st.session_state.bridge_library}
-        Thông số thiết kế hiện tại người dùng đang nhập trên Web: {design_info}
-        Hãy dựa vào tiêu chuẩn để tư vấn hoặc kiểm tra tính đúng đắn của số liệu.
-        """
-        
-        full_prompt = f"{system_message}\n\nCâu hỏi của người dùng: {prompt}"
-        
-        # Gọi Gemini 2.5 Flash
-        response = gemini_model.generate_content(full_prompt)
-        
-        # 3. Hiển thị kết quả của AI
-        st.session_state.messages.append({"role": "assistant", "content": response.text})
-        chat_box.chat_message("assistant").write(response.text)
-        
-    except Exception as e:
-        if "429" in str(e):
-            st.error("⚠️ Bạn nạp quá nhiều tài liệu hoặc hỏi quá nhanh. Hãy đợi 60 giây nhé!")
-        else:
-            st.error(f"Lỗi AI: {e}")
+        # Ô nhập liệu (Phải nằm trong with col_chat_area)
+        if prompt := st.chat_input("Hỏi tôi về thiết kế cầu...", key="chat_input_v2"):
+            # 1. Hiển thị tin nhắn người dùng ngay lập tức
+            st.session_state.messages.append({"role": "user", "content": prompt})
             
+            # 2. Xử lý AI
+            try:
+                # Kiểm tra xem có dữ liệu module chưa
+                design_info = st.session_state.get('design_data', "Chưa có dữ liệu thiết kế cụ thể.")
+                
+                # Tạo bối cảnh (System Message)
+                system_message = f"""
+                Bạn là chuyên gia tư vấn thiết kế cầu của UTH. 
+                Sử dụng tri thức sau để trả lời: {st.session_state.bridge_library}
+                Thông số thiết kế hiện tại người dùng đang nhập trên Web: {design_info}
+                Hãy dựa vào tiêu chuẩn để tư vấn hoặc kiểm tra tính đúng đắn của số liệu.
+                """
+                
+                full_prompt = f"{system_message}\n\nCâu hỏi của người dùng: {prompt}"
+                
+                # Gọi Gemini 2.5 Flash
+                response = gemini_model.generate_content(full_prompt)
+                
+                # 3. Lưu kết quả của AI vào lịch sử
+                st.session_state.messages.append({"role": "assistant", "content": response.text})
+                
+                # Làm mới trang để tin nhắn hiện lên
+                st.rerun()
+                
+            except Exception as e:
+                if "429" in str(e):
+                    st.error("⚠️ Bạn hỏi quá nhanh hoặc tài liệu quá lớn. Đợi 60s nhé!")
+                else:
+                    st.error(f"Lỗi AI: {e}")
