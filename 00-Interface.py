@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import importlib
+import google.generativeai as genai
 # --- THIẾT LẬP TRANG ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
 with st.sidebar:
@@ -289,13 +290,14 @@ st.sidebar.markdown("---")
 st.sidebar.write("👤 **SVTH:** Chương DND")
 st.sidebar.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
 st.sidebar.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
-# --- 00-Interface.py ---
-# Chèn đoạn này xuống cuối cùng của file
+# --- 1. CẤU HÌNH API (Thay bằng Key bạn lấy từ Google AI Studio) ---
+# Link lấy Key: https://aistudio.google.com/
+genai.configure(api_key="AIzaSyDyRt1Y_dTWXdCjQY8a3C7oxM90gswwUjs") 
 
-# CSS để đưa nút chat vào góc phải màn hình
+# --- 2. CSS ĐỂ NÚT CHAT NẰM CỐ ĐỊNH GÓC PHẢI ---
 st.markdown("""
     <style>
-    .stPopover {
+    div[data-testid="stPopover"] {
         position: fixed;
         bottom: 20px;
         right: 20px;
@@ -304,35 +306,32 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# Tạo nút icon nhỏ bằng Popover
-with st.popover("💬 Trợ lý AI"):
+# --- 3. KHUNG CHAT ---
+with st.popover("💬 Trợ lý Kỹ thuật"):
     st.markdown("### 🤖 Bridge AI Assistant")
-    st.write("Tôi có thể giúp bạn tra cứu TCVN hoặc giải thích kết cấu cầu.")
     
-    # Khởi tạo lịch sử chat
     if "messages" not in st.session_state:
         st.session_state.messages = []
 
-    # Khung hiển thị nội dung chat (giới hạn chiều cao)
-    chat_container = st.container(height=300)
-    
-    with chat_container:
-        for message in st.session_state.messages:
-            with st.chat_message(message["role"]):
-                st.markdown(message["content"])
+    # Hiển thị lịch sử chat
+    for msg in st.session_state.messages:
+        st.chat_message(msg["role"]).write(msg["content"])
 
-    # Ô nhập liệu
-    if prompt := st.chat_input("Nhập câu hỏi..."):
-        # Hiển thị tin nhắn người dùng
+    # Ô nhập câu hỏi
+    if prompt := st.chat_input("Hỏi tôi về TCVN, tĩnh không cầu..."):
+        # Lưu và hiển thị câu hỏi người dùng
         st.session_state.messages.append({"role": "user", "content": prompt})
-        with chat_container:
-            with st.chat_message("user"):
-                st.markdown(prompt)
-
-        # Giả lập phản hồi của AI (Chương có thể kết nối Gemini API ở đây)
-        response = f"AI: Bạn đang quan tâm về {prompt}. Theo TCVN, thông số này cần lưu ý..."
+        st.chat_message("user").write(prompt)
         
-        st.session_state.messages.append({"role": "assistant", "content": response})
-        with chat_container:
-            with st.chat_message("assistant"):
-                st.markdown(response)
+        # Gọi Gemini trả lời
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            # Thêm ngữ cảnh để AI đóng vai kỹ sư Việt Nam
+            full_prompt = f"Bạn là một kỹ sư cầu đường lâu năm tại Việt Nam. Hãy trả lời ngắn gọn, chuyên nghiệp câu hỏi sau: {prompt}"
+            response = model.generate_content(full_prompt)
+            
+            # Lưu và hiển thị phản hồi của AI
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
+            st.chat_message("assistant").write(response.text)
+        except Exception as e:
+            st.error("Cần cấu hình API Key chính xác để chat!")
