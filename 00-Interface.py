@@ -3,85 +3,14 @@ import pandas as pd
 import os
 import importlib
 import google.generativeai as genai
-import fitz
 # --- THIẾT LẬP TRANG ---
-if "show_chat" not in st.session_state:
-    st.session_state.show_chat = False
-try:
-    # Gọi chính xác tên biến bạn đã đặt trong mục Secrets
-    if "GEMINI_API_KEY" in st.secrets:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        genai.configure(api_key=api_key)
-        
-        # Khởi tạo model - Nên dùng tên này để ổn định nhất
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
-    else:
-        st.error("❌ Không tìm thấy mã GEMINI_API_KEY trong cấu hình Secrets của Streamlit!")
-        gemini_model = None
-except Exception as e:
-    st.error(f"Lỗi cấu hình AI: {e}")
-    gemini_model = None
-
-def load_all_standards(folder_name="Documents"):
-    knowledge_text = ""
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    folder_path = os.path.join(current_dir, folder_name)
-    
-    if not os.path.exists(folder_path):
-        return "Thư mục tài liệu không tồn tại."
-
-    for file_name in os.listdir(folder_path):
-        if file_name.endswith(".pdf"):
-            try:
-                doc = fitz.open(os.path.join(folder_path, file_name))
-                text = ""
-                for page in doc:
-                    text += page.get_text()
-                knowledge_text += f"\n--- NGUỒN TÀI LIỆU: {file_name} ---\n{text}\n"
-            except Exception as e:
-                print(f"Lỗi đọc file {file_name}: {e}")
-    return knowledge_text
-
-# --- 3. NẠP TÀI LIỆU VÀO BỘ NHỚ (Chèn vào đây) ---
-if 'bridge_library' not in st.session_state:
-    with st.spinner("📚 Đang nạp hệ thống tiêu chuẩn cầu đường..."):
-        st.session_state.bridge_library = load_all_standards()
-
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
-
-current_dir = os.path.dirname(os.path.abspath(__file__)) # Lấy thư mục gốc của dự án
-logo_path = os.path.join(current_dir, "Images", "UTH.jpg")
-
 with st.sidebar:
-    if os.path.exists(logo_path):
-        st.image(logo_path, width=300)
-    else:
-        st.error("⚠️ Thiếu file logo!")
-# --- CSS TẠO RIGHT SIDEBAR GIẢ ---
-st.markdown("""
-    <style>
-    /* Biến cột bên phải thành Sidebar cố định */
-    [data-testid="column"]:has(div.right-sidebar-content) {
-        position: fixed;
-        right: 0;
-        top: 0;
-        height: 100vh;
-        background-color: #111111; /* Màu nền tối cho chuyên nghiệp */
-        border-left: 1px solid #444;
-        padding: 20px;
-        z-index: 1000;
-        overflow-y: auto;
-    }
-    /* Chỉnh cho nội dung chính không bị Sidebar đè lên khi mở */
-    @media (min-width: 1200px) {
-        .stMain { margin-right: 0px; }
-    }
-    </style>
-    """, unsafe_allow_html=True)
+    st.image("Images/UTH.jpg", width=300)
 # --- 2. CHÈN NHẠC NỀN VÀO SIDEBAR ---
 with st.sidebar:
     st.title("🎵 Sound")
-    music_path = os.path.join(current_dir, "Sounds", "S1.mp3")
+    music_path = "Sounds/S1.mp3" 
     if os.path.exists(music_path):
         st.audio(music_path, loop=True, autoplay=True)
     else:
@@ -106,26 +35,8 @@ if 'design_data' not in st.session_state:
         'bc': 0.0,
         'loai_duong': "Do thi"
     }
-if 'messages' not in st.session_state:
-    st.session_state.messages = []
-# --- GIAO DIỆN CHÍNH ---
-# --- ĐIỀU KHIỂN SIDEBAR PHẢI ---
-if st.session_state.show_chat:
-    col_left, col_right = st.columns([7, 3])
-else:
-    col_left = st.container()
-    col_right = None
 
-# ==========================================
-# CỘT TRÁI: NỘI DUNG CHÍNH (CÁC TAB)
-# ==========================================
-with col_left:
-    # Nút bấm mở/đóng nằm ở góc trên bên phải của vùng nội dung
-    c1, c2 = st.columns([9, 1])
-    c1.title("🏗️ Hệ thống Thiết kế Cầu AI")
-    if c2.button("🤖 AI"):
-        st.session_state.show_chat = not st.session_state.show_chat
-        st.rerun()
+# --- GIAO DIỆN CHÍNH ---
 tab1, tab2, tab3 = st.tabs(["🌊 Tĩnh không & Thủy văn", "📐 Hình học & MCN", "🤖 Dự báo AI"])
 
 # ==========================================
@@ -379,29 +290,48 @@ st.sidebar.markdown("---")
 st.sidebar.write("👤 **SVTH:** Chương DND")
 st.sidebar.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
 st.sidebar.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
+# --- 1. CẤU HÌNH API (Thay bằng Key bạn lấy từ Google AI Studio) ---
+# Link lấy Key: https://aistudio.google.com/
+genai.configure(api_key="AIzaSyDyRt1Y_dTWXdCjQY8a3C7oxM90gswwUjs") 
 
-# --- 3. KHUNG CHAT (Phiên bản đã sửa lỗi kết nối) ---
-if col_right:
-    with col_right:
-        # Class này để CSS nhận diện và biến nó thành Sidebar
-        st.markdown('<div class="right-sidebar-content">', unsafe_allow_html=True)
-        st.subheader("🤖 Bridge AI Assistant")
+# --- 2. CSS ĐỂ NÚT CHAT NẰM CỐ ĐỊNH GÓC PHẢI ---
+st.markdown("""
+    <style>
+    div[data-testid="stPopover"] {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 1000;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 3. KHUNG CHAT ---
+with st.popover("💬 Trợ lý Kỹ thuật"):
+    st.markdown("### 🤖 Bridge AI Assistant")
+    
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    # Hiển thị lịch sử chat
+    for msg in st.session_state.messages:
+        st.chat_message(msg["role"]).write(msg["content"])
+
+    # Ô nhập câu hỏi
+    if prompt := st.chat_input("Hỏi tôi về TCVN, tĩnh không cầu..."):
+        # Lưu và hiển thị câu hỏi người dùng
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        st.chat_message("user").write(prompt)
         
-        # Khung chat với chiều cao lớn để chiếm hết Sidebar
-        chat_container = st.container(height=700, border=True)
-        with chat_container:
-            for msg in st.session_state.messages:
-                st.chat_message(msg["role"]).write(msg["content"])
-
-        if prompt := st.chat_input("Hỏi tôi về TCVN...", key="global_chat"):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            try:
-                # Logic gọi Gemini 2.5 Flash
-                design_info = st.session_state.get('design_data', {})
-                system_msg = f"Tri thức: {st.session_state.bridge_library}\nDữ liệu: {design_info}"
-                response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
-                st.rerun()
-            except Exception as e:
-                st.error(f"Lỗi AI: {e}")
-        st.markdown('</div>', unsafe_allow_html=True)
+        # Gọi Gemini trả lời
+        try:
+            model = genai.GenerativeModel('gemini-1.5-flash')
+            # Thêm ngữ cảnh để AI đóng vai kỹ sư Việt Nam
+            full_prompt = f"Bạn là một kỹ sư cầu đường lâu năm tại Việt Nam. Hãy trả lời ngắn gọn, chuyên nghiệp câu hỏi sau: {prompt}"
+            response = model.generate_content(full_prompt)
+            
+            # Lưu và hiển thị phản hồi của AI
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
+            st.chat_message("assistant").write(response.text)
+        except Exception as e:
+            st.error("Cần cấu hình API Key chính xác để chat!")
