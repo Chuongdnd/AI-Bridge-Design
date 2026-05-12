@@ -4,6 +4,8 @@ import os
 import importlib
 import google.generativeai as genai
 # --- THIẾT LẬP TRANG ---
+
+gemini_model = None
 try:
     if "GEMINI_API_KEY" in st.secrets:
         API_KEY = st.secrets["GEMINI_API_KEY"]
@@ -345,19 +347,17 @@ with st.popover("💬 Trợ lý Kỹ thuật"):
         chat_box.chat_message(msg["role"]).write(msg["content"])
 
     if prompt := st.chat_input("Hỏi tôi về thiết kế cầu..."):
-        # Hiển thị tin nhắn người dùng
         st.session_state.messages.append({"role": "user", "content": prompt})
-        chat_box.chat_message("user").write(prompt)
-        
+    chat_box.chat_message("user").write(prompt)
+    
+    # Kiểm tra biến đã tồn tại và không rỗng
+    if gemini_model is not None:
         try:
-            # Gửi câu hỏi cho Gemini
-            full_prompt = f"Bạn là kỹ sư cầu đường VN chuyên nghiệp. Trả lời ngắn gọn câu hỏi: {prompt}"
-            # Sử dụng đúng biến gemini_model đã khai báo ở đầu file
-            response = gemini_model.generate_content(full_prompt)
-            
-            # Hiển thị câu trả lời của AI
+            response = gemini_model.generate_content(prompt)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
             chat_box.chat_message("assistant").write(response.text)
         except Exception as e:
-            st.error(f"Lỗi: {str(e)}") # Hiện lỗi chi tiết nếu Key bị khóa hoặc sai
+            st.error(f"Lỗi gọi AI: {e}")
+    else:
+        st.error("🤖 Robot chưa được khởi tạo. Vui lòng kiểm tra API Key ở đầu trang!")
             
