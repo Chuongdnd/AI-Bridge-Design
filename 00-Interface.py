@@ -7,7 +7,7 @@ import google.generativeai as genai
 API_KEY = "AIzaSyC9Mpgrd-_b5xTzTfIHruDKQy9YIak52Oo"
 try:
     genai.configure(api_key=API_KEY)
-    gemini_model = genai.GenerativeModel('models/gemini-pro-2.0')
+    gemini_model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
 except Exception as e:
     st.error(f"Lỗi cấu hình AI: {e}")
 
