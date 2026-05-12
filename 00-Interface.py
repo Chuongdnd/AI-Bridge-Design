@@ -350,3 +350,12 @@ with st.popover("💬 Trợ lý Kỹ thuật"):
             chat_box.chat_message("assistant").write(response.text)
         except Exception as e:
             st.error(f"Lỗi: {str(e)}") # Hiện lỗi chi tiết nếu Key bị khóa hoặc sai
+            
+try:
+    st.write("### 🔍 Danh sách mô hình AI khả dụng của bạn:")
+    for m in genai.list_models():
+        if 'generateContent' in m.supported_generation_methods:
+            st.code(f"Tên mô hình: {m.name}")
+            # st.write(f"Mô tả: {m.description}") # Mở dòng này nếu muốn xem chi tiết
+except Exception as e:
+    st.error(f"Không thể lấy danh sách mô hình: {e}")
