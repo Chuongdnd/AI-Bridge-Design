@@ -289,3 +289,50 @@ st.sidebar.markdown("---")
 st.sidebar.write("👤 **SVTH:** Chương DND")
 st.sidebar.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
 st.sidebar.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
+# --- 00-Interface.py ---
+# Chèn đoạn này xuống cuối cùng của file
+
+# CSS để đưa nút chat vào góc phải màn hình
+st.markdown("""
+    <style>
+    .stPopover {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 1000;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# Tạo nút icon nhỏ bằng Popover
+with st.popover("💬 Trợ lý AI"):
+    st.markdown("### 🤖 Bridge AI Assistant")
+    st.write("Tôi có thể giúp bạn tra cứu TCVN hoặc giải thích kết cấu cầu.")
+    
+    # Khởi tạo lịch sử chat
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    # Khung hiển thị nội dung chat (giới hạn chiều cao)
+    chat_container = st.container(height=300)
+    
+    with chat_container:
+        for message in st.session_state.messages:
+            with st.chat_message(message["role"]):
+                st.markdown(message["content"])
+
+    # Ô nhập liệu
+    if prompt := st.chat_input("Nhập câu hỏi..."):
+        # Hiển thị tin nhắn người dùng
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with chat_container:
+            with st.chat_message("user"):
+                st.markdown(prompt)
+
+        # Giả lập phản hồi của AI (Chương có thể kết nối Gemini API ở đây)
+        response = f"AI: Bạn đang quan tâm về {prompt}. Theo TCVN, thông số này cần lưu ý..."
+        
+        st.session_state.messages.append({"role": "assistant", "content": response})
+        with chat_container:
+            with st.chat_message("assistant"):
+                st.markdown(response)
