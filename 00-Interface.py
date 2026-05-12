@@ -339,26 +339,30 @@ with tab3:
                     st.error("Lỗi trong quá trình huấn luyện AI.")
 
     st.markdown("---")
+# --- SIDEBAR: THÔNG TIN VÀ CHATBOT (DÒNG 324 TRỞ ĐI) ---
+with st.sidebar:
+    st.markdown("---")
     st.write("👤 **SVTH:** Chương DND")
     st.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
     st.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
-    # --- PHẦN CHATBOT (PHẢI THỤT LỀ VÀO ĐÂY) ---
+
+    # --- PHẦN CHATBOT (Tất cả phải thụt lề 4 khoảng trắng so với 'with') ---
     st.markdown("---")
     st.subheader("🤖 Bridge AI Assistant")
     
     # 1. Khung hiển thị hội thoại
-    chat_container = st.container(height=450, border=True)
+    chat_container = st.container(height=500, border=True)
     
     with chat_container:
         for msg in st.session_state.messages:
             st.chat_message(msg["role"]).write(msg["content"])
 
-    # 2. Ô nhập liệu nằm TRONG sidebar
+    # 2. Ô nhập liệu chat (Cần thụt lề để nằm trong sidebar)
     if prompt := st.chat_input("Hỏi tôi về thiết kế cầu...", key="sidebar_chat"):
-        # Lưu và hiển thị tin nhắn User
+        # Lưu tin nhắn người dùng
         st.session_state.messages.append({"role": "user", "content": prompt})
         
-        # Xử lý AI
+        # Xử lý AI Gemini
         try:
             design_info = st.session_state.get('design_data', "Chưa có dữ liệu.")
             system_msg = f"""
@@ -367,10 +371,13 @@ with tab3:
             Dữ liệu web hiện tại: {design_info}
             """
             
+            # Gọi Gemini xử lý
             response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
             
-            # Lưu phản hồi AI
+            # Lưu phản hồi của AI
             st.session_state.messages.append({"role": "assistant", "content": response.text})
+            
+            # Làm mới trang để tin nhắn hiện lên ngay lập tức
             st.rerun() 
             
         except Exception as e:
