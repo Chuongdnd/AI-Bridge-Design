@@ -12,7 +12,7 @@ try:
         genai.configure(api_key=api_key)
         
         # Khởi tạo model - Nên dùng tên này để ổn định nhất
-        gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
     else:
         st.error("❌ Không tìm thấy mã GEMINI_API_KEY trong cấu hình Secrets của Streamlit!")
         gemini_model = None
