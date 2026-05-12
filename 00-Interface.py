@@ -4,7 +4,7 @@ import os
 import importlib
 import google.generativeai as genai
 # --- THIẾT LẬP TRANG ---
-API_KEY = "AIzaSyC9Mpgrd-_b5xTzTfIHruDKQy9YIak52Oo"
+API_KEY = "AIzaSyDyRt1Y_dTWXdCjQY8a3C7oxM90gswwUjs"
 try:
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
@@ -351,11 +351,3 @@ with st.popover("💬 Trợ lý Kỹ thuật"):
         except Exception as e:
             st.error(f"Lỗi: {str(e)}") # Hiện lỗi chi tiết nếu Key bị khóa hoặc sai
             
-try:
-    st.write("### 🔍 Danh sách mô hình AI khả dụng của bạn:")
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            st.code(f"Tên mô hình: {m.name}")
-            # st.write(f"Mô tả: {m.description}") # Mở dòng này nếu muốn xem chi tiết
-except Exception as e:
-    st.error(f"Không thể lấy danh sách mô hình: {e}")
