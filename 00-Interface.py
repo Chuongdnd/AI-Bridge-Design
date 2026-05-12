@@ -5,7 +5,8 @@ import importlib
 import google.generativeai as genai
 import fitz
 # --- THIẾT LẬP TRANG ---
-
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
 try:
     # Gọi chính xác tên biến bạn đã đặt trong mục Secrets
     if "GEMINI_API_KEY" in st.secrets:
@@ -341,64 +342,39 @@ st.sidebar.markdown("---")
 st.sidebar.write("👤 **SVTH:** Chương DND")
 st.sidebar.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
 st.sidebar.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
-
-
-# --- 2. CSS ĐỂ NÚT CHAT NẰM CỐ ĐỊNH GÓC PHẢI ---
-st.markdown("""
-    <style>
-    div[data-testid="stPopover"] {
-        position: fixed;
-        bottom: 20px;
-        right: 20px;
-        z-index: 1000;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-
-# --- 3. KHUNG CHAT (Phiên bản đã sửa lỗi kết nối) ---
-with st.popover("💬 Trợ lý Kỹ thuật"):
-    st.markdown("### 🤖 Bridge AI Assistant")
+# --- TÍCH HỢP CHATBOT VÀO SIDEBAR ---
+st.markdown("---")
+st.subheader("🤖 Bridge AI Assistant")
     
-    # Khởi tạo messages nếu chưa có để tránh lỗi AttributeError
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    chat_box = st.container(height=350)
+    # Khung hiển thị hội thoại (Chiều cao vừa phải để không lấn át Sidebar)
+chat_container = st.container(height=400, border=True)
     
-    # Hiển thị lịch sử chat
-    for msg in st.session_state.messages:
-        chat_box.chat_message(msg["role"]).write(msg["content"])
+with chat_container:
+        for msg in st.session_state.messages:
+            st.chat_message(msg["role"]).write(msg["content"])
 
-    if prompt := st.chat_input("Hỏi tôi về thiết kế cầu..."):
-    # 1. Hiển thị tin nhắn người dùng
+    # Ô nhập liệu nằm ngay dưới khung chat trong Sidebar
+if prompt := st.chat_input("Hỏi tôi về thiết kế cầu...", key="sidebar_chat"):
+        # 1. Lưu và hiển thị tin nhắn User
         st.session_state.messages.append({"role": "user", "content": prompt})
-    chat_box.chat_message("user").write(prompt)
-    
-    # 2. Xử lý AI
-    try:
-        # Kiểm tra xem có dữ liệu module chưa để tránh lỗi
-        design_info = st.session_state.get('design_data', "Chưa có dữ liệu thiết kế cụ thể.")
         
-        # Tạo bối cảnh kết hợp tri thức từ PDF và dữ liệu trên Web
-        system_message = f"""
-        Bạn là chuyên gia tư vấn thiết kế cầu của UTH. 
-        Sử dụng tri thức sau để trả lời: {st.session_state.bridge_library}
-        Thông số thiết kế hiện tại người dùng đang nhập trên Web: {design_info}
-        Hãy dựa vào tiêu chuẩn để tư vấn hoặc kiểm tra tính đúng đắn của số liệu.
-        """
-        
-        full_prompt = f"{system_message}\n\nCâu hỏi của người dùng: {prompt}"
-        
-        # Gọi Gemini 2.5 Flash
-        response = gemini_model.generate_content(full_prompt)
-        
-        # 3. Hiển thị kết quả của AI
-        st.session_state.messages.append({"role": "assistant", "content": response.text})
-        chat_box.chat_message("assistant").write(response.text)
-        
-    except Exception as e:
-        if "429" in str(e):
-            st.error("⚠️ Bạn nạp quá nhiều tài liệu hoặc hỏi quá nhanh. Hãy đợi 60 giây nhé!")
-        else:
-            st.error(f"Lỗi AI: {e}")
+        # 2. Xử lý AI Gemini 2.5 Flash
+        try:
+            design_info = st.session_state.get('design_data', "Chưa có dữ liệu.")
+            system_msg = f"""
+            Bạn là chuyên gia tư vấn thiết kế cầu của UTH. 
+            Sử dụng tri thức sau: {st.session_state.bridge_library}
+            Dữ liệu web hiện tại: {design_info}
+            """
             
+            response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
+            
+            # 3. Lưu phản hồi AI
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
+            st.rerun() # Cập nhật giao diện ngay lập tức
+            
+        except Exception as e:
+            if "429" in str(e):
+                st.error("⚠️ Nhắn chậm lại chút nhé Chương (đợi 30s).")
+            else:
+                st.error(f"Lỗi AI: {e}")
