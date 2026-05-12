@@ -58,15 +58,6 @@ with st.sidebar:
     else:
         st.error("⚠️ Thiếu file logo!")
 
-# --- 2. CHÈN NHẠC NỀN VÀO SIDEBAR ---
-with st.sidebar:
-    st.title("🎵 Sound")
-    music_path = os.path.join(current_dir, "Sounds", "S1.mp3")
-    if os.path.exists(music_path):
-        st.audio(music_path, loop=True, autoplay=True)
-    else:
-        st.error(f"⚠️ Không tìm thấy file: {music_path}")
-
 # --- KẾT NỐI MODULES ---
 try:
     TK = importlib.import_module("01-Tinh_khong")
