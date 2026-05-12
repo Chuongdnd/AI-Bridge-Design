@@ -4,7 +4,7 @@ import os
 import importlib
 import google.generativeai as genai
 # --- THIẾT LẬP TRANG ---
-API_KEY = "AIzaSyDyRt1Y_dTWXdCjQY8a3C7oxM90gswwUjs"
+API_KEY = "AIzaSyBR7yPz7bWWoRkH8HC_NKpgXhVZTdZBl1E"
 try:
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('models/gemini-1.5-flash-latest')
