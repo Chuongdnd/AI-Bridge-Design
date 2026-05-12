@@ -345,7 +345,7 @@ with st.popover("💬 Trợ lý Kỹ thuật"):
         chat_box.chat_message(msg["role"]).write(msg["content"])
 
     if prompt := st.chat_input("Hỏi tôi về thiết kế cầu..."):
-    st.session_state.messages.append({"role": "user", "content": prompt})
+        st.session_state.messages.append({"role": "user", "content": prompt})
     chat_box.chat_message("user").write(prompt)
     
     if gemini_model:
