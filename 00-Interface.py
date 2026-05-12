@@ -4,7 +4,7 @@ import os
 import importlib
 import google.generativeai as genai
 # --- THIẾT LẬP TRANG ---
-API_KEY = "AIzaSyDyRt1Y_dTWXdCjQY8a3C7oxM90gswwUjs"
+API_KEY = "AIzaSyC9Mpgrd-_b5xTzTfIHruDKQy9YIak52Oo"
 try:
     genai.configure(api_key=API_KEY)
     gemini_model = genai.GenerativeModel('gemini-1.5-flash')
@@ -320,22 +320,33 @@ st.markdown("""
     </style>
     """, unsafe_allow_html=True)
 
-# --- 3. KHUNG CHAT ---
+# --- 3. KHUNG CHAT (Phiên bản đã sửa lỗi kết nối) ---
 with st.popover("💬 Trợ lý Kỹ thuật"):
     st.markdown("### 🤖 Bridge AI Assistant")
-    chat_box = st.container(height=350) # Giới hạn chiều cao khung chat
     
+    # Khởi tạo messages nếu chưa có để tránh lỗi AttributeError
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    chat_box = st.container(height=350)
+    
+    # Hiển thị lịch sử chat
     for msg in st.session_state.messages:
         chat_box.chat_message(msg["role"]).write(msg["content"])
 
     if prompt := st.chat_input("Hỏi tôi về thiết kế cầu..."):
+        # Hiển thị tin nhắn người dùng
         st.session_state.messages.append({"role": "user", "content": prompt})
         chat_box.chat_message("user").write(prompt)
         
         try:
-            full_prompt = f"Bạn là kỹ sư cầu đường VN chuyên nghiệp. Trả lời ngắn gọn: {prompt}"
+            # Gửi câu hỏi cho Gemini
+            full_prompt = f"Bạn là kỹ sư cầu đường VN chuyên nghiệp. Trả lời ngắn gọn câu hỏi: {prompt}"
+            # Sử dụng đúng biến gemini_model đã khai báo ở đầu file
             response = gemini_model.generate_content(full_prompt)
+            
+            # Hiển thị câu trả lời của AI
             st.session_state.messages.append({"role": "assistant", "content": response.text})
             chat_box.chat_message("assistant").write(response.text)
         except Exception as e:
-            st.error("Lỗi kết nối AI. Hãy kiểm tra mạng hoặc API Key!")
+            st.error(f"Lỗi: {str(e)}") # Hiện lỗi chi tiết nếu Key bị khóa hoặc sai
