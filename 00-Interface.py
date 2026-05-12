@@ -3,6 +3,7 @@ import pandas as pd
 import os
 import importlib
 import google.generativeai as genai
+import fitz
 # --- THIẾT LẬP TRANG ---
 
 try:
@@ -20,7 +21,31 @@ except Exception as e:
     st.error(f"Lỗi cấu hình AI: {e}")
     gemini_model = None
 
+def load_all_standards(folder_name="Documents"):
+    knowledge_text = ""
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    folder_path = os.path.join(current_dir, folder_name)
     
+    if not os.path.exists(folder_path):
+        return "Thư mục tài liệu không tồn tại."
+
+    for file_name in os.listdir(folder_path):
+        if file_name.endswith(".pdf"):
+            try:
+                doc = fitz.open(os.path.join(folder_path, file_name))
+                text = ""
+                for page in doc:
+                    text += page.get_text()
+                knowledge_text += f"\n--- NGUỒN TÀI LIỆU: {file_name} ---\n{text}\n"
+            except Exception as e:
+                print(f"Lỗi đọc file {file_name}: {e}")
+    return knowledge_text
+
+# --- 3. NẠP TÀI LIỆU VÀO BỘ NHỚ (Chèn vào đây) ---
+if 'bridge_library' not in st.session_state:
+    with st.spinner("📚 Đang nạp hệ thống tiêu chuẩn cầu đường..."):
+        st.session_state.bridge_library = load_all_standards()
+
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
 
 current_dir = os.path.dirname(os.path.abspath(__file__)) # Lấy thư mục gốc của dự án
@@ -345,17 +370,35 @@ with st.popover("💬 Trợ lý Kỹ thuật"):
         chat_box.chat_message(msg["role"]).write(msg["content"])
 
     if prompt := st.chat_input("Hỏi tôi về thiết kế cầu..."):
+    # 1. Hiển thị tin nhắn người dùng
         st.session_state.messages.append({"role": "user", "content": prompt})
     chat_box.chat_message("user").write(prompt)
     
-    if gemini_model:
-        try:
-            # Gửi câu hỏi cho AI
-            response = gemini_model.generate_content(prompt)
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
-            chat_box.chat_message("assistant").write(response.text)
-        except Exception as e:
-            st.error(f"AI đang bận hoặc lỗi kết nối: {e}")
-    else:
-        st.warning("🤖 Chatbot chưa được cấu hình đúng API Key.")
+    # 2. Xử lý AI
+    try:
+        # Kiểm tra xem có dữ liệu module chưa để tránh lỗi
+        design_info = st.session_state.get('design_data', "Chưa có dữ liệu thiết kế cụ thể.")
+        
+        # Tạo bối cảnh kết hợp tri thức từ PDF và dữ liệu trên Web
+        system_message = f"""
+        Bạn là chuyên gia tư vấn thiết kế cầu của UTH. 
+        Sử dụng tri thức sau để trả lời: {st.session_state.bridge_library}
+        Thông số thiết kế hiện tại người dùng đang nhập trên Web: {design_info}
+        Hãy dựa vào tiêu chuẩn để tư vấn hoặc kiểm tra tính đúng đắn của số liệu.
+        """
+        
+        full_prompt = f"{system_message}\n\nCâu hỏi của người dùng: {prompt}"
+        
+        # Gọi Gemini 2.5 Flash
+        response = gemini_model.generate_content(full_prompt)
+        
+        # 3. Hiển thị kết quả của AI
+        st.session_state.messages.append({"role": "assistant", "content": response.text})
+        chat_box.chat_message("assistant").write(response.text)
+        
+    except Exception as e:
+        if "429" in str(e):
+            st.error("⚠️ Bạn nạp quá nhiều tài liệu hoặc hỏi quá nhanh. Hãy đợi 60 giây nhé!")
+        else:
+            st.error(f"Lỗi AI: {e}")
             
