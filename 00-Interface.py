@@ -5,10 +5,7 @@ import importlib
 import google.generativeai as genai
 import fitz
 # --- THIẾT LẬP TRANG ---
-if st.session_state.show_chat:
-    col_left, col_right = st.columns([7, 3])
-else:
-    col_left, col_right = st.container(), None
+
 try:
     # Gọi chính xác tên biến bạn đã đặt trong mục Secrets
     if "GEMINI_API_KEY" in st.secrets:
@@ -59,27 +56,7 @@ with st.sidebar:
         st.image(logo_path, width=300)
     else:
         st.error("⚠️ Thiếu file logo!")
-# --- CSS TẠO RIGHT SIDEBAR GIẢ ---
-st.markdown("""
-    <style>
-    /* Biến cột bên phải thành Sidebar cố định */
-    [data-testid="column"]:has(div.right-sidebar-content) {
-        position: fixed;
-        right: 0;
-        top: 0;
-        height: 100vh;
-        background-color: #111111; /* Màu nền tối cho chuyên nghiệp */
-        border-left: 1px solid #444;
-        padding: 20px;
-        z-index: 1000;
-        overflow-y: auto;
-    }
-    /* Chỉnh cho nội dung chính không bị Sidebar đè lên khi mở */
-    @media (min-width: 1200px) {
-        .stMain { margin-right: 0px; }
-    }
-    </style>
-    """, unsafe_allow_html=True)
+
 # --- 2. CHÈN NHẠC NỀN VÀO SIDEBAR ---
 with st.sidebar:
     st.title("🎵 Sound")
@@ -111,23 +88,6 @@ if 'design_data' not in st.session_state:
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 # --- GIAO DIỆN CHÍNH ---
-# --- ĐIỀU KHIỂN SIDEBAR PHẢI ---
-if st.session_state.show_chat:
-    col_left, col_right = st.columns([7, 3])
-else:
-    col_left = st.container()
-    col_right = None
-
-# ==========================================
-# CỘT TRÁI: NỘI DUNG CHÍNH (CÁC TAB)
-# ==========================================
-with col_left:
-    st.title("🏗️ Hệ thống Thiết kế Cầu AI")
-    
-    # Nút bấm mở/đóng AI nằm ở đây
-    if st.button("🤖 " + ("Đóng Trợ lý" if st.session_state.show_chat else "Mở Trợ lý AI")):
-        st.session_state.show_chat = not st.session_state.show_chat
-        st.rerun()
 tab1, tab2, tab3 = st.tabs(["🌊 Tĩnh không & Thủy văn", "📐 Hình học & MCN", "🤖 Dự báo AI"])
 
 # ==========================================
@@ -382,28 +342,63 @@ st.sidebar.write("👤 **SVTH:** Chương DND")
 st.sidebar.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
 st.sidebar.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
 
-# --- 3. KHUNG CHAT (Phiên bản đã sửa lỗi kết nối) ---
-if col_right:
-    with col_right:
-        # Class này để CSS nhận diện và biến nó thành Sidebar
-        st.markdown('<div class="right-sidebar-content">', unsafe_allow_html=True)
-        st.subheader("🤖 Bridge AI Assistant")
-        
-        # Khung chat với chiều cao lớn để chiếm hết Sidebar
-        chat_container = st.container(height=700, border=True)
-        with chat_container:
-            for msg in st.session_state.messages:
-                st.chat_message(msg["role"]).write(msg["content"])
 
-        if prompt := st.chat_input("Hỏi tôi về TCVN...", key="global_chat"):
-            st.session_state.messages.append({"role": "user", "content": prompt})
-            try:
-                # Logic gọi Gemini 2.5 Flash
-                design_info = st.session_state.get('design_data', {})
-                system_msg = f"Tri thức: {st.session_state.bridge_library}\nDữ liệu: {design_info}"
-                response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
-                st.session_state.messages.append({"role": "assistant", "content": response.text})
-                st.rerun()
-            except Exception as e:
-                st.error(f"Lỗi AI: {e}")
-        st.markdown('</div>', unsafe_allow_html=True)
+# --- 2. CSS ĐỂ NÚT CHAT NẰM CỐ ĐỊNH GÓC PHẢI ---
+st.markdown("""
+    <style>
+    div[data-testid="stPopover"] {
+        position: fixed;
+        bottom: 20px;
+        right: 20px;
+        z-index: 1000;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+
+# --- 3. KHUNG CHAT (Phiên bản đã sửa lỗi kết nối) ---
+with st.popover("💬 Trợ lý Kỹ thuật"):
+    st.markdown("### 🤖 Bridge AI Assistant")
+    
+    # Khởi tạo messages nếu chưa có để tránh lỗi AttributeError
+    if "messages" not in st.session_state:
+        st.session_state.messages = []
+
+    chat_box = st.container(height=350)
+    
+    # Hiển thị lịch sử chat
+    for msg in st.session_state.messages:
+        chat_box.chat_message(msg["role"]).write(msg["content"])
+
+    if prompt := st.chat_input("Hỏi tôi về thiết kế cầu..."):
+    # 1. Hiển thị tin nhắn người dùng
+        st.session_state.messages.append({"role": "user", "content": prompt})
+    chat_box.chat_message("user").write(prompt)
+    
+    # 2. Xử lý AI
+    try:
+        # Kiểm tra xem có dữ liệu module chưa để tránh lỗi
+        design_info = st.session_state.get('design_data', "Chưa có dữ liệu thiết kế cụ thể.")
+        
+        # Tạo bối cảnh kết hợp tri thức từ PDF và dữ liệu trên Web
+        system_message = f"""
+        Bạn là chuyên gia tư vấn thiết kế cầu của UTH. 
+        Sử dụng tri thức sau để trả lời: {st.session_state.bridge_library}
+        Thông số thiết kế hiện tại người dùng đang nhập trên Web: {design_info}
+        Hãy dựa vào tiêu chuẩn để tư vấn hoặc kiểm tra tính đúng đắn của số liệu.
+        """
+        
+        full_prompt = f"{system_message}\n\nCâu hỏi của người dùng: {prompt}"
+        
+        # Gọi Gemini 2.5 Flash
+        response = gemini_model.generate_content(full_prompt)
+        
+        # 3. Hiển thị kết quả của AI
+        st.session_state.messages.append({"role": "assistant", "content": response.text})
+        chat_box.chat_message("assistant").write(response.text)
+        
+    except Exception as e:
+        if "429" in str(e):
+            st.error("⚠️ Bạn nạp quá nhiều tài liệu hoặc hỏi quá nhanh. Hãy đợi 60 giây nhé!")
+        else:
+            st.error(f"Lỗi AI: {e}")
+            
