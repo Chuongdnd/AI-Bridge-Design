@@ -338,27 +338,27 @@ with tab3:
                 else:
                     st.error("Lỗi trong quá trình huấn luyện AI.")
 
-st.sidebar.markdown("---")
-st.sidebar.write("👤 **SVTH:** Chương DND")
-st.sidebar.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
-st.sidebar.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
-# --- TÍCH HỢP CHATBOT VÀO SIDEBAR ---
-st.markdown("---")
-st.subheader("🤖 Bridge AI Assistant")
+    st.markdown("---")
+    st.write("👤 **SVTH:** Chương DND")
+    st.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
+    st.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
+    # --- PHẦN CHATBOT (PHẢI THỤT LỀ VÀO ĐÂY) ---
+    st.markdown("---")
+    st.subheader("🤖 Bridge AI Assistant")
     
-    # Khung hiển thị hội thoại (Chiều cao vừa phải để không lấn át Sidebar)
-chat_container = st.container(height=400, border=True)
+    # 1. Khung hiển thị hội thoại
+    chat_container = st.container(height=450, border=True)
     
-with chat_container:
+    with chat_container:
         for msg in st.session_state.messages:
             st.chat_message(msg["role"]).write(msg["content"])
 
-    # Ô nhập liệu nằm ngay dưới khung chat trong Sidebar
-if prompt := st.chat_input("Hỏi tôi về thiết kế cầu...", key="sidebar_chat"):
-        # 1. Lưu và hiển thị tin nhắn User
+    # 2. Ô nhập liệu nằm TRONG sidebar
+    if prompt := st.chat_input("Hỏi tôi về thiết kế cầu...", key="sidebar_chat"):
+        # Lưu và hiển thị tin nhắn User
         st.session_state.messages.append({"role": "user", "content": prompt})
         
-        # 2. Xử lý AI Gemini 2.5 Flash
+        # Xử lý AI
         try:
             design_info = st.session_state.get('design_data', "Chưa có dữ liệu.")
             system_msg = f"""
@@ -369,12 +369,9 @@ if prompt := st.chat_input("Hỏi tôi về thiết kế cầu...", key="sidebar
             
             response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
             
-            # 3. Lưu phản hồi AI
+            # Lưu phản hồi AI
             st.session_state.messages.append({"role": "assistant", "content": response.text})
-            st.rerun() # Cập nhật giao diện ngay lập tức
+            st.rerun() 
             
         except Exception as e:
-            if "429" in str(e):
-                st.error("⚠️ Nhắn chậm lại chút nhé Chương (đợi 30s).")
-            else:
-                st.error(f"Lỗi AI: {e}")
+            st.error(f"Lỗi AI: {e}")
