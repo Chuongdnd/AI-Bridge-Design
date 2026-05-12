@@ -4,13 +4,28 @@ import os
 import importlib
 import google.generativeai as genai
 # --- THIẾT LẬP TRANG ---
+API_KEY = "AIzaSyDyRt1Y_dTWXdCjQY8a3C7oxM90gswwUjs"
+try:
+    genai.configure(api_key=API_KEY)
+    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
+except Exception as e:
+    st.error(f"Lỗi cấu hình AI: {e}")
+
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
+
+current_dir = os.path.dirname(os.path.abspath(__file__)) # Lấy thư mục gốc của dự án
+logo_path = os.path.join(current_dir, "Images", "UTH.jpg")
+
 with st.sidebar:
-    st.image("Images/UTH.jpg", width=300)
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=300)
+    else:
+        st.error("⚠️ Thiếu file logo!")
+
 # --- 2. CHÈN NHẠC NỀN VÀO SIDEBAR ---
 with st.sidebar:
     st.title("🎵 Sound")
-    music_path = "Sounds/S1.mp3" 
+    music_path = os.path.join(current_dir, "Sounds", "S1.mp3")
     if os.path.exists(music_path):
         st.audio(music_path, loop=True, autoplay=True)
     else:
@@ -35,7 +50,8 @@ if 'design_data' not in st.session_state:
         'bc': 0.0,
         'loai_duong': "Do thi"
     }
-
+if 'messages' not in st.session_state:
+    st.session_state.messages = []
 # --- GIAO DIỆN CHÍNH ---
 tab1, tab2, tab3 = st.tabs(["🌊 Tĩnh không & Thủy văn", "📐 Hình học & MCN", "🤖 Dự báo AI"])
 
@@ -290,9 +306,7 @@ st.sidebar.markdown("---")
 st.sidebar.write("👤 **SVTH:** Chương DND")
 st.sidebar.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
 st.sidebar.write("🎓 **Đề tài:** Nghiên cứu giải pháp tích hợp trí tuệ nhân tạo (AI) và Mô hình thông tin công trình (BIM) tự động hóa thiết kế cầu đường bộ tại Việt Nam")
-# --- 1. CẤU HÌNH API (Thay bằng Key bạn lấy từ Google AI Studio) ---
-# Link lấy Key: https://aistudio.google.com/
-genai.configure(api_key="AIzaSyDyRt1Y_dTWXdCjQY8a3C7oxM90gswwUjs") 
+
 
 # --- 2. CSS ĐỂ NÚT CHAT NẰM CỐ ĐỊNH GÓC PHẢI ---
 st.markdown("""
@@ -309,29 +323,19 @@ st.markdown("""
 # --- 3. KHUNG CHAT ---
 with st.popover("💬 Trợ lý Kỹ thuật"):
     st.markdown("### 🤖 Bridge AI Assistant")
+    chat_box = st.container(height=350) # Giới hạn chiều cao khung chat
     
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
-
-    # Hiển thị lịch sử chat
     for msg in st.session_state.messages:
-        st.chat_message(msg["role"]).write(msg["content"])
+        chat_box.chat_message(msg["role"]).write(msg["content"])
 
-    # Ô nhập câu hỏi
-    if prompt := st.chat_input("Hỏi tôi về TCVN, tĩnh không cầu..."):
-        # Lưu và hiển thị câu hỏi người dùng
+    if prompt := st.chat_input("Hỏi tôi về thiết kế cầu..."):
         st.session_state.messages.append({"role": "user", "content": prompt})
-        st.chat_message("user").write(prompt)
+        chat_box.chat_message("user").write(prompt)
         
-        # Gọi Gemini trả lời
         try:
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            # Thêm ngữ cảnh để AI đóng vai kỹ sư Việt Nam
-            full_prompt = f"Bạn là một kỹ sư cầu đường lâu năm tại Việt Nam. Hãy trả lời ngắn gọn, chuyên nghiệp câu hỏi sau: {prompt}"
-            response = model.generate_content(full_prompt)
-            
-            # Lưu và hiển thị phản hồi của AI
+            full_prompt = f"Bạn là kỹ sư cầu đường VN chuyên nghiệp. Trả lời ngắn gọn: {prompt}"
+            response = gemini_model.generate_content(full_prompt)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
-            st.chat_message("assistant").write(response.text)
+            chat_box.chat_message("assistant").write(response.text)
         except Exception as e:
-            st.error("Cần cấu hình API Key chính xác để chat!")
+            st.error("Lỗi kết nối AI. Hãy kiểm tra mạng hoặc API Key!")
