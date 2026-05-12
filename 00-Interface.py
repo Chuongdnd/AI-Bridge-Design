@@ -5,22 +5,20 @@ import importlib
 import google.generativeai as genai
 # --- THIẾT LẬP TRANG ---
 
-gemini_model = None
 try:
+    # Gọi chính xác tên biến bạn đã đặt trong mục Secrets
     if "GEMINI_API_KEY" in st.secrets:
-        API_KEY = st.secrets["GEMINI_API_KEY"]
-        genai.configure(api_key=API_KEY)
-        # Sử dụng model cơ bản để tránh lỗi 404
+        api_key = st.secrets["GEMINI_API_KEY"]
+        genai.configure(api_key=api_key)
+        
+        # Khởi tạo model - Nên dùng tên này để ổn định nhất
         gemini_model = genai.GenerativeModel('gemini-1.5-flash')
     else:
-        st.error("❌ Không tìm thấy GEMINI_API_KEY trong file secrets.toml")
+        st.error("❌ Không tìm thấy mã GEMINI_API_KEY trong cấu hình Secrets của Streamlit!")
+        gemini_model = None
 except Exception as e:
     st.error(f"Lỗi cấu hình AI: {e}")
-try:
-    genai.configure(api_key=API_KEY)
-    gemini_model = genai.GenerativeModel('gemini-1.5-flash')
-except Exception as e:
-    st.error(f"Lỗi cấu hình AI: {e}")
+    gemini_model = None
 
     
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI", layout="wide", page_icon="🏗️")
@@ -347,17 +345,17 @@ with st.popover("💬 Trợ lý Kỹ thuật"):
         chat_box.chat_message(msg["role"]).write(msg["content"])
 
     if prompt := st.chat_input("Hỏi tôi về thiết kế cầu..."):
-        st.session_state.messages.append({"role": "user", "content": prompt})
+    st.session_state.messages.append({"role": "user", "content": prompt})
     chat_box.chat_message("user").write(prompt)
     
-    # Kiểm tra biến đã tồn tại và không rỗng
-    if gemini_model is not None:
+    if gemini_model:
         try:
+            # Gửi câu hỏi cho AI
             response = gemini_model.generate_content(prompt)
             st.session_state.messages.append({"role": "assistant", "content": response.text})
             chat_box.chat_message("assistant").write(response.text)
         except Exception as e:
-            st.error(f"Lỗi gọi AI: {e}")
+            st.error(f"AI đang bận hoặc lỗi kết nối: {e}")
     else:
-        st.error("🤖 Robot chưa được khởi tạo. Vui lòng kiểm tra API Key ở đầu trang!")
+        st.warning("🤖 Chatbot chưa được cấu hình đúng API Key.")
             
