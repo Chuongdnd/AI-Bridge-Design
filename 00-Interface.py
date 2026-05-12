@@ -351,7 +351,7 @@ with st.sidebar:
     st.subheader("🤖 Bridge AI Assistant")
     
     # 1. Khung hiển thị hội thoại
-    chat_container = st.container(height=500, border=True)
+    chat_container = st.container(height=250, border=True)
     
     with chat_container:
         for msg in st.session_state.messages:
