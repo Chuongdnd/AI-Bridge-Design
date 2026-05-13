@@ -299,7 +299,7 @@ with tab3:
     # Hiển thị tóm tắt đầu vào cho AI
     st.write("Dữ liệu đầu vào cho AI:")
     col_a, col_b, col_c = st.columns(3)
-    col_a.write(f"📍 Tĩnh không B: **{st.session_state.design_data['khau_do_ngang']} m**")
+    col_a.write(f"📍 Tĩnh không B: **{st.session_state.design_data.get('B', 0)} m**")
     col_b.write(f"📍 Bề rộng Bc: **{st.session_state.design_data['bc']} m**")
     col_c.write(f"📍 Môi trường: **{st.session_state.design_data['loai_duong']}**")
 
