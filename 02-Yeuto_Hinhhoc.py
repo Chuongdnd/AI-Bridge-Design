@@ -2,10 +2,11 @@ def tra_cuu_yeu_to_hinh_hoc(loai, vtk, dia_hinh="1"):
     """
     Hàm tra cứu các chỉ tiêu kỹ thuật dựa trên TCVN.
     loai: "O to", "Cao tốc", "Do thi"
-    vtk: Tốc độ thiết kế
+    vtk: Tốc độ thiết kế (số nguyên hoặc số thực)
     dia_hinh: "1" (Đồng bằng), "2" (Miền núi)
     """
-    # Dữ liệu tra cứu cho Đường Ô tô (TCVN 4054:2005)
+    
+    # 1. Dữ liệu tra cứu cho Đường Ô tô (TCVN 4054:2005)
     db_oto = {
         120: {"R": [11000, 17000], "imax": 4, "cap": "I"},
         100: {"R": [6000, 10000],  "imax": 5, "cap": "II"},
@@ -15,15 +16,15 @@ def tra_cuu_yeu_to_hinh_hoc(loai, vtk, dia_hinh="1"):
         30:  {"R": [400, 600],     "imax": 10, "cap": "VI"}
     }
     
-    # Dữ liệu tra cứu cho Cao tốc (TCVN 5729:2012)
+    # 2. Dữ liệu tra cứu cho Cao tốc (TCVN 5729:2012)
     db_caotoc = {
-        120: {"R": [12000, 17000, 20000], "imax": 4, "cap": "120"},
-        100: {"R": [6000, 10000, 16000],  "imax": 5, "cap": "100"},
-        80:  {"R": [3000, 4500, 12000],   "imax": 6, "cap": "80"},
-        60:  {"R": [1500, 2000, 9000],    "imax": 6, "cap": "60"}
+        120: {"R": [15000, 20000], "imax": 4, "cap": "120"},
+        100: {"R": [10000, 15000], "imax": 5, "cap": "100"},
+        80:  {"R": [4500, 7000],   "imax": 6, "cap": "80"},
+        60:  {"R": [2500, 4000],   "imax": 7, "cap": "60"}
     }
     
-    # Dữ liệu tra cứu cho Đường Đô thị (TCVN 13592:2022)
+    # 3. Dữ liệu tra cứu cho Đường đô thị (TCVN 13592:2022)
     db_dothi = {
         100: {"R": [6500, 10000], "imax": 4, "cap": "Cao tốc ĐT"},
         80:  {"R": [3000, 4500],  "imax": 5, "cap": "Trục chính"},
@@ -33,33 +34,51 @@ def tra_cuu_yeu_to_hinh_hoc(loai, vtk, dia_hinh="1"):
         30:  {"R": [250, 400],    "imax": 8, "cap": "Đường nội bộ"}
     }
 
+    # Chọn bộ dữ liệu tương ứng
     res = None
+    tc_name = ""
     if loai == "O to":
         res = db_oto.get(vtk)
+        tc_name = "TCVN 4054:2005"
     elif loai == "Cao tốc":
         res = db_caotoc.get(vtk)
+        tc_name = "TCVN 5729:2012"
     elif loai == "Do thi":
         res = db_dothi.get(vtk)
+        tc_name = "TCVN 13592:2022"
 
     if res:
         # Xử lý độ dốc dọc tối đa (i_max)
         imax_val = res['imax']
-        if loai == "O to" and dia_hinh == "2":
-            imax_val += 1 # Tăng 1% cho miền núi
-            if imax_val > 11: imax_val = 11
+        # Đối với đường ô tô miền núi (dia_hinh="2"), cho phép châm chước tăng dốc
+        ghi_chu_imax = ""
+        if loai == "O to" and str(dia_hinh) == "2":
+            imax_val += 0 # Giữ nguyên i_max gốc nhưng thêm ghi chú
+            ghi_chu_imax = " (Có thể +1% khi khó khăn nhưng không quá 11%)"
 
+        # Trả về kết quả dạng Dictionary để file 00 hiển thị
         return {
             "status": "success",
+            "tieu_chuan": tc_name,
             "cap_duong": res['cap'],
-            "imax": imax_val,
+            "v_thiet_ke": f"{vtk} km/h",
+            "imax": f"{imax_val}%{ghi_chu_imax}",
             "R_loi_min": res['R'][0],
-            "R_loi_tt": res['R'][1]
+            "R_loi_tt": res['R'][1],
+            "dia_hinh": "Đồng bằng" if str(dia_hinh) == "1" else "Miền núi"
         }
-    return {"status": "error", "message": "Không có dữ liệu cho vận tốc này"}
+    
+    return {"status": "error", "message": "Không tìm thấy thông số vận tốc phù hợp."}
 
-def tinh_toan_mcn_cau(n_lan, w_lan, w_le, w_at=0.5):
-    """Tính toán bề rộng tổng cộng của cầu Bc"""
-    # Bc = n*W_lan + 2*W_le + 2*W_an_toan + 2*Gờ lan can (0.5m mỗi bên)
-    bc_thong_thuy = (n_lan * w_lan) + (2 * w_le) + (2 * w_at)
-    bc_tong = bc_thong_thuy + 1.0 # 0.5m x 2 gờ lan can
-    return round(bc_tong, 2)
+# Hàm hiển thị bảng 3 chỉ dùng để in ra Console nếu cần (vẫn giữ cho bạn)
+def hien_thi_bang_3_oto():
+    print("\n--- BẢNG 3: CẤP THIẾT KẾ VÀ LƯU LƯỢNG XE THIẾT KẾ (TCVN 4054:2005) ---")
+    print("| Cấp thiết kế | Lưu lượng xe thiết kế (xcqd/ngày đêm)           |")
+    print("|--------------|-------------------------------------------------|")
+    print("|    Cấp I     |               xcqd > 15.000                     |")
+    print("|    Cấp II    |          6.000 < xcqd <= 15.000                 |")
+    print("|    Cấp III   |          3.000 < xcqd <= 6.000                  |")
+    print("|    Cấp IV    |            500 < xcqd <= 3.000                  |")
+    print("|    Cấp V     |            200 < xcqd <= 500                    |")
+    print("|    Cấp VI    |               xcqd <= 200                       |")
+    print("------------------------------------------------------------------")
