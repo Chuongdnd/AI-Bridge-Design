@@ -1,5 +1,30 @@
 import pandas as pd
-
+def get_vtk_goi_y_dothi(loai_dt, cap_dt):
+    """
+    Dữ liệu Bảng 6: Vận tốc thiết kế các cấp đường đô thị (TCVN 13592:2022)
+    Dùng để gợi ý Vtk cho người dùng chọn tại file 00-Interface.py
+    """
+    data_b6 = {
+        "Trục chính đô thị": {
+            "Đặc biệt": [100, 120],
+            "Cấp I": [80, 100],
+            "Cấp II": [60, 80]
+        },
+        "Đường chính đô thị": {
+            "Cấp I": [60, 80],
+            "Cấp II": [50, 60]
+        },
+        "Đường khu vực": {
+            "Cấp I": [50, 60],
+            "Cấp II": [40, 50]
+        },
+        "Đường nội bộ": {
+            "Cấp I": [30, 40],
+            "Cấp II": [20, 30]
+        }
+    }
+    # Trả về danh sách vận tốc, nếu không tìm thấy trả về [60] làm mặc định
+    return data_b6.get(loai_dt, {}).get(cap_dt, [60])
 def tra_cuu_yeu_to_hinh_hoc(loai, cap_duong, dia_hinh="1"):
     """
     Hàm tra cứu tổng hợp các loại đường:
@@ -71,14 +96,16 @@ def tra_cuu_yeu_to_hinh_hoc(loai, cap_duong, dia_hinh="1"):
     elif loai == "Do thi":
         try:
             vtk = int(cap_duong)
-            # Tra theo bảng 11 và bảng 15 TCVN 13592
+            # Tra theo bảng 11 (imax) và bảng 15 (R) TCVN 13592
             data_dt = {
+                120: {"imax": 4, "R": [11000, 17000]}, # Bổ sung cho trục chính đặc biệt
                 100: {"imax": 4, "R": [6500, 10000]},
                 80:  {"imax": 5, "R": [3000, 4500]},
                 60:  {"imax": 6, "R": [1400, 2000]},
                 50:  {"imax": 6, "R": [800, 1200]},
                 40:  {"imax": 7, "R": [450, 700]},
-                30:  {"imax": 8, "R": [250, 400]}
+                30:  {"imax": 8, "R": [250, 400]},
+                20:  {"imax": 9, "R": [120, 200]}  # Bổ sung cho đường nội bộ cấp II
             }
             res = data_dt[vtk]
             return {

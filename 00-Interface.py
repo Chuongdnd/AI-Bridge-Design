@@ -156,14 +156,25 @@ with tab1:
 
     # --- KỊCH BẢN 3: ĐỐI VỚI ĐƯỜNG ĐÔ THỊ ---
     else:
-        st.info("ℹ️ Tra cứu theo TCXDVN 104:2007")
-        col_v_dt, col_dh_dt = st.columns(2)
-        with col_v_dt:
-            v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=[100, 80, 60, 50, 40, 30], key="dt_v")
-        with col_dh_dt:
-            d_hinhhoc = st.radio("Địa hình:", ["1", "2"], format_func=lambda x: "Bằng phẳng" if x == "1" else "Đồi núi", key="dt_dh")
+        col_loai, col_cap_dt = st.columns(2)
+        with col_loai:
+            loai_dt = st.selectbox("Loại đường đô thị:", 
+                                   ["Trục chính đô thị", "Đường chính đô thị", "Đường khu vực", "Đường nội bộ"], 
+                                   key="dt_loai")
+        with col_cap_dt:
+            # Xác định danh sách cấp tương ứng để người dùng chọn
+            options_cap = ["Đặc biệt", "Cấp I", "Cấp II"] if loai_dt == "Trục chính đô thị" else ["Cấp I", "Cấp II"]
+            cap_dt = st.selectbox("Cấp đường:", options_cap, key="dt_cap")
+
+        # GỌI HÀM TỪ FILE 02 ĐỂ LẤY VẬN TỐC (Không cần viết bảng data ở đây nữa)
+        list_vtk = YTHH.get_vtk_goi_y_dothi(loai_dt, cap_dt)
         
-        # Xác định đầu vào tra cứu là Vận tốc
+        v_hinhhoc = st.radio("Chọn Vận tốc thiết kế Vtk (km/h) áp dụng:", 
+                             options=list_vtk, horizontal=True, key="dt_v_final")
+        
+        d_hinhhoc = st.radio("Địa hình:", ["1", "2"], horizontal=True,
+                             format_func=lambda x: "Bằng phẳng" if x == "1" else "Đồi núi/Khó khăn", key="dt_dh")
+        
         input_tra_cuu = v_hinhhoc
 
     # --- BƯỚC TRUNG GIAN: TRA CỨU YẾU TỐ HÌNH HỌC ---
