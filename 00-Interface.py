@@ -217,7 +217,7 @@ with tab1:
             try:
                 fig = PLOT.ve_trac_doc_cau(res)
                 st.pyplot(fig)
-                st.success(f"🎉 Đã vẽ trắc dọc với R = {res['R_hinh_hoc']}m")
+                #st.success(f"🎉 Đã vẽ trắc dọc với R = {res['R_hinh_hoc']}m")
             except Exception as e:
                 st.error(f"Lỗi khi vẽ: {e}")
         else:
