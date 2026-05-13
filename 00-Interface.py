@@ -145,7 +145,11 @@ with tab1:
         }
         # Hiển thị bảng nhỏ gọn bên cạnh phần nhập liệu
         st.dataframe(pd.DataFrame(data_bang3), hide_index=True)
-        
+     # Nút bấm xác nhận nằm ở dưới cùng của cả 2 cột
+    if st.button("Xác nhận & Tra cứu TCVN", use_container_width=True):
+    # (Giữ nguyên logic gọi YTHH_Logic như các bước trước)
+        pass
+
     if st.button("🚀 Let's go"):
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, 
