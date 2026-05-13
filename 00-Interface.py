@@ -121,7 +121,7 @@ with tab1:
         
     st.markdown("---")
     st.header("📐 Yếu tố hình học thiết kế")
-    c1, c2, c3 = st.columns(3)
+    c1, c2 = st.columns(2)
     with c1:
         l_hinhhoc = st.selectbox("Cấp thiết kế đường trên cầu:", ["O to", "Cao tốc", "Do thi"], key="geo_l")
     with c2:
