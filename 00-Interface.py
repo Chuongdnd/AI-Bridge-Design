@@ -224,23 +224,35 @@ with tab1:
         res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
         
         if res_geo and res_geo.get("status") == "success":
-            # Gán dữ liệu bán kính vào res để PLOT vẽ đường cong
-            res['R_hinh_hoc'] = res['R_hinh_hoc'] = st.session_state.get('R_ap_dung', res_geo['R_loi_tt'])
-            res['i_max_hinh_hoc'] = res_geo['imax']
-            chon_R = st.radio("Chọn loại bán kính:", ["Tối thiểu thông thường", "Tối thiểu giới hạn"])
-            R_final = res_geo["R_loi_tt"] if chon_R == "Tối thiểu thông thường" else res_geo["R_loi_gh"]
-            st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
-            st.pyplot(PLOT.ve_trac_doc_cau(res))
-    
-            # Hiển thị bảng hình học
+            # GÁN GIÁ TRỊ R VÀ IMAX VÀO BIẾN res ĐỂ VẼ
+            res['R_hinh_hoc'] = st.session_state.get('R_final', res_geo.get('R_loi_tt', 5000))
+            res['i_max_hinh_hoc'] = res_geo.get('imax', 0)
+            
+            # Lưu vào session_state để chatbot sử dụng
+            st.session_state.tinh_khong_res = res
+            st.session_state['design_data'] = {"thuy_van": res, "hinh_hoc": res_geo}
+
+            # 3. HIỂN THỊ BẢN VẼ
             st.divider()
-            st.subheader("🛣️ Kết quả Yếu tố Hình học (TCVN)")
-            g1, g2, g3 = st.columns(3)
-            g1.metric("Cấp đường", res_geo['cap_duong'])
-            g2.metric("Độ dốc dọc max", f"{res_geo['imax']}%")
-            g3.metric("Bán kính Rmin", f"{res_geo['R_loi_min']} m")
+            st.subheader("🖼️ Sơ đồ trắc dọc cầu thiết kế")
+            try:
+                # Gọi hàm vẽ từ Drawing_Utils (đã import là PLOT)
+                fig = PLOT.ve_trac_doc_cau(res)
+                st.pyplot(fig)
+                
+                # 4. HIỂN THỊ CÁC CHỈ SỐ (Fix lỗi NameError tại đây)
+                st.subheader("🛣️ Thông số kỹ thuật áp dụng")
+                g1, g2, g3 = st.columns(3)
+                # Dùng .get('cap') vì file 02 trả về key 'cap'
+                g1.metric("Cấp đường", res_geo.get('cap', 'N/A')) 
+                g2.metric("Độ dốc dọc max", f"{res_geo.get('imax')}%")
+                g3.metric("Bán kính R", f"{res['R_hinh_hoc']} m")
+                
+                st.success(f"✅ Đã vẽ bản vẽ với R = {res['R_hinh_hoc']}m")
+            except Exception as e:
+                st.error(f"Lỗi khi hiển thị bản vẽ: {e}")
         else:
-            st.error("Không tìm thấy dữ liệu hình học phù hợp.")
+            st.error("❌ Không tìm thấy thông số hình học phù hợp để vẽ.")
 
         st.divider()
         # 2. Hiển thị bảng thông số
