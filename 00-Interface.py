@@ -134,7 +134,7 @@ with tab1:
             # Ràng buộc vận tốc theo địa hình đúng yêu cầu
             v_list = [120, 100] if d_hinhhoc == "1" else [80, 60]
             v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list, key="ct_v")
-
+        input_tra_cuu = v_hinhhoc
     # --- KỊCH BẢN 2: ĐỐI VỚI ĐƯỜNG Ô TÔ ---
     elif l_hinhhoc == "O to":
         st.markdown("### --- BẢNG 3: CẤP THIẾT KẾ VÀ LƯU LƯỢNG XE THIẾT KẾ (TCVN 4054:2005) ---")
