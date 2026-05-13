@@ -137,6 +137,7 @@ with tab1:
 
     # --- KỊCH BẢN 2: ĐỐI VỚI ĐƯỜNG Ô TÔ ---
     elif l_hinhhoc == "O to":
+        # Hiển thị Bảng 3 ngay phía dưới tiêu đề để người dùng nhìn vào
         st.markdown("### --- BẢNG 3: CẤP THIẾT KẾ VÀ LƯU LƯỢNG XE THIẾT KẾ (TCVN 4054:2005) ---")
         data_b3 = {
             "Cấp thiết kế": ["Cấp I", "Cấp II", "Cấp III", "Cấp IV", "Cấp V", "Cấp VI"],
@@ -144,31 +145,43 @@ with tab1:
         }
         st.table(pd.DataFrame(data_b3))
         
+        # Sau đó mới hiện các ô chọn theo đúng quy trình bạn muốn
         col_cap, col_dh = st.columns(2)
         with col_cap:
+            # Người dùng chọn Cấp thay vì chọn Vận tốc
             cap_duong_oto = st.selectbox("Chọn Cấp đường:", ["I", "II", "III", "IV", "V", "VI"], key="oto_cap_auto")
         with col_dh:
             d_hinhhoc = st.radio("Chọn địa hình:", ["1", "2"], horizontal=True, 
-                                 format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi", key="oto_dh_auto")
-
-        # --- TRA CỨU ĐỂ LẤY THÔNG SỐ ---
-        # Gọi hàm tra cứu từ file 02 (Dùng cap_duong_oto)
-        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc("O to", cap_duong_oto, d_hinhhoc)
-        
-        if res_geo["status"] == "success":
-            st.info(f"🚀 Vtk xác định: **{res_geo['v_thiet_ke']}** | imax: **{res_geo['imax']}**")
+                                format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi", key="oto_dh_auto")
+        # Tra cứu sơ bộ để lấy Vtk và imax hiển thị ngay
+        res_pre = YTHH.tra_cuu_yeu_to_hinh_hoc("O to", cap_duong_oto, d_hinhhoc)
+        if res_pre["status"] == "success":
+            v_hinhhoc = res_pre["v_thiet_ke"]
+            st.info(f"🚀 Vtk xác định: **{v_hinhhoc} km/h** | imax: **{res_pre['imax']}%**")
             
-            # Chọn R đứng lồi
+            # --- THÊM OPTION CHỌN R (BẢNG 19) ---
             chon_R = st.radio("Chọn loại bán kính đứng lồi áp dụng:", 
-                             ["Tối thiểu thông thường", "Tối thiểu giới hạn"], 
-                             horizontal=True, key="radio_select_r_oto")
+                             ["Tối thiểu thông thường", "Tối thiểu giới hạn"], horizontal=True)
             
-            # Gán R cuối cùng
-            R_final = res_geo["R_loi_tt"] if chon_R == "Tối thiểu thông thường" else res_geo["R_loi_gh"]
-            
-            # QUAN TRỌNG: Lưu vào session_state để nút bấm "Let's go" bên dưới sử dụng
-            st.session_state.R_final = R_final
-            st.session_state.res_geo_current = res_geo   
+            # Gán giá trị R cuối cùng dựa trên lựa chọn
+            R_final = res_pre["R_loi_tt"] if chon_R == "Tối thiểu thông thường" else res_pre["R_loi_gh"]
+            st.session_state.R_ap_dung = R_final # Lưu để cập nhật bản vẽ
+        # 2. DÒNG CẬP NHẬT QUAN TRỌNG: Tự động tra Vận tốc thiết kế (Vtk)
+        v_auto_map = {
+            "I": {"1": 120, "2": 80},
+            "II": {"1": 100, "2": 60},
+            "III": {"1": 80, "2": 60},
+            "IV": {"1": 60, "2": 40},
+            "V": {"1": 40, "2": 30},
+            "VI": {"1": 30, "2": 20}
+        }
+        v_hinhhoc = v_auto_map[cap_duong_oto][d_hinhhoc]
+
+    # --- ĐỐI VỚI ĐƯỜNG ĐÔ THỊ (GIỮ NGUYÊN HOẶC TÙY CHỈNH SAU) ---
+    else:
+        # ... logic đường đô thị tương tự ...
+        d_hinhhoc = st.radio("Địa hình:", ["1", "2"], key="dt_terrain")
+        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=[100, 80, 60, 50, 40, 30], key="dt_v")    
         
     if st.button("🚀 Let's go!", use_container_width=True):
         # --- 1. Tính toán thủy văn/tĩnh không ---
