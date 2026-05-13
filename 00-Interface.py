@@ -183,7 +183,8 @@ with tab1:
         d_hinhhoc = st.radio("Địa hình:", ["1", "2"], key="dt_terrain")
         v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=[100, 80, 60, 50, 40, 30], key="dt_v")    
         
-    if st.button("🚀 Let's go"):
+    if st.button("🚀 Let's go!", use_container_width=True):
+        # --- 1. Tính toán thủy văn/tĩnh không ---
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, 
             mien=mien if loai_c=="Vượt sông" else None,
@@ -191,17 +192,37 @@ with tab1:
             loai_hinh=loai_h if loai_c=="Vượt sông" else None,
             loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
             cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None,
-            h1=h1, 
-            h5=h5, 
-            h10=h10, 
-            h98=h98,
-            h_tn_tb=h_tn_tb if loai_c=="Vượt sông" else h1 # TRUYỀN THÊM BIẾN NÀY
+            h1=h1, h5=h5, h10=h10, h98=h98,
+            h_tn_tb=h_tn_tb if loai_c=="Vượt sông" else h1 
         )
     
-        if res["status"] == "success":
-            # LƯU KẾT QUẢ VÀO SESSION STATE
-            st.session_state.tinh_khong_res = res
-            st.session_state.design_data.update({'day_dam': res['day_dam'], 'khau_do_ngang': res['B']})
+        # --- 2. Kiểm tra và Nạp dữ liệu hình học để vẽ ---
+        if res_geo and res_geo.get("status") == "success":
+            # Gán R từ Radio button đã chọn ở trên
+            res['R_hinh_hoc'] = st.session_state.get('R_final', res_geo.get('R_loi_tt', 5000))
+            
+            # Xử lý imax về dạng số
+            imax_raw = res_geo.get('imax', '0')
+            if isinstance(imax_raw, str):
+                res['i_max_hinh_hoc'] = float(imax_raw.split('%')[0])
+            else:
+                res['i_max_hinh_hoc'] = imax_raw
+            
+            # --- 3. LỆNH QUAN TRỌNG NHẤT: HIỂN THỊ BẢN VẼ ---
+            st.divider()
+            st.subheader("🖼️ Sơ đồ trắc dọc cầu thiết kế")
+            try:
+                # Gọi hàm vẽ từ Drawing_Utils (đã import là PLOT)
+                fig_final = PLOT.ve_trac_doc_cau(res)
+                st.pyplot(fig_final)
+                
+                # Lưu lại kết quả để các Tab khác hoặc AI sử dụng
+                st.session_state.tinh_khong_res = res
+                st.success(f"✅ Đã vẽ với R={res['R_hinh_hoc']}m và i={res['i_max_hinh_hoc']}%")
+            except Exception as e:
+                st.error(f"Lỗi khi vẽ: {e}")
+        else:
+            st.error("❌ Không tìm thấy thông số hình học phù hợp để vẽ.")
 
     # HIỂN THỊ KẾT QUẢ (Nằm ngoài nút bấm nhưng kiểm tra session_state)
     if 'tinh_khong_res' in st.session_state:
