@@ -227,7 +227,8 @@ with tab1:
             # Gán dữ liệu bán kính vào res để PLOT vẽ đường cong
             res['R_hinh_hoc'] = res['R_hinh_hoc'] = st.session_state.get('R_ap_dung', res_geo['R_loi_tt'])
             res['i_max_hinh_hoc'] = res_geo['imax']
-            
+            chon_R = st.radio("Chọn loại bán kính:", ["Tối thiểu thông thường", "Tối thiểu giới hạn"])
+            R_final = res_geo["R_loi_tt"] if chon_R == "Tối thiểu thông thường" else res_geo["R_loi_gh"]
             st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
             st.pyplot(PLOT.ve_trac_doc_cau(res))
     
