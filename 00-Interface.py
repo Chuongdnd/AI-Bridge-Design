@@ -137,7 +137,6 @@ with tab1:
 
     # --- KỊCH BẢN 2: ĐỐI VỚI ĐƯỜNG Ô TÔ ---
     elif l_hinhhoc == "O to":
-        # Hiển thị Bảng 3 ngay phía dưới tiêu đề để người dùng nhìn vào
         st.markdown("### --- BẢNG 3: CẤP THIẾT KẾ VÀ LƯU LƯỢNG XE THIẾT KẾ (TCVN 4054:2005) ---")
         data_b3 = {
             "Cấp thiết kế": ["Cấp I", "Cấp II", "Cấp III", "Cấp IV", "Cấp V", "Cấp VI"],
@@ -145,46 +144,48 @@ with tab1:
         }
         st.table(pd.DataFrame(data_b3))
         
-        # Sau đó mới hiện các ô chọn theo đúng quy trình bạn muốn
         col_cap, col_dh = st.columns(2)
         with col_cap:
-            # Người dùng chọn Cấp thay vì chọn Vận tốc
             cap_duong_oto = st.selectbox("Chọn Cấp đường:", ["I", "II", "III", "IV", "V", "VI"], key="oto_cap_auto")
         with col_dh:
             d_hinhhoc = st.radio("Chọn địa hình:", ["1", "2"], horizontal=True, 
-                                format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi", key="oto_dh_auto")
-        # Tra cứu sơ bộ để lấy Vtk và imax hiển thị ngay
-        res_pre = YTHH.tra_cuu_yeu_to_hinh_hoc("O to", cap_duong_oto, d_hinhhoc)
-        if res_pre["status"] == "success":
-            v_hinhhoc = res_pre["v_thiet_ke"]
-            st.info(f"🚀 Vtk xác định: **{v_hinhhoc} km/h** | imax: **{res_pre['imax']}%**")
-            
-            # --- THÊM OPTION CHỌN R (BẢNG 19) ---
-            chon_R = st.radio("Chọn loại bán kính đứng lồi áp dụng:", 
-                             ["Tối thiểu thông thường", "Tối thiểu giới hạn"], horizontal=True)
-            
-            # Gán giá trị R cuối cùng dựa trên lựa chọn
-            R_final = res_pre["R_loi_tt"] if chon_R == "Tối thiểu thông thường" else res_pre["R_loi_gh"]
-            st.session_state.R_ap_dung = R_final # Lưu để cập nhật bản vẽ
-        # 2. DÒNG CẬP NHẬT QUAN TRỌNG: Tự động tra Vận tốc thiết kế (Vtk)
-        v_auto_map = {
-            "I": {"1": 120, "2": 80},
-            "II": {"1": 100, "2": 60},
-            "III": {"1": 80, "2": 60},
-            "IV": {"1": 60, "2": 40},
-            "V": {"1": 40, "2": 30},
-            "VI": {"1": 30, "2": 20}
-        }
-        v_hinhhoc = v_auto_map[cap_duong_oto][d_hinhhoc]
-
-    # --- ĐỐI VỚI ĐƯỜNG ĐÔ THỊ (GIỮ NGUYÊN HOẶC TÙY CHỈNH SAU) ---
-    else:
-        # ... logic đường đô thị tương tự ...
-        d_hinhhoc = st.radio("Địa hình:", ["1", "2"], key="dt_terrain")
-        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=[100, 80, 60, 50, 40, 30], key="dt_v")    
+                                 format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi", key="oto_dh_auto")
         
+        # Xác định đầu vào tra cứu là Cấp đường
+        input_tra_cuu = cap_duong_oto
+
+    # --- KỊCH BẢN 3: ĐỐI VỚI ĐƯỜNG ĐÔ THỊ ---
+    else:
+        st.info("ℹ️ Tra cứu theo TCXDVN 104:2007")
+        col_v_dt, col_dh_dt = st.columns(2)
+        with col_v_dt:
+            v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=[100, 80, 60, 50, 40, 30], key="dt_v")
+        with col_dh_dt:
+            d_hinhhoc = st.radio("Địa hình:", ["1", "2"], format_func=lambda x: "Bằng phẳng" if x == "1" else "Đồi núi", key="dt_dh")
+        
+        # Xác định đầu vào tra cứu là Vận tốc
+        input_tra_cuu = v_hinhhoc
+
+    # --- BƯỚC TRUNG GIAN: TRA CỨU YẾU TỐ HÌNH HỌC ---
+    # Lệnh này nằm ngoài các khối if/else để luôn chạy trước khi bấm nút
+    res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
+
+    if res_geo.get("status") == "success":
+        st.success(f"✅ Đã xác định Vtk = {res_geo['v_thiet_ke']} | imax = {res_geo['imax']}")
+        
+        # Cho phép người dùng chọn R đứng lồi để vẽ
+        chon_R = st.radio("Chọn bán kính đứng lồi áp dụng:", 
+                         ["Tối thiểu thông thường", "Tối thiểu giới hạn"], horizontal=True, key="r_selection")
+        
+        # Lưu giá trị R vào session_state để nút bấm bên dưới sử dụng
+        r_final = res_geo["R_loi_tt"] if chon_R == "Tối thiểu thông thường" else res_geo["R_loi_gh"]
+        st.session_state.R_final = r_final
+
+    st.divider()
+
+    # --- BƯỚC CUỐI: NÚT BẤM TÍNH TOÁN VÀ DỰNG HÌNH ---
     if st.button("🚀 Let's go!", use_container_width=True):
-        # --- 1. Tính toán thủy văn/tĩnh không ---
+        # 1. Gọi hàm tính toán Tĩnh không & Thủy văn
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, 
             mien=mien if loai_c=="Vượt sông" else None,
@@ -193,131 +194,48 @@ with tab1:
             loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
             cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None,
             h1=h1, h5=h5, h10=h10, h98=h98,
-            h_tn_tb=h_tn_tb if loai_c=="Vượt sông" else h1 
+            h_tn_tb=h_tn_tb if loai_c=="Vượt sông" else h1
         )
-    
-        # --- 2. Kiểm tra và Nạp dữ liệu hình học để vẽ ---
-        if res_geo and res_geo.get("status") == "success":
-            # Gán R từ Radio button đã chọn ở trên
-            res['R_hinh_hoc'] = st.session_state.get('R_final', res_geo.get('R_loi_tt', 5000))
+
+        # 2. Bơm dữ liệu hình học vào res để phục vụ hàm vẽ
+        if res_geo.get("status") == "success":
+            res['R_hinh_hoc'] = st.session_state.get('R_final', 5000)
             
-            # Xử lý imax về dạng số
+            # Ép kiểu imax về số (cắt bỏ dấu % nếu có)
             imax_raw = res_geo.get('imax', '0')
-            if isinstance(imax_raw, str):
-                res['i_max_hinh_hoc'] = float(imax_raw.split('%')[0])
-            else:
-                res['i_max_hinh_hoc'] = imax_raw
+            res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
             
-            # --- 3. LỆNH QUAN TRỌNG NHẤT: HIỂN THỊ BẢN VẼ ---
-            st.divider()
+            # Gán thêm biến 'bc' (bề rộng cầu) để tránh lỗi ở các tab khác
+            res['bc'] = res.get('B', 0)
+
+            # Lưu vào session_state để chatbot và các tab sau sử dụng
+            st.session_state.design_data = res
+            st.session_state.res_geo_current = res_geo
+
+            # 3. HIỂN THỊ KẾT QUẢ VÀ BẢN VẼ
             st.subheader("🖼️ Sơ đồ trắc dọc cầu thiết kế")
             try:
-                # Gọi hàm vẽ từ Drawing_Utils (đã import là PLOT)
-                fig_final = PLOT.ve_trac_doc_cau(res)
-                st.pyplot(fig_final)
-                
-                # Lưu lại kết quả để các Tab khác hoặc AI sử dụng
-                st.session_state.tinh_khong_res = res
-                st.success(f"✅ Đã vẽ với R={res['R_hinh_hoc']}m và i={res['i_max_hinh_hoc']}%")
-            except Exception as e:
-                st.error(f"Lỗi khi vẽ: {e}")
-        else:
-            st.error("❌ Không tìm thấy thông số hình học phù hợp để vẽ.")
-
-    # HIỂN THỊ KẾT QUẢ (Nằm ngoài nút bấm nhưng kiểm tra session_state)
-    if 'tinh_khong_res' in st.session_state:
-        res = st.session_state.tinh_khong_res
-        st.divider()
-
-        # --- BƯỚC A: CHUẨN BỊ DỮ LIỆU BẢNG TRƯỚC (Để tránh lỗi NameError) ---
-        if "vượt đường bộ" in res.get('label', "").lower():
-            df_data = {
-                "Thông số kỹ thuật": ["Loại đường bị vượt", "Bề rộng (B)", "Tĩnh không (H)", "Cao độ mặt đường", "Cao độ đáy dầm"],
-                "Giá trị": [res.get('label', "").split("-")[-1].strip(), f"{res.get('B', 0)} m", f"{res.get('H', 0)} m", f"{res.get('MNCN', 0):.3f} m", f"{res.get('day_dam', 0):.3f} m"]
-            }
-        else:
-            df_data = {
-                "Thông số kỹ thuật": ["Khổ thông thuyền (B)", "Tĩnh không (H)", "Cao độ đáy dầm thiết kế", "MNCN (H1%)", "MNTT (H5%)", "MNTC (H10%)", "MNTN (H98%)"],
-                "Giá trị": [f"{res.get('B', 0)} m", f"{res.get('H', 0)} m", f"{res.get('day_dam', 0):.3f} m", f"{res.get('MNCN', 0):.3f} m", f"{res.get('MNTT', 0):.3f} m", f"{res.get('MNTC', 0):.3f} m", f"{res.get('MNTN', 0):.3f} m"]
-            }
-
-        # --- BƯỚC B: TRA CỨU HÌNH HỌC VÀ VẼ HÌNH ---
-        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
-        
-        if res_geo and res_geo.get("status") == "success":
-            # GÁN GIÁ TRỊ R VÀ IMAX VÀO BIẾN res ĐỂ VẼ
-            res['R_hinh_hoc'] = st.session_state.get('R_final', res_geo.get('R_loi_tt', 5000))
-            res['i_max_hinh_hoc'] = res_geo.get('imax', 0)
-            
-            # Lưu vào session_state để chatbot sử dụng
-            st.session_state.tinh_khong_res = res
-            st.session_state['design_data'] = {"thuy_van": res, "hinh_hoc": res_geo}
-
-            # 3. HIỂN THỊ BẢN VẼ
-            st.divider()
-            st.subheader("🖼️ Sơ đồ trắc dọc cầu thiết kế")
-            try:
-                # Gọi hàm vẽ từ Drawing_Utils (đã import là PLOT)
                 fig = PLOT.ve_trac_doc_cau(res)
                 st.pyplot(fig)
-                
-                # 4. HIỂN THỊ CÁC CHỈ SỐ (Fix lỗi NameError tại đây)
-                st.subheader("🛣️ Thông số kỹ thuật áp dụng")
-                g1, g2, g3 = st.columns(3)
-                # Dùng .get('cap') vì file 02 trả về key 'cap'
-                g1.metric("Cấp đường", res_geo.get('cap', 'N/A')) 
-                g2.metric("Độ dốc dọc max", f"{res_geo.get('imax')}%")
-                g3.metric("Bán kính R", f"{res['R_hinh_hoc']} m")
-                
-                st.success(f"✅ Đã vẽ bản vẽ với R = {res['R_hinh_hoc']}m")
+                st.success(f"🎉 Đã vẽ trắc dọc với R = {res['R_hinh_hoc']}m")
             except Exception as e:
-                st.error(f"Lỗi khi hiển thị bản vẽ: {e}")
-        else:
-            st.error("❌ Không tìm thấy thông số hình học phù hợp để vẽ.")
+                st.error(f"Lỗi khi vẽ: {e}")
 
-        st.divider()
-        # 2. Hiển thị bảng thông số
-        st.subheader("📊 Chi tiết thông số kỹ thuật")
-        
-        # Kiểm tra loại cầu dựa trên label kết quả
-        if "vượt đường bộ" in res.get('label', "").lower():
-            # NỘI DUNG CHO VƯỢT ĐƯỜNG BỘ
-            df_data = {
-                "Thông số kỹ thuật": [
-                    "Loại đường bị vượt", 
-                    "Bề rộng tĩnh không (B)", 
-                    "Chiều cao tĩnh không (H)", 
-                    "Cao độ mặt đường", 
-                    "Cao độ đáy dầm thiết kế"
-                ],
-                "Giá trị": [
-                    res.get('label', "").split("-")[-1].strip(), # Lấy tên loại đường từ label
-                    f"{res.get('B', 0)} m", 
-                    f"{res.get('H', 0)} m", 
-                    f"{res.get('MNCN', 0):.3f} m", 
-                    f"{res.get('day_dam', 0):.3f} m"
-                ]
-            }
+            # 4. HIỂN THỊ BẢNG TỔNG HỢP (Theo file txt của bạn)
+            st.subheader("📊 Bảng thông số kỹ thuật")
+            if loai_c == "Vượt đường bộ":
+                df_data = {
+                    "Thông số kỹ thuật": ["Loại đường bị vượt", "Bề rộng tĩnh không (B)", "Chiều cao tĩnh không (H)", "Cao độ mặt đường", "Cao độ đáy dầm thiết kế"],
+                    "Giá trị": [res.get('label', "").split("-")[-1].strip(), f"{res.get('B', 0)} m", f"{res.get('H', 0)} m", f"{res.get('MNCN', 0):.3f} m", f"{res.get('day_dam', 0):.3f} m"]
+                }
+            else:
+                df_data = {
+                    "Thông số kỹ thuật": ["Khổ ngang (B)", "Tĩnh không đứng (H)", "Mực nước cao nhất (MNCN)", "Cao độ đáy dầm thiết kế"],
+                    "Giá trị": [f"{res.get('B', 0)} m", f"{res.get('H', 0)} m", f"{res.get('MNCN', 0):.3f} m", f"{res.get('day_dam', 0):.3f} m"]
+                }
+            st.table(pd.DataFrame(df_data))
         else:
-            # GIỮ NGUYÊN NỘI DUNG VƯỢT SÔNG CỦA BẠN
-            df_data = {
-                "Thông số kỹ thuật": [
-                    "Khổ thông thuyền ngang (B)", "Chiều cao tĩnh không đứng (H)", "Cao độ đáy dầm thiết kế",
-                    "Mực nước cao nhất (MNCN)", "Mực nước thông thuyền (MNTT)", "Mực nước thi công (MNTC)",
-                    "Mực nước thấp nhất (MNTN)"
-                ],
-                "Giá trị": [
-                    f"{res.get('B', 0)} m", 
-                    f"{res.get('H', 0)} m", 
-                    f"{res.get('day_dam', 0):.3f} m", 
-                    f"{res.get('MNCN', 0):.3f} m", 
-                    f"{res.get('MNTT', 0):.3f} m", 
-                    f"{res.get('MNTC', 0):.3f} m", 
-                    f"{res.get('MNTN', 0):.3f} m"
-                ]
-            }
-            
-        st.table(pd.DataFrame(df_data))
+            st.error("❌ Không thể xác định yếu tố hình học. Vui lòng kiểm tra lại đầu vào.")
             # ==========================================
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
