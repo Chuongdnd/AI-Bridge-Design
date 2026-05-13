@@ -123,57 +123,57 @@ with tab1:
     l_hinhhoc = st.selectbox("Chọn loại đường thiết kế:", ["Cao tốc", "O to", "Do thi"], key="main_type")
 
 # --- KỊCH BẢN 1: ĐỐI VỚI ĐƯỜNG CAO TỐC ---
-if l_hinhhoc == "Cao tốc":
-    col1, col2 = st.columns(2)
-    with col1:
-        d_hinhhoc = st.radio("Chọn địa hình:", 
-                             options=["1", "2"], 
-                             format_func=lambda x: "Đồng bằng" if x == "1" else "Núi, đồi cao, địa hình khó khăn",
-                             key="ct_terrain")
-    with col2:
-        # Ràng buộc vận tốc theo địa hình đúng yêu cầu
-        v_list = [120, 100] if d_hinhhoc == "1" else [80, 60]
-        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list, key="ct_v")
+    if l_hinhhoc == "Cao tốc":
+        col1, col2 = st.columns(2)
+        with col1:
+            d_hinhhoc = st.radio("Chọn địa hình:", 
+                                options=["1", "2"], 
+                                format_func=lambda x: "Đồng bằng" if x == "1" else "Núi, đồi cao, địa hình khó khăn",
+                                key="ct_terrain")
+        with col2:
+            # Ràng buộc vận tốc theo địa hình đúng yêu cầu
+            v_list = [120, 100] if d_hinhhoc == "1" else [80, 60]
+            v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list, key="ct_v")
 
-# --- KỊCH BẢN 2: ĐỐI VỚI ĐƯỜNG Ô TÔ ---
-elif l_hinhhoc == "O to":
-    # Hiển thị Bảng 3 ngay phía dưới tiêu đề để người dùng nhìn vào
-    st.markdown("### --- BẢNG 3: CẤP THIẾT KẾ VÀ LƯU LƯỢNG XE THIẾT KẾ (TCVN 4054:2005) ---")
-    data_b3 = {
-        "Cấp thiết kế": ["Cấp I", "Cấp II", "Cấp III", "Cấp IV", "Cấp V", "Cấp VI"],
-        "Lưu lượng xe (xcqd/ngày đêm)": ["> 15.000", "6.000 - 15.000", "3.000 - 6.000", "500 - 3.000", "200 - 500", "<= 200"]
-    }
-    st.table(pd.DataFrame(data_b3))
-    
-    # Sau đó mới hiện các ô chọn theo đúng quy trình bạn muốn
-    c1, c2, c3 = st.columns(3)
-    with c1:
-        # Người dùng chọn cấp đường tương ứng sau khi nhìn bảng 3
-        cap_duong_oto = st.selectbox("Chọn Cấp đường tương ứng:", ["I", "II", "III", "IV", "V", "VI"], key="oto_cap")
-    with c2:
-        # Chọn địa hình
-        d_hinhhoc = st.radio("Chọn địa hình:", 
-                             options=["1", "2"], 
-                             format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi",
-                             key="oto_terrain")
-    with c3:
-        # Logic Vtk tự động dựa trên Cấp đường và Địa hình (TCVN 4054)
-        v_map = {
-            "I": {"1": [120, 100], "2": [80]},
-            "II": {"1": [100, 80], "2": [60]},
-            "III": {"1": [80, 60], "2": [60, 40]},
-            "IV": {"1": [60], "2": [40]},
-            "V": {"1": [40], "2": [30]},
-            "VI": {"1": [30], "2": [20]}
+    # --- KỊCH BẢN 2: ĐỐI VỚI ĐƯỜNG Ô TÔ ---
+    elif l_hinhhoc == "O to":
+        # Hiển thị Bảng 3 ngay phía dưới tiêu đề để người dùng nhìn vào
+        st.markdown("### --- BẢNG 3: CẤP THIẾT KẾ VÀ LƯU LƯỢNG XE THIẾT KẾ (TCVN 4054:2005) ---")
+        data_b3 = {
+            "Cấp thiết kế": ["Cấp I", "Cấp II", "Cấp III", "Cấp IV", "Cấp V", "Cấp VI"],
+            "Lưu lượng xe (xcqd/ngày đêm)": ["> 15.000", "6.000 - 15.000", "3.000 - 6.000", "500 - 3.000", "200 - 500", "<= 200"]
         }
-        v_list_oto = v_map[cap_duong_oto][d_hinhhoc]
-        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list_oto, key="oto_v")
+        st.table(pd.DataFrame(data_b3))
+        
+        # Sau đó mới hiện các ô chọn theo đúng quy trình bạn muốn
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            # Người dùng chọn cấp đường tương ứng sau khi nhìn bảng 3
+            cap_duong_oto = st.selectbox("Chọn Cấp đường tương ứng:", ["I", "II", "III", "IV", "V", "VI"], key="oto_cap")
+        with c2:
+            # Chọn địa hình
+            d_hinhhoc = st.radio("Chọn địa hình:", 
+                                options=["1", "2"], 
+                                format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi",
+                                key="oto_terrain")
+        with c3:
+            # Logic Vtk tự động dựa trên Cấp đường và Địa hình (TCVN 4054)
+            v_map = {
+                "I": {"1": [120, 100], "2": [80]},
+                "II": {"1": [100, 80], "2": [60]},
+                "III": {"1": [80, 60], "2": [60, 40]},
+                "IV": {"1": [60], "2": [40]},
+                "V": {"1": [40], "2": [30]},
+                "VI": {"1": [30], "2": [20]}
+            }
+            v_list_oto = v_map[cap_duong_oto][d_hinhhoc]
+            v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list_oto, key="oto_v")
 
-# --- ĐỐI VỚI ĐƯỜNG ĐÔ THỊ (GIỮ NGUYÊN HOẶC TÙY CHỈNH SAU) ---
-else:
-    # ... logic đường đô thị tương tự ...
-    d_hinhhoc = st.radio("Địa hình:", ["1", "2"], key="dt_terrain")
-    v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=[100, 80, 60, 50, 40, 30], key="dt_v")
+    # --- ĐỐI VỚI ĐƯỜNG ĐÔ THỊ (GIỮ NGUYÊN HOẶC TÙY CHỈNH SAU) ---
+    else:
+        # ... logic đường đô thị tương tự ...
+        d_hinhhoc = st.radio("Địa hình:", ["1", "2"], key="dt_terrain")
+        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=[100, 80, 60, 50, 40, 30], key="dt_v")    
         
     if st.button("🚀 Let's go"):
         res = TK.tra_cuu_tinh_khong_bridge(
