@@ -229,36 +229,26 @@ with tab1:
             }
 
         # --- BƯỚC B: TRA CỨU HÌNH HỌC VÀ VẼ HÌNH ---
-        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, v_hinhhoc, d_hinhhoc)
+        input_tra_cuu = cap_duong_oto if l_hinhhoc == "O to" else v_hinhhoc
+        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
         
         if res_geo and res_geo.get("status") == "success":
             # GÁN GIÁ TRỊ R VÀ IMAX VÀO BIẾN res ĐỂ VẼ
             res['R_hinh_hoc'] = st.session_state.get('R_final', res_geo.get('R_loi_tt', 5000))
-            res['i_max_hinh_hoc'] = res_geo.get('imax', 0)
             
-            # Lưu vào session_state để chatbot sử dụng
+            # Xử lý imax (ép kiểu về số để Drawing_Utils không lỗi)
+            imax_raw = res_geo.get('imax', 0)
+            res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
+            
+            # Lưu vào session_state
             st.session_state.tinh_khong_res = res
             st.session_state['design_data'] = {"thuy_van": res, "hinh_hoc": res_geo}
 
-            # 3. HIỂN THỊ BẢN VẼ
+            # --- BƯỚC 3: GỌI LỆNH VẼ (Cực kỳ quan trọng) ---
             st.divider()
             st.subheader("🖼️ Sơ đồ trắc dọc cầu thiết kế")
-            try:
-                # Gọi hàm vẽ từ Drawing_Utils (đã import là PLOT)
-                fig = PLOT.ve_trac_doc_cau(res)
-                st.pyplot(fig)
-                
-                # 4. HIỂN THỊ CÁC CHỈ SỐ (Fix lỗi NameError tại đây)
-                st.subheader("🛣️ Thông số kỹ thuật áp dụng")
-                g1, g2, g3 = st.columns(3)
-                # Dùng .get('cap') vì file 02 trả về key 'cap'
-                g1.metric("Cấp đường", res_geo.get('cap', 'N/A')) 
-                g2.metric("Độ dốc dọc max", f"{res_geo.get('imax')}%")
-                g3.metric("Bán kính R", f"{res['R_hinh_hoc']} m")
-                
-                st.success(f"✅ Đã vẽ bản vẽ với R = {res['R_hinh_hoc']}m")
-            except Exception as e:
-                st.error(f"Lỗi khi hiển thị bản vẽ: {e}")
+            st.pyplot(PLOT.ve_trac_doc_cau(res))
+            st.success(f"✅ Đã vẽ bản vẽ với R = {res['R_hinh_hoc']}m")
         else:
             st.error("❌ Không tìm thấy thông số hình học phù hợp để vẽ.")
 
