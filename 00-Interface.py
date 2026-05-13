@@ -121,9 +121,10 @@ with tab1:
         
     st.markdown("---")
     st.header("📐 Yếu tố hình học thiết kế")
-    with col_in1:
+    c1, c2, c3 = st.columns(3)
+    with c1:
         l_hinhhoc = st.selectbox("Cấp thiết kế đường trên cầu:", ["O to", "Cao tốc", "Do thi"], key="geo_l")
-    with col_in2:
+    with c2:
         v_list = [120, 100, 80, 60, 40, 30] if l_hinhhoc != "Do thi" else [100, 80, 60, 50, 40, 30]
         d_hinhhoc = st.radio("Địa hình:", [("1", "Đồng bằng"), ("2", "Miền núi")], 
                                  format_func=lambda x: x[1], horizontal=True, key="geo_d")[0]
