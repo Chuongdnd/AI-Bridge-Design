@@ -146,28 +146,24 @@ with tab1:
         st.table(pd.DataFrame(data_b3))
         
         # Sau đó mới hiện các ô chọn theo đúng quy trình bạn muốn
-        c1, c2, c3 = st.columns(3)
-        with c1:
-            # Người dùng chọn cấp đường tương ứng sau khi nhìn bảng 3
-            cap_duong_oto = st.selectbox("Chọn Cấp đường tương ứng:", ["I", "II", "III", "IV", "V", "VI"], key="oto_cap")
-        with c2:
-            # Chọn địa hình
-            d_hinhhoc = st.radio("Chọn địa hình:", 
-                                options=["1", "2"], 
-                                format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi",
-                                key="oto_terrain")
-        with c3:
-            # Logic Vtk tự động dựa trên Cấp đường và Địa hình (TCVN 4054)
-            v_map = {
-                "I": {"1": [120, 100], "2": [80]},
-                "II": {"1": [100, 80], "2": [60]},
-                "III": {"1": [80, 60], "2": [60, 40]},
-                "IV": {"1": [60], "2": [40]},
-                "V": {"1": [40], "2": [30]},
-                "VI": {"1": [30], "2": [20]}
-            }
-            v_list_oto = v_map[cap_duong_oto][d_hinhhoc]
-            v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list_oto, key="oto_v")
+        col_cap, col_dh = st.columns(2)
+        with col_cap:
+            # Người dùng chọn Cấp thay vì chọn Vận tốc
+            cap_duong_oto = st.selectbox("Chọn Cấp đường:", ["I", "II", "III", "IV", "V", "VI"], key="oto_cap_auto")
+        with col_dh:
+            d_hinhhoc = st.radio("Chọn địa hình:", ["1", "2"], horizontal=True, 
+                                format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi", key="oto_dh_auto")
+
+        # 2. DÒNG CẬP NHẬT QUAN TRỌNG: Tự động tra Vận tốc thiết kế (Vtk)
+        v_auto_map = {
+            "I": {"1": 120, "2": 80},
+            "II": {"1": 100, "2": 60},
+            "III": {"1": 80, "2": 60},
+            "IV": {"1": 60, "2": 40},
+            "V": {"1": 40, "2": 30},
+            "VI": {"1": 30, "2": 20}
+        }
+        v_hinhhoc = v_auto_map[cap_duong_oto][d_hinhhoc]
 
     # --- ĐỐI VỚI ĐƯỜNG ĐÔ THỊ (GIỮ NGUYÊN HOẶC TÙY CHỈNH SAU) ---
     else:
