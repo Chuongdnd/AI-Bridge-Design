@@ -105,7 +105,7 @@ with tab1:
             # Ô NHẬP BỀ RỘNG B THEO KHAI BÁO NGƯỜI DÙNG
             b_khai_bao = st.number_input("Bề rộng tĩnh không khai báo (B) - m:", value=20.0, step=0.5)
         st.markdown("---")
-        l_hinhhoc = st.selectbox("Cấp thiết kế đường trên cầu:", ["O to", "Cao tốc", "Do thi"], key="geo_l")
+        
     with col_in2:
         if loai_c == "Vượt sông":
             h_tn_tb = st.number_input("Cao độ tự nhiên trung bình (m):", value=0.00, format="%.3f")
@@ -118,12 +118,17 @@ with tab1:
             h1 = st.number_input("Cao độ mặt đường bị vượt (m):", value=5.00, format="%.3f")
             # Các giá trị khác ẩn hoặc để mặc định để tránh lỗi hàm
             h5, h10, h98 = h1, h1, h1
-        st.markdown("---")
+        
+    st.markdown("---")
+    st.header("📐 Yếu tố hình học thiết kế")
+    with col_in1:
+        l_hinhhoc = st.selectbox("Cấp thiết kế đường trên cầu:", ["O to", "Cao tốc", "Do thi"], key="geo_l")
+    with col_in2:
         v_list = [120, 100, 80, 60, 40, 30] if l_hinhhoc != "Do thi" else [100, 80, 60, 50, 40, 30]
-        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", v_list, key="geo_v")
         d_hinhhoc = st.radio("Địa hình:", [("1", "Đồng bằng"), ("2", "Miền núi")], 
                                  format_func=lambda x: x[1], horizontal=True, key="geo_d")[0]
-    # QUAN TRỌNG: Mọi hiển thị kết quả phải nằm TRONG khối lệnh button này
+        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", v_list, key="geo_v")
+        
     if st.button("🚀 Let's go"):
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, 
