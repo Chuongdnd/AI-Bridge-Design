@@ -220,20 +220,6 @@ with tab1:
                 st.success(f"🎉 Đã vẽ trắc dọc với R = {res['R_hinh_hoc']}m")
             except Exception as e:
                 st.error(f"Lỗi khi vẽ: {e}")
-
-            # 4. HIỂN THỊ BẢNG TỔNG HỢP (Theo file txt của bạn)
-            st.subheader("📊 Bảng thông số kỹ thuật")
-            if loai_c == "Vượt đường bộ":
-                df_data = {
-                    "Thông số kỹ thuật": ["Loại đường bị vượt", "Bề rộng tĩnh không (B)", "Chiều cao tĩnh không (H)", "Cao độ mặt đường", "Cao độ đáy dầm thiết kế"],
-                    "Giá trị": [res.get('label', "").split("-")[-1].strip(), f"{res.get('B', 0)} m", f"{res.get('H', 0)} m", f"{res.get('MNCN', 0):.3f} m", f"{res.get('day_dam', 0):.3f} m"]
-                }
-            else:
-                df_data = {
-                    "Thông số kỹ thuật": ["Khổ ngang (B)", "Tĩnh không đứng (H)", "Mực nước cao nhất (MNCN)", "Cao độ đáy dầm thiết kế"],
-                    "Giá trị": [f"{res.get('B', 0)} m", f"{res.get('H', 0)} m", f"{res.get('MNCN', 0):.3f} m", f"{res.get('day_dam', 0):.3f} m"]
-                }
-            st.table(pd.DataFrame(df_data))
         else:
             st.error("❌ Không thể xác định yếu tố hình học. Vui lòng kiểm tra lại đầu vào.")
             # ==========================================
