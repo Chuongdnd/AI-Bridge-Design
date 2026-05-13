@@ -1,84 +1,95 @@
-def tra_cuu_yeu_to_hinh_hoc(loai, vtk, dia_hinh="1"):
-    """
-    Hàm tra cứu các chỉ tiêu kỹ thuật dựa trên TCVN.
-    loai: "O to", "Cao tốc", "Do thi"
-    vtk: Tốc độ thiết kế (số nguyên hoặc số thực)
-    dia_hinh: "1" (Đồng bằng), "2" (Miền núi)
-    """
-    
-    # 1. Dữ liệu tra cứu cho Đường Ô tô (TCVN 4054:2005)
-    db_oto = {
-        120: {"R": [11000, 17000], "imax": 4, "cap": "I"},
-        100: {"R": [6000, 10000],  "imax": 5, "cap": "II"},
-        80:  {"R": [4000, 5000],   "imax": 6, "cap": "III"},
-        60:  {"R": [2500, 4000],   "imax": 7, "cap": "IV"},
-        40:  {"R": [700, 1000],    "imax": 9, "cap": "V"},
-        30:  {"R": [400, 600],     "imax": 10, "cap": "VI"}
-    }
-    
-    # 2. Dữ liệu tra cứu cho Cao tốc (TCVN 5729:2012)
-    db_caotoc = {
-        120: {"R": [15000, 20000], "imax": 4, "cap": "120"},
-        100: {"R": [10000, 15000], "imax": 5, "cap": "100"},
-        80:  {"R": [4500, 7000],   "imax": 6, "cap": "80"},
-        60:  {"R": [2500, 4000],   "imax": 7, "cap": "60"}
-    }
-    
-    # 3. Dữ liệu tra cứu cho Đường đô thị (TCVN 13592:2022)
-    db_dothi = {
-        100: {"R": [6500, 10000], "imax": 4, "cap": "Cao tốc ĐT"},
-        80:  {"R": [3000, 4500],  "imax": 5, "cap": "Trục chính"},
-        60:  {"R": [1400, 2000],  "imax": 6, "cap": "Chính thứ yếu"},
-        50:  {"R": [800, 1200],   "imax": 6, "cap": "Đường khu vực"},
-        40:  {"R": [450, 700],    "imax": 7, "cap": "Đường phố gom"},
-        30:  {"R": [250, 400],    "imax": 8, "cap": "Đường nội bộ"}
-    }
+import pandas as pd
 
-    # Chọn bộ dữ liệu tương ứng
-    res = None
-    tc_name = ""
+def tra_cuu_yeu_to_hinh_hoc(loai, cap_duong, dia_hinh="1"):
+    """
+    Hàm tra cứu tổng hợp các loại đường:
+    - Ô tô: TCVN 4054:2005
+    - Cao tốc: TCVN 5729:2012
+    - Đô thị: TCVN 13592:2022
+    """
+    
+    # ---------------------------------------------------------
+    # 1. LOGIC ĐƯỜNG Ô TÔ (TCVN 4054:2005)
+    # ---------------------------------------------------------
     if loai == "O to":
-        res = db_oto.get(vtk)
-        tc_name = "TCVN 4054:2005"
-    elif loai == "Cao tốc":
-        res = db_caotoc.get(vtk)
-        tc_name = "TCVN 5729:2012"
-    elif loai == "Do thi":
-        res = db_dothi.get(vtk)
-        tc_name = "TCVN 13592:2022"
-
-    if res:
-        # Xử lý độ dốc dọc tối đa (i_max)
-        imax_val = res['imax']
-        # Đối với đường ô tô miền núi (dia_hinh="2"), cho phép châm chước tăng dốc
-        ghi_chu_imax = ""
-        if loai == "O to" and str(dia_hinh) == "2":
-            imax_val += 0 # Giữ nguyên i_max gốc nhưng thêm ghi chú
-            ghi_chu_imax = " (Có thể +1% khi khó khăn nhưng không quá 11%)"
-
-        # Trả về kết quả dạng Dictionary để file 00 hiển thị
-        return {
-            "status": "success",
-            "tieu_chuan": tc_name,
-            "cap_duong": res['cap'],
-            "v_thiet_ke": f"{vtk} km/h",
-            "imax": f"{imax_val}%{ghi_chu_imax}",
-            "R_loi_min": res['R'][0],
-            "R_loi_tt": res['R'][1],
-            "dia_hinh": "Đồng bằng" if str(dia_hinh) == "1" else "Miền núi"
+        map_vtk = {
+            "I":   {"1": 120, "2": 80},
+            "II":  {"1": 100, "2": 60},
+            "III": {"1": 80,  "2": 60},
+            "IV":  {"1": 60,  "2": 40},
+            "V":   {"1": 40,  "2": 30},
+            "VI":  {"1": 30,  "2": 20}
         }
-    
-    return {"status": "error", "message": "Không tìm thấy thông số vận tốc phù hợp."}
+        map_imax = {120: 4, 100: 5, 80: 6, 60: 7, 40: 9, 30: 10, 20: 12}
+        map_R_loi = {
+            120: [11000, 17000], 100: [6000, 10000], 80: [4000, 5000],
+            60: [2500, 4000], 40: [700, 1000], 30: [400, 600], 20: [150, 250]
+        }
+        try:
+            vtk = map_vtk[cap_duong][str(dia_hinh)]
+            return {
+                "status": "success",
+                "loai_duong": "Đường Ô tô",
+                "tieu_chuan": "TCVN 4054:2005",
+                "v_thiet_ke": vtk,
+                "imax": map_imax[vtk],
+                "R_loi_gh": map_R_loi[vtk][0],
+                "R_loi_tt": map_R_loi[vtk][1]
+            }
+        except: return {"status": "error", "message": "Lỗi tra cứu Đường Ô tô"}
 
-# Hàm hiển thị bảng 3 chỉ dùng để in ra Console nếu cần (vẫn giữ cho bạn)
-def hien_thi_bang_3_oto():
-    print("\n--- BẢNG 3: CẤP THIẾT KẾ VÀ LƯU LƯỢNG XE THIẾT KẾ (TCVN 4054:2005) ---")
-    print("| Cấp thiết kế | Lưu lượng xe thiết kế (xcqd/ngày đêm)           |")
-    print("|--------------|-------------------------------------------------|")
-    print("|    Cấp I     |               xcqd > 15.000                     |")
-    print("|    Cấp II    |          6.000 < xcqd <= 15.000                 |")
-    print("|    Cấp III   |          3.000 < xcqd <= 6.000                  |")
-    print("|    Cấp IV    |            500 < xcqd <= 3.000                  |")
-    print("|    Cấp V     |            200 < xcqd <= 500                    |")
-    print("|    Cấp VI    |               xcqd <= 200                       |")
-    print("------------------------------------------------------------------")
+    # ---------------------------------------------------------
+    # 2. LOGIC ĐƯỜNG CAO TỐC (TCVN 5729:2012)
+    # ---------------------------------------------------------
+    elif loai == "Cao tốc":
+        # Cao tốc thường phân theo Vận tốc thiết kế trực tiếp
+        # Nếu cap_duong truyền vào là số (120, 100, 80, 60)
+        try:
+            vtk = int(cap_duong)
+            # Tra i_max và R lồi theo bảng 5 và bảng 9 TCVN 5729
+            data_ct = {
+                120: {"imax": 4, "R": [15000, 25000]},
+                100: {"imax": 5, "R": [10000, 15000]},
+                80:  {"imax": 6, "R": [4500, 7000]},
+                60:  {"imax": 7, "R": [2500, 4000]}
+            }
+            res = data_ct[vtk]
+            return {
+                "status": "success",
+                "loai_duong": "Đường Cao tốc",
+                "tieu_chuan": "TCVN 5729:2012",
+                "v_thiet_ke": vtk,
+                "imax": res["imax"],
+                "R_loi_gh": res["R"][0],
+                "R_loi_tt": res["R"][1]
+            }
+        except: return {"status": "error", "message": "Vtk Cao tốc phải là 120, 100, 80 hoặc 60"}
+
+    # ---------------------------------------------------------
+    # 3. LOGIC ĐƯỜNG ĐÔ THỊ (TCVN 13592:2022)
+    # ---------------------------------------------------------
+    elif loai == "Do thi":
+        try:
+            vtk = int(cap_duong)
+            # Tra theo bảng 11 và bảng 15 TCVN 13592
+            data_dt = {
+                100: {"imax": 4, "R": [6500, 10000]},
+                80:  {"imax": 5, "R": [3000, 4500]},
+                60:  {"imax": 6, "R": [1400, 2000]},
+                50:  {"imax": 6, "R": [800, 1200]},
+                40:  {"imax": 7, "R": [450, 700]},
+                30:  {"imax": 8, "R": [250, 400]}
+            }
+            res = data_dt[vtk]
+            return {
+                "status": "success",
+                "loai_duong": "Đường Đô thị",
+                "tieu_chuan": "TCVN 13592:2022",
+                "v_thiet_ke": vtk,
+                "imax": res["imax"],
+                "R_loi_gh": res["R"][0],
+                "R_loi_tt": res["R"][1]
+            }
+        except: return {"status": "error", "message": "Vtk Đô thị không hợp lệ"}
+
+    return {"status": "error", "message": "Loại đường không xác định"}

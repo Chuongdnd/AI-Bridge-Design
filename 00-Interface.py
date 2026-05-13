@@ -153,7 +153,19 @@ with tab1:
         with col_dh:
             d_hinhhoc = st.radio("Chọn địa hình:", ["1", "2"], horizontal=True, 
                                 format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi", key="oto_dh_auto")
-
+        # Tra cứu sơ bộ để lấy Vtk và imax hiển thị ngay
+        res_pre = YTHH.tra_cuu_yeu_to_hinh_hoc("O to", cap_duong_oto, d_hinhhoc)
+        if res_pre["status"] == "success":
+            v_hinhhoc = res_pre["v_thiet_ke"]
+            st.info(f"🚀 Vtk xác định: **{v_hinhhoc} km/h** | imax: **{res_pre['imax']}%**")
+            
+            # --- THÊM OPTION CHỌN R (BẢNG 19) ---
+            chon_R = st.radio("Chọn loại bán kính đứng lồi áp dụng:", 
+                             ["Tối thiểu thông thường", "Tối thiểu giới hạn"], horizontal=True)
+            
+            # Gán giá trị R cuối cùng dựa trên lựa chọn
+            R_final = res_pre["R_loi_tt"] if chon_R == "Tối thiểu thông thường" else res_pre["R_loi_gh"]
+            st.session_state.R_ap_dung = R_final # Lưu để cập nhật bản vẽ
         # 2. DÒNG CẬP NHẬT QUAN TRỌNG: Tự động tra Vận tốc thiết kế (Vtk)
         v_auto_map = {
             "I": {"1": 120, "2": 80},
