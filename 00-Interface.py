@@ -118,38 +118,17 @@ with tab1:
             h1 = st.number_input("Cao độ mặt đường bị vượt (m):", value=5.00, format="%.3f")
             # Các giá trị khác ẩn hoặc để mặc định để tránh lỗi hàm
             h5, h10, h98 = h1, h1, h1
-            
+        
     st.header("📐 Yếu tố hình học thiết kế")
-    col_input, col_table = st.columns([1, 1.2])
-    with col_input:
-        loai_duong = st.selectbox("Cấp đường thiết kế:", ["O to", "Cao tốc", "Do thi"], key="yh_type_final")
-        dia_hinh = st.radio("Địa hình:", ["1", "2"], horizontal=True, 
-                        format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi", key="yh_dh_final")
-
-    # 3. Logic vận tốc (Ràng buộc theo yêu cầu của bạn)
-    if loai_duong == "O to":
-        v_options = [120, 100, 80, 60] if dia_hinh == "1" else [40, 30]
-    elif loai_duong == "Cao tốc":
-        v_options = [120, 100] if dia_hinh == "1" else [80, 60]
-    else: # Đô thị
-        v_options = [100, 80, 60, 50] if dia_hinh == "1" else [40, 30]
-
-    vtk_input = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_options, key="yh_vtk_final")
-    with col_table:
-        if loai_duong == "O to":
-            st.info("ℹ️ Tra cứu Bảng 3 (TCVN 4054:2005)")
-        data_bang3 = {
-            "Cấp": ["I", "II", "III", "IV", "V", "VI"],
-            "Lưu lượng (xcqd/nđ)": [">15k", "6k-15k", "3k-6k", "500-3k", "200-500", "<=200"],
-            "Vtk (Đồng bằng)": ["120-100", "100-80", "80-60", "60", "40", "30"]
-        }
-        # Hiển thị bảng nhỏ gọn bên cạnh phần nhập liệu
-        st.dataframe(pd.DataFrame(data_bang3), hide_index=True)
-     # Nút bấm xác nhận nằm ở dưới cùng của cả 2 cột
-    if st.button("Xác nhận & Tra cứu TCVN", use_container_width=True):
-    # (Giữ nguyên logic gọi YTHH_Logic như các bước trước)
-        pass
-
+    c1, c2 = st.columns(2)
+    with c1:
+        l_hinhhoc = st.selectbox("Cấp thiết kế đường trên cầu:", ["O to", "Cao tốc", "Do thi"], key="geo_l")
+    with c2:
+        v_list = [120, 100, 80, 60, 40, 30] if l_hinhhoc != "Do thi" else [100, 80, 60, 50, 40, 30]
+        d_hinhhoc = st.radio("Địa hình:", [("1", "Đồng bằng"), ("2", "Miền núi")], 
+                                 format_func=lambda x: x[1], horizontal=True, key="geo_d")[0]
+        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", v_list, key="geo_v")
+        
     if st.button("🚀 Let's go"):
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, 
