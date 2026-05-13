@@ -300,8 +300,9 @@ with tab3:
     st.write("Dữ liệu đầu vào cho AI:")
     col_a, col_b, col_c = st.columns(3)
     col_a.write(f"📍 Tĩnh không B: **{st.session_state.design_data.get('B', 0)} m**")
-    col_b.write(f"📍 Bề rộng Bc: **{st.session_state.design_data['bc']} m**")
-    col_c.write(f"📍 Môi trường: **{st.session_state.design_data['loai_duong']}**")
+    col_b.write(f"📍 Bề rộng Bc: **{st.session_state.design_data.get('bc', 0)} m**")
+    moi_truong = st.session_state.design_data.get('loai_duong', st.session_state.get('main_type_select', 'Chưa chọn'))
+    col_c.write(f"📍 Môi trường: **{moi_truong}**")
 
     # Đường dẫn file Excel trên server
     base_path = os.path.dirname(__file__)
