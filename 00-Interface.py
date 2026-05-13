@@ -225,7 +225,7 @@ with tab1:
         
         if res_geo and res_geo.get("status") == "success":
             # Gán dữ liệu bán kính vào res để PLOT vẽ đường cong
-            res['R_hinh_hoc'] = res_geo['R_loi_min']
+            res['R_hinh_hoc'] = st.session_state.get('R_ap_dung', res_geo['R_loi_tt'])
             res['i_max_hinh_hoc'] = res_geo['imax']
             
             st.subheader("🖼️ Sơ đồ bố trí chung mặt cắt dọc cầu")
