@@ -204,7 +204,7 @@ with tab1:
             loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
             cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None,
             h1=h1, h5=h5, h10=h10, h98=h98,
-            h_tn_tb=h_tn_tb if loai_c=="Vượt sông" else h1
+            h_tn_tb=h_tn_tb
         )
 
         # 2. Bơm dữ liệu hình học vào res để phục vụ hàm vẽ
