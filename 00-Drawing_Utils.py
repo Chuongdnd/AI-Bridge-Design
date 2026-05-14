@@ -69,54 +69,68 @@ def ve_trac_doc_cau(res):
         ve_ky_hieu_muc_nuoc(ax, 75, h10, "MNTC H10%", "green")
         ve_ky_hieu_muc_nuoc(ax, 105, h98, "MNTN H98%", "orange")
 
-    # --- 4. VẼ KẾT CẤU CẦU (ĐƯỜNG ĐỎ: TIẾP TUYẾN + ĐƯỜNG CONG) ---
+    # --- 4. VẼ KẾT CẤU CẦU (ĐƯỜNG ĐỎ: TIẾP TUYẾN + ĐƯỜNG CONG + TỔNG CHIỀU DÀI CẦU) ---
     R_curve = res.get('R_hinh_hoc', 5000)
-    # Lấy i_max (giả sử i_max là số thực 4, 5, 6... chuyển về thập phân)
+    # Lấy i_max (chuyển về thập phân)
     i_val = res.get('i_max_hinh_hoc', 4.0) / 100 
+    # Cao độ tự nhiên trung bình để tính chiều cao đắp
+    h_tn_tb = res.get('H_TN_TB', res.get('MNTN', 0))
     
     x_dinh = 60
     y_dinh_mat_cau = h_dam + 2.0
     
-    # Chiều dài tiếp tuyến đường cong đứng: T = R * i
+    # 4.1. Tính toán thông số đường cong đứng
     T = R_curve * i_val
     x_tiep_1 = x_dinh - T
     x_tiep_2 = x_dinh + T
-    
-    # Cao độ tại tiếp điểm (Điểm bắt đầu/kết thúc đường cong)
-    # y_tiep = y_dinh - (T^2)/(2R)
     y_tiep_mat_cau = y_dinh_mat_cau - (T**2) / (2 * R_curve)
     
-    # Tạo mảng Y cho toàn bộ trắc dọc
+    # 4.2. Xác định Tổng chiều dài cầu dựa trên chiều cao đắp (H_đắp ≈ 7m)
+    h_dap_yc = 7.0 # Lấy giá trị trung bình trong khoảng 6-8m
+    y_mo_cau = h_tn_tb + h_dap_yc
+    
+    # Vị trí mố trái (nằm trên đường dốc bên trái)
+    # y_mo = y_tiep - i * (x_tiep - x_mo) => x_mo = x_tiep - (y_tiep - y_mo)/i
+    x_mo_trai = x_tiep_1 - (y_tiep_mat_cau - y_mo_cau) / i_val
+    x_mo_phai = x_dinh + (x_dinh - x_mo_trai)
+    L_cau = x_mo_phai - x_mo_trai
+
+    # 4.3. Tạo mảng tọa độ cho Đường đỏ và Đáy dầm
     y_mat_cau = []
     y_day_dam = []
     
     for xi in x:
         if xi < x_tiep_1:
-            # Đoạn tiếp tuyến trái: y = y_tiep - i * (x_tiep - x)
             yi_mat = y_tiep_mat_cau - i_val * (x_tiep_1 - xi)
         elif xi > x_tiep_2:
-            # Đoạn tiếp tuyến phải: y = y_tiep - i * (x - x_tiep)
             yi_mat = y_tiep_mat_cau - i_val * (xi - x_tiep_2)
         else:
-            # Đoạn đường cong đứng Parabol
             yi_mat = y_dinh_mat_cau - (xi - x_dinh)**2 / (2 * R_curve)
         
         y_mat_cau.append(yi_mat)
-        y_day_dam.append(yi_mat - 2.0) # Đáy dầm song song cách mặt cầu 2m
+        y_day_dam.append(yi_mat - 2.0)
 
-    # Chuyển về mảng numpy để vẽ
     y_mat_cau = np.array(y_mat_cau)
     y_day_dam = np.array(y_day_dam)
 
-    # Vẽ Đường đỏ (Toàn bộ đoạn)
+    # 4.4. Vẽ các thành phần lên đồ thị
     ax.plot(x, y_mat_cau, color='red', lw=3, label="Đường đỏ")
-    # Vẽ Đáy dầm
     ax.plot(x, y_day_dam, color='#34495e', ls='-.', lw=1.5)
     
-    # Ghi chú thông số hình học
-    ax.text(x_dinh, y_dinh_mat_cau + 0.8, f"ĐƯỜNG ĐỎ: i_max={i_val*100}% | R={R_curve}m", 
-            color='red', fontweight='bold', fontsize=10, ha='center')
-    ax.text(2, h_dam - 0.8, f"CAO ĐỘ ĐÁY DẦM TẠI TIM: {h_dam:.3f}m", color='#34495e', fontsize=9)
+    # Vẽ vị trí 2 mố cầu (đường thẳng đứng màu nâu)
+    ax.vlines([x_mo_trai, x_mo_phai], h_tn_tb, y_mo_cau, colors='brown', ls='--', lw=2)
+    
+    # Hiển thị thông số và Tổng chiều dài cầu
+    ax.text(x_dinh, y_dinh_mat_cau + 1.2, f"TỔNG CHIỀU DÀI CẦU: L = {L_cau:.2f}m", 
+            color='brown', fontweight='bold', fontsize=11, ha='center', bbox=dict(facecolor='white', alpha=0.8))
+    
+    ax.text(x_dinh, y_dinh_mat_cau + 0.5, f"ĐƯỜNG ĐỎ: i_max={i_val*100}% | R={R_curve}m", 
+            color='red', fontweight='bold', fontsize=9, ha='center')
+    
+    # Ghi chú chiều cao đắp tại mố
+    ax.annotate(f'H đắp ≈ {h_dap_yc}m', xy=(x_mo_trai, (y_mo_cau + h_tn_tb)/2), 
+                xytext=(x_mo_trai - 15, (y_mo_cau + h_tn_tb)/2),
+                arrowprops=dict(arrowstyle='->', color='brown'), color='brown', fontsize=8)
 
     # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM ---
     if B > 0:

@@ -120,3 +120,41 @@ def tra_cuu_yeu_to_hinh_hoc(loai, cap_duong, dia_hinh="1"):
         except: return {"status": "error", "message": "Vtk Đô thị không hợp lệ"}
 
     return {"status": "error", "message": "Loại đường không xác định"}
+def tinh_toan_chieu_dai_cau(res_hinhhoc, h_tn_tb, h_dam, h_dap_yc=7.0):
+    """
+    Tính toán các điểm khống chế đường đỏ và tổng chiều dài cầu
+    dựa trên chiều cao đắp yêu cầu tại mố.
+    """
+    R = res_hinhhoc.get('R_loi_tt', 5000)
+    i_max = res_hinhhoc.get('imax', 4.0) / 100
+    
+    x_dinh = 60 # Giả định đỉnh nằm giữa dải 120m
+    y_dinh = h_dam + 2.0 # Cao độ mặt cầu tại đỉnh
+    
+    # 1. Thông số đường cong đứng
+    T = R * i_max
+    x_tiep_1 = x_dinh - T
+    y_tiep = y_dinh - (T**2) / (2 * R)
+    
+    # 2. Xác định vị trí mố cầu dựa trên H_đắp yêu cầu (6-8m)
+    # y_mo = h_tn_tb + h_dap_yc
+    # Phương trình đoạn dốc: y_mo = y_tiep - i * (x_tiep - x_mo)
+    y_mo = h_tn_tb + h_dap_yc
+    x_mo_trai = x_tiep_1 - (y_tiep - y_mo) / i_max
+    
+    # Tổng chiều dài cầu (đối xứng qua đỉnh)
+    L_cau = (x_dinh - x_mo_trai) * 2
+    
+    return {
+        "R": R,
+        "i_val": i_max,
+        "T": T,
+        "x_tiep_1": x_tiep_1,
+        "x_tiep_2": x_dinh + T,
+        "y_tiep": y_tiep,
+        "y_dinh": y_dinh,
+        "x_mo_trai": x_mo_trai,
+        "x_mo_phai": x_dinh + (x_dinh - x_mo_trai),
+        "L_cau": L_cau,
+        "H_dap": h_dap_yc
+    }
