@@ -40,27 +40,23 @@ def ve_trac_doc_cau(res):
     if isinstance(B, str): B = 0
     x = np.linspace(0, 120, 200)
 
-  # --- 2. VẼ ĐỊA HÌNH ---
-    # Đảm bảo lấy đúng giá trị người dùng khai báo từ res
-    h_tn_tb = res.get('H_TN_TB', 0.0) 
+  # --- 2. VẼ ĐỊA HÌNH VÀ ĐƯỜNG TỰ NHIÊN TB ---
+    h_tn_tb = res.get('H_TN_TB', 0.0) # Lấy đúng giá trị TN TB khai báo
 
     if is_duong_bo:
-        # 1. Vẽ mặt đường bị vượt (Màu xám)
+        # Vẽ mặt đường bị vượt (Màu xám)
         y_nen = np.full_like(x, h1)
         ax.plot(x, y_nen, color='#7f8c8d', ls='-', lw=2.5, label="Mặt đường bị vượt", zorder=3)
         ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.6)
-        ax.text(2, h1 + 0.2, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=9, fontweight='bold')
+        ax.text(2, h1 + 0.3, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=9, fontweight='bold')
 
-        # 2. Vẽ đường tự nhiên trung bình (Màu xanh lá) - SỬA TẠI ĐÂY
-        # Không dùng np.full_like(x, h1) nữa mà dùng h_tn_tb
-        y_tn_flat = np.full_like(x, h_tn_tb) 
-        ax.plot(x, y_tn_flat, color='#27ae60', ls='--', lw=2.0, label="Đường tự nhiên TB", zorder=2)
-        
-        # Hiển thị nhãn đúng vị trí cao độ tự nhiên
+        # Vẽ đường TN trung bình (Màu xanh lá - Tách biệt với h1)
+        y_tn_flat = np.full_like(x, h_tn_tb)
+        ax.plot(x, y_tn_flat, color='#27ae60', ls='--', lw=1.5, label="Đường TN TB", zorder=2)
         ax.text(2, h_tn_tb - 0.8, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb:.3f}m", 
                 color='#27ae60', fontsize=9, fontweight='bold')
     else:
-        # Trường hợp vượt sông (Giữ nguyên)
+        # Vượt sông: Chỉ vẽ đường TN trung bình
         y_tn_flat = np.full_like(x, h_tn_tb)
         ax.plot(x, y_tn_flat, color='#27ae60', ls='--', lw=2.0)
         ax.fill_between(x, h_tn_tb - 5, h_tn_tb, color='#f1e7d0', alpha=0.5)
