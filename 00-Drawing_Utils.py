@@ -46,9 +46,12 @@ def ve_trac_doc_cau(res):
     if is_duong_bo:
         # Nếu VƯỢT ĐƯỜNG: Vẽ mặt đường bằng phẳng màu xám
         y_nen = np.full_like(x, h1)
+        y_tn_flat = np.full_like(x, h_tn_tb)
         ax.plot(x, y_nen, color='#7f8c8d', ls='-', lw=2.5, label="Mặt đường bị vượt")
         ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.6)
         ax.text(2, h1 + 0.2, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=9, fontweight='bold')
+        ax.text(2, h_tn_tb - 0.8, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb:.3f}m", 
+                color='#27ae60', fontsize=9, fontweight='bold')
     else:
         # Nếu VƯỢT SÔNG: Đổi đường cong thành ĐƯỜNG THẲNG xanh lá
         y_tn_flat = np.full_like(x, h_tn_tb)
