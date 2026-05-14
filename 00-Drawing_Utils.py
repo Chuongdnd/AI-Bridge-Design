@@ -41,29 +41,27 @@ def ve_trac_doc_cau(res):
     x = np.linspace(0, 120, 200)
 
   # --- 2. VẼ ĐỊA HÌNH VÀ ĐƯỜNG TỰ NHIÊN TB ---
-    # Ưu tiên lấy khóa 'h_tn_tb' viết thường để đồng bộ với Interface
-    h_tn_tb_val = res.get('h_tn_tb', res.get('H_TN_TB', 0.0))
+    h_tn_tb = res.get('h_tn_tb', 3.0) # Lấy đúng giá trị TN TB khai báo
 
     if is_duong_bo:
-        # 2.1. Vẽ mặt đường bị vượt (Màu xám)
+        # Vẽ mặt đường bị vượt (Màu xám)
         y_nen = np.full_like(x, h1)
         ax.plot(x, y_nen, color='#7f8c8d', ls='-', lw=2.5, label="Mặt đường bị vượt", zorder=3)
         ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.6)
         ax.text(2, h1 + 0.3, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=9, fontweight='bold')
 
-        # 2.2. Vẽ đường TN trung bình (Nét đứt xanh lá - Theo số khai báo)
-        y_tn_flat = np.full_like(x, h_tn_tb_val)
-        ax.plot(x, y_tn_flat, color='#27ae60', ls='--', lw=2.0, label="Đường TN TB", zorder=2)
-        ax.text(2, h_tn_tb_val - 0.8, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb_val:.3f}m", 
+        # Vẽ đường TN trung bình (Màu xanh lá - Tách biệt với h1)
+        y_tn_flat = np.full_like(x, h_tn_tb)
+        ax.plot(x, y_tn_flat, color='#27ae60', ls='--', lw=1.5, label="Đường TN TB", zorder=2)
+        ax.text(2, h_tn_tb - 0.8, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb:.3f}m", 
                 color='#27ae60', fontsize=9, fontweight='bold')
     else:
-        # Trường hợp vượt sông: Vẽ đường TN TB và tô màu đất
-        y_tn_flat = np.full_like(x, h_tn_tb_val)
+        # Vượt sông: Chỉ vẽ đường TN trung bình
+        y_tn_flat = np.full_like(x, h_tn_tb)
         ax.plot(x, y_tn_flat, color='#27ae60', ls='--', lw=2.0)
-        ax.fill_between(x, h_tn_tb_val - 5, h_tn_tb_val, color='#f1e7d0', alpha=0.5)
-        ax.text(2, h_tn_tb_val - 0.8, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb_val:.3f}m", 
+        ax.fill_between(x, h_tn_tb - 5, h_tn_tb, color='#f1e7d0', alpha=0.5)
+        ax.text(2, h_tn_tb - 0.8, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb:.3f}m", 
                 color='#27ae60', fontsize=9, fontweight='bold')
-
     # --- 3. VẼ KÝ HIỆU MỰC NƯỚC (Chỉ vẽ khi vượt sông) ---
     if not is_duong_bo:
         ve_ky_hieu_muc_nuoc(ax, 15, h1, "MNCN H1%", "red")
