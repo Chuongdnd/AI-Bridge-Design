@@ -40,31 +40,32 @@ def ve_trac_doc_cau(res):
     if isinstance(B, str): B = 0
     x = np.linspace(0, 120, 200)
 
-    # --- 2. VẼ ĐỊA HÌNH ---
-    h_tn_tb = res.get('H_TN_TB')
+  # --- 2. VẼ ĐỊA HÌNH VÀ ĐƯỜNG TỰ NHIÊN TRUNG BÌNH ---
+    h_tn_tb = res.get('H_TN_TB', 0.0)
+
+    # A. VẼ ĐƯỜNG TỰ NHIÊN TRUNG BÌNH (Chung cho cả 2 loại cầu)
+    # Vẽ đường nét đứt màu xanh lá cây xuyên suốt trắc dọc
+    ax.plot([0, 120], [h_tn_tb, h_tn_tb], color='#27ae60', ls='--', lw=1.5, label="Đường tự nhiên TB", zorder=2)
+    
+    # Hiển thị nhãn văn bản cho đường TN trung bình
+    ax.text(2, h_tn_tb - 0.7, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb:.3f}m", 
+            color='#27ae60', fontsize=9, fontweight='bold', ha='left')
 
     if is_duong_bo:
-        # Nếu VƯỢT ĐƯỜNG: Vẽ mặt đường bằng phẳng màu xám
+        # B1. TRƯỜNG HỢP VƯỢT ĐƯỜNG: Vẽ mặt đường bị vượt (màu xám)
         y_nen = np.full_like(x, h1)
-        y_tn_flat = np.full_like(x, h_tn_tb)
-        ax.plot(x, y_nen, color='#7f8c8d', ls='-', lw=2.5, label="Mặt đường bị vượt")
-        ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.6)
-        ax.text(2, h1 + 0.2, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=9, fontweight='bold')
-        ax.text(2, h_tn_tb - 0.8, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb:.3f}m", 
-                color='#27ae60', fontsize=9, fontweight='bold')
+        ax.plot(x, y_nen, color='#7f8c8d', ls='-', lw=2.5, label="Mặt đường bị vượt", zorder=3)
+        
+        # Tô màu vùng đất bên dưới (giới hạn từ mặt đường h1 trở xuống)
+        ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.6, label="Nền đường cũ")
+        
+        # Ghi chú cao độ mặt đường
+        ax.text(2, h1 + 0.3, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", 
+                color='#34495e', fontsize=9, fontweight='bold', ha='left')
     else:
-        # Nếu VƯỢT SÔNG: Đổi đường cong thành ĐƯỜNG THẲNG xanh lá
-        y_tn_flat = np.full_like(x, h_tn_tb)
-        
-        # Vẽ đường thẳng nét đứt màu xanh lá
-        ax.plot(x, y_tn_flat, color='#27ae60', ls='--', lw=2.0)
-        
-        # Tô màu đất bên dưới đường thẳng
-        ax.fill_between(x, h_tn_tb - 5, h_tn_tb, color='#f1e7d0', alpha=0.5)
-        
-        # Hiển thị nhãn Cao độ tự nhiên trung bình
-        ax.text(2, h_tn_tb - 0.8, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb:.3f}m", 
-                color='#27ae60', fontsize=9, fontweight='bold')
+        # B2. TRƯỜNG HỢP VƯỢT SÔNG: Tô màu lòng sông bên dưới đường tự nhiên
+        # Đường thẳng h_tn_tb đã vẽ ở trên, giờ chỉ tô màu vùng đất/lòng sông
+        ax.fill_between(x, h_tn_tb - 5, h_tn_tb, color='#f1e7d0', alpha=0.5, label="Địa hình tự nhiên")
     # --- 3. VẼ KÝ HIỆU MỰC NƯỚC (Chỉ vẽ khi vượt sông) ---
     if not is_duong_bo:
         ve_ky_hieu_muc_nuoc(ax, 15, h1, "MNCN H1%", "red")
