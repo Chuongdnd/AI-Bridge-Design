@@ -206,7 +206,7 @@ with tab1:
             h1=h1, h5=h5, h10=h10, h98=h98,
             h_tn_tb=h_tn_tb
         )
-
+        res['h_tn_tb'] = h_tn_tb
         # 2. Bơm dữ liệu hình học vào res để phục vụ hàm vẽ
         if res_geo.get("status") == "success":
             res['R_hinh_hoc'] = st.session_state.get('R_final', 5000)
