@@ -1,4 +1,5 @@
 import pandas as pd
+import numpy as np
 def get_vtk_goi_y_dothi(loai_dt, cap_dt):
     """
     Dữ liệu Bảng 6: Vận tốc thiết kế các cấp đường đô thị (TCVN 13592:2022)
@@ -125,17 +126,17 @@ def tinh_toan_pham_vi_cau(res, h_tn_tb, h_dam, h_dap_yc=7.0):
     Logic: Quét toàn bộ đường đỏ để tìm x sao cho (y_duong_do - h_tn_tb) = h_dap_yc
     Xử lý được cả trường hợp mố nằm trong đường cong hoặc trên đoạn dốc.
     """
-    import numpy as np
-    R = res.get('R_loi_tt', 5000)
-    i_val = res.get('imax', 4.0) / 100
+    R = res.get('R_hinh_hoc', 5000)
+    i_val = res.get('i_max_hinh_hoc', 4.0) / 100
+    y_dinh = h_dam + 2.0
     x_dinh = 60
-    y_dinh = h_dam + 2.0  # Giả định mặt cầu cách đáy dầm 2m
-    
+
+    # Tính tọa độ tiếp điểm
     T = R * i_val
     x_t1, x_t2 = x_dinh - T, x_dinh + T
     y_t = y_dinh - (T**2) / (2 * R)
-    
-    # Tạo mảng quét mật độ cao từ 0 đến 120m
+
+    # Quét 1000 điểm để tìm giao điểm h_dap
     x_scan = np.linspace(0, 120, 1000)
     y_scan = []
     for xi in x_scan:
@@ -144,17 +145,16 @@ def tinh_toan_pham_vi_cau(res, h_tn_tb, h_dam, h_dap_yc=7.0):
         else: yi = y_dinh - (xi - x_dinh)**2 / (2 * R)
         y_scan.append(yi)
     y_scan = np.array(y_scan)
-    
-    # Tìm vị trí mố trái (quét từ trái đến tim cầu)
+
+    # Tìm mố trái (nơi chênh lệch cao độ ≈ h_dap)
     idx_mo = np.argmin(np.abs((y_scan[:500] - h_tn_tb) - h_dap_yc))
     x_mo_trai = x_scan[idx_mo]
-    y_mo = y_scan[idx_mo]
     
     return {
+        "x_t1": x_t1, "x_t2": x_t2, "y_t": y_t, "y_dinh": y_dinh, "R": R, "i_val": i_val,
         "x_mo_trai": x_mo_trai,
         "x_mo_phai": x_dinh + (x_dinh - x_mo_trai),
-        "y_mo": y_mo,
+        "y_mo": y_scan[idx_mo],
         "L_cau": (x_dinh - x_mo_trai) * 2,
-        "x_t1": x_t1, "x_t2": x_t2, "y_t": y_t, "y_dinh": y_dinh, 
-        "R": R, "i_val": i_val, "h_tn_tb": h_tn_tb
+        "h_tn_tb": h_tn_tb
     }
