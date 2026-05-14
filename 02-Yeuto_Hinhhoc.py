@@ -121,11 +121,9 @@ def tra_cuu_yeu_to_hinh_hoc(loai, cap_duong, dia_hinh="1"):
         except: return {"status": "error", "message": "Vtk Đô thị không hợp lệ"}
 
     return {"status": "error", "message": "Loại đường không xác định"}
-def tinh_toan_pham_vi_cau(res, h_tn_tb, h_dam, h_dap_yc=7.0):
-    """
-    Logic: Quét toàn bộ đường đỏ để tìm x sao cho (y_duong_do - h_tn_tb) = h_dap_yc
-    Xử lý được cả trường hợp mố nằm trong đường cong hoặc trên đoạn dốc.
-    """
+def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=7.0):
+    import numpy as np
+    # Lấy thông số đã tra cứu được
     R = res.get('R_hinh_hoc', 5000)
     i_val = res.get('i_max_hinh_hoc', 4.0) / 100
     y_dinh = h_dam + 2.0
