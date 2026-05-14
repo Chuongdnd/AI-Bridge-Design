@@ -211,7 +211,14 @@ with tab1:
         # 2. Bơm dữ liệu hình học vào res để phục vụ hàm vẽ
         if res_geo.get("status") == "success":
             res['R_hinh_hoc'] = st.session_state.get('R_final', 5000)
-            res['geo_logic'] = YTHH.tinh_toan_geo_logic(res, h_tn_tb, h_dam)
+            # Xác định cao độ tham chiếu tùy theo loại cầu (Sông lấy h_tn_tb, Đường lấy h1)
+            h_tham_chieu = h_tn_tb if loai_c == "Vượt sông" else h1
+
+             # Lấy cao độ đáy dầm từ kết quả trả về của module Tĩnh không (biến res)
+            h_dam_thuc_te = res.get('day_dam', 0.0)
+
+            # Gọi hàm tính toán logic từ file 02 với các biến đã xác định
+            res['geo_logic'] = YTHH.tinh_toan_geo_logic(res, h_tham_chieu, h_dam_thuc_te)
             # Ép kiểu imax về số (cắt bỏ dấu % nếu có)
             imax_raw = res_geo.get('imax', '0')
             res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
