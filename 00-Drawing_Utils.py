@@ -41,7 +41,7 @@ def ve_trac_doc_cau(res):
     x = np.linspace(0, 120, 200)
 
     # --- 2. VẼ ĐỊA HÌNH ---
-    h_tn_tb = res.get('H_TN_TB', res.get('MNTN', 0))
+    h_tn_tb = res.get('H_TN_TB')
 
     if is_duong_bo:
         # Nếu VƯỢT ĐƯỜNG: Vẽ mặt đường bằng phẳng màu xám
