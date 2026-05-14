@@ -211,10 +211,6 @@ with tab1:
         # 2. Bơm dữ liệu hình học vào res để phục vụ hàm vẽ
         if res_geo.get("status") == "success":
             res['R_hinh_hoc'] = st.session_state.get('R_final', 5000)
-
-            from Yeuto_Hinhhoc import tinh_toan_pham_vi_cau
-            res_geo = tinh_toan_pham_vi_cau(res, h_tn_tb, h_dam)
-            res['geo_logic'] = res_geo  # Lưu vào dictionary res
             
             # Ép kiểu imax về số (cắt bỏ dấu % nếu có)
             imax_raw = res_geo.get('imax', '0')
