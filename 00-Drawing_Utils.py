@@ -69,27 +69,52 @@ def ve_trac_doc_cau(res):
         ve_ky_hieu_muc_nuoc(ax, 75, h10, "MNTC H10%", "green")
         ve_ky_hieu_muc_nuoc(ax, 105, h98, "MNTN H98%", "orange")
 
-    # --- 4. VẼ KẾT CẤU CẦU (ĐƯỜNG ĐỎ ĐƯỜNG CONG ĐỨNG) ---
-    # Lấy bán kính R từ kết quả YTHH (mặc định 5000m nếu không có)
-    # Lưu ý: res_geo cần được truyền vào hoặc nằm trong res
-    R_curve = res.get('R_hinh_hoc', 5000) 
+    # --- 4. VẼ KẾT CẤU CẦU (ĐƯỜNG ĐỎ: TIẾP TUYẾN + ĐƯỜNG CONG) ---
+    R_curve = res.get('R_hinh_hoc', 5000)
+    # Lấy i_max (giả sử i_max là số thực 4, 5, 6... chuyển về thập phân)
+    i_val = res.get('i_max_hinh_hoc', 4.0) / 100 
     
-    # Phương trình đường cong đứng Parabol: y = y_dinh - (x - x_dinh)^2 / (2R)
     x_dinh = 60
-    y_dinh_mat_cau = h_dam + 2.0  # Cao độ đỉnh mặt cầu tại tim cầu
+    y_dinh_mat_cau = h_dam + 2.0
     
-    # Tính toán tọa độ y cho mặt cầu và đáy dầm theo đường cong
-    y_mat_cau = y_dinh_mat_cau - (x - x_dinh)**2 / (2 * R_curve)
-    y_day_dam = (y_dinh_mat_cau - 2.0) - (x - x_dinh)**2 / (2 * R_curve)
+    # Chiều dài tiếp tuyến đường cong đứng: T = R * i
+    T = R_curve * i_val
+    x_tiep_1 = x_dinh - T
+    x_tiep_2 = x_dinh + T
     
-    # Vẽ Đường đỏ (Mặt cầu) - Đường cong màu đỏ
+    # Cao độ tại tiếp điểm (Điểm bắt đầu/kết thúc đường cong)
+    # y_tiep = y_dinh - (T^2)/(2R)
+    y_tiep_mat_cau = y_dinh_mat_cau - (T**2) / (2 * R_curve)
+    
+    # Tạo mảng Y cho toàn bộ trắc dọc
+    y_mat_cau = []
+    y_day_dam = []
+    
+    for xi in x:
+        if xi < x_tiep_1:
+            # Đoạn tiếp tuyến trái: y = y_tiep - i * (x_tiep - x)
+            yi_mat = y_tiep_mat_cau - i_val * (x_tiep_1 - xi)
+        elif xi > x_tiep_2:
+            # Đoạn tiếp tuyến phải: y = y_tiep - i * (x - x_tiep)
+            yi_mat = y_tiep_mat_cau - i_val * (xi - x_tiep_2)
+        else:
+            # Đoạn đường cong đứng Parabol
+            yi_mat = y_dinh_mat_cau - (xi - x_dinh)**2 / (2 * R_curve)
+        
+        y_mat_cau.append(yi_mat)
+        y_day_dam.append(yi_mat - 2.0) # Đáy dầm song song cách mặt cầu 2m
+
+    # Chuyển về mảng numpy để vẽ
+    y_mat_cau = np.array(y_mat_cau)
+    y_day_dam = np.array(y_day_dam)
+
+    # Vẽ Đường đỏ (Toàn bộ đoạn)
     ax.plot(x, y_mat_cau, color='red', lw=3, label="Đường đỏ")
-    
-    # Vẽ Đáy dầm - Đường cong nét đứt phía dưới
+    # Vẽ Đáy dầm
     ax.plot(x, y_day_dam, color='#34495e', ls='-.', lw=1.5)
     
-    # Ghi chú tại vị trí đỉnh cầu
-    ax.text(x_dinh, y_dinh_mat_cau + 0.5, f"ĐƯỜNG ĐỎ (R={R_curve}m)", 
+    # Ghi chú thông số hình học
+    ax.text(x_dinh, y_dinh_mat_cau + 0.8, f"ĐƯỜNG ĐỎ: i_max={i_val*100}% | R={R_curve}m", 
             color='red', fontweight='bold', fontsize=10, ha='center')
     ax.text(2, h_dam - 0.8, f"CAO ĐỘ ĐÁY DẦM TẠI TIM: {h_dam:.3f}m", color='#34495e', fontsize=9)
 
