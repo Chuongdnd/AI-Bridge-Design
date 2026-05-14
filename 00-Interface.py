@@ -114,9 +114,8 @@ with tab1:
             h10 = st.number_input("MNTC (H10%):", value=1.50, format="%.3f")
             h98 = st.number_input("MNTN (H98%):", value=0.50, format="%.3f")
         else:
-            # Đối với đường bộ, h1 đóng vai trò là cao độ mặt đường bị vượt
-            h1 = st.number_input("Cao độ mặt đường bị vượt (m):", value=5.00, format="%.3f")
-            # Các giá trị khác ẩn hoặc để mặc định để tránh lỗi hàm
+            h_tn_tb = st.number_input("Cao độ tự nhiên trung bình (m):", value=0.00, format="%.3f", key="tn_db")
+            h1 = st.number_input("Cao độ mặt đường bị vượt (m):", value=5.00, format="%.3f", key="overpass_height")
             h5, h10, h98 = h1, h1, h1
         
     st.subheader("📐 Yếu tố hình học thiết kế")
