@@ -211,7 +211,7 @@ with tab1:
         # 2. Bơm dữ liệu hình học vào res để phục vụ hàm vẽ
         if res_geo.get("status") == "success":
             res['R_hinh_hoc'] = st.session_state.get('R_final', 5000)
-            
+            res['geo_logic'] = YTHH.tinh_toan_geo_logic(res, h_tn_tb, h_dam)
             # Ép kiểu imax về số (cắt bỏ dấu % nếu có)
             imax_raw = res_geo.get('imax', '0')
             res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
