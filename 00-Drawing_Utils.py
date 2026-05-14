@@ -86,7 +86,9 @@ def ve_trac_doc_cau(res):
                 # Đoạn đường cong đứng (Bao phủ cả trường hợp mố nằm trong đường cong)
                 yi = geo['y_dinh'] - (xi - 60)**2 / (2 * geo['R'])
             y_mat.append(yi)
-        
+            ax.vlines(x=[geo['x_mo_trai'], geo['x_mo_phai']], 
+                  ymin=geo['h_tn_tb'], ymax=geo['y_mo'], 
+                  colors='brown', ls='--', lw=2.5)
         y_mat = np.array(y_mat)
         
         # 4.2. Vẽ Đường đỏ và Đáy dầm (cách mặt cầu 2.0m)

@@ -134,6 +134,8 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=7.0):
     x_t1, x_t2 = x_dinh - T, x_dinh + T
     y_t = y_dinh - (T**2) / (2 * R)
 
+    idx_mo = np.argmin(np.abs((y_scan[:500] - h_tn_tb) - h_dap_yc))
+    x_mo_trai = x_scan[idx_mo]
     # Quét 1000 điểm để tìm giao điểm h_dap
     x_scan = np.linspace(0, 120, 1000)
     y_scan = []
@@ -149,10 +151,10 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=7.0):
     x_mo_trai = x_scan[idx_mo]
     
     return {
-        "x_t1": x_t1, "x_t2": x_t2, "y_t": y_t, "y_dinh": y_dinh, "R": R, "i_val": i_val,
         "x_mo_trai": x_mo_trai,
-        "x_mo_phai": x_dinh + (x_dinh - x_mo_trai),
+        "x_mo_phai": 60 + (60 - x_mo_trai),
         "y_mo": y_scan[idx_mo],
-        "L_cau": (x_dinh - x_mo_trai) * 2,
-        "h_tn_tb": h_tn_tb
+        "L_cau": (60 - x_mo_trai) * 2,
+        "h_tn_tb": h_tn_tb, # Lưu lại để file vẽ sử dụng
+        "x_t1": x_t1, "x_t2": x_t2, "y_t": y_t, "y_dinh": y_dinh, "R": R, "i_val": i_val
     }
