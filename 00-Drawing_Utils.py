@@ -41,7 +41,7 @@ def ve_trac_doc_cau(res):
     x = np.linspace(0, 120, 200)
 
   # --- 2. VẼ ĐỊA HÌNH VÀ ĐƯỜNG TỰ NHIÊN TB ---
-    h_tn_tb = res.get('h_tn_tb', 0.0) # Lấy đúng giá trị TN TB khai báo
+    h_tn_tb = res.get('H_TN_TB', res.get('h_tn_tb', 0.0))
 
     if is_duong_bo:
         # Vẽ mặt đường bị vượt (Màu xám)
