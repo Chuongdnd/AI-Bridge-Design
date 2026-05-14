@@ -68,56 +68,98 @@ def ve_trac_doc_cau(res):
         ve_ky_hieu_muc_nuoc(ax, 45, h5, "MNTT H5%", "blue")
         ve_ky_hieu_muc_nuoc(ax, 75, h10, "MNTC H10%", "green")
         ve_ky_hieu_muc_nuoc(ax, 105, h98, "MNTN H98%", "orange")
-
-    # --- 4. VẼ KẾT CẤU CẦU (HIỂN THỊ DỰA TRÊN LOGIC TỪ FILE 02) ---
-    # Lấy dữ liệu hình học đã được tính toán sẵn từ file 02 thông qua Dictionary res
+    # --- 4. VẼ KẾT CẤU CẦU (HIỂN THỊ PHẠM VI CẦU TỰ ĐỘNG) ---
     geo = res.get('geo_logic')
-    
     if geo:
-        # 4.1. Khởi tạo mảng tọa độ dựa trên thông số hình học truyền từ file 02
-        y_mat_cau_plot = []
+        # Tính toán mảng y để vẽ đường đỏ dựa trên geo
+        y_plot = []
         for xi in x:
-            if xi < geo['x_t1']:
-                # Đoạn tiếp tuyến bên trái
-                yi = geo['y_t'] - geo['i_val'] * (geo['x_t1'] - xi)
-            elif xi > geo['x_t2']:
-                # Đoạn tiếp tuyến bên phải
-                yi = geo['y_t'] - geo['i_val'] * (xi - geo['x_t2'])
-            else:
-                # Đoạn đường cong đứng (Mố có thể nằm trong hoặc ngoài đoạn này)
-                yi = geo['y_dinh'] - (xi - 60)**2 / (2 * geo['R'])
-            y_mat_cau_plot.append(yi)
+            if xi < geo['x_t1']: yi = geo['y_t'] - geo['i_val'] * (geo['x_t1'] - xi)
+            elif xi > geo['x_t2']: yi = geo['y_t'] - geo['i_val'] * (xi - geo['x_t2'])
+            else: yi = geo['y_dinh'] - (xi - 60)**2 / (2 * geo['R'])
+            y_plot.append(yi)
         
-        y_mat_cau_plot = np.array(y_mat_cau_plot)
-        y_day_dam_plot = y_mat_cau_plot - 2.0 
-
-        # 4.2. Vẽ Đường đỏ và Đường đáy dầm
-        ax.plot(x, y_mat_cau_plot, color='red', lw=3, label="Đường đỏ")
-        ax.plot(x, y_day_dam_plot, color='#34495e', ls='-.', lw=1.5)
+        y_plot = np.array(y_plot)
+        ax.plot(x, y_plot, color='red', lw=3, label="Đường đỏ")
+        ax.plot(x, y_plot - 2.0, color='#34495e', ls='-.', lw=1.5)
         
-        # 4.3. VẼ ĐƯỜNG THẲNG ĐỨNG GIỚI HẠN PHẠM VI MỐ (Xác định ở file 02)
-        # Vẽ từ cao độ tự nhiên lên đến cao độ đường đỏ tại vị trí mố đã tìm thấy
+        # VẼ ĐƯỜNG THẲNG ĐỨNG GIỚI HẠN PHẠM VI MỐ
         ax.vlines(x=[geo['x_mo_trai'], geo['x_mo_phai']], 
                   ymin=geo['h_tn_tb'], ymax=geo['y_mo'], 
                   colors='brown', ls='--', lw=2.5)
-
-        # 4.4. Hiển thị thông số văn bản
-        # Tổng chiều dài cầu L
+        
+        # Ghi chú chiều dài L và thông số
         ax.text(60, geo['y_dinh'] + 1.2, f"TỔNG CHIỀU DÀI CẦU: L = {geo['L_cau']:.2f}m", 
-                color='brown', fontweight='bold', fontsize=11, ha='center', 
-                bbox=dict(facecolor='white', alpha=0.8, edgecolor='none'))
+                color='brown', fontweight='bold', ha='center', bbox=dict(facecolor='white', alpha=0.8))
         
-        # Thông số hình học
-        ax.text(60, geo['y_dinh'] + 0.5, f"i_max={geo['i_val']*100}% | R={geo['R']}m", 
-                color='red', fontweight='bold', fontsize=10, ha='center')
-        
-        # Cao độ đáy dầm thiết kế tại tim cầu
-        y_day_tim = geo['y_dinh'] - 2.0
-        ax.text(60, y_day_tim - 0.8, f"CAO ĐỘ ĐÁY DẦM TẠI TIM: {y_day_tim:.3f}m", 
+        ax.text(60, geo['y_dinh'] - 2.8, f"CAO ĐỘ ĐÁY DẦM TẠI TIM: {(geo['y_dinh']-2):.3f}m", 
                 color='#34495e', fontsize=9, ha='center', fontweight='bold')
-    else:
-        # Trường hợp dự phòng nếu session_state chưa kịp nạp dữ liệu geo_logic
-        ax.text(60, h_dam + 1, "CHỜ DỮ LIỆU HÌNH HỌC TỪ FILE 02...", color='orange', ha='center', fontweight='bold')
+    # --- 4. VẼ KẾT CẤU CẦU (ĐƯỜNG ĐỎ: TIẾP TUYẾN + ĐƯỜNG CONG + XÁC ĐỊNH CHIỀU DÀI CẦU) ---
+    R_curve = res.get('R_hinh_hoc', 5000)
+    # Lấy i_max (giả sử i_max là số thực 4, 5, 6... chuyển về thập phân)
+    i_val = res.get('i_max_hinh_hoc', 4.0) / 100 
+    # Lấy cao độ tự nhiên trung bình để tính toán chiều dài cầu
+    h_tn_tb = res.get('H_TN_TB', res.get('MNTN', 0))
+    
+    x_dinh = 60
+    y_dinh_mat_cau = h_dam + 2.0
+    
+    # --- Bổ sung: Xác định vị trí mố và Tổng chiều dài cầu ---
+    # Giả định chiều cao đắp tại mố lý tưởng là 7m (trong khoảng 6-8m)
+    h_dap_yc = 7.0 
+    y_mo_cau = h_tn_tb + h_dap_yc
+    
+    # Chiều dài tiếp tuyến đường cong đứng: T = R * i
+    T = R_curve * i_val
+    x_tiep_1 = x_dinh - T
+    x_tiep_2 = x_dinh + T
+    y_tiep_mat_cau = y_dinh_mat_cau - (T**2) / (2 * R_curve)
+
+    # Vị trí mố trái (nằm trên đường dốc): x_mo = x_tiep - (y_tiep - y_mo)/i
+    x_mo_trai = x_tiep_1 - (y_tiep_mat_cau - y_mo_cau) / i_val
+    x_mo_phai = x_dinh + (x_dinh - x_mo_trai)
+    L_cau = x_mo_phai - x_mo_trai
+    
+    # Tạo mảng Y cho toàn bộ trắc dọc
+    y_mat_cau = []
+    y_day_dam = []
+    
+    for xi in x:
+        if xi < x_tiep_1:
+            # Đoạn tiếp tuyến trái
+            yi_mat = y_tiep_mat_cau - i_val * (x_tiep_1 - xi)
+        elif xi > x_tiep_2:
+            # Đoạn tiếp tuyến phải
+            yi_mat = y_tiep_mat_cau - i_val * (xi - x_tiep_2)
+        else:
+            # Đoạn đường cong đứng Parabol
+            yi_mat = y_dinh_mat_cau - (xi - x_dinh)**2 / (2 * R_curve)
+        
+        y_mat_cau.append(yi_mat)
+        y_day_dam.append(yi_mat - 2.0) # Đáy dầm song song cách mặt cầu 2m
+
+    # Chuyển về mảng numpy để vẽ
+    y_mat_cau = np.array(y_mat_cau)
+    y_day_dam = np.array(y_day_dam)
+
+    # Vẽ Đường đỏ và Đáy dầm
+    ax.plot(x, y_mat_cau, color='red', lw=3, label="Đường đỏ")
+    ax.plot(x, y_day_dam, color='#34495e', ls='-.', lw=1.5)
+    
+    # Vẽ ký hiệu vị trí mố cầu
+    ax.vlines([x_mo_trai, x_mo_phai], h_tn_tb, y_mo_cau, colors='brown', ls='--', lw=2)
+
+    # Ghi chú thông số hình học và Tổng chiều dài cầu
+    ax.text(x_dinh, y_dinh_mat_cau + 1.2, f"TỔNG CHIỀU DÀI CẦU DỰ KIẾN: L = {L_cau:.2f}m", 
+            color='brown', fontweight='bold', fontsize=11, ha='center', bbox=dict(facecolor='white', alpha=0.8))
+    
+    ax.text(x_dinh, y_dinh_mat_cau + 0.5, f"ĐƯỜNG ĐỎ: i_max={i_val*100}% | R={R_curve}m", 
+            color='red', fontweight='bold', fontsize=10, ha='center')
+    
+    # Khôi phục ghi chú cao độ đáy dầm tại tim (đỉnh cầu)
+    y_day_dam_tai_tim = y_dinh_mat_cau - 2.0
+    ax.text(x_dinh, y_day_dam_tai_tim - 0.8, f"CAO ĐỘ ĐÁY DẦM TẠI TIM: {y_day_dam_tai_tim:.3f}m", 
+            color='#34495e', fontsize=9, ha='center', fontweight='bold')
 
     # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM ---
     if B > 0:
