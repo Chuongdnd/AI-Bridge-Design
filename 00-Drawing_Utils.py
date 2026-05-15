@@ -88,11 +88,25 @@ def ve_trac_doc_cau(res):
             y_mat.append(yi)
         
         y_mat = np.array(y_mat)
+        # --- LẤY THÔNG SỐ CẤU TẠO DẦM TỪ AI ---
+
+        h_dam_ai = res.get('ai_result', {}).get('chieu_cao', 1.65) # Mặc định 1.65m nếu chưa có AI
+        h_ban_mat_cau = 0.18  # Bản mặt cầu 180mm
         
-        # 4.2. Vẽ Đường đỏ và Đáy dầm (cách mặt cầu 2.0m)
-        ax.plot(x, y_mat, color='red', lw=3, label="Đường đỏ")
-        ax.plot(x, y_mat - 2.0, color='#34495e', ls='-.', lw=1.5)
+        # 4.2. Vẽ cấu tạo nhịp cầu: Đường đỏ -> Đỉnh dầm -> Đáy dầm
+        # Tính toán các cao độ
+        y_duong_do = y_mat
+        y_dinh_dam = y_mat - h_ban_mat_cau
+        y_day_dam_thuc = y_dinh_dam - h_dam_ai
         
+        # Vẽ các đường nét
+        ax.plot(x, y_duong_do, color='red', lw=3, label="Đường đỏ")
+        ax.plot(x, y_dinh_dam, color='darkblue', ls='-', lw=1.2, label="Đỉnh dầm")
+        ax.plot(x, y_day_dam_thuc, color='#34495e', ls='-.', lw=1.5, label="Đáy dầm")
+
+        # Tô màu cho dầm và bản mặt cầu để dễ phân biệt
+        ax.fill_between(x, y_dinh_dam, y_duong_do, color='gray', alpha=0.3) # Bản mặt cầu
+
         # 4.3. VẼ PHẠM VI CHIỀU DÀI CẦU (ĐƯỜNG THẲNG ĐỨNG TẠI VỊ TRÍ MỐ)
         # Đường thẳng đứng nối từ cao độ tự nhiên lên đến cao độ đường đỏ tại mố
         ax.vlines(x=[geo['x_mo_trai'], geo['x_mo_phai']], 
@@ -110,7 +124,7 @@ def ve_trac_doc_cau(res):
                 color='red', fontweight='bold', fontsize=10, ha='center')
         
         # Hiển thị Cao độ đáy dầm thiết kế tại vị trí tim cầu
-        y_day_tim = geo['y_dinh'] - 2.0
+        y_day_tim = geo['y_dinh'] - h_ban_mat_cau - h_dam_ai
         ax.text(60, y_day_tim - 0.8, f"CAO ĐỘ ĐÁY DẦM TẠI TIM: {y_day_tim:.3f}m", 
                 color='#34495e', fontsize=9, ha='center', fontweight='bold')
     else:
@@ -153,7 +167,7 @@ def ve_trac_doc_cau(res):
     # --- 6. CẤU HÌNH TRỤC VÀ HIỂN THỊ ---
     ax.set_xlim(-5, 125)
     # Cao độ mặt cầu cao nhất để đặt giới hạn trục Y
-    h_mat_cau_max = h_dam + 2.0
+    h_mat_cau_max = np.max(y_mat) if geo else h_dam + 2.0
     
     # Thiết lập giới hạn trục Y an toàn
     y_min = min(h98, h1, h5) - 5
