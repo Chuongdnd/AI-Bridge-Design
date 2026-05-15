@@ -74,85 +74,75 @@ def train_bridge_ai_system(file_path):
 # MODULE 2: LOGIC XÁC ĐỊNH THÔNG SỐ NHỊP VÀ PHÂN CHIA NHỊP
 # =========================================================
 def predict_main_span(b_tk, goc, b_cau, env, models, L_cau_tong=None):
-    """
-    Cập nhật đồng bộ:
-    - Lấy L_cau_tong từ kết quả trắc dọc (File 02)
-    - So sánh PA kinh tế Super-T 38.2m
-    - Sử dụng models['h'] thay cho models['height'] theo hàm train mới
-    """
-    # 1. Mã hóa môi trường đầu vào
-    try:
-        env_enc = models['le_env'].transform([env])[0]
-    except:
-        env_enc = 0
+    # 1. Mã hóa môi trường đầu vào an toàn
+    le_env = models['le_env']
+    env_str = str(env).strip()
+    
+    # Kiểm tra nếu nhãn tồn tại trong tập huấn luyện, nếu không dùng nhãn mặc định
+    if env_str in le_env.classes_:
+        env_enc = le_env.transform([env_str])[0]
+    else:
+        # Tránh lỗi unseen labels bằng cách lấy nhãn phổ biến nhất hoặc nhãn đầu tiên
+        env_enc = 0 
 
-    # 2. Dự đoán Loại dầm và Chiều dài AI ban đầu
+    # 2. Dự đoán Loại dầm và Chiều dài AI
     t_idx = models['type'].predict([[b_tk, env_enc]])[0]
     t_f = models['le_type'].inverse_transform([t_idx])[0]
     
-    # Logic nghiệp vụ: Đô thị tĩnh không hẹp ưu tiên T ngược
-    if env == "Đô thị" and b_tk <= 20:
+    # Logic nghiệp vụ khống chế
+    if env_str == "Đô thị" and b_tk <= 20:
         t_f = "T ngược"
 
-    # 3. Dự đoán Chiều dài dầm vừa khít tĩnh không (L)
+    # 3. Dự đoán Chiều dài dầm (L)
     l_ai = models['len'].predict([[b_tk, env_enc]])[0]
-    l_min = (b_tk / np.sin(np.radians(goc))) + 2.0 # Khống chế hình học tối thiểu
+    l_min = (b_tk / np.sin(np.radians(goc))) + 2.0 
     
-    # Quy đổi về chiều dài định hình phổ biến cho nhịp chính
     std_lengths = [15, 18, 21, 24, 25, 30, 33, 38.2, 40]
     l_f_ai = max(l_ai, l_min)
     l_f_ai = min(std_lengths, key=lambda x: abs(x - l_f_ai))
 
-    # --- BỔ SUNG LOGIC PHÂN CHIA NHỊP VÀ SO SÁNH KINH TẾ ---
+    # --- CẬP NHẬT LOGIC PHÂN CHIA NHỊP TỐI ƯU (3 NHỊP CHO 120M) ---
     analysis_note = ""
     n_nhip_final = 1
     
     if L_cau_tong and L_cau_tong > 0:
-        # 1. Phương án A: Theo dầm AI đề xuất (Dầm I, T...)
+        # Phương án A: Theo dầm AI định hình (Làm tròn lên)
         n_ai = int(np.ceil(L_cau_tong / l_f_ai))
         l_thuc_ai = round(L_cau_tong / n_ai, 2)
         
-        # 2. Phương án B: Theo dầm Super-T (Ưu tiên giảm số hàng trụ)
-        l_spt_dinh_hinh = 38.2
-        # Sử dụng floor để tìm số nhịp ít nhất có thể
-        n_spt = int(np.floor(L_cau_tong / l_spt_dinh_hinh))
+        # Phương án B: Super-T (Làm tròn xuống để giảm trụ theo ý bạn)
+        # 120 / 38.2 = 3.14 -> floor sẽ ra 3 nhịp
+        n_spt = int(np.floor(L_cau_tong / 38.2))
         if n_spt < 1: n_spt = 1
-        
         l_thuc_spt = round(L_cau_tong / n_spt, 2)
         
-        # KIỂM TRA ĐIỀU KIỆN KINH TẾ:
-        # Nếu dùng Super-T mà giảm được số nhịp (n_spt < n_ai) 
-        # và chiều dài dầm thực tế không vượt quá giới hạn cho phép (40m)
+        # KIỂM TRA ĐIỀU KIỆN: Nếu giảm được trụ và dầm thực tế <= 40m
         if n_spt < n_ai and l_thuc_spt <= 40.0:
-            analysis_note = (f"Tối ưu kinh tế: Giảm từ {n_ai} nhịp xuống {n_spt} nhịp nhờ dùng dầm Super-T "
-                             f"(L thực tế = {l_thuc_spt}m). Tiết kiệm {n_ai - n_spt} hàng trụ.")
             l_f = l_thuc_spt
             t_f = "Super-T"
             n_nhip_final = n_spt
+            analysis_note = f"Tối ưu: Chia {n_spt} nhịp Super-T {l_f}m để giảm trụ."
         else:
-            # Nếu không giảm được trụ hoặc dầm vượt quá 40m, giữ nguyên PA ban đầu
-            analysis_note = f"Phương án tối ưu: Chia cầu thành {n_ai} nhịp dầm {t_f}."
             l_f = l_thuc_ai
             n_nhip_final = n_ai
+            analysis_note = f"Chia thành {n_ai} nhịp dầm {t_f}."
     else:
         l_f = l_f_ai
-        analysis_note = "Dự báo thông số cho 1 nhịp đơn."
+        n_nhip_final = 1
+        analysis_note = "Dự báo cho 1 nhịp đơn."
 
-    # 4. Dự đoán Chiều cao dầm (H) - Sử dụng 'h' thay cho 'height'
-    t_enc = models['le_type'].transform([t_f])[0]
-    h_ai = models['h'].predict([[t_enc, l_f]])[0] # models['h'] đã được khớp với hàm train
+    # 4. Dự đoán Chiều cao dầm (H) - Xử lý Label dầm an toàn
+    le_type = models['le_type']
+    t_f_str = str(t_f).strip()
+    t_enc = le_type.transform([t_f_str])[0] if t_f_str in le_type.classes_ else 0
     
-    # Khống chế cấu tạo H >= 1/18 - 1/20 L (ngoại trừ T ngược)
-    h_f = h_ai if "t ngược" in t_f.lower() else max(h_ai, round(l_f/20, 2))
+    h_ai = models['h'].predict([[t_enc, l_f]])[0]
+    h_f = h_ai if "t ngược" in t_f_str.lower() else max(h_ai, round(l_f/20, 2))
 
-    # 5. Dự đoán Số lượng dầm và Khoảng cách (S) trên Mặt cắt ngang
+    # 5. Số lượng dầm và Khoảng cách (S)
     s_f = models['dist'].predict([[t_enc, b_cau]])[0]
     n_dam = int(np.floor(b_cau / s_f)) + 1
     oh = round((b_cau - (n_dam - 1) * s_f) / 2, 2)
-    
-    if oh >= 0.8 * s_f:
-        n_dam += 1
-        oh = round((b_cau - (n_dam - 1) * s_f) / 2, 2)
 
     return {
         "loai_dam": t_f,
