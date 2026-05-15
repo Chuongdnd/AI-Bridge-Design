@@ -121,21 +121,26 @@ def tra_cuu_yeu_to_hinh_hoc(loai, cap_duong, dia_hinh="1"):
         except: return {"status": "error", "message": "Vtk Đô thị không hợp lệ"}
 
     return {"status": "error", "message": "Loại đường không xác định"}
-def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=7.0):
+def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0):
     import numpy as np
-    # Lấy thông số đã tra cứu được
+    
+    # 1. Lấy thông số trắc dọc
     R = res.get('R_hinh_hoc', 5000)
     i_val = res.get('i_max_hinh_hoc', 4.0) / 100
-    y_dinh = h_dam + 2.0
-    x_dinh = 60
+    y_dinh = h_dam + 2.0 
+    x_dinh = 150  # Tăng phạm vi tim cầu để quét rộng hơn
 
-    # Tính tọa độ tiếp điểm
+    # 2. Lấy chiều dài nhịp AI dự kiến để làm "chiều dài tối thiểu"
+    l_nhip_du_kien = res.get('ai_result', {}).get('chieu_dai', 33.0) 
+    l_cau_min = l_nhip_du_kien + 10.0 # Chiều dài cầu tối thiểu = 1 nhịp + 2 đoạn mố
+
+    # 3. Tính toán hình học
     T = R * i_val
     x_t1, x_t2 = x_dinh - T, x_dinh + T
     y_t = y_dinh - (T**2) / (2 * R)
 
-    # Quét 1000 điểm để tìm giao điểm h_dap
-    x_scan = np.linspace(0, 120, 1000)
+    # Quét rộng hơn (từ 0 đến 300) để tránh lỗi kịch trần 120m
+    x_scan = np.linspace(0, 300, 2000)
     y_scan = []
     for xi in x_scan:
         if xi < x_t1: yi = y_t - i_val * (x_t1 - xi)
@@ -144,15 +149,24 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=7.0):
         y_scan.append(yi)
     y_scan = np.array(y_scan)
 
-    # Tìm mố trái (nơi chênh lệch cao độ ≈ h_dap)
-    idx_mo = np.argmin(np.abs((y_scan[:500] - h_tn_tb) - h_dap_yc))
-    x_mo_trai = x_scan[idx_mo]
+    # 4. Tìm mố trái dựa trên h_dap_yc
+    # Chỉ quét nửa bên trái (xi < x_dinh)
+    delta_y = y_scan - h_tn_tb
+    idx_mo = np.argmin(np.abs(delta_y[:1000] - h_dap_yc))
+    x_mo_trai_tinh_toan = x_scan[idx_mo]
     
+    # --- KHỐNG CHẾ CHIỀU DÀI TỐI THIỂU ---
+    # Nếu x_mo quá gần tim cầu, ép về vị trí đảm bảo chiều dài tối thiểu
+    x_mo_trai_min = x_dinh - (l_cau_min / 2)
+    x_mo_trai = min(x_mo_trai_tinh_toan, x_mo_trai_min)
+    
+    l_cau_final = (x_dinh - x_mo_trai) * 2
+
     return {
         "x_t1": x_t1, "x_t2": x_t2, "y_t": y_t, "y_dinh": y_dinh, "R": R, "i_val": i_val,
         "x_mo_trai": x_mo_trai,
         "x_mo_phai": x_dinh + (x_dinh - x_mo_trai),
-        "y_mo": y_scan[idx_mo],
-        "L_cau": (x_dinh - x_mo_trai) * 2,
+        "y_mo": y_scan[idx_mo] if x_mo_trai == x_mo_trai_tinh_toan else y_scan[np.argmin(np.abs(x_scan - x_mo_trai))],
+        "L_cau": l_cau_final,
         "h_tn_tb": h_tn_tb
     }
