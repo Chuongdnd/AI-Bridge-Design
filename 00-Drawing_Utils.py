@@ -176,14 +176,14 @@ def ve_trac_doc_cau(res):
                     arrowprops=dict(arrowstyle='<->', color='blue', lw=1.2))
         # Căn lề 'top' để đẩy chữ xuống dưới điểm giữa đường DIM
         ax.text(x_dim_cau_tao - 1.5, y_day_pt, f"h_dầm = {h_dam_ai}m", 
-                ha='left', va='bottom', rotation=90, color='blue', fontsize=9, fontweight='bold')
+                ha='left', va='top', rotation=90, color='blue', fontsize=9, fontweight='bold')
 
         # 2. DIM Bản mặt cầu (Màu đỏ)
         ax.annotate('', xy=(x_dim_cau_tao, y_dinh_pt), xytext=(x_dim_cau_tao, y_do_pt),
                     arrowprops=dict(arrowstyle='<->', color='red', lw=1.2))
         # Căn lề 'bottom' để đẩy chữ lên trên điểm giữa đường DIM
         ax.text(x_dim_cau_tao - 1.5, y_do_pt, f"h_bmc = {h_ban_mat_cau}m", 
-                ha='right', va='top', rotation=90, color='red', fontsize=9, fontweight='bold')
+                ha='right', va='bottom', rotation=90, color='red', fontsize=9, fontweight='bold')
         
         # 3. KÝ HIỆU ĐƯỜNG DÓNG NGẮN (Gọn gàng hơn)
         line_style = dict(color='black', lw=0.6, ls=':', alpha=0.6)
