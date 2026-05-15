@@ -114,12 +114,14 @@ def predict_main_span(b_tk, goc, b_cau, env, models, L_cau_tong=None):
         
         # Phương án B: Theo dầm Super-T 38.2m (Tối ưu số trụ cho cầu dài)
         l_spt = 38.2
-        n_spt = int(np.ceil(L_cau_tong / l_spt))
+        n_spt = int(np.floor(L_cau_tong / l_spt)) 
+        if n_spt < 1: n_spt = 1 # Đảm bảo ít nhất 1 nhịp
+        
         l_thuc_spt = round(L_cau_tong / n_spt, 2)
         
-        # SO SÁNH: Nếu PA AI > 3 nhịp và dùng Super-T giảm được số lượng trụ
-        if n_ai > 3 and n_spt < n_ai:
-            analysis_note = f"Tối ưu kinh tế: Chuyển sang dầm Super-T 38.2m để giảm từ {n_ai} nhịp xuống {n_spt} nhịp (Tiết kiệm {n_ai - n_spt} hàng trụ)."
+        # SO SÁNH KINH TẾ (Khống chế chiều dài dầm thực tế không quá 40m)
+        if n_spt < n_ai and l_thuc_spt <= 40.0:
+            analysis_note = f"Tối ưu kinh tế: Giảm từ {n_ai} nhịp xuống {n_spt} nhịp nhờ dùng dầm Super-T (L_nhịp thực tế = {l_thuc_spt}m)."
             l_f = l_thuc_spt
             t_f = "Super-T"
             n_nhip_final = n_spt
