@@ -33,15 +33,23 @@ def ve_trac_doc_cau(res):
     H_tk = res.get('H', 0)
     B = res.get('B', 0)
     label_res = res.get('label', "")
-
-    # Kiểm tra loại cầu: Nếu là vượt đường bộ, các mực nước thường bằng nhau hoặc label chứa chữ 'Vượt'
+    
+    # Lấy thông số geo_logic để đồng bộ tim cầu và chiều dài
+    geo = res.get('geo_logic')
+    # Ưu tiên x_dinh từ geo_logic (150), nếu chưa có thì dùng 60 làm fallback
+    x_center = geo.get('x_dinh', 60) if geo else 60
+    # Mở rộng phạm vi vẽ lên 300m để thấy hết cầu dài
+    x_limit = 300 if x_center > 100 else 120
+    
+    # Kiểm tra loại cầu
     is_duong_bo = "vượt đường bộ" in label_res.lower()
     
     if isinstance(B, str): B = 0
-    x = np.linspace(0, 120, 200)
+    # Tạo dải X rộng để bao phủ toàn bộ phạm vi quét địa hình
+    x = np.linspace(0, x_limit, 500)
 
-  # --- 2. VẼ ĐỊA HÌNH VÀ ĐƯỜNG TỰ NHIÊN TB ---
-    h_tn_tb = res.get('h_tn_tb', 3.0) # Lấy đúng giá trị TN TB khai báo
+    # --- 2. VẼ ĐỊA HÌNH VÀ ĐƯỜNG TỰ NHIÊN TB ---
+    h_tn_tb = res.get('h_tn_tb', 3.0) 
 
     if is_duong_bo:
         # Vẽ mặt đường bị vượt (Màu xám)
@@ -50,7 +58,7 @@ def ve_trac_doc_cau(res):
         ax.fill_between(x, h1 - 5, h1, color='#ecf0f1', alpha=0.6)
         ax.text(2, h1 + 0.3, f"CAO ĐỘ MẶT ĐƯỜNG: {h1:.3f}m", color='#34495e', fontsize=9, fontweight='bold')
 
-        # Vẽ đường TN trung bình (Màu xanh lá - Tách biệt với h1)
+        # Vẽ đường TN trung bình
         y_tn_flat = np.full_like(x, h_tn_tb)
         ax.plot(x, y_tn_flat, color='#27ae60', ls='--', lw=1.5, label="Đường TN TB", zorder=2)
         ax.text(2, h_tn_tb - 0.8, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb:.3f}m", 
@@ -62,29 +70,26 @@ def ve_trac_doc_cau(res):
         ax.fill_between(x, h_tn_tb - 5, h_tn_tb, color='#f1e7d0', alpha=0.5)
         ax.text(2, h_tn_tb - 0.8, f"ĐƯỜNG TỰ NHIÊN TRUNG BÌNH: {h_tn_tb:.3f}m", 
                 color='#27ae60', fontsize=9, fontweight='bold')
-    # --- 3. VẼ KÝ HIỆU MỰC NƯỚC (Chỉ vẽ khi vượt sông) ---
+
+    # --- 3. VẼ KÝ HIỆU MỰC NƯỚC (Điều chỉnh vị trí theo x_center) ---
     if not is_duong_bo:
-        ve_ky_hieu_muc_nuoc(ax, 15, h1, "MNCN H1%", "red")
-        ve_ky_hieu_muc_nuoc(ax, 45, h5, "MNTT H5%", "blue")
-        ve_ky_hieu_muc_nuoc(ax, 75, h10, "MNTC H10%", "green")
-        ve_ky_hieu_muc_nuoc(ax, 105, h98, "MNTN H98%", "orange")
+        ve_ky_hieu_muc_nuoc(ax, x_center - 45, h1, "MNCN H1%", "red")
+        ve_ky_hieu_muc_nuoc(ax, x_center - 15, h5, "MNTT H5%", "blue")
+        ve_ky_hieu_muc_nuoc(ax, x_center + 15, h10, "MNTC H10%", "green")
+        ve_ky_hieu_muc_nuoc(ax, x_center + 45, h98, "MNTN H98%", "orange")
     
-    # --- 4. VẼ KẾT CẤU CẦU (HIỂN THỊ DỰA TRÊN LOGIC TỪ FILE 02) ---
-    geo = res.get('geo_logic')
-    
+    # --- 4. VẼ KẾT CẤU CẦU ---
     if geo:
-        # 4.1. Tạo mảng tọa độ Y cho toàn bộ dải X dựa trên dữ liệu từ file 02
+        # 4.1. Tạo mảng tọa độ Y dựa trên x_center động
         y_mat = []
         for xi in x:
             if xi < geo['x_t1']:
-                # Đoạn tiếp tuyến bên trái
                 yi = geo['y_t'] - geo['i_val'] * (geo['x_t1'] - xi)
             elif xi > geo['x_t2']:
-                # Đoạn tiếp tuyến bên phải
                 yi = geo['y_t'] - geo['i_val'] * (xi - geo['x_t2'])
             else:
-                # Đoạn đường cong đứng (Bao phủ cả trường hợp mố nằm trong đường cong)
-                yi = geo['y_dinh'] - (xi - 60)**2 / (2 * geo['R'])
+                # THAY 60 THÀNH x_center Ở ĐÂY
+                yi = geo['y_dinh'] - (xi - x_center)**2 / (2 * geo['R'])
             y_mat.append(yi)
         
         y_mat = np.array(y_mat)
