@@ -91,6 +91,9 @@ with tab1:
     with col_in1:
         loai_c = st.radio("Chọn đối tượng vượt:", ["Vượt sông", "Vượt đường bộ"], horizontal=True)
         st.session_state.design_data['loai_doi_tuong_vuot'] = loai_c
+        goc_giao = st.number_input("Góc giao chéo (độ):", min_value=30.0, max_value=90.0, value=90.0, step=1.0, 
+                                    help="Góc giữa tim tuyến cầu và tim dòng chảy/đường bị vượt. 90 độ là vuông góc.")
+        st.session_state.design_data['goc_giao'] = goc_giao
         if loai_c == "Vượt sông":
             mien = st.selectbox("Khu vực:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
             cap_s = st.selectbox("Cấp sông:", ["1", "2", "3", "4", "5", "6"], format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
@@ -195,9 +198,9 @@ with tab1:
 
     st.divider()
 
-    # --- BƯỚC CUỐI: NÚT BẤM TÍNH TOÁN VÀ DỰNG HÌNH ---
+    # --- BƯỚC CUỐI: NÚT BẤM TÍNH TOÁN, DỰNG HÌNH & DỰ BÁO AI ---
     if st.button("🚀 Let's go!", use_container_width=True):
-        # 1. Gọi hàm tính toán Tĩnh không & Thủy văn
+        # 1. Gọi hàm tính toán Tĩnh không & Thủy văn (Lấy dữ liệu thô từ File 01)
         res = TK.tra_cuu_tinh_khong_bridge(
             loai_cau=loai_c, 
             mien=mien if loai_c=="Vượt sông" else None,
@@ -208,37 +211,86 @@ with tab1:
             h1=h1, h5=h5, h10=h10, h98=h98,
             h_tn_tb=h_tn_tb
         )
+        
+        # --- CẬP NHẬT 1: TÍNH TOÁN BỀ RỘNG THEO GÓC XIÊN ---
+        alpha_deg = goc_giao  # Biến này lấy từ input st.number_input bạn vừa thêm
+        alpha_rad = np.radians(alpha_deg)
+        B_goc = res.get('B', 0)
+        
+        # Nếu xiên (góc < 90), quy đổi B_tk = B / sin(alpha)
+        if alpha_deg < 90:
+            B_thiet_ke = round(B_goc / np.sin(alpha_rad), 2)
+        else:
+            B_thiet_ke = B_goc
+            
+        res['B'] = B_thiet_ke # Cập nhật lại B để các hàm sau sử dụng
+        res['goc_giao'] = alpha_deg
         res['h_tn_tb'] = h_tn_tb
-        # 2. Bơm dữ liệu hình học vào res để phục vụ hàm vẽ
+
+        # 2. Bơm dữ liệu hình học và tính toán trắc dọc
         if res_geo.get("status") == "success":
             res['R_hinh_hoc'] = st.session_state.get('R_final', 5000)
-            # Xác định cao độ tham chiếu tùy theo loại cầu (Sông lấy h_tn_tb, Đường lấy h1)
             h_tham_chieu = h_tn_tb if loai_c == "Vượt sông" else h1
-
-             # Lấy cao độ đáy dầm từ kết quả trả về của module Tĩnh không (biến res)
             h_dam_thuc_te = res.get('day_dam', 0.0)
 
-            # Gọi hàm tính toán logic từ file 02 với các biến đã xác định
+            # Gọi hàm tính toán logic từ file 02 (Xác định L_cau, x_mo_trai,...)
             res['geo_logic'] = YTHH.tinh_toan_geo_logic(res, h_tham_chieu, h_dam_thuc_te)
-            # Ép kiểu imax về số (cắt bỏ dấu % nếu có)
+            
             imax_raw = res_geo.get('imax', '0')
             res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
-            
-            # Gán thêm biến 'bc' (bề rộng cầu) để tránh lỗi ở các tab khác
-            res['bc'] = res.get('B', 0)
+            res['bc'] = 12.0  # Mặc định bề rộng mặt cầu, có thể thay bằng input người dùng
 
-            # Lưu vào session_state để chatbot và các tab sau sử dụng
+            # --- CẬP NHẬT 2: GỌI ROBOT AI DỰ BÁO KẾT CẤU (File 05) ---
+            with st.spinner('🤖 Robot AI đang dự báo nhịp & dầm tối ưu...'):
+                xlsx_path = os.path.join(os.path.dirname(__file__), "Girder.xlsx")
+                models = GRD.train_bridge_ai_system(xlsx_path)
+                
+                if models:
+                    env_ai = "Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông"
+                    # Dự báo dầm, số nhịp dựa trên B xiên và L_cau thực tế
+                    res_ai = GRD.predict_main_span(
+                        b_tk=res['B'], 
+                        goc=alpha_deg, 
+                        b_cau=res['bc'], 
+                        env=env_ai, 
+                        models=models,
+                        L_cau_tong=res['geo_logic']['L_cau']
+                    )
+                    res['ai_result'] = res_ai
+                else:
+                    st.warning("⚠️ Không nạp được mô hình AI, chỉ hiển thị trắc dọc hình học.")
+
+            # Lưu vào session_state
             st.session_state.design_data = res
             st.session_state.res_geo_current = res_geo
 
-            # 3. HIỂN THỊ KẾT QUẢ VÀ BẢN VẼ
-            st.subheader("🖼️ Sơ đồ trắc dọc cầu thiết kế")
-            try:
-                fig = PLOT.ve_trac_doc_cau(res)
-                st.pyplot(fig)
-                #st.success(f"🎉 Đã vẽ trắc dọc với R = {res['R_hinh_hoc']}m")
-            except Exception as e:
-                st.error(f"Lỗi khi vẽ: {e}")
+            # 3. HIỂN THỊ KẾT QUẢ TỔNG HỢP
+            st.divider()
+            col_res1, col_res2 = st.columns([2, 1])
+            
+            with col_res1:
+                st.subheader("🖼️ Sơ đồ trắc dọc cầu thiết kế")
+                try:
+                    fig = PLOT.ve_trac_doc_cau(res)
+                    st.pyplot(fig)
+                except Exception as e:
+                    st.error(f"Lỗi khi vẽ: {e}")
+            
+            with col_res2:
+                st.subheader("🤖 Đề xuất của AI")
+                if 'ai_result' in res:
+                    ai = res['ai_result']
+                    st.info(f"**{ai['loai_dam'].upper()}**")
+                    st.write(f"🔹 Tổng số nhịp: **{ai['tong_so_nhip']} nhịp**")
+                    st.write(f"🔹 Chiều dài nhịp: **{ai['chieu_dai']} m**")
+                    st.write(f"🔹 Chiều cao dầm: **{ai['chieu_cao']} m**")
+                    st.success(f"💡 {ai['ghi_chu_ai']}")
+                
+                st.subheader("📐 Thông số mố trụ")
+                geo = res['geo_logic']
+                st.write(f"📍 Vị trí mố trái: **{geo['x_mo_trai']:.2f} m**")
+                st.write(f"📍 Vị trí mố phải: **{geo['x_mo_phai']:.2f} m**")
+                st.write(f"📏 Tổng chiều dài L: **{geo['L_cau']:.2f} m**")
         else:
             st.error("❌ Không thể xác định yếu tố hình học. Vui lòng kiểm tra lại đầu vào.")
             # ==========================================
