@@ -118,34 +118,50 @@ def ve_trac_doc_cau(res):
         ax.text(60, h_dam + 1, "⚠️ CHỜ DỮ LIỆU HÌNH HỌC TỪ FILE 02...", 
                 color='orange', ha='center', fontweight='bold')
 
-    # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM ---
+    # --- 5. KHUNG TĨNH KHÔNG VÀ NÉT DIM (Cập nhật hiển thị góc xiên) ---
     if B > 0:
-        # Khung tĩnh không Magenta
+        # 5.1. Khung tĩnh không Magenta
         rect = patches.Rectangle((60 - B/2, h5), B, H_tk, fill=False, edgecolor='magenta', ls='--', lw=2.5, zorder=3)
         ax.add_patch(rect)
         
-        # DIM Bề rộng B (Dời lên cao h5 + 3.0)
+        # 5.2. Tính toán text hiển thị cho B
+        alpha = res.get('goc_giao', 90.0)
+        if alpha < 90:
+            # Tính ngược lại B tiêu chuẩn để hiển thị công thức: B_tc = B_tk * sin(alpha)
+            B_tieuchuan = round(B * np.sin(np.radians(alpha)), 1)
+            label_B = f"B_tk = {B}m\n({B_tieuchuan} / sin({alpha}°))"
+        else:
+            label_B = f"B = {B}m"
+
+        # 5.3. DIM Bề rộng B (Dời lên cao h5 + H_tk/2)
         y_dim_b = h5 + H_tk/2
         ax.annotate('', xy=(60 + B/2, y_dim_b), xytext=(60 - B/2, y_dim_b),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        ax.text(60, y_dim_b + 0.2, f"B = {B}m", ha='center', va='bottom', fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        
+        # Hiển thị text với 2 dòng nếu có góc xiên
+        ax.text(60, y_dim_b + 0.3, label_B, ha='center', va='bottom', 
+                fontweight='bold', fontsize=9, 
+                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
-        # DIM Chiều cao H
+        # 5.4. DIM Chiều cao H
         ax.annotate('', xy=(60 + B/2 + 3, h5 + H_tk), xytext=(60 + B/2 + 3, h5),
                     arrowprops=dict(arrowstyle='<->', color='black', lw=1.2, mutation_scale=15))
-        ax.text(60 + B/2 + 3.5, h5 + H_tk/2, f"H = {H_tk}m", ha='left', va='center', rotation=90, fontweight='bold', bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        ax.text(60 + B/2 + 3.5, h5 + H_tk/2, f"H = {H_tk}m", ha='left', va='center', 
+                rotation=90, fontweight='bold', 
+                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
 
-    # Cấu hình trục
+    # --- 6. CẤU HÌNH TRỤC VÀ HIỂN THỊ ---
     ax.set_xlim(-5, 125)
-    # Tính toán cao độ mặt cầu cao nhất để đặt giới hạn trục Y
-    h_mat_cau_max = h_dam + 2.0 
+    # Cao độ mặt cầu cao nhất để đặt giới hạn trục Y
+    h_mat_cau_max = h_dam + 2.0
     
     # Thiết lập giới hạn trục Y an toàn
     y_min = min(h98, h1, h5) - 5
     y_max = h_mat_cau_max + 5
     ax.set_ylim(y_min, y_max)
     ax.axis('off')
-    ax.set_title(label_res.upper() if label_res else "SƠ HỌA TRẮC DỌC CẦU", fontsize=16, fontweight='bold', pad=20)
+    ax.set_title(label_res.upper() if label_res else "SƠ HỌA TRẮC DỌC CẦU", 
+                 fontsize=16, fontweight='bold', pad=20)
     
     return fig
 

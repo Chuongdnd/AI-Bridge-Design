@@ -81,13 +81,13 @@ if 'design_data' not in st.session_state:
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 # --- GIAO DIỆN CHÍNH ---
-tab1, tab2, tab3 = st.tabs(["🌊 Tĩnh không & Thủy văn", "📐 Hình học & MCN", "🤖 Dự báo AI"])
+tab1, tab2, tab3 = st.tabs(["🌊 Bố trí chung thiết kế", "🛣️ Mặt cắt ngang điển hình", "📐 Chi tiết dầm"])
 
 # ==========================================
 # TAB 1: TĨNH KHÔNG & THỦY VĂN
 # ==========================================
 with tab1:
-    st.header("🌊 Thông số Tĩnh không & Thủy văn thiết kế")
+    st.header("🌊 Bố trí chung thiết kế")
     col_in1, col_in2 = st.columns(2)
     with col_in1:
         loai_c = st.radio("Chọn đối tượng vượt:", ["Vượt sông", "Vượt đường bộ"], horizontal=True)
@@ -298,7 +298,7 @@ with tab1:
 # TAB 2: HÌNH HỌC & MẶT CẮT NGANG
 # ==========================================
 with tab2:
-    st.header("🛣️ Yếu tố hình học & Mặt cắt ngang")
+    st.header("🛣️ Mặt cắt ngang điển hình")
     
     col1, col2 = st.columns(2)
     with col1:
@@ -352,7 +352,7 @@ with tab2:
 # TAB 3: DỰ BÁO AI
 # ==========================================
 with tab3:
-    st.header("🤖 Robot AI dự báo Kết cấu nhịp chính")
+    st.header("📐 Chi tiết dầm")
     
     # 1. TRUY XUẤT DỮ LIỆU AN TOÀN TỪ TAB 1 & TAB 2
     data = st.session_state.design_data
