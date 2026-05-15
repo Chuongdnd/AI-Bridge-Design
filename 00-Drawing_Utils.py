@@ -39,12 +39,12 @@ def ve_trac_doc_cau(res):
     # Ưu tiên x_dinh từ geo_logic (150), nếu chưa có thì dùng 60 làm fallback
     x_center = geo.get('x_dinh', 60) if geo else 60
     # Mở rộng phạm vi vẽ lên 300m để thấy hết cầu dài
-    x_limit = 300 if x_center > 100 else 120
+    x_limit = 1000 if x_center > 100 else 120
     # Kiểm tra loại cầu: Nếu là vượt đường bộ, các mực nước thường bằng nhau hoặc label chứa chữ 'Vượt'
     is_duong_bo = "vượt đường bộ" in label_res.lower()
     
     if isinstance(B, str): B = 0
-    x = np.linspace(0, x_limit, 500)
+    x = np.linspace(0, x_limit, 1000)
 
   # --- 2. VẼ ĐỊA HÌNH VÀ ĐƯỜNG TỰ NHIÊN TB ---
     h_tn_tb = res.get('h_tn_tb', 3.0) # Lấy đúng giá trị TN TB khai báo
@@ -197,7 +197,7 @@ def ve_trac_doc_cau(res):
         ax.plot([x_dim_cau_tao - 2, x_dim_cau_tao + 1], [y_dinh_pt, y_dinh_pt], **line_style)
         ax.plot([x_dim_cau_tao - 2, x_dim_cau_tao + 1], [y_do_pt, y_do_pt], **line_style)
     # --- 6. CẤU HÌNH TRỤC VÀ HIỂN THỊ ---
-    ax.set_xlim(-10, x_limit + 10)
+    ax.set_xlim(-50, x_limit + 50)
     
     # Cao độ mặt cầu cao nhất để đặt giới hạn trục Y (Sử dụng np.max để lấy Scalar)
     h_mat_cau_max = np.max(y_duong_do) if geo else h_dam + 2.0

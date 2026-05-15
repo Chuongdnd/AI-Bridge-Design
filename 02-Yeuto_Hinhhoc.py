@@ -128,7 +128,7 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0):
     R = res.get('R_hinh_hoc', 5000)
     i_val = res.get('i_max_hinh_hoc', 4.0) / 100
     y_dinh = h_dam + 2.0 
-    x_dinh = 150  # Tăng phạm vi tim cầu để quét rộng hơn
+    x_dinh = 500  # Tăng phạm vi tim cầu để quét rộng hơn
 
     # 2. Lấy chiều dài nhịp AI dự kiến để làm "chiều dài tối thiểu"
     l_nhip_du_kien = res.get('ai_result', {}).get('chieu_dai', 33.0) 
@@ -139,8 +139,7 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0):
     x_t1, x_t2 = x_dinh - T, x_dinh + T
     y_t = y_dinh - (T**2) / (2 * R)
 
-    # Quét rộng hơn (từ 0 đến 300) để tránh lỗi kịch trần 120m
-    x_scan = np.linspace(0, 300, 2000)
+    x_scan = np.linspace(0, 1000, 2000)
     y_scan = []
     for xi in x_scan:
         if xi < x_t1: yi = y_t - i_val * (x_t1 - xi)
