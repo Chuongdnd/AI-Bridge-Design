@@ -56,83 +56,54 @@ def train_bridge_ai_system(file_path):
 # =========================================================
 # MODULE 2: LOGIC XÁC ĐỊNH THÔNG SỐ NHỊP CHÍNH
 # =========================================================
-# =========================================================
-# MODULE 2: LOGIC XÁC ĐỊNH THÔNG SỐ NHỊP VÀ PHÂN CHIA NHỊP
-# =========================================================
-def predict_main_span(b_tk, goc, b_cau, env, models, L_cau_tong=None):
-    """
-    Bổ sung tham số L_cau_tong (Tổng chiều dài cầu từ file 02) để chia nhịp
-    """
+def predict_main_span(b_tk, goc, b_cau, env, models):
     # 1. Mã hóa môi trường đầu vào
     try:
         env_enc = models['le_env'].transform([env])[0]
     except:
         env_enc = 0
 
-    # 2. Dự đoán Loại dầm và Chiều dài cơ sở (L_ai)
+    # 2. Dự đoán Loại dầm
     t_idx = models['type'].predict([[b_tk, env_enc]])[0]
     t_f = models['le_type'].inverse_transform([t_idx])[0]
     
+    # Ưu tiên logic nghiệp vụ: Đô thị tĩnh không hẹp dùng T ngược
     if env == "Đô thị" and b_tk <= 20:
         t_f = "T ngược"
 
+    # 3. Dự đoán Chiều dài dầm (L)
     l_ai = models['len'].predict([[b_tk, env_enc]])[0]
-    l_min = (b_tk / np.sin(np.radians(goc))) + 2.0 
+    l_min = (b_tk / np.sin(np.radians(goc))) + 2.0 # Khống chế hình học tối thiểu
     
-    # Chiều dài dầm đề xuất ban đầu (vừa khít tĩnh không)
+    # Quy đổi về chiều dài định hình phổ biến
     std_lengths = [15, 18, 21, 24, 25, 30, 33, 38.2, 40]
     l_f = max(l_ai, l_min)
     l_f = min(std_lengths, key=lambda x: abs(x - l_f)) if l_f <= 40 else round(l_f, 1)
 
-    # --- BỔ SUNG LOGIC PHÂN CHIA NHỊP VÀ SO SÁNH SPT 38.2m ---
-    analysis_report = ""
-    if L_cau_tong:
-        # Phương án A: Dùng dầm AI dự đoán
-        n_nhip_ai = int(np.ceil(L_cau_tong / l_f))
-        l_thuc_ai = round(L_cau_tong / n_nhip_ai, 2)
-        
-        # Phương án B: Dùng Super-T 38.2m (Tối ưu số trụ)
-        l_spt = 38.2
-        n_nhip_spt = int(np.ceil(L_cau_tong / l_spt))
-        l_thuc_spt = round(L_cau_tong / n_nhip_spt, 2)
-        
-        # So sánh: Nếu PA AI > 3 nhịp và SPT giảm được ít nhất 1 trụ
-        if n_nhip_ai > 3 and n_nhip_spt < n_nhip_ai:
-            analysis_report = (f"Đề xuất thay đổi sang Super-T 38.2m: Giảm từ {n_nhip_ai} nhịp "
-                               f"xuống còn {n_nhip_spt} nhịp. Tiết kiệm {n_nhip_ai - n_nhip_spt} hàng trụ.")
-            l_f = l_thuc_spt
-            t_f = "Super-T"
-            n_nhip_final = n_nhip_spt
-        else:
-            analysis_report = f"Giữ nguyên loại dầm {t_f} với {n_nhip_ai} nhịp để phù hợp tĩnh không."
-            l_f = l_thuc_ai
-            n_nhip_final = n_nhip_ai
-    else:
-        n_nhip_final = 1 # Mặc định nếu không có tổng chiều dài
-
-    # 4. Dự đoán Chiều cao dầm (H) dựa trên chiều dài dầm cuối cùng
+    # 4. Dự đoán Chiều cao dầm (H)
     t_enc = models['le_type'].transform([t_f])[0]
     h_ai = models['height'].predict([[t_enc, l_f]])[0]
+    # Khống chế cấu tạo H >= 1/18 - 1/20 L (ngoại trừ T ngược)
     h_f = h_ai if "t ngược" in t_f.lower() else max(h_ai, round(l_f/20, 2))
 
-    # 5. Dự đoán Số lượng dầm trên MCN
+    # 5. Dự đoán Số lượng dầm và Khoảng cách (S)
     s_f = models['dist'].predict([[t_enc, b_cau]])[0]
-    n_dam_mcn = int(np.floor(b_cau / s_f)) + 1
-    oh = round((b_cau - (n_dam_mcn - 1) * s_f) / 2, 2)
+    n_dam = int(np.floor(b_cau / s_f)) + 1
+    # Tính toán khoảng nhô cánh dầm (overhang)
+    oh = round((b_cau - (n_dam - 1) * s_f) / 2, 2)
     
+    # Nếu oh quá lớn, tăng thêm 1 dầm để phân bổ lại
     if oh >= 0.8 * s_f:
-        n_dam_mcn += 1
-        oh = round((b_cau - (n_dam_mcn - 1) * s_f) / 2, 2)
+        n_dam += 1
+        oh = round((b_cau - (n_dam - 1) * s_f) / 2, 2)
 
     return {
         "loai_dam": t_f,
-        "chieu_dai_nhip": l_f,
-        "tong_so_nhip": n_nhip_final,
+        "chieu_dai": l_f,
         "chieu_cao": round(h_f, 2),
-        "so_luong_dam_mcn": n_dam_mcn,
-        "khoang_cach_dam": round(s_f, 2),
-        "overhang": oh,
-        "ghi_chu_ai": analysis_report
+        "so_luong": n_dam,
+        "khoang_cach": round(s_f, 2),
+        "overhang": oh
     }
 
 # =========================================================
