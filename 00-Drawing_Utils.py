@@ -163,34 +163,33 @@ def ve_trac_doc_cau(res):
         ax.text(60 + B/2 + 3.5, h5 + H_tk/2, f"H = {H_tk}m", ha='left', va='center', 
                 rotation=90, fontweight='bold', 
                 bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
-        # --- 5.5. DIM CHIỀU CAO DẦM VÀ BẢN MẶT CẦU (TỐI ƯU HIỂN THỊ) ---
-        x_dim_cau_tao = 35 
+        # --- 5.5. FIX LỖI CHỒNG LẤN NHÃN DIM CẤU TẠO ---
+        x_dim_cau_tao = 30  # Đẩy vị trí DIM sang trái thêm một chút (từ 35 về 30) để thoáng hơn
         
         idx_dim = np.argmin(np.abs(x - x_dim_cau_tao))
         y_day_pt = y_day_dam_thuc[idx_dim]
         y_dinh_pt = y_dinh_dam[idx_dim]
         y_do_pt = y_duong_do[idx_dim]
         
-        # 1. DIM Chiều cao dầm
+        # 1. DIM Chiều cao dầm (Màu xanh)
         ax.annotate('', xy=(x_dim_cau_tao, y_day_pt), xytext=(x_dim_cau_tao, y_dinh_pt),
                     arrowprops=dict(arrowstyle='<->', color='blue', lw=1.2))
-        # Đẩy chữ sang trái nhiều hơn (x-2) và căn giữa dòng DIM để tránh đè
-        ax.text(x_dim_cau_tao - 2, (y_day_pt + y_dinh_pt)/2, f"h_dầm={h_dam_ai}m", 
-                ha='right', va='center', rotation=90, color='blue', fontsize=9, fontweight='bold')
+        # Căn lề 'top' để đẩy chữ xuống dưới điểm giữa đường DIM
+        ax.text(x_dim_cau_tao - 1.5, y_day_pt, f"h_dầm = {h_dam_ai}m", 
+                ha='right', va='bottom', rotation=90, color='blue', fontsize=9, fontweight='bold')
 
-        # 2. DIM Bản mặt cầu
+        # 2. DIM Bản mặt cầu (Màu đỏ)
         ax.annotate('', xy=(x_dim_cau_tao, y_dinh_pt), xytext=(x_dim_cau_tao, y_do_pt),
                     arrowprops=dict(arrowstyle='<->', color='red', lw=1.2))
-        # Dùng va='bottom' để đẩy chữ lên trên ranh giới đỉnh dầm, tránh đè vào h_dầm
-        ax.text(x_dim_cau_tao - 2, (y_dinh_pt + y_do_pt)/2, f"h_bmc={h_ban_mat_cau}m", 
-                ha='right', va='center', rotation=90, color='red', fontsize=9, fontweight='bold')
+        # Căn lề 'bottom' để đẩy chữ lên trên điểm giữa đường DIM
+        ax.text(x_dim_cau_tao - 1.5, y_do_pt, f"h_bmc = {h_ban_mat_cau}m", 
+                ha='right', va='top', rotation=90, color='red', fontsize=9, fontweight='bold')
         
-        # 3. THU NGẮN KÝ HIỆU ĐƯỜNG DÓNG (Chỉ dóng ra 2 đơn vị thay vì tới 40)
-        line_style = dict(color='black', lw=0.6, ls=':')
-        ax.plot([x_dim_cau_tao - 2.5, x_dim_cau_tao + 1.5], [y_day_pt, y_day_pt], **line_style)
-        ax.plot([x_dim_cau_tao - 2.5, x_dim_cau_tao + 1.5], [y_dinh_pt, y_dinh_pt], **line_style)
-        ax.plot([x_dim_cau_tao - 2.5, x_dim_cau_tao + 1.5], [y_do_pt, y_do_pt], **line_style)
-
+        # 3. KÝ HIỆU ĐƯỜNG DÓNG NGẮN (Gọn gàng hơn)
+        line_style = dict(color='black', lw=0.6, ls=':', alpha=0.6)
+        ax.plot([x_dim_cau_tao - 2, x_dim_cau_tao + 1], [y_day_pt, y_day_pt], **line_style)
+        ax.plot([x_dim_cau_tao - 2, x_dim_cau_tao + 1], [y_dinh_pt, y_dinh_pt], **line_style)
+        ax.plot([x_dim_cau_tao - 2, x_dim_cau_tao + 1], [y_do_pt, y_do_pt], **line_style)
     # --- 6. CẤU HÌNH TRỤC VÀ HIỂN THỊ ---
     ax.set_xlim(-5, 125)
     
