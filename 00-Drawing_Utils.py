@@ -163,7 +163,26 @@ def ve_trac_doc_cau(res):
         ax.text(60 + B/2 + 3.5, h5 + H_tk/2, f"H = {H_tk}m", ha='left', va='center', 
                 rotation=90, fontweight='bold', 
                 bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
+        # --- 5.5. DIM CHIỀU CAO DẦM VÀ BẢN MẶT CẦU (MỚI) ---
+        # Chọn vị trí đặt DIM bên trái nhịp (x khoảng 35-40) để không bị chồng lấn
+        x_dim_cau_tao = 35 
+        
+        # 1. DIM Chiều cao dầm
+        ax.annotate('', xy=(x_dim_cau_tao, y_day_dam_thuc), xytext=(x_dim_cau_tao, y_dinh_dam),
+                    arrowprops=dict(arrowstyle='<->', color='blue', lw=1.2))
+        ax.text(x_dim_cau_tao - 1, (y_day_dam_thuc + y_dinh_dam)/2, f"h_dầm = {h_dam_ai}m", 
+                ha='right', va='center', rotation=90, color='blue', fontsize=8, fontweight='bold')
 
+        # 2. DIM Bản mặt cầu
+        ax.annotate('', xy=(x_dim_cau_tao, y_dinh_dam), xytext=(x_dim_cau_tao, y_duong_do),
+                    arrowprops=dict(arrowstyle='<->', color='red', lw=1.2))
+        ax.text(x_dim_cau_tao - 1, (y_dinh_dam + y_duong_do)/2, f"h_bmc = {h_ban_mat_cau}m", 
+                ha='right', va='center', rotation=90, color='red', fontsize=8, fontweight='bold')
+        
+        # Vẽ các đường dóng ngang mảnh để DIM nhìn rõ ràng hơn
+        ax.plot([x_dim_cau_tao - 2, 40], [y_day_dam_thuc, y_day_dam_thuc], color='black', lw=0.5, ls=':')
+        ax.plot([x_dim_cau_tao - 2, 40], [y_dinh_dam, y_dinh_dam], color='black', lw=0.5, ls=':')
+        ax.plot([x_dim_cau_tao - 2, 40], [y_duong_do, y_duong_do], color='black', lw=0.5, ls=':')
     # --- 6. CẤU HÌNH TRỤC VÀ HIỂN THỊ ---
     ax.set_xlim(-5, 125)
     # Cao độ mặt cầu cao nhất để đặt giới hạn trục Y
