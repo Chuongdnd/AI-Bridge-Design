@@ -108,24 +108,29 @@ def predict_main_span(b_tk, goc, b_cau, env, models, L_cau_tong=None):
     n_nhip_final = 1
     
     if L_cau_tong and L_cau_tong > 0:
-        # Phương án A: Theo dầm AI vừa khít tĩnh không
+        # 1. Phương án A: Theo dầm AI đề xuất (Dầm I, T...)
         n_ai = int(np.ceil(L_cau_tong / l_f_ai))
         l_thuc_ai = round(L_cau_tong / n_ai, 2)
         
-        # Phương án B: Theo dầm Super-T 38.2m (Tối ưu số trụ cho cầu dài)
-        l_spt = 38.2
-        n_spt = int(np.floor(L_cau_tong / l_spt)) 
-        if n_spt < 1: n_spt = 1 # Đảm bảo ít nhất 1 nhịp
+        # 2. Phương án B: Theo dầm Super-T (Ưu tiên giảm số hàng trụ)
+        l_spt_dinh_hinh = 38.2
+        # Sử dụng floor để tìm số nhịp ít nhất có thể
+        n_spt = int(np.floor(L_cau_tong / l_spt_dinh_hinh))
+        if n_spt < 1: n_spt = 1
         
         l_thuc_spt = round(L_cau_tong / n_spt, 2)
         
-        # SO SÁNH KINH TẾ (Khống chế chiều dài dầm thực tế không quá 40m)
+        # KIỂM TRA ĐIỀU KIỆN KINH TẾ:
+        # Nếu dùng Super-T mà giảm được số nhịp (n_spt < n_ai) 
+        # và chiều dài dầm thực tế không vượt quá giới hạn cho phép (40m)
         if n_spt < n_ai and l_thuc_spt <= 40.0:
-            analysis_note = f"Tối ưu kinh tế: Giảm từ {n_ai} nhịp xuống {n_spt} nhịp nhờ dùng dầm Super-T (L_nhịp thực tế = {l_thuc_spt}m)."
+            analysis_note = (f"Tối ưu kinh tế: Giảm từ {n_ai} nhịp xuống {n_spt} nhịp nhờ dùng dầm Super-T "
+                             f"(L thực tế = {l_thuc_spt}m). Tiết kiệm {n_ai - n_spt} hàng trụ.")
             l_f = l_thuc_spt
             t_f = "Super-T"
             n_nhip_final = n_spt
         else:
+            # Nếu không giảm được trụ hoặc dầm vượt quá 40m, giữ nguyên PA ban đầu
             analysis_note = f"Phương án tối ưu: Chia cầu thành {n_ai} nhịp dầm {t_f}."
             l_f = l_thuc_ai
             n_nhip_final = n_ai
