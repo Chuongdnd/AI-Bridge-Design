@@ -90,6 +90,7 @@ with tab1:
     col_in1, col_in2 = st.columns(2)
     with col_in1:
         loai_c = st.radio("Chọn đối tượng vượt:", ["Vượt sông", "Vượt đường bộ"], horizontal=True)
+        st.session_state.design_data['loai_doi_tuong_vuot'] = loai_c
         if loai_c == "Vượt sông":
             mien = st.selectbox("Khu vực:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
             cap_s = st.selectbox("Cấp sông:", ["1", "2", "3", "4", "5", "6"], format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
@@ -102,6 +103,7 @@ with tab1:
         "Đường cải tạo", 
         "Đường xe thô sơ"
     ])
+            st.session_state.design_data['cap_duong_bi_vuot'] = loai_duong_v
             # Ô NHẬP BỀ RỘNG B THEO KHAI BÁO NGƯỜI DÙNG
             b_khai_bao = st.number_input("Bề rộng tĩnh không khai báo (B) - m:", value=20.0, step=0.5)
         st.markdown("---")
@@ -299,50 +301,62 @@ with tab2:
 with tab3:
     st.header("🤖 Robot AI dự báo Kết cấu nhịp chính")
     
-    # Hiển thị tóm tắt đầu vào cho AI
-    st.write("Dữ liệu đầu vào cho AI:")
+    # 1. TRUY XUẤT DỮ LIỆU AN TOÀN TỪ TAB 1 & TAB 2
+    data = st.session_state.design_data
+    
+    # Xác định môi trường trực tiếp từ lựa chọn đối tượng vượt ở Tab 1
+    # Nếu chưa chọn, mặc định là "Vượt sông"
+    loai_vuot_tab1 = data.get('loai_doi_tuong_vuot', 'Vượt sông')
+    env = "Đô thị" if loai_vuot_tab1 == "Vượt đường bộ" else "Vượt sông"
+    
+    # Hiển thị tóm tắt đầu vào để người dùng kiểm tra
+    st.write("Dữ liệu đầu vào cho AI (Lấy từ Tab 1 & Tab 2):")
     col_a, col_b, col_c = st.columns(3)
-    col_a.write(f"📍 Tĩnh không B: **{st.session_state.design_data.get('B', 0)} m**")
-    col_b.write(f"📍 Bề rộng Bc: **{st.session_state.design_data.get('bc', 0)} m**")
-    moi_truong = st.session_state.design_data.get('loai_duong', st.session_state.get('main_type_select', 'Chưa chọn'))
-    col_c.write(f"📍 Môi trường: **{moi_truong}**")
+    col_a.metric("📍 Tĩnh không B", f"{data.get('B', 0)} m")
+    col_b.metric("📍 Bề rộng Bc", f"{data.get('bc', 0)} m")
+    col_c.metric("📍 Môi trường", env)
 
-    # Đường dẫn file Excel trên server
-    base_path = os.path.dirname(__file__)
-    xlsx_path = os.path.join(base_path, "Girder.xlsx")
+    # Đường dẫn file Excel huấn luyện
+    xlsx_path = os.path.join(os.path.dirname(__file__), "Girder.xlsx")
 
-    if st.button("🚀 Bắt đầu Dự báo AI"):
+    if st.button("🚀 Bắt đầu Dự báo AI", use_container_width=True):
         if not os.path.exists(xlsx_path):
-            st.error("Thiếu file Girder.xlsx trên GitHub!")
+            st.error("❌ Thiếu file Girder.xlsx để huấn luyện Robot AI!")
+        elif 'geo_logic' not in data:
+            st.warning("⚠️ Bạn cần nhấn 'Let's go!' ở Tab 1 để có dữ liệu tổng chiều dài cầu trước.")
         else:
-            with st.spinner('AI đang phân tích dữ liệu huấn luyện...'):
-                # 1. Huấn luyện
+            with st.spinner('AI đang phân tích và tính toán phương án tối ưu...'):
+                # Gọi Module huấn luyện (File 05)
                 models = GRD.train_bridge_ai_system(xlsx_path)
                 
                 if models:
-                    # 2. Dự báo
-                    env = "Đô thị" if st.session_state.design_data['loai_duong'] == "Do thi" else "Vượt sông"
+                    # GỌI DỰ BÁO: Tận dụng B (File 01), Bc (Tab 2) và L_cau (File 02)
                     res_ai = GRD.predict_main_span(
-                        st.session_state.design_data['khau_do_ngang'], 
-                        90, # Góc giao
-                        st.session_state.design_data['bc'], 
-                        env, 
-                        models
+                        b_tk = data.get('B', 20.0), 
+                        goc = 90, 
+                        b_cau = data.get('bc', 12.0), 
+                        env = env, 
+                        models = models,
+                        L_cau_tong = data['geo_logic'].get('L_cau') # Lấy tổng chiều dài cầu để chia nhịp
                     )
                     
-                    # 3. Hiển thị kết quả
-                                    
-                    st.subheader("KẾT QUẢ ĐỀ XUẤT TỪ AI")
-                    res_col1, res_col2, res_col3 = st.columns(3)
+                    # 3. HIỂN THỊ KẾT QUẢ ĐỀ XUẤT
+                    st.divider()
+                    st.subheader("📋 KẾT QUẢ ĐỀ XUẤT TỪ ROBOT AI")
                     
-                    res_col1.metric("Loại dầm", res_ai['loai_dam'].upper())
-                    res_col2.metric("Chiều dài L", f"{res_ai['chieu_dai']} m")
-                    res_col3.metric("Số lượng dầm", f"{res_ai['so_luong']} thanh")
+                    # Hiển thị các chỉ số chính
+                    r1, r2, r3 = st.columns(3)
+                    r1.metric("Loại dầm", res_ai['loai_dam'].upper())
+                    r2.metric("Tổng số nhịp", f"{res_ai.get('tong_so_nhip', 1)} nhịp")
+                    r3.metric("Chiều dài nhịp (L)", f"{res_ai['chieu_dai']} m")
                     
-                    with st.expander("Xem chi tiết cấu tạo dầm"):
+                    # Thông báo đánh giá của AI về tính kinh tế
+                    st.info(f"💡 **Đánh giá AI:** {res_ai.get('ghi_chu_ai', 'Đã tính toán xong phương án nhịp.')}")
+                    
+                    with st.expander("🔍 Xem chi tiết cấu tạo và mặt cắt ngang"):
                         st.json(res_ai)
                 else:
-                    st.error("Lỗi trong quá trình huấn luyện AI.")
+                    st.error("❌ Lỗi trong quá trình huấn luyện hệ thống AI.")
 
     st.markdown("---")
 # --- SIDEBAR: THÔNG TIN VÀ CHATBOT (DÒNG 324 TRỞ ĐI) ---
