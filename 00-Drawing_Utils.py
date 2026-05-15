@@ -185,10 +185,11 @@ def ve_trac_doc_cau(res):
         ax.text(x_dim_cau_tao - 2, (y_dinh_pt + y_do_pt)/2, f"h_bmc={h_ban_mat_cau}m", 
                 ha='right', va='center', rotation=90, color='red', fontsize=9, fontweight='bold')
         
-        # Vẽ các đường dóng ngang mảnh kết nối từ DIM vào nhịp cầu
-        ax.plot([x_dim_cau_tao - 2, 40], [y_day_pt, y_day_pt], color='black', lw=0.5, ls=':')
-        ax.plot([x_dim_cau_tao - 2, 40], [y_dinh_pt, y_dinh_pt], color='black', lw=0.5, ls=':')
-        ax.plot([x_dim_cau_tao - 2, 40], [y_do_pt, y_do_pt], color='black', lw=0.5, ls=':')
+        # 3. THU NGẮN KÝ HIỆU ĐƯỜNG DÓNG (Chỉ dóng ra 2 đơn vị thay vì tới 40)
+        line_style = dict(color='black', lw=0.6, ls=':')
+        ax.plot([x_dim_cau_tao - 2.5, x_dim_cau_tao + 1.5], [y_day_pt, y_day_pt], **line_style)
+        ax.plot([x_dim_cau_tao - 2.5, x_dim_cau_tao + 1.5], [y_dinh_pt, y_dinh_pt], **line_style)
+        ax.plot([x_dim_cau_tao - 2.5, x_dim_cau_tao + 1.5], [y_do_pt, y_do_pt], **line_style)
 
     # --- 6. CẤU HÌNH TRỤC VÀ HIỂN THỊ ---
     ax.set_xlim(-5, 125)
