@@ -163,27 +163,27 @@ def ve_trac_doc_cau(res):
         ax.text(60 + B/2 + 3.5, h5 + H_tk/2, f"H = {H_tk}m", ha='left', va='center', 
                 rotation=90, fontweight='bold', 
                 bbox=dict(facecolor='white', alpha=0.7, edgecolor='none'))
-        # --- 5.5. DIM CHIỀU CAO DẦM VÀ BẢN MẶT CẦU (ĐÃ FIX LỖI SCALAR) ---
-        # Chọn vị trí đặt DIM bên trái nhịp (x khoảng 35) để không bị chồng lấn
+        # --- 5.5. DIM CHIỀU CAO DẦM VÀ BẢN MẶT CẦU (TỐI ƯU HIỂN THỊ) ---
         x_dim_cau_tao = 35 
         
-        # Trích xuất giá trị Scalar tại vị trí x = 35 từ các mảng tọa độ
         idx_dim = np.argmin(np.abs(x - x_dim_cau_tao))
         y_day_pt = y_day_dam_thuc[idx_dim]
         y_dinh_pt = y_dinh_dam[idx_dim]
         y_do_pt = y_duong_do[idx_dim]
         
-        # 1. DIM Chiều cao dầm (Sử dụng giá trị Scalar)
+        # 1. DIM Chiều cao dầm
         ax.annotate('', xy=(x_dim_cau_tao, y_day_pt), xytext=(x_dim_cau_tao, y_dinh_pt),
                     arrowprops=dict(arrowstyle='<->', color='blue', lw=1.2))
-        ax.text(x_dim_cau_tao - 1, (y_day_pt + y_dinh_pt)/2, f"h_dầm = {h_dam_ai}m", 
-                ha='right', va='center', rotation=90, color='blue', fontsize=8, fontweight='bold')
+        # Đẩy chữ sang trái nhiều hơn (x-2) và căn giữa dòng DIM để tránh đè
+        ax.text(x_dim_cau_tao - 2, (y_day_pt + y_dinh_pt)/2, f"h_dầm={h_dam_ai}m", 
+                ha='right', va='center', rotation=90, color='blue', fontsize=9, fontweight='bold')
 
-        # 2. DIM Bản mặt cầu (Sử dụng giá trị Scalar)
+        # 2. DIM Bản mặt cầu
         ax.annotate('', xy=(x_dim_cau_tao, y_dinh_pt), xytext=(x_dim_cau_tao, y_do_pt),
                     arrowprops=dict(arrowstyle='<->', color='red', lw=1.2))
-        ax.text(x_dim_cau_tao - 1, (y_dinh_pt + y_do_pt)/2, f"h_bmc = {h_ban_mat_cau}m", 
-                ha='right', va='center', rotation=90, color='red', fontsize=8, fontweight='bold')
+        # Dùng va='bottom' để đẩy chữ lên trên ranh giới đỉnh dầm, tránh đè vào h_dầm
+        ax.text(x_dim_cau_tao - 2, (y_dinh_pt + y_do_pt)/2, f"h_bmc={h_ban_mat_cau}m", 
+                ha='right', va='center', rotation=90, color='red', fontsize=9, fontweight='bold')
         
         # Vẽ các đường dóng ngang mảnh kết nối từ DIM vào nhịp cầu
         ax.plot([x_dim_cau_tao - 2, 40], [y_day_pt, y_day_pt], color='black', lw=0.5, ls=':')
