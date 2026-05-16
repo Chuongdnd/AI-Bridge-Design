@@ -62,11 +62,14 @@ def ve_trac_doc_cau(res):
     x_full = np.concatenate([x_doc_trai, x_cong_dung, x_doc_phai])
     y_full = np.concatenate([y_doc_trai, y_cong_dung, y_doc_phai])
 
+    # --- FIX LỖI: TÍNH TOÁN BIẾN CHÊNH CAO TRƯỚC KHI KHỞI TẠO BIỂU ĐỒ ---
+    h_tn_tb_tuong_doi = geo['h_tn_tb'] - y_base_goc
+    chenh_cao = y_full - h_tn_tb_tuong_doi
+
     # --- 3. KHỞI TẠO ĐỒ HỌA PLOTLY ---
     fig = go.Figure()
 
     # 3.1 Đường tự nhiên trung bình tương đối
-    h_tn_tb_tuong_doi = geo['h_tn_tb'] - y_base_goc
     fig.add_trace(go.Scatter(x=x_full, y=np.full_like(x_full, h_tn_tb_tuong_doi), name="Đường TN trung bình", line=dict(color='#27ae60', width=1.5, dash='dash')))
 
     # 3.2 Vẽ 3 phân đoạn màu sắc đường đỏ
@@ -81,17 +84,16 @@ def ve_trac_doc_cau(res):
         line=dict(color='darkblue', width=2, dash='dashdot')
     ))
 
-    # 3.4 ĐƯỜNG ẨN HỖ TRỢ HIỂN THỊ THÔNG SỐ CHÊNH CAO ĐỘ (ĐÃ SỬA ĐỂ BẬT HOVER CHUẨN)
-    # Ép đường này nhận giá trị Y chính là khoảng chênh cao, nhưng cấu hình hiển thị text tùy biến
+    # 3.4 ĐƯỜNG ẨN HỖ TRỢ HIỂN THỊ THÔNG SỐ CHÊNH CAO ĐỘ (ĐÃ CÓ BIẾN CHÊNH_CAO CHUẨN)
     fig.add_trace(go.Scatter(
         x=x_full, 
-        y=y_full, # Đặt Y tại đường đỏ để nhãn hiển thị ngay vị trí con trỏ chuột
+        y=y_full, 
         name="Chênh cao (Đỏ - TN)",
         mode="lines",
-        line=dict(color="rgba(0,0,0,0)", width=0), # Làm ẩn hoàn toàn đường dây
+        line=dict(color="rgba(0,0,0,0)", width=0), 
         customdata=chenh_cao,
-        hovertemplate="%{customdata:.3f} m",       # Chỉ định rõ định dạng số thập phân trong bảng gom
-        showlegend=False,                          # Không hiện đường ẩn này ở danh sách chú thích góc phải
+        hovertemplate="%{customdata:.3f} m",       
+        showlegend=False,                          
         legendgroup="chenh_cao"
     ))
 
@@ -102,12 +104,21 @@ def ve_trac_doc_cau(res):
     fig.add_shape(type="line", x0=x_t2, y0=h_tn_tb_tuong_doi, x1=x_t2, y1=tinh_y_do_hoa(x_t2), line=dict(color="#95a5a6", width=1.5, dash="dot"))
     fig.add_annotation(x=x_t2, y=h_tn_tb_tuong_doi - 1.5, text=f"Tiếp điểm T2<br>{x_t2:.1f}m", showarrow=False, font=dict(size=9, color="#7f8c8d"))
 
-    # 3.6 Khung khổ tĩnh không đặt ngay chính giữa gốc (0,0)
+    # 3.6 Bố trí các mực nước thủy văn hoặc mặt đường bị vượt tương đối
+    if is_duong_bo:
+        fig.add_trace(go.Scatter(x=x_full, y=np.full_like(x_full, 0), name="Mặt đường bị vượt (Y=0)", line=dict(color='#7f8c8d', width=2.5)))
+    else:
+        ve_ky_hieu_muc_nuoc_plotly(fig, -45, h1, "MNCN H1%", "red")
+        ve_ky_hieu_muc_nuoc_plotly(fig, -15, h5, "MNTT H5% (Y=0)", "blue")
+        ve_ky_hieu_muc_nuoc_plotly(fig, 15, h10, "MNTC H10%", "green")
+        ve_ky_hieu_muc_nuoc_plotly(fig, 45, h98, "MNTN H98%", "orange")
+
+    # 3.7 Khung khổ tĩnh không đặt ngay chính giữa gốc (0,0)
     if B > 0 and H_tk > 0:
         fig.add_shape(type="rect", x0=-B/2, y0=0, x1=B/2, y1=H_tk, line=dict(color="magenta", width=2), fillcolor="rgba(255, 0, 255, 0.08)")
         fig.add_trace(go.Scatter(x=[0], y=[H_tk / 2], mode="text", text=[f"TĨNH KHÔNG KỸ THUẬT<br>B x H = {B}m x {H_tk}m"], textposition="middle center", textfont=dict(color="magenta", size=10, family="Arial Black"), showlegend=False, hoverinfo="skip"))
 
-    # 3.7 Vẽ mố cầu đối xứng
+    # 3.8 Vẽ mố cầu đối xứng
     y_mo_tuong_doi = geo['y_mo'] - y_base_goc
     fig.add_trace(go.Scatter(x=[geo['x_mo_trai'], geo['x_mo_trai']], y=[h_tn_tb_tuong_doi, y_mo_tuong_doi], name="Mố Trái", line=dict(color='brown', width=3, dash='dash')))
     fig.add_trace(go.Scatter(x=[geo['x_mo_phai'], geo['x_mo_phai']], y=[h_tn_tb_tuong_doi, y_mo_tuong_doi], name="Mố Phải", line=dict(color='brown', width=3, dash='dash')))
@@ -120,17 +131,17 @@ def ve_trac_doc_cau(res):
         height=550, 
         template="plotly_white", 
         dragmode='pan', 
-        hovermode="x unified", # Gom thông tin tất cả các đường tại cùng một hoành độ X
+        hovermode="x unified",
         
-        # CẤU HÌNH BẢNG HIỂN THỊ LIA CHUỘT (THÊM DÒNG NÀY ĐỂ HIỂN THỊ RÕ RÀNG)
         hoverlabel=dict(
-            bgcolor="rgba(30, 30, 30, 0.85)", # Màu nền xám tối giúp chữ nổi bật
+            bgcolor="rgba(30, 30, 30, 0.85)", 
             font_size=12,
             font_family="Arial",
             font_color="white"
         )
     )
     return fig
+
 def ve_mat_cat_ngang(res_mcn):
     bc = res_mcn.get('bc_cau', 12.0)
     w_lc = res_mcn.get('w_lc', 0.5)
