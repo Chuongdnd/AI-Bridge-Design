@@ -274,8 +274,12 @@ with tab1:
                 try:
                     fig_plotly = PLOT.ve_trac_doc_cau(res)
                     if fig_plotly is not None:
-                        # Thay st.pyplot(fig) bằng st.plotly_chart để hiển thị biểu đồ tương tác
-                        st.plotly_chart(fig_plotly, use_container_width=True)
+                        # Bổ sung tham số config để kích hoạt tính năng cuộn chuột phóng to/thu nhỏ
+                        st.plotly_chart(
+                            fig_plotly, 
+                            use_container_width=True,
+                            config={'scrollZoom': True}
+                        )
                 except Exception as e:
                     st.error(f"Lỗi khi vẽ: {e}")
             with col_res2:
