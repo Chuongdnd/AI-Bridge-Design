@@ -3,199 +3,128 @@ import plotly.graph_objects as go
 
 def ve_ky_hieu_muc_nuoc_plotly(fig, x_pos, y_val, label, color):
     """Vẽ ký hiệu mực nước tương tác bằng nét vẽ của Plotly"""
-    # Vẽ đường ngang mực nước (Dài 8m vây quanh vị trí đặt)
     fig.add_trace(go.Scatter(
-        x=[x_pos - 4, x_pos + 4],
-        y=[y_val, y_val],
-        mode="lines",
-        line=dict(color=color, width=1.5),
-        showlegend=False,
-        hoverinfo="skip"
+        x=[x_pos - 6, x_pos + 6], y=[y_val, y_val],
+        mode="lines", line=dict(color=color, width=1.5),
+        showlegend=False, hoverinfo="skip"
     ))
-    # Tạo nhãn chữ hiển thị thông số cao độ ngay phía trên nét gạch
     fig.add_trace(go.Scatter(
-        x=[x_pos],
-        y=[y_val + 0.3],
-        mode="text",
-        text=[f"{label}<br>{y_val:.3f}m"],
-        textposition="top center",
-        textfont=dict(color=color, size=9, family="Arial Black"),
-        showlegend=False,
-        hoverinfo="skip"
+        x=[x_pos], y=[y_val + 0.3],
+        mode="text", text=[f"{label}<br>{y_val:.3f}m"],
+        textposition="top center", textfont=dict(color=color, size=9),
+        showlegend=False, hoverinfo="skip"
     ))
 
 def ve_trac_doc_cau(res):
-    """Vẽ sơ họa trắc dọc cầu bằng Plotly - Phân tách màu sắc đoạn Dốc thẳng và Đường cong đứng"""
+    """Vẽ sơ họa trắc dọc cầu bằng Plotly - Đọc dữ liệu hệ đối xứng (0,0) trực tiếp từ file 02"""
     geo = res.get('geo_logic')
     if not geo:
         return None
         
-    # --- 1. LẤY DỮ LIỆU ĐẦU VÀO VÀ ĐỔI GỐC TỌA ĐỘ VỀ (0,0) ---
-    h1 = res.get('MNCN', 0)
-    h5 = res.get('MNTT', 0)
-    h10 = res.get('MNTC', 0)
-    h98 = res.get('MNTN', 0)
+    # --- 1. LẤY THÔNG SỐ ĐÃ DỜI TRỤC TỪ FILE 02 ---
+    y_base_goc = geo.get('y_base_goc', 0)
+    l_cau_thuc = geo.get('L_cau', 120)
+    x_t1, x_t2 = geo['x_t1'], geo['x_t2']
+    
+    h1 = res.get('MNCN', 0) - y_base_goc
+    h5 = res.get('MNTT', 0) - y_base_goc
+    h10 = res.get('MNTC', 0) - y_base_goc
+    h98 = res.get('MNTN', 0) - y_base_goc
     H_tk = res.get('H', 0)
     B = res.get('B', 0)
     label_res = res.get('label', "")
     is_duong_bo = "vượt đường bộ" in label_res.lower()
     
-    y_base_goc = h1 if is_duong_bo else h5
-    x_dinh_cu = geo.get('x_dinh', 150)
-    l_cau_thuc = geo.get('L_cau', 120)
-    
-    # Chuyển đổi tọa độ các điểm gãy hình học sang hệ tọa độ mới (Tim = 0)
-    x_t1_moi = geo['x_t1'] - x_dinh_cu
-    x_t2_moi = geo['x_t2'] - x_dinh_cu
-    x_mo_trai_moi = -l_cau_thuc / 2
-    x_mo_phai_moi = l_cau_thuc / 2
-    
-    x_start_view = x_mo_trai_moi - 50
-    x_limit_view = x_mo_phai_moi + 50
-    
+    # Thiết lập phạm vi nhìn đối xứng vây quanh chiều dài cầu thực tế
+    x_start_view = geo['x_mo_trai'] - 60
+    x_limit_view = geo['x_mo_phai'] + 60
+
+    # Kích thước dầm cầu
     h_dam_ai = res.get('ai_result', {}).get('chieu_cao', 1.65)
     h_ban_mat_cau = 0.18
     h_tong_ket_cau = h_ban_mat_cau + h_dam_ai
 
-    # --- 2. TẠO MẢNG RIÊNG BIỆT CHO TỪNG PHÂN ĐOẠN HÌNH HỌC ---
-    # Việc chia nhỏ dải điểm giúp Plotly tô màu độc lập từng đoạn mà không bị dính nét
-    x_doc_trai = np.linspace(x_start_view, x_t1_moi, 300)
-    x_cong_dung = np.linspace(x_t1_moi, x_t2_moi, 500)
-    x_doc_phai = np.linspace(x_t2_moi, x_limit_view, 300)
+    # --- 2. CHIA PHÂN ĐOẠN ĐIỂM ĐỂ TÔ MÀU ĐƯỜNG ĐỎ ĐỐI XỨNG ---
+    x_doc_trai = np.linspace(x_start_view, x_t1, 400)
+    x_cong_dung = np.linspace(x_t1, x_t2, 600)
+    x_doc_phai = np.linspace(x_t2, x_limit_view, 400)
     
-    # Hàm tính cao độ phụ thuộc hệ trục mới (Y đã trừ y_base_goc)
-    def tinh_y_moi(xi_moi):
-        xi_cu = xi_moi + x_dinh_cu
-        if xi_cu < geo['x_t1']:
-            return (geo['y_t'] - geo['i_val'] * (geo['x_t1'] - xi_cu)) - y_base_goc
-        elif xi_cu > geo['x_t2']:
-            return (geo['y_t'] - geo['i_val'] * (xi_cu - geo['x_t2'])) - y_base_goc
-        else:
-            return (geo['y_dinh'] - (xi_cu - x_dinh_cu)**2 / (2 * geo['R'])) - y_base_goc
+    # Hàm vẽ toán học chuẩn hóa theo hệ trục gốc 0
+    def tinh_y_do_hoa(xi):
+        if xi < x_t1:   return geo['y_t'] - geo['i_val'] * (x_t1 - xi)
+        elif xi > x_t2: return geo['y_t'] - geo['i_val'] * (xi - x_t2)
+        else:           return geo['y_dinh'] - xi**2 / (2 * geo['R'])
 
-    y_doc_trai = np.array([tinh_y_moi(xi) for xi in x_doc_trai])
-    y_cong_dung = np.array([tinh_y_moi(xi) for xi in x_cong_dung])
-    y_doc_phai = np.array([tinh_y_moi(xi) for xi in x_doc_phai])
+    y_doc_trai = np.array([tinh_y_do_hoa(xi) for xi in x_doc_trai])
+    y_cong_dung = np.array([tinh_y_do_hoa(xi) for xi in x_cong_dung])
+    y_doc_phai = np.array([tinh_y_do_hoa(xi) for xi in x_doc_phai])
+    
+    x_full = np.concatenate([x_doc_trai, x_cong_dung, x_doc_phai])
+    y_full = np.concatenate([y_doc_trai, y_cong_dung, y_doc_phai])
 
-    # --- 3. KHỞI TẠO BIỂU ĐỒ PLOTLY ---
+    # --- 3. KHỞI TẠO ĐỒ HỌA PLOTLY ---
     fig = go.Figure()
 
-    # 3.1 Vẽ Đường tự nhiên trung bình nền
-    h_tn_tb_moi = geo.get('h_tn_tb', 3.0) - y_base_goc
-    x_full = np.concatenate([x_doc_trai, x_cong_dung, x_doc_phai])
-    fig.add_trace(go.Scatter(x=x_full, y=np.full_like(x_full, h_tn_tb_moi), name="Đường TN trung bình", line=dict(color='#27ae60', width=1.5, dash='dash')))
+    # 3.1 Đường tự nhiên trung bình tương đối
+    h_tn_tb_tuong_doi = geo['h_tn_tb'] - y_base_goc
+    fig.add_trace(go.Scatter(x=x_full, y=np.full_like(x_full, h_tn_tb_tuong_doi), name="Đường TN trung bình", line=dict(color='#27ae60', width=1.5, dash='dash')))
 
-    # 3.2 THỂ HIỆN TRỰC QUAN ĐƯỜNG ĐỎ THEO PHÂN ĐOẠN (ĐỔI MÀU NÉT VẼ)
-    # Đoạn dốc dọc bên trái (Nét liền màu Cam đậm)
-    fig.add_trace(go.Scatter(
-        x=x_doc_trai, y=y_doc_trai,
-        name=f"Đoạn dốc dọc trái (i={geo['i_val']*100:.1f}%)",
-        line=dict(color='#e67e22', width=3.5)
-    ))
-    
-    # Đoạn đường cong đứng Parabol (Nét liền màu Đỏ rực)
-    fig.add_trace(go.Scatter(
-        x=x_cong_dung, y=y_cong_dung,
-        name=f"Đoạn đường cong đứng (R={geo['R']}m)",
-        line=dict(color='#e74c3c', width=4.5)
-    ))
-    
-    # Đoạn dốc dọc bên phải (Nét liền màu Cam đậm)
-    fig.add_trace(go.Scatter(
-        x=x_doc_phai, y=y_doc_phai,
-        name=f"Đoạn dốc dọc phải (i={geo['i_val']*100:.1f}%)",
-        line=dict(color='#e67e22', width=3.5)
-    ))
+    # 3.2 Vẽ 3 phân đoạn màu sắc đường đỏ
+    fig.add_trace(go.Scatter(x=x_doc_trai, y=y_doc_trai, name=f"Đoạn dốc thẳng trái (i={geo['i_val']*100:.1f}%)", line=dict(color='#e67e22', width=3.5)))
+    fig.add_trace(go.Scatter(x=x_cong_dung, y=y_cong_dung, name=f"Đoạn đường cong đứng (R={geo['R']}m)", line=dict(color='#e74c3c', width=4.5)))
+    fig.add_trace(go.Scatter(x=x_doc_phai, y=y_doc_phai, name=f"Đoạn dốc thẳng phải (i={geo['i_val']*100:.1f}%)", line=dict(color='#e67e22', width=3.5)))
 
-    # 3.3 Vẽ đường Đáy dầm thiết kế tương ứng (Dùng nét đứt màu xanh biển)
-    fig.add_trace(go.Scatter(x=x_full, y=np.concatenate([y_doc_trai, y_cong_dung, y_doc_phai]) - h_tong_ket_cau, 
-                             name="Đường đáy dầm", line=dict(color='darkblue', width=2, dash='dashdot')))
+    # 3.3 Đường đáy dầm thiết kế
+    fig.add_trace(go.Scatter(x=x_full, y=y_full - h_tong_ket_cau, name="Đường đáy dầm thiết kế", line=dict(color='darkblue', width=2, dash='dashdot')))
 
-    # 3.4 THÊM ĐƯỜNG GIÓNG RÀNH GIỚI VÀO BIỂU ĐỒ (MÉP ĐƯỜNG CONG ĐỨNG)
-    # Đường gióng Tiếp điểm 1 (Bắt đầu vào đường cong)
-    fig.add_shape(type="line", x0=x_t1_moi, y0=h_tn_tb_moi, x1=x_t1_moi, y1=tinh_y_moi(x_t1_moi),
-                  line=dict(color="#95a5a6", width=1.5, dash="dot"))
-    fig.add_annotation(x=x_t1_moi, y=h_tn_tb_moi - 1, text="Tiếp điểm T1<br>(Vào đường cong)", showarrow=False, font=dict(size=9, color="#7f8c8d"))
+    # 3.4 Bố trí các mực nước / Mặt đường bị vượt đối xứng qua trục tung
+    if is_duong_bo:
+        fig.add_trace(go.Scatter(x=x_full, y=np.full_like(x_full, 0), name="Mặt đường bị vượt (Y=0)", line=dict(color='#7f8c8d', width=2.5)))
+    else:
+        ve_ky_hieu_muc_nuoc_plotly(fig, -45, h1, "MNCN H1%", "red")
+        ve_ky_hieu_muc_nuoc_plotly(fig, -15, h5, "MNTT H5% (Y=0)", "blue")
+        ve_ky_hieu_muc_nuoc_plotly(fig, 15, h10, "MNTC H10%", "green")
+        ve_ky_hieu_muc_nuoc_plotly(fig, 45, h98, "MNTN H98%", "orange")
 
-    # Đường gióng Tiếp điểm 2 (Hết đường cong, vào dốc thẳng)
-    fig.add_shape(type="line", x0=x_t2_moi, y0=h_tn_tb_moi, x1=x_t2_moi, y1=tinh_y_moi(x_t2_moi),
-                  line=dict(color="#95a5a6", width=1.5, dash="dot"))
-    fig.add_annotation(x=x_t2_moi, y=h_tn_tb_moi - 1, text="Tiếp điểm T2<br>(Hết đường cong)", showarrow=False, font=dict(size=9, color="#7f8c8d"))
+    # 3.5 Đường gióng ranh giới phân tách hình học
+    fig.add_shape(type="line", x0=x_t1, y0=h_tn_tb_tuong_doi, x1=x_t1, y1=tinh_y_do_hoa(x_t1), line=dict(color="#95a5a6", width=1.5, dash="dot"))
+    fig.add_annotation(x=x_t1, y=h_tn_tb_tuong_doi - 1.5, text=f"Tiếp điểm T1<br>{x_t1:.1f}m", showarrow=False, font=dict(size=9, color="#7f8c8d"))
 
-    # 3.5 Bố trí Khung tĩnh không kỹ thuật và các yếu tố phụ trợ khác
+    fig.add_shape(type="line", x0=x_t2, y0=h_tn_tb_tuong_doi, x1=x_t2, y1=tinh_y_do_hoa(x_t2), line=dict(color="#95a5a6", width=1.5, dash="dot"))
+    fig.add_annotation(x=x_t2, y=h_tn_tb_tuong_doi - 1.5, text=f"Tiếp điểm T2<br>{x_t2:.1f}m", showarrow=False, font=dict(size=9, color="#7f8c8d"))
+
+    # 3.6 Khung khổ tĩnh không đặt ngay chính giữa gốc (0,0)
     if B > 0 and H_tk > 0:
         fig.add_shape(type="rect", x0=-B/2, y0=0, x1=B/2, y1=H_tk, line=dict(color="magenta", width=2), fillcolor="rgba(255, 0, 255, 0.08)")
-    if not is_duong_bo:
-        ve_ky_hieu_muc_nuoc_plotly(fig, -15, h5 - y_base_goc, "MNTT H5% (Y=0)", "blue")
+        fig.add_trace(go.Scatter(x=[0], y=[H_tk / 2], mode="text", text=[f"TĨNH KHÔNG KỸ THUẬT<br>B x H = {B}m x {H_tk}m"], textposition="middle center", textfont=dict(color="magenta", size=10, family="Arial Black"), showlegend=False, hoverinfo="skip"))
 
-    # Vẽ vị trí mố cầu
-    y_mo_moi = geo['y_mo'] - y_base_goc
-    fig.add_trace(go.Scatter(x=[x_mo_trai_moi, x_mo_trai_moi], y=[h_tn_tb_moi, y_mo_moi], name="Mố Trái", line=dict(color='brown', width=3, dash='dash')))
-    fig.add_trace(go.Scatter(x=[x_mo_phai_moi, x_mo_phai_moi], y=[h_tn_tb_moi, y_mo_moi], name="Mố Phải", line=dict(color='brown', width=3, dash='dash')))
+    # 3.7 Vẽ mố cầu đối xứng
+    y_mo_tuong_doi = geo['y_mo'] - y_base_goc
+    fig.add_trace(go.Scatter(x=[geo['x_mo_trai'], geo['x_mo_trai']], y=[h_tn_tb_tuong_doi, y_mo_tuong_doi], name="Mố Trái", line=dict(color='brown', width=3, dash='dash')))
+    fig.add_trace(go.Scatter(x=[geo['x_mo_phai'], geo['x_mo_phai']], y=[h_tn_tb_tuong_doi, y_mo_tuong_doi], name="Mố Phải", line=dict(color='brown', width=3, dash='dash')))
 
-    # --- 4. THIẾT LẬP GIAO DIỆN ---
+    # --- 4. THIẾT LẬP LAYOUT ---
     fig.update_layout(
-        title=dict(text=f"TRẮC DỌC CẦU - PHÂN TÁCH ĐOẠN CONG ĐỨNG VÀ ĐOẠN DỐC THẲNG (1-1)", x=0.5),
+        title=dict(text=f"TRẮC DỌC CẦU ĐỐI XỨNG HỌA TIẾT (L_cầu = {l_cau_thuc:.2f}m)", x=0.5),
         xaxis=dict(title="Khoảng cách tính từ Tim cầu (m)", range=[x_start_view, x_limit_view], showgrid=True),
-        yaxis=dict(title="Cao độ tương đối (m)", scaleanchor="x", scaleratio=1, showgrid=True, zeroline=True, zerolinecolor="black"),
-        height=550,
-        template="plotly_white",
-        dragmode='pan',
-        hovermode="x unified"
+        yaxis=dict(title="Cao độ tương đối (m)", scaleanchor="x", scaleratio=1, showgrid=True, zeroline=True, zerolinecolor="black", zerolinewidth=1.5),
+        height=550, template="plotly_white", dragmode='pan', hovermode="x unified"
     )
-    
     return fig
 
 def ve_mat_cat_ngang(res_mcn):
-    """Vẽ mặt cắt ngang cầu điển hình bằng Plotly - Khóa tỷ lệ 1-1"""
     bc = res_mcn.get('bc_cau', 12.0)
-    w_lc = res_mcn.get('w_lc', 0.5)   # Mặc định bề rộng gờ lan can
+    w_lc = res_mcn.get('w_lc', 0.5)
     
     fig = go.Figure()
+    fig.add_trace(go.Scatter(x=[-bc/2, bc/2, bc/2, -bc/2, -bc/2], y=[0, 0, -0.25, -0.25, 0], fill="toself", fillcolor="#bdc3c7", line=dict(color="black", width=2), name="Bản mặt cầu", hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[-bc/2, -bc/2 + w_lc, -bc/2 + w_lc, -bc/2, -bc/2], y=[0, 0, 0.4, 0.4, 0], fill="toself", fillcolor="#7f8c8d", line=dict(color="black", width=1.5), showlegend=False, hoverinfo="skip"))
+    fig.add_trace(go.Scatter(x=[bc/2 - w_lc, bc/2, bc/2, bc/2 - w_lc, bc/2 - w_lc], y=[0, 0, 0.4, 0.4, 0], fill="toself", fillcolor="#7f8c8d", line=dict(color="black", width=1.5), showlegend=False, hoverinfo="skip"))
 
-    # Vẽ Khối bản mặt cầu bê tông (Hình hộp chữ nhật dày 25cm)
-    fig.add_trace(go.Scatter(
-        x=[-bc/2, bc/2, bc/2, -bc/2, -bc/2],
-        y=[0, 0, -0.25, -0.25, 0],
-        fill="toself",
-        fillcolor="#bdc3c7",
-        line=dict(color="black", width=2),
-        name="Bản mặt cầu",
-        hoverinfo="skip"
-    ))
-
-    # Vẽ gờ chắn lan can bên trái
-    fig.add_trace(go.Scatter(
-        x=[-bc/2, -bc/2 + w_lc, -bc/2 + w_lc, -bc/2, -bc/2],
-        y=[0, 0, 0.4, 0.4, 0],
-        fill="toself", fillcolor="#7f8c8d",
-        line=dict(color="black", width=1.5),
-        showlegend=False, hoverinfo="skip"
-    ))
-    
-    # Vẽ gờ chắn lan can bên phải
-    fig.add_trace(go.Scatter(
-        x=[bc/2 - w_lc, bc/2, bc/2, bc/2 - w_lc, bc/2 - w_lc],
-        y=[0, 0, 0.4, 0.4, 0],
-        fill="toself", fillcolor="#7f8c8d",
-        line=dict(color="black", width=1.5),
-        showlegend=False, hoverinfo="skip"
-    ))
-
-    # Khóa trục tỷ lệ 1-1 cho mặt cắt ngang
     fig.update_layout(
         title=dict(text=f"MẶT CẮT NGANG CẦU ĐIỂN HÌNH (B_cầu = {bc}m)", x=0.5),
         xaxis=dict(title="Bề rộng cầu (m)", range=[-bc/2 - 2, bc/2 + 2], showgrid=False, zeroline=True),
-        yaxis=dict(
-            title="Chiều cao cấu tạo (m)",
-            scaleanchor="x",
-            scaleratio=1, # Tỉ lệ 1-1 thực thụ
-            range=[-1, 2],
-            showgrid=False
-        ),
-        height=380,
-        template="plotly_white",
-        dragmode='pan'
+        yaxis=dict(title="Chiều cao cấu tạo (m)", scaleanchor="x", scaleratio=1, range=[-1, 2], showgrid=False),
+        height=380, template="plotly_white", dragmode='pan'
     )
-    
     return fig
