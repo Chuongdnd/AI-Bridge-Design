@@ -25,12 +25,12 @@ def ve_ky_hieu_muc_nuoc_plotly(fig, x_pos, y_val, label, color):
     ))
 
 def ve_trac_doc_cau(res):
-    """Vẽ sơ họa trắc dọc cầu bằng Plotly - Hỗ trợ tương tác Zoom/Pan và tỷ lệ 1-1"""
+    """Vẽ sơ họa trắc dọc cầu bằng Plotly - Gốc tọa độ (0,0) đặt tại TIM TĨNH KHÔNG"""
     geo = res.get('geo_logic')
     if not geo:
         return None
         
-    # --- 1. LẤY DỮ LIỆU ĐẦU VÀO VÀ THIẾT LẬP KHUNG NHÌN ĐỘNG ---
+    # --- 1. LẤY DỮ LIỆU ĐẦU VÀO VÀ THIẾT LẬP MỐC DỜI TỌA ĐỘ ---
     h1 = res.get('MNCN', 0)
     h5 = res.get('MNTT', 0)
     h10 = res.get('MNTC', 0)
@@ -40,30 +40,44 @@ def ve_trac_doc_cau(res):
     label_res = res.get('label', "")
     is_duong_bo = "vượt đường bộ" in label_res.lower()
     
-    # Thiết lập tim cầu và dải phạm vi động từ file 02 hình học
-    x_center = geo.get('x_dinh', 150)
+    # CHỌN MỐC CAO ĐỘ ĐÁY TĨNH KHÔNG LÀM GỐC Y = 0
+    # Nếu vượt sông lấy MNTT (h5), vượt đường bộ lấy Mặt đường bị vượt (h1)
+    y_base_goc = h1 if is_duong_bo else h5
+    
+    # TIM CẦU MẶC ĐỊNH VỀ X = 0
+    x_center = 0 
     l_cau_thuc = geo.get('L_cau', 120)
     
-    # Khung nhìn tự động ôm sát chiều dài cầu và mở rộng 50m ra hai bên đường đầu cầu
-    x_start_view = max(0, x_center - (l_cau_thuc / 2) - 50)
-    x_limit_view = x_center + (l_cau_thuc / 2) + 50
+    # Tính toán lại vị trí mố trái và mố phải đối xứng qua tim 0
+    x_mo_trai_moi = -l_cau_thuc / 2
+    x_mo_phai_moi = l_cau_thuc / 2
     
-    # Chia 1000 điểm để các đường cong đứng Parabol đạt độ mịn tối đa khi zoom sâu
-    x = np.linspace(x_start_view, x_limit_view, 1000)
+    # Thiết lập phạm vi vẽ dải tuyến (Quét rộng ra 2 bên mố 50m)
+    x_start_view = x_mo_trai_moi - 50
+    x_limit_view = x_mo_phai_moi + 50
+    x = np.linspace(x_start_view, x_limit_view, 1500)
 
-    # --- 2. TÍNH TOÁN CAO ĐỘ ĐƯỜNG ĐỎ VÀ CÁC LỚP KẾT CẤU ---
+    # --- 2. TÍNH TOÁN CAO ĐỘ ĐƯỜNG ĐỎ (ĐÃ TRỪ ĐI Y_BASE_GOC) ---
+    # Lấy các thông số hình học gốc từ file 02 để tính toán hình học tương đối
+    x_dinh_cu = geo.get('x_dinh', 150)
+    
     y_mat = []
     for xi in x:
-        if xi < geo['x_t1']:
-            yi = geo['y_t'] - geo['i_val'] * (geo['x_t1'] - xi)
-        elif xi > geo['x_t2']:
-            yi = geo['y_t'] - geo['i_val'] * (xi - geo['x_t2'])
+        # Chuyển đổi ngược tọa độ xi mới về hệ tọa độ cũ để tận dụng logic hình học cũ của bạn
+        xi_cu = xi + x_dinh_cu 
+        
+        if xi_cu < geo['x_t1']:
+            yi_cu = geo['y_t'] - geo['i_val'] * (geo['x_t1'] - xi_cu)
+        elif xi_cu > geo['x_t2']:
+            yi_cu = geo['y_t'] - geo['i_val'] * (xi_cu - geo['x_t2'])
         else:
-            yi = geo['y_dinh'] - (xi - x_center)**2 / (2 * geo['R'])
-        y_mat.append(yi)
+            yi_cu = geo['y_dinh'] - (xi_cu - x_dinh_cu)**2 / (2 * geo['R'])
+            
+        # DỜI TRỤC Y: Trừ đi cao độ mốc để đưa về gốc 0
+        y_mat.append(yi_cu - y_base_goc)
+        
     y_mat = np.array(y_mat)
     
-    # Chiều cao dầm từ kết quả AI và bản mặt cầu cố định
     h_dam_ai = res.get('ai_result', {}).get('chieu_cao', 1.65)
     h_ban_mat_cau = 0.18
     
@@ -71,85 +85,84 @@ def ve_trac_doc_cau(res):
     y_dinh_dam = y_mat - h_ban_mat_cau
     y_day_dam = y_mat - h_ban_mat_cau - h_dam_ai
 
-    # --- 3. KHỞI TẠO BIỂU ĐỒ HOÀN TOÀN BẰNG PLOTLY ---
+    # --- 3. KHỞI TẠO BIỂU ĐỒ PLOTLY ---
     fig = go.Figure()
 
-    # 3.1 Đường tự nhiên trung bình (Nét đứt màu xanh lá cây)
-    h_tn_tb = geo.get('h_tn_tb', 3.0)
+    # 3.1 Đường tự nhiên trung bình (Đã dời trục Y)
+    h_tn_tb_moi = geo.get('h_tn_tb', 3.0) - y_base_goc
     fig.add_trace(go.Scatter(
-        x=x, y=np.full_like(x, h_tn_tb),
+        x=x, y=np.full_like(x, h_tn_tb_moi),
         name="Đường TN trung bình",
         line=dict(color='#27ae60', width=1.5, dash='dash')
     ))
 
-    # 3.2 Nhận diện Vượt Sông hoặc Vượt Đường
+    # 3.2 Vẽ các mực nước / Mặt đường bị vượt (Đã dời trục Y)
     if is_duong_bo:
-        # Mặt đường bị vượt (Màu xám đại diện cho đường bộ phía dưới)
+        # Mặt đường bị vượt chính là đường thẳng Y = 0
         fig.add_trace(go.Scatter(
-            x=x, y=np.full_like(x, h1),
-            name="Mặt đường bị vượt",
+            x=x, y=np.full_like(x, 0),
+            name="Mặt đường bị vượt (Y=0)",
             line=dict(color='#7f8c8d', width=2.5)
         ))
     else:
-        # Sắp xếp các ký hiệu mực nước đối xứng vây quanh khu vực tim cầu
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_center - 45, h1, "MNCN H1%", "red")
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_center - 15, h5, "MNTT H5%", "blue")
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_center + 15, h10, "MNTC H10%", "green")
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_center + 45, h98, "MNTN H98%", "orange")
+        # Bố trí các mực nước đối xứng qua tim 0, cao độ tương đối so với h5 (Y_goc)
+        ve_ky_hieu_muc_nuoc_plotly(fig, -40, h1 - y_base_goc, "MNCN H1%", "red")
+        ve_ky_hieu_muc_nuoc_plotly(fig, -15, h5 - y_base_goc, "MNTT H5% (Y=0)", "blue")
+        ve_ky_hieu_muc_nuoc_plotly(fig, 15, h10 - y_base_goc, "MNTC H10%", "green")
+        ve_ky_hieu_muc_nuoc_plotly(fig, 40, h98 - y_base_goc, "MNTN H98%", "orange")
 
-    # 3.3 Bản mặt cầu, đỉnh dầm, đáy dầm thiết kế
+    # 3.3 Vẽ Bản mặt cầu, Đỉnh dầm, Đáy dầm
     fig.add_trace(go.Scatter(x=x, y=y_duong_do, name="Mặt cầu (Đường đỏ)", line=dict(color='red', width=3)))
-    fig.add_trace(go.Scatter(x=x, y=y_dinh_dam, name="Đỉnh dầm", line=dict(color='gray', width=1, dash='dot'), showlegend=False))
     fig.add_trace(go.Scatter(x=x, y=y_day_dam, name="Đáy dầm thiết kế", line=dict(color='darkblue', width=2, dash='dashdot')))
 
-    # 3.4 Sơ họa kết cấu mố cầu hai bên đầu nhịp (Đường thẳng đứng màu nâu)
+    # 3.4 Vẽ vị trí Mố cầu đối xứng
+    y_mo_moi = geo['y_mo'] - y_base_goc
     fig.add_trace(go.Scatter(
-        x=[geo['x_mo_trai'], geo['x_mo_trai']], y=[h_tn_tb, geo['y_mo']],
+        x=[x_mo_trai_moi, x_mo_trai_moi], y=[h_tn_tb_moi, y_mo_moi],
         name="Mố Trái", line=dict(color='brown', width=3, dash='dash')
     ))
     fig.add_trace(go.Scatter(
-        x=[geo['x_mo_phai'], geo['x_mo_phai']], y=[h_tn_tb, geo['y_mo']],
+        x=[x_mo_phai_moi, x_mo_phai_moi], y=[h_tn_tb_moi, y_mo_moi],
         name="Mố Phải", line=dict(color='brown', width=3, dash='dash')
     ))
 
-    # 3.5 Tải khung Khổ thông thuyền / Khung tĩnh không kỹ thuật (Khối màu Magenta)
+    # 3.5 VẼ KHUNG TĨNH KHÔNG GỐC TOÀN CỤC (0,0)
     if B > 0 and H_tk > 0:
-        # Tính toán tọa độ cao độ đặt khung thông thuyền (Lấy từ mực nước thiết kế h5 hoặc h1 tuỳ loại cầu)
-        y_base_tk = h1 if is_duong_bo else h5
+        # Lúc này x0, y0 xuất phát chính xác từ tâm hoành độ và tung độ gốc
         fig.add_shape(
             type="rect",
-            x0=x_center - B/2, y0=y_base_tk,
-            x1=x_center + B/2, y1=y_base_tk + H_tk,
-            line=dict(color="magenta", width=1.5),
-            fillcolor="rgba(255, 0, 255, 0.05)",
-            name="Khung tĩnh không"
+            x0=-B/2, y0=0,
+            x1=B/2, y1=H_tk,
+            line=dict(color="magenta", width=2),
+            fillcolor="rgba(255, 0, 255, 0.08)"
         )
-        # Bổ sung nhãn Text ghi rõ kích thước tĩnh không ngay tâm khung hình
         fig.add_trace(go.Scatter(
-            x=[x_center], y=[y_base_tk + H_tk/2],
+            x=[0], y=[H_tk / 2],
             mode="text",
-            text=[f"TĨNH KHÔNG KỸ THUẬT<br>B x H = {B}m x {H_tk}m"],
+            text=[f"TĨNH KHÔNG KỸ THUẬT<br>B x H = {B}m x {H_tk}m<br>Tâm đặt tại (0,0)"],
             textposition="middle center",
-            textfont=dict(color="magenta", size=10, family="Arial"),
+            textfont=dict(color="magenta", size=10, family="Arial Black"),
             showlegend=False,
             hoverinfo="skip"
         ))
 
-    # --- 4. THIẾT LẬP KHÓA CỨNG TỶ LỆ HÌNH HỌC 1-1 VÀ GIAO DIỆN ---
+    # --- 4. THIẾT LẬP LAYOUT KHUNG NHÌN ĐỐI XỨNG ---
     fig.update_layout(
-        title=dict(text=f"SƠ HỌA TRẮC DỌC TOÀN CẦU ĐỘNG (L_cầu = {l_cau_thuc:.2f}m)", x=0.5, font=dict(size=14, color="black")),
-        xaxis=dict(title="Khoảng cách dọc tuyến (m)", range=[x_start_view, x_limit_view], showgrid=True, gridcolor="#f0f0f0"),
+        title=dict(text=f"SƠ HỌA TRẮC DỌC CẦU VỚI GỐC TOẠ ĐỘ TIM TĨNH KHÔNG (0,0)", x=0.5),
+        xaxis=dict(title="Khoảng cách tính từ Tim cầu (m)", range=[x_start_view, x_limit_view], showgrid=True),
         yaxis=dict(
-            title="Cao độ trắc dọc (m)",
-            scaleanchor="x",  # <<< QUAN TRỌNG NHẤT: Khóa trục Y theo trục X
-            scaleratio=1,     # <<< TỶ LỆ THỰC TẾ 1-1: Bản vẽ kỹ thuật chuẩn xác không bị bẹt
+            title="Cao độ tương đối (m)",
+            scaleanchor="x",  
+            scaleratio=1,     
             showgrid=True,
-            gridcolor="#f0f0f0"
+            zeroline=True,         # Bật đường chuẩn vị trí 0
+            zerolinecolor="black", # Tô đậm trục tọa độ X gốc
+            zerolinewidth=1.5
         ),
         height=550,
         template="plotly_white",
-        dragmode='pan',       # Đặt mặc định là công cụ Bàn tay để kéo trượt trái/phải tự do
-        hovermode="x unified" # Hiển thị đồng bộ cao độ toàn bộ các cấu kiện khi rê chuột qua tuyến
+        dragmode='pan',       
+        hovermode="x unified" 
     )
     
     return fig
