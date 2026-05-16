@@ -130,16 +130,74 @@ def ve_trac_doc_cau(res):
     return fig
 
 def ve_mat_cat_ngang(res_mcn):
-    fig, ax = plt.subplots(figsize=(10, 5))
-    bc = res_mcn.get('bc_cau', 0)
+    """Vẽ mặt cắt ngang cầu bằng Plotly - Hỗ trợ tương tác Zoom/Pan tỷ lệ thực 1-1"""
+    bc = res_mcn.get('bc_cau', 12.0) # Lấy tổng bề rộng cầu, mặc định 12m nếu thiếu
     w_lan = res_mcn.get('w_lan', 3.5)
-    # Vẽ bản mặt cầu đơn giản
-    ax.add_patch(patches.Rectangle((-bc/2, 0), bc, 0.5, color='#bdc3c7', ec='black'))
-    # Vẽ vạch sơn phân làn (minh họa)
-    ax.plot([0, 0], [0.5, 0.7], color='black', lw=2) 
+    w_lc = res_mcn.get('w_lc', 0.5)   # Bề rộng gờ lan can
+    w_dpc = res_mcn.get('w_dpc', 0.0) # Bề rộng dải phân cách (nếu có)
     
-    ax.set_xlim(-bc/2 - 2, bc/2 + 2)
-    ax.set_ylim(-1, 2)
-    ax.set_title(f"MẶT CẮT NGANG CẦU (Bc = {bc}m)")
-    ax.axis('off')
+    # --- 1. KHỞI TẠO BIỂU ĐỒ PLOTLY ---
+    fig = go.Figure()
+
+    # 1.1 Vẽ Bản mặt cầu (Hình khối chữ nhật từ -Bc/2 đến Bc/2, dày 0.25m làm mẫu)
+    # Dùng tính năng vẽ hình khép kín (Filled Tunnels) để giả lập khối bê tông
+    fig.add_trace(go.Scatter(
+        x=[-bc/2, bc/2, bc/2, -bc/2, -bc/2],
+        y=[0, 0, -0.25, -0.25, 0],
+        fill="subsection" or "toself",
+        fillcolor="#bdc3c7",
+        line=dict(color="black", width=2),
+        name="Bản mặt cầu",
+        hoverinfo="skip"
+    ))
+
+    # 1.2 Vẽ các gờ lan can hai bên mặt cắt ngang
+    # Gờ bên trái
+    fig.add_trace(go.Scatter(
+        x=[-bc/2, -bc/2 + w_lc, -bc/2 + w_lc, -bc/2, -bc/2],
+        y=[0, 0, 0.4, 0.4, 0],
+        fill="toself", fillcolor="#7f8c8d",
+        line=dict(color="black", width=1.5),
+        name="Gờ lan can trái", hoverinfo="skip"
+    ))
+    # Gờ bên phải
+    fig.add_trace(go.Scatter(
+        x=[bc/2 - w_lc, bc/2, bc/2, bc/2 - w_lc, bc/2 - w_lc],
+        y=[0, 0, 0.4, 0.4, 0],
+        fill="toself", fillcolor="#7f8c8d",
+        line=dict(color="black", width=1.5),
+        name="Gờ lan can phải", hoverinfo="skip"
+    ))
+
+    # 1.3 Vẽ vạch sơn phân làn minh họa (Đặt tại tim cầu x=0)
+    fig.add_trace(go.Scatter(
+        x=[0, 0], y=[0, 0.15],
+        mode="lines",
+        line=dict(color="yellow", width=3, dash="dash"),
+        name="Vạch tim đường"
+    ))
+
+    # --- 2. THIẾT LẬP KHÓA TỶ LỆ KỸ THUẬT 1-1 VÀ GIAO DIỆN ---
+    fig.update_layout(
+        title=dict(text=f"MẶT CẮT NGANG CẦU ĐIỂN HÌNH (B_cầu = {bc}m)", x=0.5),
+        xaxis=dict(
+            title="Bề rộng cầu (m)", 
+            range=[-bc/2 - 2, bc/2 + 2],
+            showgrid=False,
+            zeroline=True,
+            zerolinecolor="gray"
+        ),
+        yaxis=dict(
+            title="Chiều cao cấu tạo (m)",
+            scaleanchor="x",  # <<< KHÓA TRỤC Y THEO TRỤC X
+            scaleratio=1,     # <<< TỶ LỆ ĐÚNG 1-1: Bản mặt cầu và làn xe không bị bóp méo
+            range=[-1, 2],
+            showgrid=False
+        ),
+        height=400,
+        template="plotly_white",
+        dragmode='pan',       # Bật kéo trượt tự do
+        showlegend=False
+    )
+    
     return fig
