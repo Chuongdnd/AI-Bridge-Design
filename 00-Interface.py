@@ -272,11 +272,12 @@ with tab1:
             with col_res1:
                 st.subheader("🖼️ Sơ đồ trắc dọc cầu thiết kế")
                 try:
-                    fig = PLOT.ve_trac_doc_cau(res)
-                    st.pyplot(fig)
+                    fig_plotly = PLOT.ve_trac_doc_cau(res)
+                    if fig_plotly is not None:
+                        # Thay st.pyplot(fig) bằng st.plotly_chart để hiển thị biểu đồ tương tác
+                        st.plotly_chart(fig_plotly, use_container_width=True)
                 except Exception as e:
                     st.error(f"Lỗi khi vẽ: {e}")
-            
             with col_res2:
                 st.subheader("🤖 Đề xuất của AI")
                 if 'ai_result' in res:
