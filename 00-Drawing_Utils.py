@@ -75,16 +75,25 @@ def ve_trac_doc_cau(res):
     fig.add_trace(go.Scatter(x=x_doc_phai, y=y_doc_phai, name=f"Đoạn dốc thẳng phải (i={geo['i_val']*100:.1f}%)", line=dict(color='#e67e22', width=3.5)))
 
     # 3.3 Đường đáy dầm thiết kế
-    fig.add_trace(go.Scatter(x=x_full, y=y_full - h_tong_ket_cau, name="Đường đáy dầm thiết kế", line=dict(color='darkblue', width=2, dash='dashdot')))
+    fig.add_trace(go.Scatter(
+        x=x_full, y=y_full - h_tong_ket_cau, 
+        name="Đường đáy dầm thiết kế", 
+        line=dict(color='darkblue', width=2, dash='dashdot')
+    ))
 
-    # 3.4 Bố trí các mực nước / Mặt đường bị vượt đối xứng qua trục tung
-    if is_duong_bo:
-        fig.add_trace(go.Scatter(x=x_full, y=np.full_like(x_full, 0), name="Mặt đường bị vượt (Y=0)", line=dict(color='#7f8c8d', width=2.5)))
-    else:
-        ve_ky_hieu_muc_nuoc_plotly(fig, -45, h1, "MNCN H1%", "red")
-        ve_ky_hieu_muc_nuoc_plotly(fig, -15, h5, "MNTT H5% (Y=0)", "blue")
-        ve_ky_hieu_muc_nuoc_plotly(fig, 15, h10, "MNTC H10%", "green")
-        ve_ky_hieu_muc_nuoc_plotly(fig, 45, h98, "MNTN H98%", "orange")
+    # 3.4 ĐƯỜNG ẨN HỖ TRỢ HIỂN THỊ THÔNG SỐ CHÊNH CAO ĐỘ (ĐÃ SỬA ĐỂ BẬT HOVER CHUẨN)
+    # Ép đường này nhận giá trị Y chính là khoảng chênh cao, nhưng cấu hình hiển thị text tùy biến
+    fig.add_trace(go.Scatter(
+        x=x_full, 
+        y=y_full, # Đặt Y tại đường đỏ để nhãn hiển thị ngay vị trí con trỏ chuột
+        name="Chênh cao (Đỏ - TN)",
+        mode="lines",
+        line=dict(color="rgba(0,0,0,0)", width=0), # Làm ẩn hoàn toàn đường dây
+        customdata=chenh_cao,
+        hovertemplate="%{customdata:.3f} m",       # Chỉ định rõ định dạng số thập phân trong bảng gom
+        showlegend=False,                          # Không hiện đường ẩn này ở danh sách chú thích góc phải
+        legendgroup="chenh_cao"
+    ))
 
     # 3.5 Đường gióng ranh giới phân tách hình học
     fig.add_shape(type="line", x0=x_t1, y0=h_tn_tb_tuong_doi, x1=x_t1, y1=tinh_y_do_hoa(x_t1), line=dict(color="#95a5a6", width=1.5, dash="dot"))
@@ -108,10 +117,20 @@ def ve_trac_doc_cau(res):
         title=dict(text=f"TRẮC DỌC CẦU ĐỐI XỨNG HỌA TIẾT (L_cầu = {l_cau_thuc:.2f}m)", x=0.5),
         xaxis=dict(title="Khoảng cách tính từ Tim cầu (m)", range=[x_start_view, x_limit_view], showgrid=True),
         yaxis=dict(title="Cao độ tương đối (m)", scaleanchor="x", scaleratio=1, showgrid=True, zeroline=True, zerolinecolor="black", zerolinewidth=1.5),
-        height=550, template="plotly_white", dragmode='pan', hovermode="x unified"
+        height=550, 
+        template="plotly_white", 
+        dragmode='pan', 
+        hovermode="x unified", # Gom thông tin tất cả các đường tại cùng một hoành độ X
+        
+        # CẤU HÌNH BẢNG HIỂN THỊ LIA CHUỘT (THÊM DÒNG NÀY ĐỂ HIỂN THỊ RÕ RÀNG)
+        hoverlabel=dict(
+            bgcolor="rgba(30, 30, 30, 0.85)", # Màu nền xám tối giúp chữ nổi bật
+            font_size=12,
+            font_family="Arial",
+            font_color="white"
+        )
     )
     return fig
-
 def ve_mat_cat_ngang(res_mcn):
     bc = res_mcn.get('bc_cau', 12.0)
     w_lc = res_mcn.get('w_lc', 0.5)
