@@ -282,21 +282,21 @@ with tab1:
                         )
                 except Exception as e:
                     st.error(f"Lỗi khi vẽ: {e}")
-            with col_res2:
-                st.subheader("🤖 Đề xuất của AI")
-                if 'ai_result' in res:
-                    ai = res['ai_result']
-                    st.info(f"**{ai['loai_dam'].upper()}**")
-                    st.write(f"🔹 Tổng số nhịp: **{ai['tong_so_nhip']} nhịp**")
-                    st.write(f"🔹 Chiều dài nhịp: **{ai['chieu_dai']} m**")
-                    st.write(f"🔹 Chiều cao dầm: **{ai['chieu_cao']} m**")
-                    st.success(f"💡 {ai['ghi_chu_ai']}")
+#            with col_res2:
+#                st.subheader("🤖 Đề xuất của AI")
+#                if 'ai_result' in res:
+#                    ai = res['ai_result']
+#                    st.info(f"**{ai['loai_dam'].upper()}**")
+#                    st.write(f"🔹 Tổng số nhịp: **{ai['tong_so_nhip']} nhịp**")
+#                    st.write(f"🔹 Chiều dài nhịp: **{ai['chieu_dai']} m**")
+#                    st.write(f"🔹 Chiều cao dầm: **{ai['chieu_cao']} m**")
+#                    st.success(f"💡 {ai['ghi_chu_ai']}")
                 
-                st.subheader("📐 Thông số mố trụ")
-                geo = res['geo_logic']
-                st.write(f"📍 Vị trí mố trái: **{geo['x_mo_trai']:.2f} m**")
-                st.write(f"📍 Vị trí mố phải: **{geo['x_mo_phai']:.2f} m**")
-                st.write(f"📏 Tổng chiều dài L: **{geo['L_cau']:.2f} m**")
+#                st.subheader("📐 Thông số mố trụ")
+#                geo = res['geo_logic']
+#                st.write(f"📍 Vị trí mố trái: **{geo['x_mo_trai']:.2f} m**")
+#                st.write(f"📍 Vị trí mố phải: **{geo['x_mo_phai']:.2f} m**")
+#                st.write(f"📏 Tổng chiều dài L: **{geo['L_cau']:.2f} m**")
         else:
             st.error("❌ Không thể xác định yếu tố hình học. Vui lòng kiểm tra lại đầu vào.")
             # ==========================================
