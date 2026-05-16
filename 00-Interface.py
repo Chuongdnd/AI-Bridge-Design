@@ -269,9 +269,9 @@ with tab1:
             st.divider()
             col_res1, col_res2 = st.columns([2, 1])
             
-            with col_res1:
-                st.subheader("🖼️ Sơ đồ trắc dọc cầu thiết kế")
-                try:
+#            with col_res1:
+            st.subheader("🖼️ Sơ đồ trắc dọc cầu thiết kế")
+            try:
                     fig_plotly = PLOT.ve_trac_doc_cau(res)
                     if fig_plotly is not None:
                         # Bổ sung tham số config để kích hoạt tính năng cuộn chuột phóng to/thu nhỏ
@@ -280,7 +280,7 @@ with tab1:
                             use_container_width=True,
                             config={'scrollZoom': True}
                         )
-                except Exception as e:
+            except Exception as e:
                     st.error(f"Lỗi khi vẽ: {e}")
 #            with col_res2:
 #                st.subheader("🤖 Đề xuất của AI")
