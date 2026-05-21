@@ -349,7 +349,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
         st.success(f"⚡ Hệ thống đã xử lý thành công {len(df_geology)} điểm mia địa hình thực tế!")
         
         # Nhóm 4 Tab con khi CÓ file khảo sát
-        tab_binhdo_2d, tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
+        tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
             "🏔️ Mô hình Địa hình 3D",
             "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
             "📐 Bản vẽ Mặt cắt ngang điển hình"
