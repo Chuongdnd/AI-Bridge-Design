@@ -5,8 +5,8 @@ import numpy as np
 
 def parse_ntd_file(uploaded_file):
     """
-    BỘ GIẢI MÃ FILE .NTD KHẢO SÁT VIỆT NAM (Nova-TDN, ADS Civil, Topo)
-    Chuyển đổi dữ liệu text khảo sát sang DataFrame tọa độ thực tế X, Y, Z
+    BỘ GIẢI MÃ FILE .NTD CHUẨN KHẢO SÁT CHẶT CHẼ
+    Đã xóa bỏ bộ lọc số thô dự phòng để triệt tiêu hoàn toàn các điểm ma cao độ 1m
     """
     data_points = []
     
@@ -24,78 +24,58 @@ def parse_ntd_file(uploaded_file):
             continue
             
         parts = line.split()
-        if len(parts) < 2:
+        if not parts:
             continue
             
         token = parts[0].upper()
         
-        is_trac_ngang = False
-        dist_offset = 0.0
-        z_val = 0.0
+        # 🌟 KHÓA CHẶT CHẼ: CHỈ ĐỌC 3 TỪ KHÓA ĐỊA HÌNH CHÍNH - BỎ QUA TOÀN BỘ MÃ HIỆU SỐ RÁC 🌟
         
-        if token == 'T' and len(parts) >= 3:
+        # 1. Nhận diện dòng cọc tim tuyến (Từ khóa POLE)
+        if token == 'POLE' and len(parts) >= 4:
             try:
-                dist_offset = float(parts[1])
-                z_val = float(parts[2])
-                is_trac_ngang = True
-            except ValueError:
-                pass
-        elif token.replace('-', '').replace('.', '', 1).isdigit():
-            try:
-                dist_offset = float(parts[0])
-                z_val = float(parts[1])
-                is_trac_ngang = True
+                current_x = float(parts[2])
+                z_tim = float(parts[3])
+                
+                data_points.append({
+                    'X': current_x, 
+                    'Y': 0.0, 
+                    'Z': z_tim, 
+                    'Type': 'Tim tuyến'
+                })
             except ValueError:
                 pass
                 
-        if is_trac_ngang:
-            data_points.append({
-                'X': current_x, 
-                'Y': dist_offset, 
-                'Z': z_val, 
-                'Type': 'Mia địa hình'
-            })
-        else:
-            if token.startswith(('C', 'H', 'P', 'M', 'T', 'K', 'V', 'P')) or "TIM" in token:
-                try:
-                    if token == 'POLE' and len(parts) >= 4:
-                        current_x = float(parts[2])
-                        z_tim = float(parts[3])
-                    elif len(parts) >= 3:
-                        current_x = float(parts[1])
-                        z_tim = float(parts[2])
-                    else:
-                        continue
-                    
-                    data_points.append({
-                        'X': current_x, 
-                        'Y': 0.0, 
-                        'Z': z_tim, 
-                        'Type': 'Tim tuyến'
-                    })
-                except (ValueError, IndexError):
-                    pass
+        # 2. Nhận diện dòng trắc ngang trái / phải (Từ khóa TARGETL / TARGETR)
+        elif token in ['TARGETL', 'TARGETR'] and len(parts) >= 3:
+            try:
+                dist_offset = float(parts[1])
+                z_val = float(parts[2])
+                
+                data_points.append({
+                    'X': current_x, 
+                    'Y': dist_offset, 
+                    'Z': z_val, 
+                    'Type': 'Mia địa hình'
+                })
+            except ValueError:
+                pass
                 
     return pd.DataFrame(data_points)
 
 def ve_binh_do_goc_2d(df):
     """
     HÀM DỰNG BÌNH ĐỒ GỐC 2D ĐƯỜNG ĐỒNG MỨC (PLAN VIEW)
-    Đã chuẩn hóa thứ tự nội suy: Khôi phục mặt phẳng thực tế
     """
     if df.empty or len(df.index) < 3:
         st.warning("⚠️ Dữ liệu địa hình quá ít, không đủ điều kiện dựng Bình đồ đồng mức.")
         return None
         
     try:
-        df_smooth = df.copy()
-        df_smooth['Y'] = np.round(df_smooth['Y'] * 2) / 2
+        grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
         
-        grid_df = df_smooth.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
-        
-        # 🌟 THUẬT TOÁN MỚI: Nội suy trắc ngang phương Y (axis=0) trước để tạo mặt phẳng cắt phẳng phiu
+        # Nội suy chuẩn phẳng: phương Y trắc ngang trước, phương X trắc dọc sau
         grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
-        # Sau đó mới nối các mặt cắt lại với nhau dọc theo tuyến X (axis=1)
         grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
         
         x_grid = grid_df.columns.values
@@ -145,20 +125,15 @@ def ve_binh_do_goc_2d(df):
 def ve_dia_hinh_3d(df, he_so_z=0.25):
     """
     HÀM DỰNG KHỐI MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D (TERRAIN DIGITAL MODEL)
-    Đã triệt tiêu hoàn toàn lỗi răng cưa phương Y, giữ nguyên tỷ lệ thực địa 1:1:1
     """
     if df.empty or len(df.index) < 3:
         return None
         
     try:
-        df_smooth = df.copy()
-        df_smooth['Y'] = np.round(df_smooth['Y'] * 2) / 2
+        grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
         
-        grid_df = df_smooth.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
-        
-        # 🌟 THUẬT TOÁN MỚI: Ép nội suy phương đứng trắc ngang Y (axis=0) lên thảm phẳng trước
+        # Nội suy chuẩn phẳng: phương Y trắc ngang trước, phương X trắc dọc sau
         grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
-        # Nối mượt các thảm phẳng dọc theo lý trình X (axis=1) sau
         grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
         
         x_grid = grid_df.columns.values
@@ -179,14 +154,15 @@ def ve_dia_hinh_3d(df, he_so_z=0.25):
         
         fig.update_layout(
             title=dict(
-                text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN TỶ LỆ THỰC ĐỊA 1:1:1",
+                text="🏔️ MÔ HÌNH KHÔNG GIAN ĐỊA HÌNH TUYẾN 3D MƯỢT MÀ",
                 font=dict(size=16, color='#007acc', family='Arial')
             ),
             scene=dict(
                 xaxis_title="Lý trình X (m)",
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z (m)",
-                aspectmode='data'  # Giữ nguyên kích thước thật 1:1:1 tuyệt đối của Chương
+                aspectmode='manual',
+                aspectratio=dict(x=6, y=1, z=he_so_z) # Nhận trực tiếp he_so_z mềm dẻo từ slider
             ),
             template="plotly_dark",
             margin=dict(l=10, r=10, t=40, b=10),
