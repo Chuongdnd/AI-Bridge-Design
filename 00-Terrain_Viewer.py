@@ -182,15 +182,19 @@ def ve_dia_hinh_3d(df):
         # 🌟 CẬP NHẬT PHÂN VÙNG LAYOUT GIỮ KÍCH THƯỚC THẬT 🌟
         fig.update_layout(
             title=dict(
-                text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN TỶ LỆ THỰC ĐỊA 1:1:1",
+                text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D CHUẨN TRỰC QUAN",
                 font=dict(size=16, color='#007acc', family='Arial')
             ),
             scene=dict(
                 xaxis_title="Lý trình X (m)",
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z (m)",
-                # 📌 ĐÂY LÀ ĐIỂM CỐT LÕI: Ép đồ họa chạy theo kích thước mét thực tế, không tự scale méo hình
-                aspectmode='data' 
+                # 📌 THAY ĐỔI CỐT LÕI TẠI ĐÂY:
+                aspectmode='manual',
+                aspectratio=dict(x=3, y=1, z=he_so_z)
+                # Giải thích: Chiều dài hiển thị gấp 3 lần chiều rộng, 
+                # và chiều cao đứng chiếm 25% chiều rộng. 
+                # Tỷ lệ này giúp Chương nhìn rõ mố cát, lòng sông mà không bị biến dạng thành gai nhọn!
             ),
             template="plotly_dark",
             margin=dict(l=10, r=10, t=40, b=10),

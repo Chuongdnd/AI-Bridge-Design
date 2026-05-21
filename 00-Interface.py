@@ -360,8 +360,12 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
             fig_2d = TV.ve_binh_do_goc_2d(df_geology)
             if fig_2d: st.plotly_chart(fig_2d, use_container_width=True)
             
-        with tab_dia_hinh_3d:
-            fig_3d = TV.ve_dia_hinh_3d(df_geology)
+       with tab_dia_hinh_3d:
+            # 1. Chèn thanh trượt Slider lên trên đầu của Tab 3D
+            he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ địa hình):", 0.01, 1.00, 0.25, step=0.01)
+            
+            # 2. Truyền biến he_so_z vừa tạo vào hàm vẽ
+            fig_3d = TV.ve_dia_hinh_3d(df_geology, he_so_z=he_so_z)
             if fig_3d: st.plotly_chart(fig_3d, use_container_width=True)
             
         with tab_trac_doc:
