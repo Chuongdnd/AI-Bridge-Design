@@ -8,3 +8,4 @@ ezdxf
 google-generativeai>=0.8.0
 pymupdf
 plotly
+streamlit-option-menu
