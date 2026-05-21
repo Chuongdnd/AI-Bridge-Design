@@ -145,7 +145,7 @@ def ve_binh_do_goc_2d(df):
 def ve_dia_hinh_3d(df, he_so_z=0.25):
     """
     HÀM DỰNG KHỐI MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D (TERRAIN DIGITAL MODEL)
-    Đã bổ sung nhận tham số he_so_z từ slider của file giao diện chính
+    Đã trả về tỷ lệ thực thực địa 1:1:1 tuyệt đối (True Scale) theo yêu cầu
     """
     if df.empty or len(df.index) < 3:
         return None
@@ -171,7 +171,7 @@ def ve_dia_hinh_3d(df, he_so_z=0.25):
             x=x_grid,
             y=y_grid,
             z=z_grid,
-            colorscale='Earth',    # Hệ màu địa chất chuẩn
+            colorscale='Earth',    # Hệ màu địa hình chuẩn
             opacity=0.9,
             colorbar=dict(
                 title=dict(text="Cao độ Z (m)", side="right"),
@@ -179,19 +179,18 @@ def ve_dia_hinh_3d(df, he_so_z=0.25):
             )
         )])
         
-        # Cấu hình không gian hiển thị camera 3D CAD Style
+        # 🌟 ĐƯA TOÀN BỘ VỀ TỶ LỆ KÍCH THƯỚC THỰC THỰC ĐỊA 1:1:1 🌟
         fig.update_layout(
             title=dict(
-                text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D TÙY CHỈNH TỶ LỆ",
+                text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN TỶ LỆ THỰC ĐỊA 1:1:1",
                 font=dict(size=16, color='#007acc', family='Arial')
             ),
             scene=dict(
                 xaxis_title="Lý trình X (m)",
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z (m)",
-                aspectmode='manual',
-                # 📌 GẮN BIẾN HE_SO_Z NHẬN TRỰC TIẾP TỪ SLIDER ĐỂ THAY ĐỔI ĐỘ CAO
-                aspectratio=dict(x=1, y=0.01, z=he_so_z) 
+                # 📌 Ép đồ họa chạy theo tỉ lệ chuẩn hệ mét thực tế của số liệu gốc
+                aspectmode='data'
             ),
             template="plotly_dark",
             margin=dict(l=10, r=10, t=40, b=10),
