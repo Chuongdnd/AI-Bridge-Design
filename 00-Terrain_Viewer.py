@@ -70,49 +70,69 @@ def parse_ntd_file(uploaded_file):
     return pd.DataFrame(data_points)
 
 def ve_binh_do_goc_2d(df):
+    """
+    HÀM DỰNG BÌNH ĐỒ GỐC 2D ĐƯỜNG ĐỒNG MỨC (PLAN VIEW)
+    Đã xử lý nội suy Ma trận 2D chống lỗi không khớp mảng của Plotly
+    """
     if df.empty or len(df.index) < 3:
         st.warning("⚠️ Dữ liệu địa hình quá ít, không đủ điều kiện dựng Bình đồ đồng mức.")
         return None
         
-    # Tạo cấu trúc biểu đồ đường đồng mức Contour
-    fig = go.Figure(data=go.Contour(
-        x=df['X'],
-        y=df['Y'],
-        z=df['Z'],
-        colorscale='Viridis',  # Hệ màu địa hình (Xanh lục sang Vàng) trực quan trên nền tối
-        colorbar=dict(
-            title="Cao độ Z (m)",
-            titleside="right",
-            thickness=15
-        ),
-        contours=dict(
-            start=float(df['Z'].min()),
-            end=float(df['Z'].max()),
-            size=0.5,           # Khoảng cách đều 0.5m vẽ một đường đồng mức cao độ
-            showlabels=True,    # Hiển thị trực tiếp con số cao độ trên đường đồng mức
-            labelfont=dict(size=10, color='white')
-        ),
-        line=dict(width=0.8, color='rgba(255,255,255,0.3)'),
-        connectgaps=True        # Tự động kết nối và nội suy các phân vùng thiếu điểm mia
-    ))
-    
-    # Cấu hình Layout không gian bản vẽ CAD Style
-    fig.update_layout(
-        title=dict(
-            text="🗺️ BÌNH ĐỒ ĐỊA HÌNH TỰ NHIÊN GỐC (ĐƯỜNG ĐỒNG MỨC SỐ)",
-            font=dict(size=16, color='#007acc', family='Arial')
-        ),
-        xaxis_title="Lý trình Tuyến khảo sát (m)",
-        yaxis_title="Khoảng cách trắc ngang sang 2 bên cánh tim (m)",
-        # 📌 QUAN TRỌNG: Khóa cứng tỉ lệ trục 1:1 không làm méo hình học bình đồ thực địa
-        yaxis=dict(scaleanchor="x", scaleratio=1, gridcolor='#222c3c'),
-        xaxis=dict(gridcolor='#222c3c'),
-        template="plotly_dark",  # Đồng bộ hoàn hảo với giao diện tối nền hệ thống của Chương
-        margin=dict(l=40, r=40, t=50, b=40),
-        plot_bgcolor='#0e1117',
-        paper_bgcolor='#0e1117'
-    )
-    return fig
+    try:
+        # 🧠 MẸO KỸ THUẬT: Chuyển đổi bảng điểm mia 1D rời rạc thành Ma trận lưới 2D (Grid Matrix)
+        # index='Y' (hàng là trắc ngang), columns='X' (cột là lý trình), values='Z' (cao độ)
+        grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
+        
+        # Nội suy mịn các vùng trống (nếu có cọc thiếu điểm mia cánh) để biểu đồ không bị rách
+        grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
+        grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
+        
+        # Trích xuất các mảng chuẩn cấu trúc cấu hình Plotly Contour
+        x_grid = grid_df.columns.values
+        y_grid = grid_df.index.values
+        z_grid = grid_df.values
+        
+        fig = go.Figure(data=go.Contour(
+            x=x_grid,
+            y=y_grid,
+            z=z_grid,
+            colorscale='Viridis',  
+            colorbar=dict(
+                title="Cao độ Z (m)",
+                titleside="right",
+                thickness=15
+            ),
+            contours=dict(
+                start=float(df['Z'].min()),
+                end=float(df['Z'].max()),
+                size=0.5,           # Cách 0.5m vẽ một đường đồng mức
+                showlabels=True,    # Hiện số cao độ trên đường
+                labelfont=dict(size=10, color='white')
+            ),
+            line=dict(width=0.8, color='rgba(255,255,255,0.3)'),
+            connectgaps=True        
+        ))
+        
+        fig.update_layout(
+            title=dict(
+                text="🗺️ BÌNH ĐỒ ĐỊA HÌNH TỰ NHIÊN GỐC (ĐƯỜNG ĐỒNG MỨC SỐ)",
+                font=dict(size=16, color='#007acc', family='Arial')
+            ),
+            xaxis_title="Lý trình Tuyến khảo sát (m)",
+            yaxis_title="Khoảng cách trắc ngang sang 2 bên cánh tim (m)",
+            # Khóa tỉ lệ 1:1 bảo toàn hình học thực địa không bị méo tuyến
+            yaxis=dict(scaleanchor="x", scaleratio=1, gridcolor='#222c3c'),
+            xaxis=dict(gridcolor='#222c3c'),
+            template="plotly_dark",  
+            margin=dict(l=40, r=40, t=50, b=40),
+            plot_bgcolor='#0e1117',
+            paper_bgcolor='#0e1117'
+        )
+        return fig
+        
+    except Exception as e:
+        st.error(f"Lỗi cấu trúc ma trận bình đồ: {e}")
+        return None
 
 def ve_dia_hinh_3d(df):
     if df.empty or len(df.index) < 3:
