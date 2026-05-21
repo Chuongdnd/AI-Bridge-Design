@@ -98,10 +98,12 @@ def ve_binh_do_goc_2d(df):
             z=z_grid,
             colorscale='Viridis',  
             colorbar=dict(
-                title="Cao độ Z (m)",
-                titleside="right",
-                thickness=15
+            title=dict(
+                text="Cao độ Z (m)",
+                side="right" # ✅ Đưa side lọt vào trong title dict theo đúng chuẩn Plotly
             ),
+            thickness=15
+        ),
             contours=dict(
                 start=float(df['Z'].min()),
                 end=float(df['Z'].max()),
