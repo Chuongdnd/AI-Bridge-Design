@@ -15,35 +15,68 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # =========================================================================
 st.markdown("""
     <style>
-        /* 1. Ẩn dải nền màu đen mặc định của Header nhưng GIỮ LẠI nút mở Sidebar trái */
-        div[data-testid="stHeader"] {
-            background-color: transparent !important;
-            box-shadow: none !important;
-            height: 0px !important;
-        }
-        
-        /* Đẩy các nút mặc định (nếu có) ra phía sau để không đè lên Ribbon */
-        div[data-testid="stHeader"] > div {
-            z-index: 1 !important;
-        }
-        
-        /* Dọn dẹp khoảng trống thừa để bản vẽ trắc dọc đẩy sát lên viền màn hình */
-        .main .block-container {
-            padding-top: 15px !important;
-            padding-bottom: 10px !important;
-            padding-left: 20px !important;
-            padding-right: 20px !important;
+        /* 1. KHÓA TOÀN BỘ KHUNG GỐC: Ép trang web không xuất hiện thanh cuộn kép */
+        .stApp {
+            height: 100vh !important;
+            overflow: hidden !important;
+            background-color: #0e1117 !important;
         }
 
-        /* 2. ĐÓNG BĂNG (STICKY): Khóa cố định dải Ribbon và thanh điều khiển luôn nằm trên đỉnh khi cuộn */
+        /* 2. TIÊU DIỆT HOÀN TOÀN THANH HEADER MẶC ĐỊNH CỦA STREAMLIT CLOUD (PHẦN KHOANH ĐỎ) */
+        div[data-testid="stHeader"], header {
+            display: none !important;
+            height: 0px !important;
+            opacity: 0 !important;
+        }
+
+        /* 3. ĐẨY THANH MENU XANH LÊN SÁT MÉP ĐỈNH MÀN HÌNH KHÔNG CÒN KHOẢNG TRỐNG */
         #custom-ribbon-container {
-            position: -webkit-sticky;
-            position: sticky;
-            top: 0;
-            z-index: 99999;
-            background-color: #0e1117; /* Màu nền Darkmode chuẩn của hệ thống */
-            padding-bottom: 10px;
-            margin-bottom: 10px;
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            right: 0 !important;
+            width: 100vw !important;
+            height: auto !important;
+            z-index: 9999999 !important; /* Đẩy lên tầng cao nhất tuyệt đối để không bị đè */
+            background-color: #0e1117 !important; /* Đổ đặc màu nền tối trùng màu hệ thống */
+            padding-top: 2px !important; /* Thu nhỏ lề tối đa */
+            padding-bottom: 5px !important;
+            padding-left: 15px !important;
+            padding-right: 15px !important;
+            border-bottom: 2px solid #007acc !important; /* Chỉ xanh CAD mảnh liền mạch */
+            box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.6) !important; /* Tạo bóng đổ tách biệt không gian */
+        }
+
+        /* 4. CẤU TRÚC LẠI KHUNG CHỨA BẢN VẼ (MAIN): Biến vùng này thành hộp cuộn độc lập */
+        .main {
+            margin-top: 95px !important; /* Đẩy vùng nội dung xuống vừa khít dưới chân thanh menu cố định */
+            height: calc(100vh - 95px) !important; /* Chiều cao tự động tính toán bằng phần còn lại của màn hình */
+            overflow-y: auto !important; /* Chỉ cho phép cuộn chuột bên trong phân vùng này */
+            overflow-x: hidden !important;
+        }
+
+        /* Xóa sạch mọi khoảng đệm thừa của khối nội dung chính để giải phóng không gian diện tích rộng nhất */
+        div[data-testid="stAppViewBlockContainer"] {
+            padding-top: 0px !important;
+            padding-bottom: 30px !important;
+            padding-left: 15px !important;
+            padding-right: 15px !important;
+        }
+
+        /* 5. ĐỒNG BỘ PHONG CÁCH CỦA CÁC TAB CON VÀ ẨN CÁC NÚT THỪA */
+        .stTabs [data-baseweb="tab-list"] {
+            background-color: #0e1117 !important;
+        }
+        
+        /* Đẩy nút mũi tên đóng mở Sidebar lên sát góc góc để tránh bị menu đè */
+        div[data-testid="stSidebarCollapsedControl"] {
+            top: 5px !important;
+            z-index: 10000000 !important;
+        }
+        
+        /* Triệt tiêu dải nút Deploy góc phải của Streamlit Cloud */
+        .stAppDeployDropdown, .stAppHeader {
+            display: none !important;
         }
     </style>
 """, unsafe_allow_html=True)
