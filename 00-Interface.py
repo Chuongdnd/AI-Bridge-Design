@@ -134,6 +134,7 @@ try:
     MCN = importlib.import_module("03-MatCatNgang")
     GRD = importlib.import_module("05-Main_Girder")
     PLOT = importlib.import_module("00-Drawing_Utils")
+    TV = importlib.import_module("04-Terrain_Viewer")
     importlib.reload(PLOT)
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
@@ -336,8 +337,38 @@ if selected_ribbon == "TAB TRANG CHỦ":
     """)
 
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
-    tab_trac_doc, tab_mcn_draw = st.tabs(["📊 Bản vẽ Trắc dọc toàn cầu (Full View)", "📐 Bản vẽ Mặt cắt ngang điển hình"])
     
+    # 1. Chèn khung tải file .NTD lên đỉnh trang Workspace
+    st.markdown("##### 📥 Nạp Cơ sở dữ liệu Khảo sát Địa hình Thực địa")
+    file_khao_sat = st.file_uploader("Kéo và thả file .NTD trắc dọc trắc ngang tại đây", type=["ntd"])
+    st.markdown("---")
+    
+    # 2. Kiểm tra trạng thái file để chia nhánh hiển thị Tab con
+    if file_khao_sat is not None:
+        df_geology = TV.parse_ntd_file(file_khao_sat)
+        st.success(f"⚡ Hệ thống đã xử lý thành công {len(df_geology)} điểm mia địa hình thực tế!")
+        
+        # Tạo 4 Tab con (Có thêm Bình đồ 2D và Địa hình 3D)
+        tab_binhdo_2d, tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
+            "🗺️ Bình đồ gốc 2D (Đường đồng mức)", 
+            "🏔️ Mô hình Địa hình 3D",
+            "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
+            "📐 Bản vẽ Mặt cắt ngang điển hình"
+        ])
+        
+        with tab_binhdo_2d:
+            fig_2d = TV.ve_binh_do_goc_2d(df_geology)
+            if fig_2d: st.plotly_chart(fig_2d, use_container_width=True)
+            
+        with tab_dia_hinh_3d:
+            fig_3d = TV.ve_dia_hinh_3d(df_geology)
+            if fig_3d: st.plotly_chart(fig_3d, use_container_width=True)
+    else:
+        # Nếu chưa có file .NTD, chỉ hiện 2 Tab mặc định như cũ để không trống trang
+        tab_trac_doc, tab_mcn_draw = st.tabs([
+            "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
+            "📐 Bản vẽ Mặt cắt ngang điển hình"
+        ])
     with tab_trac_doc:
         try:
             fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
