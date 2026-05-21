@@ -70,11 +70,7 @@ def parse_ntd_file(uploaded_file):
     return pd.DataFrame(data_points)
 
 def ve_binh_do_goc_2d(df):
-    """
-    HÀM DỰNG BÌNH ĐỒ GỐC 2D ĐƯỜNG ĐỒNG MỨC (PLAN VIEW)
-    Tự động tính toán cao độ, vẽ ranh giới địa hình tự nhiên lồi lõm
-    """
-    if df.empty or len(df) < 3:
+    if df.empty or len(df.index) < 3:
         st.warning("⚠️ Dữ liệu địa hình quá ít, không đủ điều kiện dựng Bình đồ đồng mức.")
         return None
         
@@ -119,11 +115,7 @@ def ve_binh_do_goc_2d(df):
     return fig
 
 def ve_dia_hinh_3d(df):
-    """
-    HÀM DỰNG KHỐI MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D (TERRAIN DIGITAL MODEL)
-    Cho phép xoay, lật, zoom tương tác tự do để ngắm lòng sông và vách taluy mố cầu
-    """
-    if df.empty or len(df) < 3:
+    if df.empty or len(df.index) < 3:
         return None
         
     # Sử dụng cấu trúc Mesh3d dựa trên mạng lưới các tam giác nội suy không gian Delaunay
