@@ -13,22 +13,32 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # =========================================================================
 # 🎨 🏙️ NHÚNG CSS NÂNG CAO: DIỆT SẠCH KHOẢNG ĐEN, CHỪA CHỖ CHO NÚT THANH BÊN (SIDEBAR)
 # =========================================================================
+# =========================================================================
+# 🎨 🏙️ NHÚNG CSS NÂNG CAO: GIỮ NÚT SIDEBAR, ẨN SẠCH 3 KÝ HIỆU BÊN PHẢI VÀ THÊM TIÊU ĐỀ
+# =========================================================================
 st.markdown("""
     <style>
-        /* 1. Thiết lập nền móng ứng dụng mượt mà, không khóa cứng để Sidebar hoạt động ổn định */
+        /* 1. Thiết lập nền móng ứng dụng mượt mà */
         .stApp {
             background-color: #0e1117 !important;
         }
 
-        /* 2. Cân chỉnh Header mặc định để không che khuất nút đóng/mở Sidebar */
+        /* 2. Cân chỉnh Header: Giữ chỗ cho nút Sidebar bên trái nhưng trong suốt */
         div[data-testid="stHeader"], header {
-            background-color: rgba(14, 17, 23, 0.8) !important;
-            backdrop-filter: blur(8px) !important;
+            background-color: transparent !important;
+            box-shadow: none !important;
             height: 3.5rem !important;
             z-index: 99 !important;
         }
 
-        /* 3. Thiết kế thanh Tiêu đề ghi đè (Top Custom Banner) sang trọng */
+        /* 3. 🎯 TIÊU DIỆT SẠCH CỤM 3 KÝ HIỆU BÊN PHẢI (Deploy, GitHub, Menu 3 chấm) */
+        div[data-testid="stActionButton"], 
+        a[data-testid="stGitHubLink"], 
+        #MainMenu {
+            display: none !important;
+        }
+
+        /* 4. Thiết kế thanh Tiêu đề ghi đè (Top Custom Banner) sang trọng nằm dưới nút Sidebar */
         .custom-top-bar {
             position: fixed;
             top: 0;
@@ -40,7 +50,7 @@ st.markdown("""
             display: flex;
             align-items: center;
             justify-content: center;
-            z-index: 98;
+            z-index: 98; /* Nằm dưới header để không đè lên nút Sidebar bên trái */
             box-shadow: 0px 4px 10px rgba(0,0,0,0.4);
         }
         
@@ -56,14 +66,14 @@ st.markdown("""
             text-shadow: 0px 2px 4px rgba(0,0,0,0.5);
         }
 
-        /* 4. Đẩy phân vùng nội dung chính xuống dưới thanh tiêu đề để không bị che khuất */
+        /* 5. Đẩy phân vùng nội dung chính xuống dưới thanh tiêu đề */
         .main .block-container {
             padding-top: 5rem !important;
             padding-bottom: 2rem !important;
             max-width: 98% !important;
         }
 
-        /* 5. Định hình phân vùng hiển thị Tab bản vẽ */
+        /* 6. Định hình phân vùng hiển thị Tab bản vẽ */
         div[data-testid="stTabContent"] {
             background-color: #11151c !important;
             border: 1px solid #1e293b !important;
