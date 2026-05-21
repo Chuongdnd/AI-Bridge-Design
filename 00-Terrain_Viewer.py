@@ -26,46 +26,65 @@ def parse_ntd_file(uploaded_file):
             continue
             
         parts = line.split()
+        if len(parts) < 2:
+            continue
+            
         first_token = parts[0].upper()
         
-        # 1. NHẬN DIỆN DÒNG CHỨA TÊN CỌC (Cọc Trắc dọc / Tim tuyến)
-        # Các file .NTD thường bắt đầu bằng tên cọc như: C1, H1, P1, K1, T1... hoặc chữ "TIM"
-        if first_token.startswith(('C', 'H', 'P', 'M', 'T', 'K', 'V')) or "TIM" in first_token:
+        # 🧠 THUẬT TOÁN CHUẨN: TÁCH BIỆT TRẮC NGANG "T" VỚI CỌC TUYẾN CHỐNG LỖI MẤT TỌA ĐỘ Y
+        is_trac_ngang = False
+        dist_offset = 0.0
+        z_val = 0.0
+        
+        # Nhánh 1: Dòng trắc ngang bắt đầu bằng ký hiệu chữ "T" độc lập (Ví dụ: T  -15.00  3.85)
+        if first_token == "T" and len(parts) >= 3:
             try:
-                # Cấu trúc chuẩn: Tên_Cọc  Lý_Trình_Tổng  Cao_Độ_Z_Tại_Tim
-                current_x = float(parts[1])
-                z_tim = float(parts[2])
-                
-                # Lưu điểm tại Tim đường/sông (X = Lý trình, Y = 0, Z = Cao độ tim)
-                data_points.append({
-                    'X': current_x, 
-                    'Y': 0.0, 
-                    'Z': z_tim, 
-                    'Type': 'Tim tuyến'
-                })
-            except (ValueError, IndexError):
-                pass
-                
-        # 2. NHẬN DIỆN DÒNG CHỨA ĐIỂM MIA TRẮC NGANG LẺ
-        # Nếu dòng bắt đầu bằng một số thực (khoảng cách lẻ), đó là điểm mia địa hình sang 2 bên cánh
-        elif len(parts) >= 2 and parts[0].replace('-', '').replace('.', '', 1).isdigit():
-            try:
-                # Cấu trúc chuẩn: Khoảng_Cách_Lẻ  Cao_Độ_Địa_Hình_Z
-                dist_offset = float(parts[0])  # Bên trái tim là âm (-), bên phải là dương (+)
-                z_val = float(parts[1])         # Cao độ thực tế mặt đất tại điểm mia
-                
-                # Tọa độ Bình đồ duỗi thẳng: X là Lý trình cọc, Y là khoảng cách biên cách tim
-                point_x = current_x
-                point_y = dist_offset
-                
-                data_points.append({
-                    'X': point_x, 
-                    'Y': point_y, 
-                    'Z': z_val, 
-                    'Type': 'Mia địa hình'
-                })
+                dist_offset = float(parts[1])
+                z_val = float(parts[2])
+                is_trac_ngang = True
             except ValueError:
                 pass
+        # Nhánh 2: Dòng trắc ngang chỉ có số thực trực tiếp (Ví dụ: -15.00  3.85)
+        elif first_token.replace('-', '').replace('.', '', 1).isdigit():
+            try:
+                dist_offset = float(parts[0])
+                z_val = float(parts[1])
+                is_trac_ngang = True
+            except ValueError:
+                pass
+                
+        # 📊 TIẾN HÀNH PHÂN LOẠI VÀ GHI DỮ LIỆU VÀO ĐÚNG TRỤC HÌNH HỌC
+        if is_trac_ngang:
+            # Lưu điểm mia địa hình thực tế (Giữ nguyên tọa độ rộng Y sang 2 bên cánh)
+            data_points.append({
+                'X': current_x, 
+                'Y': dist_offset, 
+                'Z': z_val, 
+                'Type': 'Mia địa hình'
+            })
+        else:
+            # Nhánh 3: Dòng định nghĩa cọc/tim tuyến (Chỉ nhận diện cọc thực sự như C1, H1, T1 hoặc chữ TIM)
+            if first_token.startswith(('C', 'H', 'P', 'M', 'T', 'K', 'V')) or "TIM" in first_token:
+                try:
+                    # Cấu trúc chuẩn: Tên_Cọc  Lý_Trình_Tổng  Cao_Độ_Z_Tại_Tim
+                    if first_token == "N" and len(parts) >= 4:
+                        current_x = float(parts[2])
+                        z_tim = float(parts[3])
+                    elif len(parts) >= 3:
+                        current_x = float(parts[1])
+                        z_tim = float(parts[2])
+                    else:
+                        continue
+                    
+                    # Lưu điểm tại Tim đường/sông (Y cố định = 0 tại tim)
+                    data_points.append({
+                        'X': current_x, 
+                        'Y': 0.0, 
+                        'Z': z_tim, 
+                        'Type': 'Tim tuyến'
+                    })
+                except (ValueError, IndexError):
+                    pass
                 
     return pd.DataFrame(data_points)
 
@@ -98,12 +117,12 @@ def ve_binh_do_goc_2d(df):
             z=z_grid,
             colorscale='Viridis',  
             colorbar=dict(
-            title=dict(
-                text="Cao độ Z (m)",
-                side="right" # ✅ Đưa side lọt vào trong title dict theo đúng chuẩn Plotly
+                title=dict(
+                    text="Cao độ Z (m)",
+                    side="right" # ✅ Đưa side lọt vào trong title dict theo đúng chuẩn Plotly
+                ),
+                thickness=15
             ),
-            thickness=15
-        ),
             contours=dict(
                 start=float(df['Z'].min()),
                 end=float(df['Z'].max()),
