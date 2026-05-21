@@ -150,7 +150,13 @@ def ve_dia_hinh_3d(df):
         colorscale='Earth',    # Hệ màu chuẩn địa chất
         opacity=0.85,
         showscale=True,
-        colorbar=dict(title="Cao độ Z (m)", thickness=15),
+        colorbar=dict(
+            title=dict(
+                text="Cao độ Z (m)",
+                side="right" # ✅ Đưa side lọt vào trong title dict theo đúng chuẩn Plotly
+            ),
+            thickness=15
+        ),
         flatshading=True       # Ép phẳng các bề mặt mảnh tạo hiệu ứng khối 3D
     )])
     
