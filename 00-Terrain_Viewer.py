@@ -135,38 +135,40 @@ def ve_binh_do_goc_2d(df):
         return None
 
 def ve_dia_hinh_3d(df):
+    """
+    HÀM DỰNG KHỐI MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D (TERRAIN DIGITAL MODEL)
+    Đã chuẩn hóa tham số layout chống lỗi nghiêm ngặt của Plotly
+    """
     if df.empty or len(df.index) < 3:
         return None
         
-    # Sử dụng cấu trúc Mesh3d dựa trên mạng lưới các tam giác nội suy không gian Delaunay
     fig = go.Figure(data=[go.Mesh3d(
         x=df['X'],
         y=df['Y'],
         z=df['Z'],
-        intensity=df['Z'],     # Đổ tông màu đậm nhạt biến thiên theo cao độ thực tế
-        colorscale='Earth',    # Hệ màu chuẩn địa chất (Nâu đất - Xanh lá - Sông ngòi)
+        intensity=df['Z'],     # Đổ tông màu đậm nhạt biến thiên theo cao độ
+        colorscale='Earth',    # Hệ màu chuẩn địa chất
         opacity=0.85,
         showscale=True,
         colorbar=dict(title="Cao độ Z (m)", thickness=15),
-        flatshading=True       # Ép phẳng các bề mặt mảnh để tạo hiệu ứng khối 3D rõ nét
+        flatshading=True       # Ép phẳng các bề mặt mảnh tạo hiệu ứng khối 3D
     )])
     
-    # Cấu hình không gian camera và hiển thị 3D trục tọa độ
+    # 🌟 CẬP NHẬT LAYOUT CHUẨN KHÔNG LO XUNG ĐỘT THUỘC TÍNH 🌟
     fig.update_layout(
         title=dict(
             text="🏔️ MÔ HÌNH KHÔNG GIAN ĐỊA HÌNH TỰ NHIÊN ĐA CHIỀU 3D",
             font=dict(size=16, color='#007acc', family='Arial')
         ),
         scene=dict(
-            xaxis=dict(title="Lý trình X (m)", backgroundcolor="#1e1e1e", gridcolor="#333333", textcolor="white"),
-            yaxis=dict(title="Trắc ngang Y (m)", backgroundcolor="#1e1e1e", gridcolor="#333333", textcolor="white"),
-            zaxis=dict(title="Cao độ Z (m)", backgroundcolor="#1e1e1e", gridcolor="#333333", textcolor="white"),
-            # Thiết lập góc nghiêng phóng đại trục đứng Z để tránh địa hình phẳng lì khó nhìn taluy bờ sông
-            aspectratio=dict(x=2, y=1, z=0.6) 
+            # Sử dụng các khóa macro tiêu chuẩn, an toàn tuyệt đối
+            xaxis_title="Lý trình X (m)",
+            yaxis_title="Trắc ngang Y (m)",
+            zaxis_title="Cao độ Z (m)",
+            aspectratio=dict(x=2, y=1, z=0.6) # Tỉ lệ hình học trực quan
         ),
-        template="plotly_dark",
+        template="plotly_dark",  # Hệ Darkmode tự động tối ưu màu chữ/lưới thành màu sáng
         margin=dict(l=10, r=10, t=40, b=10),
-        plot_bgcolor='#0e1117',
         paper_bgcolor='#0e1117'
     )
     return fig
