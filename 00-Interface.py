@@ -15,14 +15,15 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # =========================================================================
 st.markdown("""
     <style>
-        /* 1. KHÓA LIÊN KẾT MÀN HÌNH GỐC: Chế độ sáng (Light Mode) */
+        /* 1. ĐỒNG BỘ NỀN TỔNG THEO THAY ĐỔI HỆ THỐNG (MÁY DÙNG LIGHT/DARK NỀN TỰ CHUYỂN) */
         .stApp {
             height: 100vh !important;
             overflow: hidden !important;
-            background-color: #ffffff !important;
+            /* Sử dụng biến môi trường gốc của Streamlit để tự thích ứng màu */
+            background-color: var(--background-color) !important; 
         }
 
-        /* 2. TIÊU DIỆT HOÀN TOÀN THANH ĐEN VÀ QUET SẠCH CỤM NÚT HỆ THỐNG GÓC PHẢI */
+        /* 2. QUÉT SẠCH HOÀN TOÀN THANH HEADER VÀ CỤM NÚT HỆ THỐNG GÓC PHẢI */
         div[data-testid="stHeader"], header {
             background-color: transparent !important;
             box-shadow: none !important;
@@ -43,61 +44,76 @@ st.markdown("""
             opacity: 0 !important;
         }
 
-        /* 3. 🧠 KHÓA GHIM TUYỆT ĐỐI TOÀN BỘ KHỐI RIBBON + OPTIONS LÊN ĐỈNH ĐẦU TRANG */
+        /* 3. KHÓA GHIM KHỐI 1 (RIBBON MENU TRÊN ĐỈNH) */
         #custom-ribbon-container {
             position: fixed !important;
             top: 0 !important;
-            /* Thay vì left: 60px, ta cho sát left: 0px để kéo dải Ribbon dài hết mép trái */
             left: 0px !important; 
-            width: 100vw !important; /* Tràn viền rộng 100% màn hình cực kỳ bề thế */
+            width: 100vw !important;
             height: auto !important;
-            z-index: 9999999 !important; /* Đẩy lên tầng cao nhất để luôn lơ lửng */
-            background-color: #f1f3f4 !important; /* Nền màu xám nhạt như Office Excel */
+            z-index: 9999999 !important;
+            /* Thích ứng màu nền secondary của hệ thống (Xám nhạt ở Light, Xám đen ở Dark) */
+            background-color: var(--secondary-background-color) !important; 
             padding-top: 5px !important;
-            padding-bottom: 8px !important;
-            padding-left: 65px !important; /* Đẩy lề chữ bên trong sang phải 65px để chừa chỗ cho nút Sidebar */
+            padding-bottom: 5px !important;
+            padding-left: 65px !important; /* Chừa chỗ cho nút Sidebar trái */
             padding-right: 25px !important;
-            border-bottom: 2px solid #007acc !important; /* Đường line xanh mảnh liền mạch */
-            box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1) !important; /* Tạo bóng đổ nhẹ tách biệt không gian */
+            border-bottom: 2px solid #007acc !important;
         }
 
-        /* 4. 🚀 BIẾN PHÂN VÙNG BẢN VẼ CHÍNH THÀNH HỘP CUỘN ĐỘC LẬP CHỐNG TRƯỢT MENU */
+        /* 4. 📌 KHÓA GHIM KHỐI 2 (CỤM SỐ LIỆU + CỤM TABS ĐƯỢC ĐẨY LÊN LƠ LỬNG) */
+        /* Ta ghim cụm Tabs cố định ngay dưới Ribbon điều hướng để chống trượt tuyệt đối */
+        div[data-testid="stBlock"] {
+            /* Tự động bắt tọa độ lơ lửng nếu nằm ở nhóm đầu trang */
+        }
+        
+        /* Nhắm trực tiếp mục tiêu vào thanh Tabs con của Streamlit để khóa cứng lên đầu phân vùng chính */
+        .stTabs [data-baseweb="tab-list"] {
+            position: fixed !important;
+            top: 62px !important; /* Ghim dính chặt ngay sát dưới chân dải Ribbon */
+            left: 0px !important;
+            width: 100vw !important;
+            z-index: 9999998 !important; /* Nằm dưới Ribbon một tầng */
+            background-color: var(--background-color) !important;
+            padding-left: 20px !important;
+            border-bottom: 1px solid var(--border-color) !important;
+            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.05) !important;
+        }
+        
+        /* Định hình lại màu chữ các nút Tab tự động đảo màu theo nền hệ thống */
+        .stTabs [data-baseweb="tab"] {
+            color: var(--text-color) !important;
+            font-weight: bold !important;
+        }
+
+        /* 5. VÙNG NỘI DUNG CHÍNH (CHỈ CHỨA BẢN VẼ CUỘN ĐỘC LẬP) */
         .main {
-            /* Khoảng cách margin-top tính toán đẩy vùng nội dung xuống dưới chân khối lệnh cố định */
-            margin-top: 115px !important; 
-            height: calc(100vh - 115px) !important; /* Chiều cao còn lại tự động co giãn theo màn hình */
-            overflow-y: auto !important; /* CHỈ CHO PHÉP CUỘN CHUỘT BÊN TRONG VÙNG NÀY */
+            /* Tăng khoảng cách margin-top lên 120px để chừa trọn không gian cho cả Ribbon và cụm Tabs cố định đứng im phía trên */
+            margin-top: 120px !important; 
+            height: calc(100vh - 120px) !important;
+            overflow-y: auto !important; /* CON LĂN CHUỘT CHỈ HOẠT ĐỘNG RIÊNG TẠI ĐÂY */
             overflow-x: hidden !important;
-            background-color: #ffffff !important;
+            background-color: var(--background-color) !important; /* Đồng bộ màu nền theo máy người dùng */
         }
 
-        /* Giải phóng hoàn toàn lề thừa của khối bản vẽ */
+        /* Giải phóng lề thừa tối đa cho bản vẽ CAD */
         div[data-testid="stAppViewBlockContainer"] {
-            padding-top: 10px !important;
+            padding-top: 5px !important;
             padding-bottom: 30px !important;
             padding-left: 15px !important;
             padding-right: 15px !important;
         }
 
-        /* 5. ĐỒNG BỘ PHONG CÁCH THANH TABS VÀ ĐỊNH VỊ NÚT THANH BÊN */
-        .stTabs [data-baseweb="tab-list"] {
-            background-color: #f8f9fa !important;
-            border-bottom: 1px solid #dee2e6 !important;
-        }
-        
-        .stTabs [data-baseweb="tab"] {
-            color: #495057 !important;
-        }
-
-        /* 🛠️ Đẩy nút đóng mở Sidebar lên trên cùng dải Ribbon để người dùng luôn bấm được */
+        /* 6. ĐỊNH VỊ NÚT MỞ SIDEBAR LÊN TRÊN ĐỈNH */
         div[data-testid="stSidebarCollapsedControl"] {
             position: fixed !important;
-            top: 12px !important; /* Căn chỉnh nằm ngay ngắn chính giữa hàng Ribbon */
+            top: 12px !important;
             left: 15px !important;
-            z-index: 100000000 !important; /* Cao hơn cả container Ribbon */
+            z-index: 100000000 !important;
         }
     </style>
 """, unsafe_allow_html=True)
+
 
 # Khởi tạo bộ nhớ hội thoại chatbot
 if 'messages' not in st.session_state:
