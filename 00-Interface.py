@@ -13,9 +13,6 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # =========================================================================
 # 🎨 🏙️ NHÚNG CSS NÂNG CAO: DIỆT SẠCH KHOẢNG ĐEN, CHỪA CHỖ CHO NÚT THANH BÊN (SIDEBAR)
 # =========================================================================
-# =========================================================================
-# 🎨 🏙️ NHÚNG CSS NÂNG CAO: GIỮ NÚT SIDEBAR, ẨN SẠCH 3 KÝ HIỆU BÊN PHẢI VÀ THÊM TIÊU ĐỀ
-# =========================================================================
 st.markdown("""
     <style>
         /* 1. Thiết lập nền móng ứng dụng mượt mà */
