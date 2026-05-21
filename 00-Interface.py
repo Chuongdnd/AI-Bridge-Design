@@ -13,6 +13,8 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # Khởi tạo bộ nhớ hội thoại chatbot
 if 'messages' not in st.session_state:
     st.session_state.messages = []
+# --- THIẾT LẬP TRANG CHUẨN KỸ THUẬT TOÀN MÀN HÌNH ---
+st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
 # --- CẤU HÌNH AI GEMINI ASSISTANT ---
 try:
