@@ -191,7 +191,7 @@ def ve_dia_hinh_3d(df, he_so_z=0.25):
                 zaxis_title="Cao độ Z (m)",
                 aspectmode='manual',
                 # 📌 GẮN BIẾN HE_SO_Z NHẬN TRỰC TIẾP TỪ SLIDER ĐỂ THAY ĐỔI ĐỘ CAO
-                aspectratio=dict(x=1, y=1, z=he_so_z) 
+                aspectratio=dict(x=1, y=0.01, z=he_so_z) 
             ),
             template="plotly_dark",
             margin=dict(l=10, r=10, t=40, b=10),
