@@ -11,45 +11,53 @@ from streamlit_option_menu import option_menu
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
 # =========================================================================
-# 🎨 🏙️ NHÚNG CSS NÂNG CAO CAO CẤP: ÉP BUỘC ẨN HEADER VÀ KHÓA GHIM TRÊN SERVER
+# 🎨 🏙️ NHÚNG CSS TOÀN DIỆN: DIỆT HEADER ĐEN & KHÓA CỐ ĐỊNH THANH ĐIỀU KHIỂN (FIXED WORKSPACE)
 # =========================================================================
 st.markdown("""
     <style>
-        /* 1. Ép biến mất dải nền đen của Header nhưng giữ lại nút Sidebar nút bấm */
+        /* 1. Đè bẹp dải nền đen mặc định và đẩy nút Sidebar ra phía sau để không che Ribbon */
         div[data-testid="stHeader"] {
             background-color: transparent !important;
             box-shadow: none !important;
             height: 0px !important;
             z-index: 1 !important;
         }
-        
-        /* Đẩy các nút mặc định ra phía sau */
         div[data-testid="stHeader"] > div {
             z-index: 1 !important;
         }
-        
-        /* Xóa khoảng trống thừa trên đỉnh để đẩy bản vẽ lên sát mép màn hình */
-        .main .block-container {
+
+        /* 2. ÉP CỐ ĐỊNH TUYỆT ĐỐI (FIXED STYLE): Biến cụm Ribbon thành thanh công cụ AutoCAD bất biến */
+        #custom-ribbon-container {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100% !important;
+            z-index: 999999 !important; /* Tầng cao nhất, chấp cả Plotly đè lên */
+            background-color: #0e1117 !important; /* Màu nền tối để tiệp màu giao diện */
             padding-top: 10px !important;
+            padding-bottom: 10px !important;
+            padding-left: 20px !important;
+            padding-right: 20px !important;
+            border-bottom: 2px solid #007acc !important; /* Đường chỉ xanh CAD mảnh */
+        }
+
+        /* 3. TẠO KHOẢNG BÙ CAO ĐỘ (PADDING OFFSET): Đẩy bản vẽ xuống dưới để không bị cụm FIXED che mất */
+        .main .block-container {
+            padding-top: 130px !important; /* Khoảng trống vừa đủ cho cụm Ribbon + Nút Options đứng phía trên */
             padding-bottom: 10px !important;
             padding-left: 20px !important;
             padding-right: 20px !important;
         }
 
-        /* 2. ÉP KHÓA CỐ ĐỊNH (STICKY): Dùng !important bắt buộc hệ thống không được trôi */
-        #custom-ribbon-container {
-            position: -webkit-sticky !important;
-            position: sticky !important;
-            top: 0 !important;
-            z-index: 999999 !important; /* Đẩy lên tầng cao nhất để không bị bản vẽ Plotly đè lên */
-            background-color: #0e1117 !important; /* Ép nhận màu nền Darkmode */
-            padding-bottom: 10px !important;
-            margin-bottom: 10px !important;
-        }
-        
-        /* Đảm bảo khung Tab con Plotly không sinh khoảng trắng khi cuộn */
+        /* Đảm bảo dải tab con của bản vẽ Plotly tiệp màu nền */
         .stTabs [data-baseweb="tab-list"] {
             background-color: #0e1117 !important;
+        }
+        
+        /* Chỉnh khoảng cách nút bấm đóng mở sidebar nếu bị đè */
+        div[data-testid="stSidebarCollapsedControl"] {
+            top: 10px !important;
+            z-index: 1000000 !important;
         }
     </style>
 """, unsafe_allow_html=True)
