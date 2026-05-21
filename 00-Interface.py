@@ -69,6 +69,10 @@ if 'design_data' not in st.session_state:
         'MNCN': 3.5, 'MNTT': 2.0, 'MNTC': 1.5, 'MNTN': 0.5, 'h_tn_tb': 0.0
     }
 
+# Biến độc lập lưu văn bản tóm tắt phục vụ Chatbot ngữ cảnh
+if 'chatbot_context' not in st.session_state:
+    st.session_state.chatbot_context = "Chưa tiến hành chạy dự báo tính toán."
+
 # =========================================================================
 # ĐIỀU HƯỚNG CHÍNH: DẢI RIBBON NẰM NGANG PHÍA TRÊN CÙNG (CAD & EXCEL STYLE)
 # =========================================================================
@@ -77,7 +81,7 @@ selected_ribbon = option_menu(
     options=["TAB TRANG CHỦ", "THÔNG SỐ TUYẾN & AI TƯ VẤN", "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"],
     icons=["house", "sliders2", "layout-text-window-reverse"], 
     menu_icon="cast", 
-    default_index=2, # Thiết lập mở mặc định tại không gian Bản vẽ tương tác theo hình ảnh của bạn
+    default_index=1, # Mặc định mở Tab nhập liệu để thao tác nhanh
     orientation="horizontal",
     styles={
         "container": {"padding": "0!important", "background-color": "#1e1e1e", "border-radius": "0px"},
@@ -86,7 +90,7 @@ selected_ribbon = option_menu(
             "font-size": "13px", "text-align": "center", "margin": "0px", "color": "white",
             "font-weight": "bold", "border-radius": "0px", "--hover-color": "#333333"
         },
-        "nav-link-selected": {"background-color": "#007acc"}, # Màu xanh bản quyền đặc trưng AutoCAD
+        "nav-link-selected": {"background-color": "#007acc"}, # Màu xanh đặc trưng AutoCAD
     }
 )
 
@@ -116,7 +120,7 @@ with st.sidebar:
     if prompt := st.chat_input("Hỏi tôi về thiết kế...", key="sidebar_chat"):
         st.session_state.messages.append({"role": "user", "content": prompt})
         try:
-            design_info = st.session_state.get('design_data', "Chưa có dữ liệu.")
+            design_info = st.session_state.chatbot_context
             system_msg = f"Bạn là chuyên gia thiết kế cầu UTH. Tri thức: {st.session_state.bridge_library}. Dữ liệu: {design_info}"
             response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
             st.session_state.messages.append({"role": "assistant", "content": response.text})
@@ -138,7 +142,7 @@ if selected_ribbon == "TAB TRANG CHỦ":
     
     #### 🛠️ Hướng dẫn điều hướng:
     * **THÔNG SỐ TUYẾN & AI TƯ VẤN:** Vùng khai báo toàn diện các số liệu trắc dọc, cấp tuyến đường, số liệu thủy văn và kích hoạt robot tính toán AI.
-    * **BẢN VẼ KỸ THUẬT TƯƠNG TÁC:** Không gian đồ họa chính hiển thị bản vẽ trắc dọc toàn cầu và mặt cắt ngang điển hình với tính năng Zoom/Pan thời gian thực.
+    * **BẢN VẼ KỸ THUẬT TƯƠNG TÁC:** Không gian đồ họa chính hiển thị bản vẽ trắc dọc toàn cầu và mặt cặp ngang điển hình với tính năng Zoom/Pan thời gian thực.
     """)
 
 # --- SECTION 2: THÔNG SỐ TUYẾN & AI TƯ VẤN ---
@@ -202,68 +206,102 @@ elif selected_ribbon == "THÔNG SỐ TUYẾN & AI TƯ VẤN":
         r_final = res_geo["R_loi_tt"] if chon_R == "Tối thiểu thông thường" else res_geo["R_loi_gh"]
         st.session_state.R_final = r_final
 
-    st.divider()
-    if st.button("🚀 Thực hiện Tính toán & Lưu thiết kế", use_container_width=True):
-        res = TK.tra_cuu_tinh_khong_bridge(
-            loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None, cap_num=cap_s if loai_c=="Vượt sông" else None,
-            loai_hinh=loai_h if loai_c=="Vượt sông" else None, loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
-            cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None, h1=h1, h5=h5, h10=h10, h98=h98, h_tn_tb=h_tn_tb
-        )
-        alpha_rad = np.radians(goc_giao)
-        res['B'] = round(res.get('B', 0) / np.sin(alpha_rad), 2) if goc_giao < 90 else res.get('B', 0)
-        res['goc_giao'] = goc_giao
-        res['h_tn_tb'] = h_tn_tb
-        res['MNCN'], res['MNTT'], res['MNTC'], res['MNTN'] = h1, h5, h10, h98
+    st.markdown("---")
+    
+    # 🌟 NÚT "LET'S GO" KÍCH HOẠT TÍNH TOÁN VÀ DỰ BÁO AI CHUYÊN NGHIỆP 🌟
+    if st.button("🚀 Let's Go! Kích hoạt Tính toán & Dự báo AI", use_container_width=True, type="primary"):
+        with st.spinner("⚡ Hệ thống đang xử lý mô phỏng hình học và chạy mô hình AI..."):
+            res = TK.tra_cuu_tinh_khong_bridge(
+                loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None, cap_num=cap_s if loai_c=="Vượt sông" else None,
+                loai_hinh=loai_h if loai_c=="Vượt sông" else None, loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
+                cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None, h1=h1, h5=h5, h10=h10, h98=h98, h_tn_tb=h_tn_tb
+            )
+            alpha_rad = np.radians(goc_giao)
+            res['B'] = round(res.get('B', 0) / np.sin(alpha_rad), 2) if goc_giao < 90 else res.get('B', 0)
+            res['goc_giao'] = goc_giao
+            res['h_tn_tb'] = h_tn_tb
+            res['MNCN'], res['MNTT'], res['MNTC'], res['MNTN'] = h1, h5, h10, h98
 
-        if res_geo.get("status") == "success":
-            res['R_hinh_hoc'] = st.session_state.get('R_final', 5000)
-            res['geo_logic'] = YTHH.tinh_toan_geo_logic(res, h_tn_tb if loai_c == "Vượt sông" else h1, res.get('day_dam', 0.0))
-            imax_raw = res_geo.get('imax', '0')
-            res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
-            res['bc'] = st.session_state.design_data.get('bc', 12.0)
+            if res_geo.get("status") == "success":
+                res['R_hinh_hoc'] = st.session_state.get('R_final', 5000)
+                res['geo_logic'] = YTHH.tinh_toan_geo_logic(res, h_tn_tb if loai_c == "Vượt sông" else h1, res.get('day_dam', 0.0))
+                imax_raw = res_geo.get('imax', '0')
+                res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
+                res['bc'] = st.session_state.design_data.get('bc', 12.0)
+                res['loai_duong'] = l_hinhhoc
+                res['vtk'] = res_geo.get("v_thiet_ke", 60)
 
-            xlsx_path = os.path.join(os.path.dirname(__file__), "Girder.xlsx")
-            models = GRD.train_bridge_ai_system(xlsx_path)
-            if models:
-                res['ai_result'] = GRD.predict_main_span(res['B'], goc_giao, res['bc'], "Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông", models, res['geo_logic']['L_cau'])
-            st.session_state.design_data = res
-            st.success("🎉 Đã đồng bộ dữ liệu hình học và dự báo AI thành công! Hãy chuyển sang Tab 'BẢN VẼ KỸ THUẬT TƯƠNG TÁC' để kiểm tra bản vẽ.")
+                # Huấn luyện hệ thống và đưa ra dự báo loại dầm kết cấu
+                xlsx_path = os.path.join(os.path.dirname(__file__), "Girder.xlsx")
+                models = GRD.train_bridge_ai_system(xlsx_path)
+                if models:
+                    res['ai_result'] = GRD.predict_main_span(res['B'], goc_giao, res['bc'], "Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông", models, res['geo_logic']['L_cau'])
+                
+                # Cập nhật Dictionary trạng thái chính an toàn không gây lỗi
+                st.session_state.design_data = res
+                
+                # Lưu văn bản tóm tắt sang biến context độc lập phục vụ Chatbot
+                st.session_state.chatbot_context = f"Vtk={res['vtk']}km/h, LoaiDam={res['ai_result']['loai_dam']}, L_nhip={res['ai_result']['chieu_dai']}m, L_cau={res['geo_logic']['L_cau']:.2f}m"
+                
+                st.success("🎉 Đã tính toán và đồng bộ dữ liệu thành công! Hãy chuyển sang Tab 'BẢN VẼ KỸ THUẬT TƯƠNG TÁC' để kiểm tra bản vẽ.")
+
+    # Hiển thị kết quả tra cứu ra màn hình chính dưới dạng bảng panel
+    if 'geo_logic' in st.session_state.design_data and 'ai_result' in st.session_state.design_data:
+        st.markdown("### 📊 Kết quả phân tích hiện tại")
+        out_col1, out_col2 = st.columns(2)
+        res_current = st.session_state.design_data
+        
+        with out_col1:
+            st.info("📘 TRA CỨU HÌNH HỌC TUYẾN (TCVN)")
+            st.write(f"• **Vận tốc thiết kế Vtk:** {res_current.get('vtk', 60)} km/h")
+            st.write(f"• **Độ dốc dọc lớn nhất cho phép:** {res_current.get('i_max_hinh_hoc', 4.0)} %")
+            st.write(f"• **Bán kính đường cong áp dụng:** {res_current.get('R_hinh_hoc', 5000)} m")
+            st.write(f"• **Chiều dài toàn cầu tính toán:** {res_current['geo_logic']['L_cau']:.2f} m")
+
+        with out_col2:
+            st.success("🤖 GIẢI PHÁP KẾT CẤU NHỊP ĐỀ XUẤT TỪ AI")
+            ai_curr = res_current['ai_result']
+            st.write(f"• **Kết cấu dầm kiến nghị:** Dầm {ai_curr['loai_dam'].upper()}")
+            st.write(f"• **Sơ đồ chia nhịp toàn cầu:** {ai_curr['tong_so_nhip']} nhịp × {ai_curr['chieu_dai']} m")
+            st.write(f"• **Chiều cao dầm H:** {ai_curr['chieu_cao']} m")
+            st.write(f"• **Số lượng dầm trên MCN:** {ai_curr['so_luong_dam']} thanh dầm (S = {ai_curr['khoang_cach_dam']:.2f}m)")
+            st.caption(f"📝 *Chiến lược kinh tế của AI:* {ai_curr['ghi_chu']}")
 
 # --- SECTION 3: BẢN VẼ KỸ THUẬT TƯƠNG TÁC (KHÔNG GIAN HIỂN THỊ CHÍNH) ---
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
-    st.subheader("🖼️ Hệ thống bản vẽ thiết kế công trình (Không gian hiển thị chính)")
+    st.subheader("🖼️ Hệ thống bản vẽ thiết kế công trình")
     
-    # THIẾT KẾ HỘP THOẠI KHAI BÁO NHANH (SECTION) NẰM GỌN GÀNG PHÍA TRÊN BẢN VẼ GIỐNG HÌNH CỦA BẠN
-    with st.expander("🛠️ HỘP THOẠI KHAI BÁO & ĐIỀU CHỈNH NHANH THÔNG SỐ TRẮC DỌC", expanded=False):
+    # Hộp thoại điều chỉnh thông số nhanh trên đầu bản vẽ
+    with st.expander("🛠️ HỘP THOẠI KHAI BÁO & ĐIỀU CHỈNH NHANH THÔNG SỐ MẶT CẮT", expanded=False):
         sec_col1, sec_col2, sec_col3 = st.columns(3)
         with sec_col1:
-            st.markdown("**Thông số mặt cắt**")
-            n_lan = st.number_input("Số làn xe:", min_value=2, value=2, key="sec_n_lan")
+            st.markdown("**Thông số bề rộng mặt cắt**")
+            n_lan = st.number_input("Số làn xe chạy trên cầu:", min_value=2, value=2, key="sec_n_lan")
             w_le = st.number_input("Bề rộng dải an toàn (m):", value=0.5, key="sec_w_le")
             if st.button("🔄 Cập nhật kích thước Mặt cắt ngang", use_container_width=True):
                 res_mcn_calc = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
                 st.session_state.design_data['bc'] = res_mcn_calc['bc_cau']
-                st.toast("Đã cập nhật bề rộng Bc mặt cắt ngang!")
+                st.toast("Đã cập nhật bề rộng Bc mặt cắt ngang cầu thành công!")
         with sec_col2:
-            st.markdown("**Bố trí nhịp từ AI**")
+            st.markdown("**Kết quả cấu tạo dầm từ AI**")
             if 'ai_result' in st.session_state.design_data:
                 ai = st.session_state.design_data['ai_result']
-                st.markdown(f"• Phương án: **Dầm {ai['loai_dam'].upper()}**")
-                st.markdown(f"• Quy mô: **{ai['tong_so_nhip']} nhịp x {ai['chieu_dai']}m**")
-                st.markdown(f"• Chiều cao kiến trúc: **{ai['chieu_cao']}m**")
+                st.markdown(f"• Kiểu dầm chủ: **Dầm {ai['loai_dam'].upper()}**")
+                st.markdown(f"• Quy mô chia nhịp: **{ai['tong_so_nhip']} nhịp x {ai['chieu_dai']}m**")
+                st.markdown(f"• Chiều cao dầm H: **{ai['chieu_cao']}m**")
             else:
-                st.caption("Chưa có dữ liệu dự báo kết cấu AI.")
+                st.caption("Chưa có dữ liệu dự báo kết cấu.")
         with sec_col3:
-            st.markdown("**Thông số kích thước mố trụ**")
+            st.markdown("**Kích thước khống chế mố trụ**")
             if 'geo_logic' in st.session_state.design_data:
                 geo = st.session_state.design_data['geo_logic']
-                st.markdown(f"• Khống chế mố trái: **{geo['x_mo_trai']:.2f} m**")
-                st.markdown(f"• Khống chế mố phải: **{geo['x_mo_phai']:.2f} m**")
-                st.markdown(f"• Tổng chiều dài L: **{geo['L_cau']:.2f} m**")
+                st.markdown(f"• Điểm khống chế mố trái: **{geo['x_mo_trai']:.2f} m**")
+                st.markdown(f"• Điểm khống chế mố phải: **{geo['x_mo_phai']:.2f} m**")
+                st.markdown(f"• Chiều dài toàn cầu L: **{geo['L_cau']:.2f} m**")
             else:
-                st.caption("Chưa có dữ liệu hình học mố trụ.")
+                st.caption("Chưa có dữ liệu hình học.")
 
-    # HỆ THỐNG TAB CON SONG SONG ĐỂ CHUYỂN ĐỔI BẢN VẼ VỚI VIEW RỘNG TỐI ĐA
+    # Hệ thống tab con song song hiển thị các loại bản vẽ hình học
     tab_trac_doc, tab_mcn_draw = st.tabs(["📊 Bản vẽ Trắc dọc toàn cầu", "📐 Bản vẽ Mặt cắt ngang điển hình"])
     
     with tab_trac_doc:
@@ -273,7 +311,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
             if fig_plotly is not None:
                 st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
             else:
-                st.warning("⚠️ Hệ thống bản vẽ trống. Vui lòng sang Tab 'THÔNG SỐ TUYẾN & AI TƯ VẤN' gõ nút Let's go trước!")
+                st.warning("⚠️ Hệ thống dữ liệu bản vẽ trống. Vui lòng sang Tab 'THÔNG SỐ TUYẾN & AI TƯ VẤN' nhấn nút 'Let's Go!' trước!")
         except Exception as e:
             st.error(f"Lỗi khi dựng bản vẽ trắc dọc: {e}")
             
@@ -290,8 +328,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
                 
                 # Hiển thị bảng kích thước kết cấu bổ trợ phía dưới bản vẽ hình học
                 st.subheader("📋 Bảng tổng hợp kích thước mặt cắt ngang cầu")
-                if 'design_data' in st.session_state:
-                    res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
-                    st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
+                res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
+                st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo cụ thể.'), language="text")
         except Exception as e:
             st.error(f"Lỗi khi dựng bản vẽ mặt cắt ngang: {e}")
