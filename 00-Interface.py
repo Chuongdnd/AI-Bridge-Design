@@ -343,12 +343,12 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
     file_khao_sat = st.file_uploader("Kéo và thả file .NTD trắc dọc trắc ngang tại đây", type=["ntd"])
     st.markdown("---")
     
-    # 2. Kiểm tra trạng thái file để chia nhánh hiển thị Tab con
+    # 2. Kiểm tra trạng thái file để chia nhánh hiển thị Tab con độc lập
     if file_khao_sat is not None:
         df_geology = TV.parse_ntd_file(file_khao_sat)
         st.success(f"⚡ Hệ thống đã xử lý thành công {len(df_geology)} điểm mia địa hình thực tế!")
         
-        # Tạo 4 Tab con (Có thêm Bình đồ 2D và Địa hình 3D)
+        # Nhóm 4 Tab con khi CÓ file khảo sát
         tab_binhdo_2d, tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
             "🗺️ Bình đồ gốc 2D (Đường đồng mức)", 
             "🏔️ Mô hình Địa hình 3D",
@@ -363,32 +363,58 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
         with tab_dia_hinh_3d:
             fig_3d = TV.ve_dia_hinh_3d(df_geology)
             if fig_3d: st.plotly_chart(fig_3d, use_container_width=True)
+            
+        with tab_trac_doc:
+            try:
+                fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
+                if fig_plotly is not None:
+                    st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+            except Exception as e:
+                st.error(f"Lỗi bản vẽ trắc dọc: {e}")
+                
+        with tab_mcn_draw:
+            try:
+                mcn_input_draw = {
+                    'bc_cau': float(st.session_state.design_data.get('bc', 12.0)),
+                    'w_lc': 0.5
+                }
+                fig_mn = PLOT.ve_mat_cat_ngang(mcn_input_draw)
+                if fig_mn is not None:
+                    st.plotly_chart(fig_mn, use_container_width=True, config={'scrollZoom': True})
+                    
+                    st.subheader("📋 Cấu tạo chi tiết các lớp mặt cắt")
+                    res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
+                    st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
+            except Exception as e:
+                st.error(f"Lỗi bản vẽ mặt cắt ngang: {e}")
+                
     else:
-        # Nếu chưa có file .NTD, chỉ hiện 2 Tab mặc định như cũ để không trống trang
+        # Nhóm 2 Tab mặc định khi CHƯA CÓ file khảo sát
         tab_trac_doc, tab_mcn_draw = st.tabs([
             "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
             "📐 Bản vẽ Mặt cắt ngang điển hình"
         ])
-    with tab_trac_doc:
-        try:
-            fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
-            if fig_plotly is not None:
-                st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-        except Exception as e:
-            st.error(f"Lỗi bản vẽ trắc dọc: {e}")
-            
-    with tab_mcn_draw:
-        try:
-            mcn_input_draw = {
-                'bc_cau': float(st.session_state.design_data.get('bc', 12.0)),
-                'w_lc': 0.5
-            }
-            fig_mn = PLOT.ve_mat_cat_ngang(mcn_input_draw)
-            if fig_mn is not None:
-                st.plotly_chart(fig_mn, use_container_width=True, config={'scrollZoom': True})
+        
+        with tab_trac_doc:
+            try:
+                fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
+                if fig_plotly is not None:
+                    st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+            except Exception as e:
+                st.error(f"Lỗi bản vẽ trắc dọc: {e}")
                 
-                st.subheader("📋 Cấu tạo chi tiết các lớp mặt cắt")
-                res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
-                st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
-        except Exception as e:
-            st.error(f"Lỗi bản vẽ mặt cắt ngang: {e}")
+        with tab_mcn_draw:
+            try:
+                mcn_input_draw = {
+                    'bc_cau': float(st.session_state.design_data.get('bc', 12.0)),
+                    'w_lc': 0.5
+                }
+                fig_mn = PLOT.ve_mat_cat_ngang(mcn_input_draw)
+                if fig_mn is not None:
+                    st.plotly_chart(fig_mn, use_container_width=True, config={'scrollZoom': True})
+                    
+                    st.subheader("📋 Cấu tạo chi tiết các lớp mặt cắt")
+                    res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
+                    st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
+            except Exception as e:
+                st.error(f"Lỗi bản vẽ mặt cắt ngang: {e}")
