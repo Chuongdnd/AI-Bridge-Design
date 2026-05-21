@@ -7,8 +7,8 @@ import google.generativeai as genai
 import fitz
 from streamlit_option_menu import option_menu
 
-# --- THIẾT LẬP LAYOUT GIAO DIỆN PHONG CÁCH CAD/EXCEL ---
-st.set_page_config(layout="wide", page_title="Hệ thống Thiết kế Cầu tối ưu - UTH")
+# --- THIẾT LẬP TRANG CHUẨN KỸ THUẬT TOÀN MÀN HÌNH ---
+st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
 # Khởi tạo bộ nhớ hội thoại chatbot
 if 'messages' not in st.session_state:
@@ -21,7 +21,7 @@ try:
         genai.configure(api_key=api_key)
         gemini_model = genai.GenerativeModel('gemini-2.5-flash')
     else:
-        st.sidebar.error("❌ Thiếu cấu hình GEMINI_API_KEY trong Secrets!")
+        st.sidebar.error("❌ Không tìm thấy mã GEMINI_API_KEY trong Secrets!")
         gemini_model = None
 except Exception as e:
     st.sidebar.error(f"Lỗi cấu hình AI: {e}")
@@ -37,220 +37,261 @@ def load_all_standards(folder_name="Documents"):
         if file_name.endswith(".pdf"):
             try:
                 doc = fitz.open(os.path.join(folder_path, file_name))
+                text = ""
                 for page in doc:
-                    knowledge_text += page.get_text()
+                    text += page.get_text()
+                knowledge_text += f"\n--- NGUỒN TÀI LIỆU: {file_name} ---\n{text}\n"
             except:
                 pass
-    return knowledge_text if knowledge_text else "Không có tài liệu tiêu chuẩn nào được nạp."
+    return knowledge_text
 
+# Nạp hệ thống tài liệu vào bộ nhớ đệm
 if 'bridge_library' not in st.session_state:
-    with st.spinner("📚 Đang nạp hệ thống tiêu chuẩn kỹ thuật Việt Nam..."):
+    with st.spinner("📚 Đang nạp hệ thống tiêu chuẩn cầu đường..."):
         st.session_state.bridge_library = load_all_standards()
 
-# --- DYNAMIC IMPORTS CÁC MODULE CHỨC NĂNG BÊN NGOÀI ---
+# --- KẾT NỐI HỆ THỐNG MODULES THÀNH PHẦN ---
 try:
-    DrawingUtils = importlib.import_module("00-Drawing_Utils")
-    Geometry = importlib.import_module("02-Yeuto_Hinhhoc")
-    GirderAI = importlib.import_module("05-Main_Girder")
+    TK = importlib.import_module("01-Tinh_khong")
+    YTHH = importlib.import_module("02-Yeuto_Hinhhoc")
+    MCN = importlib.import_module("03-MatCatNgang")
+    GRD = importlib.import_module("05-Main_Girder")
+    PLOT = importlib.import_module("00-Drawing_Utils")
+    importlib.reload(PLOT)
 except Exception as e:
-    st.error(f"❌ Lỗi nạp File thành phần hệ thống: {e}")
+    st.error(f"Lỗi kết nối Module: {e}")
+
+# --- KHỞI TẠO HOÀN CHỈNH BỘ NHỚ TRẠNG THÁI SESSION STATE ---
+if 'design_data' not in st.session_state:
+    st.session_state.design_data = {
+        'day_dam': 0.0, 'khau_do_ngang': 0.0, 'bc': 12.0, 'loai_duong': "Do thi",
+        'B': 20.0, 'H': 4.75, 'loai_doi_tuong_vuot': "Vượt sông", 'goc_giao': 90.0,
+        'MNCN': 3.5, 'MNTT': 2.0, 'MNTC': 1.5, 'MNTN': 0.5, 'h_tn_tb': 0.0
+    }
 
 # =========================================================================
-# THIẾT KẾ THANH SIDEBAR TRÁI: DÀNH CHO PANEL TRỢ LÝ ẢO & THƯ VIỆN TIỆN ÍCH
-# =========================================================================
-with st.sidebar:
-    st.markdown("### 🏛️ Đại học Giao thông vận tải TP.HCM")
-    st.markdown("---")
-    st.subheader("🤖 Bridge AI Assistant")
-    
-    # Khung hiển thị nội dung chat phụ trợ độc lập bên trái
-    chat_container = st.container(height=350, border=True)
-    with chat_container:
-        for msg in st.session_state.messages:
-            st.chat_message(msg["role"]).write(msg["content"])
-
-    if prompt := st.chat_input("Hỏi tôi về tiêu chuẩn hoặc kết cấu... ", key="sidebar_chat"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        chat_container.chat_message("user").write(prompt)
-        
-        try:
-            design_info = st.session_state.get('design_data', "Chưa tiến hành chạy dự báo.")
-            system_msg = f"""
-            Bạn là chuyên gia tư vấn thiết kế cầu của UTH. 
-            Sử dụng tri thức tiêu chuẩn sau: {st.session_state.bridge_library}
-            Dữ liệu tính toán hiện tại: {design_info}
-            """
-            response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
-            ai_reply = response.text
-            st.session_state.messages.append({"role": "assistant", "content": ai_reply})
-            chat_container.chat_message("assistant").write(ai_reply)
-        except Exception as chat_err:
-            st.error(f"Lỗi phản hồi AI: {chat_err}")
-
-# =========================================================================
-# 🏠 TẠO DẢI MENU RIBBON NẰM NGANG PHÍA TRÊN CÙNG CHUYÊN NGHIỆP (PHONG CÁCH CAD/EXCEL)
+# ĐIỀU HƯỚNG CHÍNH: DẢI RIBBON NẰM NGANG PHÍA TRÊN CÙNG (CAD & EXCEL STYLE)
 # =========================================================================
 selected_ribbon = option_menu(
     menu_title=None, 
     options=["TAB TRANG CHỦ", "THÔNG SỐ TUYẾN & AI TƯ VẤN", "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"],
-    icons=["house", "cpu", "layout-text-window-reverse"], 
+    icons=["house", "sliders2", "layout-text-window-reverse"], 
     menu_icon="cast", 
-    default_index=1, # Mặc định mở luôn tab nhập liệu để thuận tiện thao tác
+    default_index=2, # Thiết lập mở mặc định tại không gian Bản vẽ tương tác theo hình ảnh của bạn
     orientation="horizontal",
     styles={
-        "container": {"padding": "0!important", "background-color": "#2c3e50", "border-radius": "0px"},
-        "icon": {"color": "#f39c12", "font-size": "15px"}, 
+        "container": {"padding": "0!important", "background-color": "#1e1e1e", "border-radius": "0px"},
+        "icon": {"color": "#f39c12", "font-size": "14px"}, 
         "nav-link": {
-            "font-size": "13px", 
-            "text-align": "center", 
-            "margin": "0px", 
-            "color": "white",
-            "font-weight": "bold",
-            "border-radius": "0px",
-            "--hover-color": "#34495e"
+            "font-size": "13px", "text-align": "center", "margin": "0px", "color": "white",
+            "font-weight": "bold", "border-radius": "0px", "--hover-color": "#333333"
         },
         "nav-link-selected": {"background-color": "#007acc"}, # Màu xanh bản quyền đặc trưng AutoCAD
     }
 )
 
-# Đường kẻ phân tách dải Ribbon và vùng làm việc
-st.markdown("<hr style='margin-top: 0px; margin-bottom: 20px; border-color: #007acc;'>", unsafe_allow_html=True)
-
-# Khởi tạo mô hình AI dầm cầu từ file Excel nền tảng
-excel_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Girder.xlsx")
-bridge_models = GirderAI.train_bridge_ai_system(excel_path)
+# Thanh chỉ định ranh giới dải Ribbon
+st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-color: #007acc;'>", unsafe_allow_html=True)
 
 # =========================================================================
-# LOGIC ĐIỀU HƯỚNG THEO CÁC LỰA CHỌN TRÊN RIBBON MENU
+# THANH PANEL BÊN TRÁI (SIDEBAR): THÔNG TIN ĐỒ ÁN VÀ TRỢ LÝ CHATBOT PHỤ TRỢ
+# =========================================================================
+with st.sidebar:
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_path = os.path.join(current_dir, "Images", "UTH.jpg")
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=280)
+    
+    st.write("👤 **SVTH:** Chương DND")
+    st.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
+    st.caption("🎓 *Đề tài:* Tích hợp AI và BIM tự động hóa thiết kế cầu đường bộ tại Việt Nam")
+    
+    st.markdown("---")
+    st.subheader("🤖 Bridge AI Assistant")
+    chat_container = st.container(height=220, border=True)
+    with chat_container:
+        for msg in st.session_state.messages:
+            st.chat_message(msg["role"]).write(msg["content"])
+
+    if prompt := st.chat_input("Hỏi tôi về thiết kế...", key="sidebar_chat"):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        try:
+            design_info = st.session_state.get('design_data', "Chưa có dữ liệu.")
+            system_msg = f"Bạn là chuyên gia thiết kế cầu UTH. Tri thức: {st.session_state.bridge_library}. Dữ liệu: {design_info}"
+            response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
+            st.session_state.messages.append({"role": "assistant", "content": response.text})
+            st.rerun()
+        except Exception as e:
+            st.error(f"Lỗi AI: {e}")
+
+# =========================================================================
+# XỬ LÝ LOGIC HIỂN THỊ CHI TIẾT CỦA CÁC VÙNG LÀM VIỆC
 # =========================================================================
 
-# --- TAB 1: TRANG CHỦ ---
+# --- SECTION 1: TAB TRANG CHỦ ---
 if selected_ribbon == "TAB TRANG CHỦ":
-    st.title("🚀 Hệ Thống Tối Ưu Hóa Thiết Kế Trắc Dọc & Kết Cấu Nhịp Cầu Bản Đường")
+    st.title("🏗️ Hệ thống Tự động hóa Thiết kế và Tối ưu hóa Kết cấu Cầu")
     st.write("---")
     st.markdown("""
-    #### 📌 Giới thiệu phần mềm:
-    Hệ thống tích hợp quy trình tính toán tự động các yếu tố hình học đường cong đứng theo Tiêu chuẩn thiết kế đường ô tô hiện hành, kết hợp thuật toán **Học máy Random Forest (AI)** để đưa ra giải pháp bố trí kết cấu nhịp tối ưu chi phí.
+    ### Chào mừng bạn đến với ứng dụng tính toán kỹ thuật UTH
+    Hệ thống hỗ trợ tự động hóa thiết kế trắc dọc, tính toán kích thước hình học thủy văn tĩnh không và ứng dụng công nghệ trí tuệ nhân tạo AI (Random Forest) nhằm đề xuất giải pháp kết cấu dầm chủ tối ưu chi phí.
     
-    #### ⚙️ Hướng dẫn thao tác nhanh:
-    1. Click chọn tab **THÔNG SỐ TUYẾN & AI TƯ VẤN** trên thanh Ribbon để khai báo thông số công trình.
-    2. Kiểm tra các bảng kết quả tính toán cao độ hình học và đề xuất kết cấu nhịp từ AI.
-    3. Chuyển sang tab **BẢN VẼ KỸ THUẬT TƯƠNG TÁC** để xem bản vẽ trắc dọc toàn cầu trực quan hóa bằng đồ thị Plotly.
+    #### 🛠️ Hướng dẫn điều hướng:
+    * **THÔNG SỐ TUYẾN & AI TƯ VẤN:** Vùng khai báo toàn diện các số liệu trắc dọc, cấp tuyến đường, số liệu thủy văn và kích hoạt robot tính toán AI.
+    * **BẢN VẼ KỸ THUẬT TƯƠNG TÁC:** Không gian đồ họa chính hiển thị bản vẽ trắc dọc toàn cầu và mặt cắt ngang điển hình với tính năng Zoom/Pan thời gian thực.
     """)
 
-# --- TAB 2: THÔNG SỐ TUYẾN & AI TƯ VẤN ---
+# --- SECTION 2: THÔNG SỐ TUYẾN & AI TƯ VẤN ---
 elif selected_ribbon == "THÔNG SỐ TUYẾN & AI TƯ VẤN":
-    st.subheader("📥 Khai báo thông số đầu vào & Chạy xử lý")
+    st.subheader("📥 Khai báo thông số đầu vào hệ thống")
     
-    # Sử dụng bố cục 3 cột đều nhau để nhập liệu chuyên nghiệp
-    in1, in2, in3 = st.columns(3)
-    with in1:
-        loai_tuyen = st.selectbox("Chọn Loại đường thiết kế:", ["O to", "Cao tốc", "Do thi"])
-        if loai_tuyen == "O to":
-            cap_duong = st.selectbox("Cấp đường nông thôn (TCVN 4054):", ["I", "II", "III", "IV", "V", "VI"])
-            dia_hinh = st.radio("Dạng Địa hình:", [("1", "Đồng bằng / Bình nguyên"), ("2", "Vùng núi / Khó khăn")], format_func=lambda x: x[1])[0]
-            vtk_final = None
-        elif loai_tuyen == "Cao tốc":
-            cap_duong = st.selectbox("Vận tốc thiết kế yêu cầu (km/h):", ["120", "100", "80", "60"])
-            dia_hinh = "1"
-            vtk_final = int(cap_duong)
+    col_in1, col_in2 = st.columns(2)
+    with col_in1:
+        loai_c = st.radio("Chọn đối tượng vượt:", ["Vượt sông", "Vượt đường bộ"], horizontal=True, key="input_loai_c")
+        st.session_state.design_data['loai_doi_tuong_vuot'] = loai_c
+        
+        goc_giao = st.number_input("Góc giao chéo (độ):", min_value=30.0, max_value=90.0, value=st.session_state.design_data['goc_giao'], step=1.0)
+        st.session_state.design_data['goc_giao'] = goc_giao
+        
+        if loai_c == "Vượt sông":
+            mien = st.selectbox("Khu vực:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
+            cap_s = st.selectbox("Cấp sông:", ["1", "2", "3", "4", "5", "6"], format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
+            loai_h = st.selectbox("Loại hình:", ["1", "2"], format_func=lambda x: "Kênh" if x=="1" else "Sông")
+            b_khai_bao = 20.0
         else:
-            loai_dt = st.selectbox("Phân cấp đường đô thị (TCVN 13592):", ["Trục chính đô thị", "Đường chính đô thị", "Đường khu vực", "Đường nội bộ"])
-            cap_dt = st.selectbox("Cấp kỹ thuật đô thị:", ["Đặc biệt", "Cấp I", "Cấp II"])
-            vtks = Geometry.get_vtk_goi_y_dothi(loai_dt, cap_dt)
-            vtk_final = st.selectbox("Vận tốc thiết kế gợi ý (km/h):", vtks)
-            cap_duong = str(vtk_final)
-            dia_hinh = "1"
+            loai_duong_v = st.selectbox("Cấp đường bị vượt:", ["Đường ô tô (Cấp I, II, III)", "Đường ô tô (Cấp còn lại)", "Đường cao tốc", "Đường cải tạo", "Đường xe thô sơ"])
+            st.session_state.design_data['cap_duong_bi_vuot'] = loai_duong_v
+            b_khai_bao = st.number_input("Bề rộng tĩnh không khai báo (B) - m:", value=st.session_state.design_data['B'], step=0.5)
+            mien, cap_s, loai_h = "1", "1", "1"
+            
+    with col_in2:
+        if loai_c == "Vượt sông":
+            h_tn_tb = st.number_input("Cao độ tự nhiên trung bình (m):", value=st.session_state.design_data['h_tn_tb'], format="%.3f")
+            h1 = st.number_input("MNCN (H1%):", value=st.session_state.design_data['MNCN'], format="%.3f")
+            h5 = st.number_input("MNTT (H5%):", value=st.session_state.design_data['MNTT'], format="%.3f")
+            h10 = st.number_input("MNTC (H10%):", value=st.session_state.design_data['MNTC'], format="%.3f")
+            h98 = st.number_input("MNTN (H98%):", value=st.session_state.design_data['MNTN'], format="%.3f")
+        else:
+            h_tn_tb = st.number_input("Cao độ tự nhiên trung bình (m):", value=st.session_state.design_data['h_tn_tb'], format="%.3f", key="tn_db_tab2")
+            h1 = st.number_input("Cao độ mặt đường bị vượt (m):", value=5.00, format="%.3f", key="overpass_height_tab2")
+            h5, h10, h98 = h1, h1, h1
 
-    with in2:
-        moitruong = st.selectbox("Môi trường xây dựng hạ tầng:", ["Vượt sông / Ngoài đô thị", "Trong đô thị / Cầu vượt nút giao"])
-        env_label = "Đô thị" if "Trong đô thị" in moitruong else "Vượt sông"
-        b_thong_thuy = st.number_input("Bề rộng thông thủy yêu cầu B (m):", min_value=4.0, value=15.0, step=0.5)
-        h_tinh_khong = st.number_input("Chiều cao tĩnh không kỹ thuật H (m):", min_value=2.0, value=4.75, step=0.25)
+    st.subheader("📐 Yếu tố hình học trắc dọc tuyến")
+    l_hinhhoc = st.selectbox("Chọn loại đường thiết kế:", ["Cao tốc", "O to", "Do thi"], key="main_type_tab2")
 
-    with in3:
-        b_cau = st.number_input("Bề rộng toàn mặt cắt ngang cầu Bc (m):", min_value=6.0, value=12.0, step=0.5)
-        goc_giao = st.slider("Góc giao chéo tuyến (Độ):", min_value=30, max_value=90, value=90)
-        h_tn_tb = st.number_input("Cao độ tự nhiên trung bình sông/đường tuyệt đối (m):", value=2.15)
-
-    st.markdown("---")
-    
-    # Thực hiện tra cứu nhanh từ tiêu chuẩn hình học thiết kế
-    std_res = Geometry.tra_cuu_yeu_to_hinh_hoc(loai_tuyen, cap_duong, dia_hinh)
-    
-    if std_res["status"] == "success":
-        v_calc = std_res["v_thiet_ke"]
-        i_max_tcvn = std_res["imax"]
-        
-        # Gọi mô hình AI tính toán kết cấu nhịp
-        ai_res = GirderAI.predict_main_span(h_tinh_khong, goc_giao, b_cau, env_label, bridge_models, L_cau_tong=120.0)
-        
-        # Ghép nối sang module phân tích cao độ hình học đối xứng của file 02
-        geo_input = {
-            'label': moitruong,
-            'MNCN': 4.5, 'MNTT': 1.0, 'MNTC': 3.5, 'MNTN': 0.2,
-            'B': b_thong_thuy, 'H': h_tinh_khong,
-            'R_hinh_hoc': std_res["R_loi_tt"],
-            'i_max_hinh_hoc': i_max_tcvn,
-            'ai_result': ai_res
-        }
-        geo_output = Geometry.tinh_toan_geo_logic(geo_input, h_tn_tb, h_dam=ai_res['chieu_cao'], h_dap_yc=5.5)
-        
-        # Đóng gói dữ liệu vào Session State để chuyển tiếp dữ liệu sang Tab bản vẽ Plotly
-        st.session_state.app_design_results = {
-            'MNCN': 4.5, 'MNTT': 1.0, 'MNTC': 3.5, 'MNTN': 0.2, 'B': b_thong_thuy, 'H': h_tinh_khong, 'label': moitruong,
-            'ai_result': ai_res, 'geo_logic': geo_output
-        }
-        st.session_state.design_data = f"Vtk={v_calc}km/h, LoaiDam={ai_res['loai_dam']}, L_nhip={ai_res['chieu_dai']}m, L_cau={geo_output['L_cau']:.2f}m"
-
-        # HIỂN THỊ KẾT QUẢ TÍNH TOÁN RA MÀN HÌNH CHÍNH (Giao diện 2 cột cân xứng)
-        out_col1, out_col2 = st.columns(2)
-        with out_col1:
-            st.success("📘 KẾT QUẢ TRA CỨU HÌNH HỌC TUYẾN (TCVN)")
-            st.write(f"• **Tiêu chuẩn áp dụng:** {std_res['tieu_chuan']}")
-            st.write(f"• **Vận tốc thiết kế Vtk:** {v_calc} km/h")
-            st.write(f"• **Độ dốc dọc lớn nhất cho phép $i_{{max}}$:** {i_max_tcvn} %")
-            st.write(f"• **Bán kính đường cong đứng lồi tối thiểu:** {std_res['R_loi_tt']} m")
-            st.write(f"• **Chiều dài toàn cầu thiết kế lý tưởng:** {geo_output['L_cau']:.2f} m")
-
-        with out_col2:
-            st.info("🤖 GIẢI PHÁP KẾT CẤU NHỊP ĐỀ XUẤT TỪ AI")
-            st.write(f"• **Kiểu kết cấu dầm chủ kiến nghị:** Dầm {ai_res['loai_dam'].upper()}")
-            st.write(f"• **Sơ đồ chia nhịp toàn cầu:** {ai_res['tong_so_nhip']} nhịp × {ai_res['chieu_dai']} m")
-            st.write(f"• **Chiều cao kiến trúc dầm H:** {ai_res['chieu_cao']} m")
-            st.write(f"• **Bố trí số lượng dầm trên MCN:** {ai_res['so_luong_dam']} thanh dầm (Khoảng cách S = {ai_res['khoang_cach_dam']:.2f}m)")
-            st.caption(f"📝 *Nhận xét chiến lược của AI:* {ai_res['ghi_chu']}")
+    if l_hinhhoc == "Cao tốc":
+        d_hinhhoc = st.radio("Chọn địa hình:", options=["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Địa hình khó khăn", key="ct_terrain_tab2")
+        v_list = [120, 100] if d_hinhhoc == "1" else [80, 60]
+        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list, key="ct_v_tab2")
+        input_tra_cuu = v_hinhhoc
+    elif l_hinhhoc == "O to":
+        cap_duong_oto = st.selectbox("Chọn Cấp đường:", ["I", "II", "III", "IV", "V", "VI"], key="oto_cap_tab2")
+        d_hinhhoc = st.radio("Chọn địa hình:", ["1", "2"], horizontal=True, format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi", key="oto_dh_tab2")
+        input_tra_cuu = cap_duong_oto
     else:
-        st.error(f"Lỗi hệ thống tra cứu: {std_res['message']}")
+        loai_dt = st.selectbox("Loại đường đô thị:", ["Trục chính đô thị", "Đường chính đô thị", "Đường khu vực", "Đường nội bộ"], key="dt_loai_tab2")
+        cap_dt = st.selectbox("Cấp đường:", ["Đặc biệt", "Cấp I", "Cấp II"] if loai_dt == "Trục chính đô thị" else ["Cấp I", "Cấp II"], key="dt_cap_tab2")
+        list_vtk = YTHH.get_vtk_goi_y_dothi(loai_dt, cap_dt)
+        v_hinhhoc = st.radio("Chọn Vận tốc thiết kế Vtk (km/h) áp dụng:", options=list_vtk, horizontal=True, key="dt_v_tab2")
+        d_hinhhoc = st.radio("Địa hình:", ["1", "2"], horizontal=True, format_func=lambda x: "Bằng phẳng" if x == "1" else "Đồi núi/Khó khăn", key="dt_dh_tab2")
+        input_tra_cuu = v_hinhhoc
 
-# --- TAB 3: BẢN VẼ KỸ THUẬT TƯƠNG TÁC ---
+    res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
+    if res_geo.get("status") == "success":
+        chon_R = st.radio("Chọn bán kính đứng lồi áp dụng:", ["Tối thiểu thông thường", "Tối thiểu giới hạn"], horizontal=True, key="r_select_tab2")
+        r_final = res_geo["R_loi_tt"] if chon_R == "Tối thiểu thông thường" else res_geo["R_loi_gh"]
+        st.session_state.R_final = r_final
+
+    st.divider()
+    if st.button("🚀 Thực hiện Tính toán & Lưu thiết kế", use_container_width=True):
+        res = TK.tra_cuu_tinh_khong_bridge(
+            loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None, cap_num=cap_s if loai_c=="Vượt sông" else None,
+            loai_hinh=loai_h if loai_c=="Vượt sông" else None, loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
+            cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None, h1=h1, h5=h5, h10=h10, h98=h98, h_tn_tb=h_tn_tb
+        )
+        alpha_rad = np.radians(goc_giao)
+        res['B'] = round(res.get('B', 0) / np.sin(alpha_rad), 2) if goc_giao < 90 else res.get('B', 0)
+        res['goc_giao'] = goc_giao
+        res['h_tn_tb'] = h_tn_tb
+        res['MNCN'], res['MNTT'], res['MNTC'], res['MNTN'] = h1, h5, h10, h98
+
+        if res_geo.get("status") == "success":
+            res['R_hinh_hoc'] = st.session_state.get('R_final', 5000)
+            res['geo_logic'] = YTHH.tinh_toan_geo_logic(res, h_tn_tb if loai_c == "Vượt sông" else h1, res.get('day_dam', 0.0))
+            imax_raw = res_geo.get('imax', '0')
+            res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
+            res['bc'] = st.session_state.design_data.get('bc', 12.0)
+
+            xlsx_path = os.path.join(os.path.dirname(__file__), "Girder.xlsx")
+            models = GRD.train_bridge_ai_system(xlsx_path)
+            if models:
+                res['ai_result'] = GRD.predict_main_span(res['B'], goc_giao, res['bc'], "Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông", models, res['geo_logic']['L_cau'])
+            st.session_state.design_data = res
+            st.success("🎉 Đã đồng bộ dữ liệu hình học và dự báo AI thành công! Hãy chuyển sang Tab 'BẢN VẼ KỸ THUẬT TƯƠNG TÁC' để kiểm tra bản vẽ.")
+
+# --- SECTION 3: BẢN VẼ KỸ THUẬT TƯƠNG TÁC (KHÔNG GIAN HIỂN THỊ CHÍNH) ---
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
-    if 'app_design_results' not in st.session_state:
-        st.warning("⚠️ Vui lòng chuyển qua Tab 'THÔNG SỐ TUYẾN & AI TƯ VẤN' nhập liệu và chạy tính toán trước!")
-    else:
-        st.subheader("🖼️ Hệ thống bản vẽ thiết kế công trình")
-        
-        # --- ĐÂY LÀ ĐOẠN PHÂN CHIA HỆ TAB CON GIỐNG LAYOUT CAD ---
-        tab_trac_doc, tab_mcn = st.tabs(["📊 Bản vẽ Trắc dọc toàn cầu", "📐 Bản vẽ Mặt cắt ngang điển hình"])
-        
-        res_data = st.session_state.app_design_results
-        
-        with tab_trac_doc:
-            st.markdown("**Sơ đồ trắc dọc cầu đối xứng hoàn hảo qua tim (0,0)**")
-            fig_td = DrawingUtils.ve_trac_doc_cau(res_data)
-            if fig_td:
-                st.plotly_chart(fig_td, use_container_width=True, config={'scrollZoom': True, 'displaymodeBar': True})
+    st.subheader("🖼️ Hệ thống bản vẽ thiết kế công trình (Không gian hiển thị chính)")
+    
+    # THIẾT KẾ HỘP THOẠI KHAI BÁO NHANH (SECTION) NẰM GỌN GÀNG PHÍA TRÊN BẢN VẼ GIỐNG HÌNH CỦA BẠN
+    with st.expander("🛠️ HỘP THOẠI KHAI BÁO & ĐIỀU CHỈNH NHANH THÔNG SỐ TRẮC DỌC", expanded=False):
+        sec_col1, sec_col2, sec_col3 = st.columns(3)
+        with sec_col1:
+            st.markdown("**Thông số mặt cắt**")
+            n_lan = st.number_input("Số làn xe:", min_value=2, value=2, key="sec_n_lan")
+            w_le = st.number_input("Bề rộng dải an toàn (m):", value=0.5, key="sec_w_le")
+            if st.button("🔄 Cập nhật kích thước Mặt cắt ngang", use_container_width=True):
+                res_mcn_calc = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
+                st.session_state.design_data['bc'] = res_mcn_calc['bc_cau']
+                st.toast("Đã cập nhật bề rộng Bc mặt cắt ngang!")
+        with sec_col2:
+            st.markdown("**Bố trí nhịp từ AI**")
+            if 'ai_result' in st.session_state.design_data:
+                ai = st.session_state.design_data['ai_result']
+                st.markdown(f"• Phương án: **Dầm {ai['loai_dam'].upper()}**")
+                st.markdown(f"• Quy mô: **{ai['tong_so_nhip']} nhịp x {ai['chieu_dai']}m**")
+                st.markdown(f"• Chiều cao kiến trúc: **{ai['chieu_cao']}m**")
             else:
-                st.error("Không thể khởi tạo bản vẽ trắc dọc.")
-                
-        with tab_mcn:
-            st.markdown("**Mặt cắt ngang kết cấu dầm và bố trí làn xe trên cầu**")
-            mcn_input = {
-                'bc_cau': res_data['geo_logic']['h_tn_tb'] * 0 + res_data['ai_result'].get('so_luong_dam', 5) * 0 + res_data['geo_logic'].get('y_base_goc', 0)*0 + 12.0, 
+                st.caption("Chưa có dữ liệu dự báo kết cấu AI.")
+        with sec_col3:
+            st.markdown("**Thông số kích thước mố trụ**")
+            if 'geo_logic' in st.session_state.design_data:
+                geo = st.session_state.design_data['geo_logic']
+                st.markdown(f"• Khống chế mố trái: **{geo['x_mo_trai']:.2f} m**")
+                st.markdown(f"• Khống chế mố phải: **{geo['x_mo_phai']:.2f} m**")
+                st.markdown(f"• Tổng chiều dài L: **{geo['L_cau']:.2f} m**")
+            else:
+                st.caption("Chưa có dữ liệu hình học mố trụ.")
+
+    # HỆ THỐNG TAB CON SONG SONG ĐỂ CHUYỂN ĐỔI BẢN VẼ VỚI VIEW RỘNG TỐI ĐA
+    tab_trac_doc, tab_mcn_draw = st.tabs(["📊 Bản vẽ Trắc dọc toàn cầu", "📐 Bản vẽ Mặt cắt ngang điển hình"])
+    
+    with tab_trac_doc:
+        try:
+            # Nhúng đồ thị Plotly đối xứng phủ tràn toàn màn hình
+            fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
+            if fig_plotly is not None:
+                st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+            else:
+                st.warning("⚠️ Hệ thống bản vẽ trống. Vui lòng sang Tab 'THÔNG SỐ TUYẾN & AI TƯ VẤN' gõ nút Let's go trước!")
+        except Exception as e:
+            st.error(f"Lỗi khi dựng bản vẽ trắc dọc: {e}")
+            
+    with tab_mcn_draw:
+        try:
+            # Thiết lập thông số đầu vào cho cấu tạo mặt cắt ngang
+            mcn_input_draw = {
+                'bc_cau': float(st.session_state.design_data.get('bc', 12.0)),
                 'w_lc': 0.5
             }
-            # Cập nhật thông số mặt cắt từ kết quả AI thực tế
-            mcn_input['bc_cau'] = float(res_data['ai_result'].get('B_cầu_thực', 12.0))
-            fig_mn = DrawingUtils.ve_mat_cat_ngang(mcn_input)
-            if fig_mn:
-                st.plotly_chart(fig_mn, use_container_width=True)
+            fig_mn = PLOT.ve_mat_cat_ngang(mcn_input_draw)
+            if fig_mn is not None:
+                st.plotly_chart(fig_mn, use_container_width=True, config={'scrollZoom': True})
+                
+                # Hiển thị bảng kích thước kết cấu bổ trợ phía dưới bản vẽ hình học
+                st.subheader("📋 Bảng tổng hợp kích thước mặt cắt ngang cầu")
+                if 'design_data' in st.session_state:
+                    res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
+                    st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
+        except Exception as e:
+            st.error(f"Lỗi khi dựng bản vẽ mặt cắt ngang: {e}")
