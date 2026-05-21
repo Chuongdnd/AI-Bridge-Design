@@ -145,41 +145,60 @@ def ve_binh_do_goc_2d(df):
 def ve_dia_hinh_3d(df):
     """
     HÀM DỰNG KHỐI MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D (TERRAIN DIGITAL MODEL)
+    Đã nâng cấp lên công nghệ go.Surface kết hợp mịn hóa lưới trắc ngang
     """
     if df.empty or len(df.index) < 3:
         return None
         
-    fig = go.Figure(data=[go.Mesh3d(
-        x=df['X'],
-        y=df['Y'],
-        z=df['Z'],
-        intensity=df['Z'],     # Đổ màu theo biến thiên cao độ thực tế
-        colorscale='Earth',    # Hệ màu chuẩn địa hình, sông ngòi
-        opacity=0.85,
-        showscale=True,
-        colorbar=dict(
+    try:
+        # 🧠 BƯỚC 1: LÀM MỊN ĐỊA HÌNH (Gom khoảng cách trắc ngang Y về bước lưới 0.5m)
+        df_smooth = df.copy()
+        df_smooth['Y'] = np.round(df_smooth['Y'] * 2) / 2 # Triệt tiêu sai số lệch pha cọc
+        
+        # 🧠 BƯỚC 2: XOAY BẢNG DỮ LIỆU THÀNH MA TRẬN LƯỚI 2D ĐỒNG BỘ
+        grid_df = df_smooth.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
+        
+        # Nội suy toán học tuyến tính điền đầy các lỗ hổng thiếu điểm mia giữa các cọc
+        grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
+        grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
+        
+        # Trích xuất mảng tọa độ chuẩn chỉnh để nạp vào Plotly Surface
+        x_grid = grid_df.columns.values
+        y_grid = grid_df.index.values
+        z_grid = grid_df.values
+        
+        # 🧠 BƯỚC 3: DÙNG GO.SURFACE ĐỂ TRẢI PHẲNG TẤM THẢM ĐỊA HÌNH MƯỢT MÀ
+        fig = go.Figure(data=[go.Surface(
+            x=x_grid,
+            y=y_grid,
+            z=z_grid,
+            colorscale='Earth',    # Hệ màu chuẩn địa chất (Đất - Cây rừng - Lòng sông)
+            opacity=0.9,
+            colorbar=dict(
+                title=dict(text="Cao độ Z (m)", side="right"),
+                thickness=15
+            )
+        )])
+        
+        # Cấu hình không gian hiển thị camera 3D CAD Style
+        fig.update_layout(
             title=dict(
-                text="Cao độ Z (m)",
-                side="right"
+                text="🏔️ MÔ HÌNH KHÔNG GIAN ĐỊA HÌNH TỰ NHIÊN ĐA CHIỀU 3D",
+                font=dict(size=16, color='#007acc', family='Arial')
             ),
-            thickness=15
-        ),
-        flatshading=True       
-    )])
-    
-    fig.update_layout(
-        title=dict(
-            text="🏔️ MÔ HÌNH KHÔNG GIAN ĐỊA HÌNH TỰ NHIÊN ĐA CHIỀU 3D",
-            font=dict(size=16, color='#007acc', family='Arial')
-        ),
-        scene=dict(
-            xaxis_title="Lý trình X (m)",
-            yaxis_title="Trắc ngang Y (m)",
-            zaxis_title="Cao độ Z (m)",
-            aspectratio=dict(x=2, y=1, z=0.6) # Tỉ lệ thu nhỏ trục Z trực quan
-        ),
-        template="plotly_dark",
-        margin=dict(l=10, r=10, t=40, b=10),
-        paper_bgcolor='#0e1117'
-    )
-    return fig
+            scene=dict(
+                xaxis_title="Lý trình X (m)",
+                yaxis_title="Trắc ngang Y (m)",
+                zaxis_title="Cao độ Z (m)",
+                # Tỉ lệ hình học: Kéo giãn trục dọc X và thu nhỏ trục đứng Z để dễ nhìn độ dốc bờ mố
+                aspectratio=dict(x=2, y=1, z=0.5) 
+            ),
+            template="plotly_dark",
+            margin=dict(l=10, r=10, t=40, b=10),
+            paper_bgcolor='#0e1117'
+        )
+        return fig
+        
+    except Exception as e:
+        st.error(f"Lỗi dựng mô hình địa hình 3D: {e}")
+        return None
