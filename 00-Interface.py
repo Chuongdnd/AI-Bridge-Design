@@ -11,53 +11,68 @@ from streamlit_option_menu import option_menu
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
 # =========================================================================
-# 🎨 🏙️ NHÚNG CSS TOÀN DIỆN: DIỆT HEADER ĐEN & KHÓA CỐ ĐỊNH THANH ĐIỀU KHIỂN (FIXED WORKSPACE)
+# 🎨 🏙️ NHÚNG CSS CHUẨN HOÁ WORKSPACE: ẨN HEADER, KHÓA CỨNG MENU & CHỐNG TRƯỢT
 # =========================================================================
 st.markdown("""
     <style>
-        /* 1. Đè bẹp dải nền đen mặc định và đẩy nút Sidebar ra phía sau để không che Ribbon */
-        div[data-testid="stHeader"] {
-            background-color: transparent !important;
-            box-shadow: none !important;
-            height: 0px !important;
-            z-index: 1 !important;
-        }
-        div[data-testid="stHeader"] > div {
-            z-index: 1 !important;
+        /* 1. KHÓA LIÊN KẾT GỐC MÀN HÌNH: Ép thanh cuộn của trình duyệt chỉ chạy ở vùng nội dung bản vẽ */
+        .stApp {
+            height: 100vh !important;
+            overflow: hidden !important;
         }
 
-        /* 2. ÉP CỐ ĐỊNH TUYỆT ĐỐI (FIXED STYLE): Biến cụm Ribbon thành thanh công cụ AutoCAD bất biến */
+        /* 2. DIỆT HOÀN TOÀN THANH ĐEN HEADER MẶC ĐỊNH */
+        div[data-testid="stHeader"] {
+            display: none !important;
+        }
+
+        /* 3. BIẾN CỤM RIBBON THÀNH THANH LỆNH AUTOCAD LƠ LỬNG TRÊN CÙNG */
         #custom-ribbon-container {
             position: fixed !important;
             top: 0 !important;
             left: 0 !important;
-            width: 100% !important;
-            z-index: 999999 !important; /* Tầng cao nhất, chấp cả Plotly đè lên */
-            background-color: #0e1117 !important; /* Màu nền tối để tiệp màu giao diện */
+            width: 100vw !important;
+            height: auto !important;
+            z-index: 9999999 !important; /* Đẩy lên tầng cao nhất, chấp mọi loại biểu đồ đè lên */
+            background-color: #0e1117 !important; /* Đổ đặc màu nền tối trùng màu hệ thống */
+            padding-top: 5px !important;
+            padding-bottom: 5px !important;
+            padding-left: 15px !important;
+            padding-right: 15px !important;
+            border-bottom: 2px solid #007acc !important; /* Chỉ xanh CAD mảnh liền mạch */
+            box-shadow: 0px 4px 10px rgba(0, 0, 0, 0.5) !important; /* Tạo bóng đổ để phân tách không gian bản vẽ */
+        }
+
+        /* 4. ĐỊNH VỊ PHÂN VÙNG NỘI DUNG (MAIN): Biến phân vùng này thành một hộp cuộn độc lập nằm dưới menu */
+        .main {
+            margin-top: 100px !important; /* Đẩy nội dung xuống đúng bằng chiều cao của menu */
+            height: calc(100vh - 100px) !important; /* Chiều cao còn lại của màn hình dành riêng cho bản vẽ */
+            overflow-y: auto !important; /* Chỉ cho phép cuộn chuột bên trong vùng này */
+            overflow-x: hidden !important;
+        }
+
+        /* Cấu hình lề vùng chứa bản vẽ đẩy sát viền */
+        div[data-testid="stAppViewBlockContainer"] {
             padding-top: 10px !important;
-            padding-bottom: 10px !important;
-            padding-left: 20px !important;
-            padding-right: 20px !important;
-            border-bottom: 2px solid #007acc !important; /* Đường chỉ xanh CAD mảnh */
+            padding-bottom: 20px !important;
+            padding-left: 15px !important;
+            padding-right: 15px !important;
         }
 
-        /* 3. TẠO KHOẢNG BÙ CAO ĐỘ (PADDING OFFSET): Đẩy bản vẽ xuống dưới để không bị cụm FIXED che mất */
-        .main .block-container {
-            padding-top: 130px !important; /* Khoảng trống vừa đủ cho cụm Ribbon + Nút Options đứng phía trên */
-            padding-bottom: 10px !important;
-            padding-left: 20px !important;
-            padding-right: 20px !important;
-        }
-
-        /* Đảm bảo dải tab con của bản vẽ Plotly tiệp màu nền */
+        /* 5. ĐỒNG BỘ MÀU NỀN VÀ PHONG CÁCH CỦA CÁC TAB CON PLOTLY */
         .stTabs [data-baseweb="tab-list"] {
             background-color: #0e1117 !important;
         }
         
-        /* Chỉnh khoảng cách nút bấm đóng mở sidebar nếu bị đè */
+        /* Đẩy nút mở Sidebar lên góc để không bị che khuất */
         div[data-testid="stSidebarCollapsedControl"] {
-            top: 10px !important;
-            z-index: 1000000 !important;
+            top: 8px !important;
+            z-index: 10000000 !important;
+        }
+        
+        /* Ẩn dải dropdown "Deploy" thừa thãi của Streamlit Cloud góc phải */
+        .stAppDeployDropdown {
+            display: none !important;
         }
     </style>
 """, unsafe_allow_html=True)
