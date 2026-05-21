@@ -22,17 +22,15 @@ st.markdown("""
             background-color: #ffffff !important;
         }
 
-        /* 2. TIÊU DIỆT HOÀN TOÀN THANH HEADER MẶC ĐỊNH */
+        /* 2. TIÊU DIỆT HOÀN TOÀN THANH ĐEN VÀ QUET SẠCH CỤM NÚT HỆ THỐNG GÓC PHẢI */
         div[data-testid="stHeader"], header {
             background-color: transparent !important;
             box-shadow: none !important;
             height: 0px !important;
-            z-index: -100 !important; /* Đẩy hẳn ra sau cùng */
+            z-index: -100 !important;
             display: none !important;
         }
         
-        /* 🎯 CÁCH KHÁC: QUÉT SẠCH TOÀN BỘ CỤM NÚT HỆ THỐNG GÓC PHẢI (FORK, GITHUB, 3 CHẤM) */
-        /* Nhắm mục tiêu trực tiếp vào container chứa các nút hành động góc phải và ẩn mọi thứ bên trong */
         [data-testid="stHeader"] *, 
         header *,
         .stAppDeployDropdown,
@@ -45,28 +43,30 @@ st.markdown("""
             opacity: 0 !important;
         }
 
-        /* 3. KHÓA GHIM TOÀN BỘ HỆ THỐNG ĐIỀU KHIỂN TRÊN ĐỈNH (Màu xám trắng Excel tinh tế) */
+        /* 3. 🧠 KHÓA GHIM TUYỆT ĐỐI TOÀN BỘ KHỐI RIBBON + OPTIONS LÊN ĐỈNH ĐẦU TRANG */
         #custom-ribbon-container {
             position: fixed !important;
             top: 0 !important;
-            left: 60px !important; /* Chừa khoảng trống bên trái cho nút mở Sidebar */
-            width: calc(100vw - 60px) !important;
+            /* Thay vì left: 60px, ta cho sát left: 0px để kéo dải Ribbon dài hết mép trái */
+            left: 0px !important; 
+            width: 100vw !important; /* Tràn viền rộng 100% màn hình cực kỳ bề thế */
             height: auto !important;
-            z-index: 9999999 !important; /* Đẩy lên tầng cao nhất tuyệt đối */
+            z-index: 9999999 !important; /* Đẩy lên tầng cao nhất để luôn lơ lửng */
             background-color: #f1f3f4 !important; /* Nền màu xám nhạt như Office Excel */
             padding-top: 5px !important;
             padding-bottom: 8px !important;
-            padding-left: 15px !important;
+            padding-left: 65px !important; /* Đẩy lề chữ bên trong sang phải 65px để chừa chỗ cho nút Sidebar */
             padding-right: 25px !important;
             border-bottom: 2px solid #007acc !important; /* Đường line xanh mảnh liền mạch */
-            box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1) !important; /* Tạo bóng đổ nhẹ */
+            box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1) !important; /* Tạo bóng đổ nhẹ tách biệt không gian */
         }
 
-        /* 4. ĐỊNH VỊ PHÂN VÙNG BẢN VẼ CHÍNH: Biến vùng này thành hộp cuộn độc lập dưới menu */
+        /* 4. 🚀 BIẾN PHÂN VÙNG BẢN VẼ CHÍNH THÀNH HỘP CUỘN ĐỘC LẬP CHỐNG TRƯỢT MENU */
         .main {
-            margin-top: 115px !important; /* Đẩy vùng nội dung xuống dưới chân khối lệnh cố định */
-            height: calc(100vh - 115px) !important; /* Chiều cao còn lại dành riêng cho bản vẽ */
-            overflow-y: auto !important; /* Chỉ cho phép cuộn chuột bên trong phân vùng này */
+            /* Khoảng cách margin-top tính toán đẩy vùng nội dung xuống dưới chân khối lệnh cố định */
+            margin-top: 115px !important; 
+            height: calc(100vh - 115px) !important; /* Chiều cao còn lại tự động co giãn theo màn hình */
+            overflow-y: auto !important; /* CHỈ CHO PHÉP CUỘN CHUỘT BÊN TRONG VÙNG NÀY */
             overflow-x: hidden !important;
             background-color: #ffffff !important;
         }
@@ -89,12 +89,12 @@ st.markdown("""
             color: #495057 !important;
         }
 
-        /* Định vị lại nút bấm đóng mở Sidebar trái lọt vào khe trống an toàn */
+        /* 🛠️ Đẩy nút đóng mở Sidebar lên trên cùng dải Ribbon để người dùng luôn bấm được */
         div[data-testid="stSidebarCollapsedControl"] {
             position: fixed !important;
-            top: 8px !important;
-            left: 10px !important;
-            z-index: 10000000 !important;
+            top: 12px !important; /* Căn chỉnh nằm ngay ngắn chính giữa hàng Ribbon */
+            left: 15px !important;
+            z-index: 100000000 !important; /* Cao hơn cả container Ribbon */
         }
     </style>
 """, unsafe_allow_html=True)
