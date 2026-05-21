@@ -258,7 +258,7 @@ def show_options_dialog():
 # =========================================================================
 st.markdown('<div id="custom-ribbon-container">', unsafe_allow_html=True)
 
-ribbon_options = ["TAB TRANG CHỦ", "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"]
+ribbon_options = ["THUYẾT MINH", "BẢN VẼ KỸ THUẬT"]
 default_idx = ribbon_options.index(st.session_state.current_tab) if st.session_state.current_tab in ribbon_options else 1
 
 selected_ribbon = option_menu(
@@ -282,7 +282,7 @@ st.session_state.current_tab = selected_ribbon
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 10px; border-color: #007acc;'>", unsafe_allow_html=True)
 
 # Bố trí hàng nút bấm Options và Dòng thông báo số liệu hiện hành nằm ngay trong khối đóng băng
-if selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
+if selected_ribbon == "BẢN VẼ KỸ THUẬT":
     ctrl_col1, ctrl_col2 = st.columns([1, 4])
     with ctrl_col1:
         if st.button("⚙️ OPTIONS - KHAI BÁO SỐ LIỆU", use_container_width=True, type="secondary"):
@@ -328,15 +328,15 @@ with st.sidebar:
 # =========================================================================
 # VÙNG KHÔNG GIAN ĐỒ HỌA BẢN VẼ TRẮC DỌC & MẶT CẮT NGANG
 # =========================================================================
-if selected_ribbon == "TAB TRANG CHỦ":
+if selected_ribbon == "THUYẾT MINH":
     st.title("🏗️ Hệ thống Tự động hóa Thiết kế và Tối ưu hóa Kết cấu Cầu")
     st.write("---")
     st.markdown("""
     ### Ứng dụng tích toán kỹ thuật thông minh UTH
-    * Bấm chọn tab **BẢN VẼ KỸ THUẬT TƯƠNG TÁC** để vào không gian thiết kế chính.
+    * Bấm chọn tab **BẢN VẼ KỸ THUẬT** để vào không gian thiết kế chính.
     """)
 
-elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
+elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
     
     # 1. Chèn khung tải file .NTD lên đỉnh trang Workspace
     st.markdown("##### 📥 Nạp Cơ sở dữ liệu Khảo sát Địa hình Thực địa")
@@ -350,7 +350,6 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
         
         # Nhóm 4 Tab con khi CÓ file khảo sát
         tab_binhdo_2d, tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
-            "🗺️ Bình đồ gốc 2D (Đường đồng mức)", 
             "🏔️ Mô hình Địa hình 3D",
             "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
             "📐 Bản vẽ Mặt cắt ngang điển hình"
