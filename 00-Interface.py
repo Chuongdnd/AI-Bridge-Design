@@ -15,29 +15,22 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # =========================================================================
 st.markdown("""
     <style>
-        /* =========================================================================
-           1. ĐỒNG BỘ NỀN THEO HỆ THỐNG (MÁY DÙNG LIGHT/DARK NỀN TỰ THÍCH ỨNG)
-           ========================================================================= */
+        /* 1. Khóa liên kết gốc màn hình để ép phân vùng bản vẽ tự cuộn độc lập */
         .stApp {
             height: 100vh !important;
             overflow: hidden !important;
-            background-color: var(--background-color) !important; /* Tự động đổi màu nền */
-            color: var(--text-color) !important; /* Tự động đổi màu chữ */
+            background-color: #0e1117 !important;
         }
 
-        /* =========================================================================
-           2. 🎯 CHỈ ẨN 3 KÝ HIỆU CỦA STREAMLIT (FORK, GITHUB, DẤU 3 CHẤM)
-           ========================================================================= */
-        /* Giữ nguyên thuộc tính ẩn Header gốc của bạn */
+        /* 2. Tiêu diệt hoàn toàn dải nền đen mặc định và CHỈ ẨN TRỰC DIỆN 3 KÝ HIỆU (FORK, GITHUB, 3 CHẤM) */
         div[data-testid="stHeader"], header {
             background-color: transparent !important;
             box-shadow: none !important;
             height: 0px !important;
-            z-index: -100 !important;
-            display: none !important;
+            z-index: 1 !important;
         }
         
-        /* Selector quét sâu quét sạch cụm nút hành động hệ thống ở góc phải trên cùng */
+        /* Bộ quét sâu nhắm trúng và ẩn sạch cụm nút Fork, biểu tượng Git và Menu 3 chấm góc phải */
         [data-testid="stHeader"] *, 
         header *,
         .stAppDeployDropdown,
@@ -51,73 +44,46 @@ st.markdown("""
             opacity: 0 !important;
         }
 
-        /* =========================================================================
-           3. KHÓA GHIM CỨNG KHỐI RIBBON MENU LÊN ĐỈNH ĐẦU TRANG
-           ========================================================================= */
-        #custom-ribbon-container {
+        /* 3. Khóa ghim thanh lệnh điều khiển trên đỉnh (Dịch sang phải để chừa chỗ cho nút Sidebar) */
+        #custom-top-toolbar {
             position: fixed !important;
             top: 0 !important;
-            left: 0px !important; 
-            width: 100vw !important; /* Tràn viền 100% màn hình */
+            left: 60px !important; /* Dịch lùi sang phải để nhường góc trái cho nút mặc định */
+            width: calc(100vw - 60px) !important;
             height: 60px !important;
-            z-index: 9999999 !important; /* Lớp cao nhất */
-            background-color: var(--secondary-background-color) !important; /* Màu nền menu đồng bộ hệ thống */
-            padding-top: 5px !important;
+            z-index: 999999 !important;
+            background-color: #0e1117 !important;
+            padding-top: 12px !important;
             padding-bottom: 5px !important;
-            padding-left: 65px !important; /* Chừa khoảng trống bên trái cho nút mở Sidebar */
+            padding-left: 15px !important;
             padding-right: 25px !important;
-            border-bottom: 2px solid #007acc !important; /* Line xanh mảnh CAD */
+            border-bottom: 2px solid #007acc !important; /* Line xanh mảnh CAD xuyên suốt */
+            display: flex !important;
+            align-items: center !important;
         }
 
-        /* =========================================================================
-           4. 📌 KHÓA GHIM CỨNG CỤM TABS CON LÊN ĐẦU TRANG (NGAY DƯỚI RIBBON)
-           ========================================================================= */
-        .stTabs [data-baseweb="tab-list"] {
-            position: fixed !important;
-            top: 62px !important; /* Khóa dính chặt ngay sát dưới chân dải Ribbon 60px */
-            left: 0px !important;
-            width: 100vw !important;
-            z-index: 9999998 !important; /* Thấp hơn Ribbon 1 tầng để không bị đè */
-            background-color: var(--background-color) !important; /* Nền tự đảo Light/Dark */
-            padding-left: 20px !important;
-            border-bottom: 1px solid var(--border-color) !important;
-            box-shadow: 0px 4px 6px rgba(0, 0, 0, 0.05) !important;
-        }
-        
-        /* Màu chữ của các Tab tự động đảo màu rõ nét theo nền */
-        .stTabs [data-baseweb="tab"] {
-            color: var(--text-color) !important;
-            font-weight: bold !important;
-        }
-
-        /* =========================================================================
-           5. BIẾN PHÂN VÙNG BẢN VẼ CHÍNH THÀNH HỘP CUỘN ĐỘC LẬP CHỐNG TRƯỢT MENU
-           ========================================================================= */
+        /* 4. Định vị phân vùng nội dung chính (Đẩy xuống dưới chân thanh lệnh 60px) */
         .main {
-            /* Đẩy vùng nội dung xuống 120px để nhường chỗ cho cả Ribbon (60px) và Tabs (60px) cố định ở trên */
-            margin-top: 120px !important; 
-            height: calc(100vh - 120px) !important; /* Chiều cao còn lại tự co giãn */
-            overflow-y: auto !important; /* CHỈ CHO PHÉP CUỘN CHUỘT NỘI DUNG Ở ĐÂY */
+            margin-top: 60px !important;
+            height: calc(100vh - 60px) !important;
+            overflow-y: auto !important;
             overflow-x: hidden !important;
-            background-color: var(--background-color) !important; /* Nền đồng bộ */
         }
 
-        /* Giải phóng lề thừa tối đa để bản vẽ chiếm trọn không gian rộng rãi */
+        /* Giải phóng hoàn toàn lề thừa của khối bản vẽ */
         div[data-testid="stAppViewBlockContainer"] {
-            padding-top: 10px !important;
+            padding-top: 15px !important;
             padding-bottom: 30px !important;
             padding-left: 15px !important;
             padding-right: 15px !important;
         }
 
-        /* =========================================================================
-           6. ĐỊNH VỊ NÚT MỞ SIDEBAR LÊN TRÊN ĐỈNH KHÔNG BỊ KHUẤT
-           ========================================================================= */
+        /* 5. Định vị lại nút bấm đóng mở Sidebar trái lọt vào khe trống 60px an toàn */
         div[data-testid="stSidebarCollapsedControl"] {
             position: fixed !important;
-            top: 12px !important; /* Căn chỉnh chính giữa hàng Ribbon */
-            left: 15px !important;
-            z-index: 100000000 !important; /* Ưu tiên cao nhất để luôn bấm được */
+            top: 8px !important;
+            left: 10px !important;
+            z-index: 1000000 !important;
         }
     </style>
 """, unsafe_allow_html=True)
