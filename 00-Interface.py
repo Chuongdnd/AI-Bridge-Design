@@ -75,15 +75,124 @@ if 'design_data' not in st.session_state:
 if 'chatbot_context' not in st.session_state:
     st.session_state.chatbot_context = "Chưa tiến hành chạy dự báo tính toán."
 
+# Quản lý việc giữ nguyên tab vẽ khi click mở hộp thoại
+if 'current_tab' not in st.session_state:
+    st.session_state.current_tab = "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"
+
 # =========================================================================
-# ĐIỀU HƯỚNG CHÍNH: RIBBON NGANG ĐÃ TINH GIẢN (CAD STYLE)
+# 🏗️ ĐỊNH NGHĨA HỘP THOẠI KHAI BÁO SỐ LIỆU ĐỘC LẬP (AUTOCAD OPTIONS STYLE)
 # =========================================================================
+@st.dialog("⚙️ HỘP THOẠI KHAI BÁO THÔNG SỐ TUYẾN & THỦY VĂN", width="large")
+def show_options_dialog():
+    st.markdown("### 📥 Nhập các thông số hình học đầu vào công trình")
+    sec_in1, sec_in2, sec_in3 = st.columns(3)
+    
+    with sec_in1:
+        loai_c = st.radio("Chọn đối tượng vượt:", ["Vượt sông", "Vượt đường bộ"], horizontal=True)
+        goc_giao = st.number_input("Góc giao chéo (độ):", min_value=30.0, max_value=90.0, value=st.session_state.design_data.get('goc_giao', 90.0), step=1.0)
+        
+        if loai_c == "Vượt sông":
+            mien = st.selectbox("Khu vực miền:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
+            cap_s = st.selectbox("Cấp sông đường thủy:", ["1", "2", "3", "4", "5", "6"], format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
+            loai_h = st.selectbox("Loại hình thủy văn:", ["1", "2"], format_func=lambda x: "Kênh đào" if x=="1" else "Sông tự nhiên")
+            b_khai_bao = 20.0
+            loai_duong_v = None
+        else:
+            loai_duong_v = st.selectbox("Cấp đường bộ bị vượt:", ["Đường ô tô (Cấp I, II, III)", "Đường ô tô (Cấp còn lại)", "Đường cao tốc", "Đường cải tạo", "Đường xe thô sơ"])
+            b_khai_bao = st.number_input("Bề rộng tĩnh không yêu cầu B (m):", value=st.session_state.design_data.get('B', 20.0), step=0.5)
+            mien, cap_s, loai_h = "1", "1", "1"
+
+    with sec_in2:
+        st.markdown("**Số liệu cao độ hình học / Thủy văn (m)**")
+        h_tn_tb = st.number_input("Cao độ tự nhiên trung bình:", value=st.session_state.design_data.get('h_tn_tb', 2.15), format="%.3f")
+        if loai_c == "Vượt sông":
+            h1 = st.number_input("Cao độ MNCN (H1%):", value=st.session_state.design_data.get('MNCN', 3.50), format="%.3f")
+            h5 = st.number_input("Cao độ MNTT (H5%):", value=st.session_state.design_data.get('MNTT', 2.00), format="%.3f")
+            h10 = st.number_input("Cao độ MNTC (H10%):", value=st.session_state.design_data.get('MNTC', 1.50), format="%.3f")
+            h98 = st.number_input("Cao độ MNTN (H98%):", value=st.session_state.design_data.get('MNTN', 0.50), format="%.3f")
+        else:
+            h1 = st.number_input("Cao độ mặt đường bị vượt:", value=5.00, format="%.3f")
+            h5, h10, h98 = h1, h1, h1
+
+    with sec_in3:
+        st.markdown("**Tiêu chuẩn hình học trắc dọc tuyến**")
+        l_hinhhoc = st.selectbox("Loại đường thiết kế:", ["Cao tốc", "O to", "Do thi"])
+        
+        if l_hinhhoc == "Cao tốc":
+            d_hinhhoc = st.radio("Địa hình:", options=["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Khó khăn")
+            v_list = [120, 100] if d_hinhhoc == "1" else [80, 60]
+            v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list)
+            input_tra_cuu = v_hinhhoc
+        elif l_hinhhoc == "O to":
+            cap_duong_oto = st.selectbox("Cấp đường ô tô:", ["I", "II", "III", "IV", "V", "VI"])
+            d_hinhhoc = st.radio("Địa hình vùng:", ["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi")
+            input_tra_cuu = cap_duong_oto
+        else:
+            loai_dt = st.selectbox("Phân loại đường đô thị:", ["Trục chính đô thị", "Đường chính đô thị", "Đường khu vực", "Đường nội bộ"])
+            cap_dt = st.selectbox("Cấp kỹ thuật kỹ sư:", ["Đặc biệt", "Cấp I", "Cấp II"] if loai_dt == "Trục chính đô thị" else ["Cấp I", "Cấp II"])
+            list_vtk = YTHH.get_vtk_goi_y_dothi(loai_dt, cap_dt)
+            v_hinhhoc = st.radio("Vận tốc thiết kế Vtk:", options=list_vtk, horizontal=True)
+            d_hinhhoc = st.radio("Địa hình đô thị:", ["1", "2"], format_func=lambda x: "Bằng phẳng" if x == "1" else "Khó khăn")
+            input_tra_cuu = v_hinhhoc
+
+        b_cau = st.number_input("Bề rộng Bc mặt cắt cầu (m):", min_value=6.0, value=st.session_state.design_data.get('bc', 12.0), step=0.5)
+
+    res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
+    r_final_calc = 5000
+    if res_geo.get("status") == "success":
+        r_final_calc = res_geo["R_loi_tt"]
+
+    st.markdown("---")
+    
+    # Nút nhấn OK để áp dữ liệu thiết kế và đóng cửa sổ
+    if st.button("💾 OK - Áp dụng cấu hình và Chạy dự báo AI", use_container_width=True, type="primary"):
+        with st.spinner("⚡ Đang cập nhật dữ liệu..."):
+            res = TK.tra_cuu_tinh_khong_bridge(
+                loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None, cap_num=cap_s if loai_c=="Vượt sông" else None,
+                loai_hinh=loai_h if loai_c=="Vượt sông" else None, loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
+                cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None, h1=h1, h5=h5, h10=h10, h98=h98, h_tn_tb=h_tn_tb
+            )
+            alpha_rad = np.radians(goc_giao)
+            res['B'] = round(res.get('B', 0) / np.sin(alpha_rad), 2) if goc_giao < 90 else res.get('B', 0)
+            res['goc_giao'] = goc_giao
+            res['h_tn_tb'] = h_tn_tb
+            res['MNCN'], res['MNTT'], res['MNTC'], res['MNTN'] = h1, h5, h10, h98
+
+            if res_geo.get("status") == "success":
+                res['R_hinh_hoc'] = r_final_calc
+                res['geo_logic'] = YTHH.tinh_toan_geo_logic(res, h_tn_tb if loai_c == "Vượt sông" else h1, res.get('day_dam', 0.0))
+                imax_raw = res_geo.get('imax', '0')
+                res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
+                res['bc'] = b_cau
+                res['loai_duong'] = l_hinhhoc
+                res['vtk'] = res_geo.get("v_thiet_ke", 60)
+
+                xlsx_path = os.path.join(os.path.dirname(__file__), "Girder.xlsx")
+                models = GRD.train_bridge_ai_system(xlsx_path)
+                if models:
+                    res['ai_result'] = GRD.predict_main_span(res['B'], goc_giao, res['bc'], "Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông", models, res['geo_logic']['L_cau'])
+                
+                st.session_state.design_data = res
+                st.session_state.chatbot_context = f"Vtk={res['vtk']}km/h, LoaiDam={res['ai_result']['loai_dam']}, L_nhip={res['ai_result']['chieu_dai']}m, L_cau={res['geo_logic']['L_cau']:.2f}m"
+                
+                # Trả thanh Ribbon về trạng thái view bản vẽ chính
+                st.session_state.current_tab = "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"
+                st.rerun()
+
+# =========================================================================
+# GIAO DIỆN RIBBON CHÍNH 3 CHỨC NĂNG (NÚT GIỮA LÀ POP-UP DIALOG)
+# =========================================================================
+ribbon_options = ["TAB TRANG CHỦ", "⚙️ THÔNG SỐ THIẾT KẾ (POP-UP)", "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"]
+
+# Định vị vị trí index mặc định của Ribbon dựa trên session state
+default_idx = ribbon_options.index(st.session_state.current_tab)
+
 selected_ribbon = option_menu(
     menu_title=None, 
-    options=["TAB TRANG CHỦ", "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"],
-    icons=["house", "layout-text-window-reverse"], 
+    options=ribbon_options,
+    icons=["house", "gear", "layout-text-window-reverse"], 
     menu_icon="cast", 
-    default_index=1, # Bật mặc định tại Bản vẽ lớn luôn
+    default_index=default_idx,
     orientation="horizontal",
     styles={
         "container": {"padding": "0!important", "background-color": "#1e1e1e", "border-radius": "0px"},
@@ -97,6 +206,16 @@ selected_ribbon = option_menu(
 )
 
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-color: #007acc;'>", unsafe_allow_html=True)
+
+# --- XỬ LÝ CLICK ĐẶC BIỆT CHO NÚT POP-UP ---
+if selected_ribbon == "⚙️ THÔNG SỐ THIẾT KẾ (POP-UP)":
+    # Kích hoạt mở hộp thoại độc lập đè lên giao diện
+    show_options_dialog()
+    # Ép luồng hiển thị chính giữ nguyên trạng thái ở trang Bản vẽ phía dưới nền
+    selected_ribbon = st.session_state.current_tab
+else:
+    # Lưu lại tab làm việc thực tế của người dùng
+    st.session_state.current_tab = selected_ribbon
 
 # --- THANH SIDEBAR TRÁI ---
 with st.sidebar:
@@ -128,128 +247,25 @@ with st.sidebar:
             st.error(f"Lỗi AI: {e}")
 
 # =========================================================================
-# XỬ LÝ LOGIC HIỂN THỊ
+# VÙNG KHÔNG GIAN LÀM VIỆC CHÍNH (WORKSPACE)
 # =========================================================================
-
 if selected_ribbon == "TAB TRANG CHỦ":
     st.title("🏗️ Hệ thống Tự động hóa Thiết kế và Tối ưu hóa Kết cấu Cầu")
     st.write("---")
     st.markdown("""
     ### Ứng dụng tích toán kỹ thuật thông minh UTH
-    Hệ thống hỗ trợ tự động hóa thiết kế trắc dọc, tính toán kích thước hình học thủy văn tĩnh không và ứng dụng công nghệ trí tuệ nhân tạo AI nhằm đề xuất giải pháp kết cấu dầm chủ tối ưu chi phí.
-    
-    #### 🛠️ Hướng dẫn điều hướng:
     * Bấm chọn tab **BẢN VẼ KỸ THUẬT TƯƠNG TÁC** để vào không gian thiết kế chính.
-    * Mở hộp thoại mở rộng ở phía trên đầu bản vẽ để nhập liệu hoặc chỉnh sửa thông số nhanh. Bản vẽ sẽ tự động cập nhật ngay tức thì mà không cần chuyển đổi trang!
+    * Click vào nút giữa **⚙️ THÔNG SỐ THIẾT KẾ (POP-UP)** trên thanh Ribbon để bật hộp thoại khai báo số liệu độc lập giống AutoCAD Options!
     """)
 
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
-    st.subheader("🖼️ Không gian hiển thị đồ họa chính (Workspace)")
-
-    # 🌟 BIẾN THÀNH HỘP THOẠI KHAI BÁO SECTION CHUYÊN NGHIỆP 🌟
-    with st.expander("⚙️ HỘP THOẠI KHAI BÁO SỐ LIỆU TUYẾN, THỦY VĂN & TRA CỨU TIÊU CHUẨN", expanded=True):
-        st.markdown("### 📥 Nhập thông số thiết kế đầu vào")
-        sec_in1, sec_in2, sec_in3 = st.columns(3)
-        
-        with sec_col_1 if 'sec_col_1' in locals() else sec_in1:
-            loai_c = st.radio("Chọn đối tượng vượt:", ["Vượt sông", "Vượt đường bộ"], horizontal=True, key="sec_loai_c")
-            goc_giao = st.number_input("Góc giao chéo (độ):", min_value=30.0, max_value=90.0, value=st.session_state.design_data.get('goc_giao', 90.0), step=1.0)
-            
-            if loai_c == "Vượt sông":
-                mien = st.selectbox("Khu vực miền:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
-                cap_s = st.selectbox("Cấp sông đường thủy:", ["1", "2", "3", "4", "5", "6"], format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
-                loai_h = st.selectbox("Loại hình thủy văn:", ["1", "2"], format_func=lambda x: "Kênh đào" if x=="1" else "Sông tự nhiên")
-                b_khai_bao = 20.0
-                loai_duong_v = None
-            else:
-                loai_duong_v = st.selectbox("Cấp đường bộ bị vượt:", ["Đường ô tô (Cấp I, II, III)", "Đường ô tô (Cấp còn lại)", "Đường cao tốc", "Đường cải tạo", "Đường xe thô sơ"])
-                b_khai_bao = st.number_input("Bề rộng tĩnh không yêu cầu B (m):", value=st.session_state.design_data.get('B', 20.0), step=0.5)
-                mien, cap_s, loai_h = "1", "1", "1"
-
-        with sec_col_2 if 'sec_col_2' in locals() else sec_in2:
-            st.markdown("**Số liệu cao độ hình học / Thủy văn (m)**")
-            h_tn_tb = st.number_input("Cao độ tự nhiên trung bình:", value=st.session_state.design_data.get('h_tn_tb', 2.15), format="%.3f")
-            if loai_c == "Vượt sông":
-                h1 = st.number_input("Cao độ MNCN (H1%):", value=st.session_state.design_data.get('MNCN', 3.50), format="%.3f")
-                h5 = st.number_input("Cao độ MNTT (H5%):", value=st.session_state.design_data.get('MNTT', 2.00), format="%.3f")
-                h10 = st.number_input("Cao độ MNTC (H10%):", value=st.session_state.design_data.get('MNTC', 1.50), format="%.3f")
-                h98 = st.number_input("Cao độ MNTN (H98%):", value=st.session_state.design_data.get('MNTN', 0.50), format="%.3f")
-            else:
-                h1 = st.number_input("Cao độ mặt đường bị vượt:", value=5.00, format="%.3f")
-                h5, h10, h98 = h1, h1, h1
-
-        with sec_col_3 if 'sec_col_3' in locals() else sec_in3:
-            st.markdown("**Tiêu chuẩn hình học trắc dọc tuyến**")
-            l_hinhhoc = st.selectbox("Loại đường thiết kế:", ["Cao tốc", "O to", "Do thi"])
-            
-            if l_hinhhoc == "Cao tốc":
-                d_hinhhoc = st.radio("Địa hình:", options=["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Khó khăn")
-                v_list = [120, 100] if d_hinhhoc == "1" else [80, 60]
-                v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list)
-                input_tra_cuu = v_hinhhoc
-            elif l_hinhhoc == "O to":
-                cap_duong_oto = st.selectbox("Cấp đường ô tô:", ["I", "II", "III", "IV", "V", "VI"])
-                d_hinhhoc = st.radio("Địa hình vùng:", ["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi")
-                input_tra_cuu = cap_duong_oto
-            else:
-                loai_dt = st.selectbox("Phân loại đường đô thị:", ["Trục chính đô thị", "Đường chính đô thị", "Đường khu vực", "Đường nội bộ"])
-                cap_dt = st.selectbox("Cấp kỹ thuật kỹ sư:", ["Đặc biệt", "Cấp I", "Cấp II"] if loai_dt == "Trục chính đô thị" else ["Cấp I", "Cấp II"])
-                list_vtk = YTHH.get_vtk_goi_y_dothi(loai_dt, cap_dt)
-                v_hinhhoc = st.radio("Vận tốc thiết kế Vtk:", options=list_vtk, horizontal=True)
-                d_hinhhoc = st.radio("Địa hình đô thị:", ["1", "2"], format_func=lambda x: "Bằng phẳng" if x == "1" else "Khó khăn")
-                input_tra_cuu = v_hinhhoc
-
-            b_cau = st.number_input("Bề rộng Bc mặt cắt cầu (m):", min_value=6.0, value=st.session_state.design_data.get('bc', 12.0), step=0.5)
-
-        # Tiến hành xử lý nhanh dữ liệu tiêu chuẩn hình học nền
-        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
-        r_final_calc = 5000
-        if res_geo.get("status") == "success":
-            r_final_calc = res_geo["R_loi_tt"]
-
-        st.markdown("---")
-        
-        # 🚀 NÚT LETSGO CHÍNH THỨC NẰM TRONG HỘP THOẠI SECTION 🚀
-        if st.button("🚀 LET'S GO! KÍCH HOẠT TÍNH TOÁN & DỰ BÁO KẾT CẤU AI", use_container_width=True, type="primary"):
-            with st.spinner("⚡ Hệ thống đang đồng bộ trắc dọc và chạy mô hình AI..."):
-                res = TK.tra_cuu_tinh_khong_bridge(
-                    loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None, cap_num=cap_s if loai_c=="Vượt sông" else None,
-                    loai_hinh=loai_h if loai_c=="Vượt sông" else None, loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
-                    cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None, h1=h1, h5=h5, h10=h10, h98=h98, h_tn_tb=h_tn_tb
-                )
-                alpha_rad = np.radians(goc_giao)
-                res['B'] = round(res.get('B', 0) / np.sin(alpha_rad), 2) if goc_giao < 90 else res.get('B', 0)
-                res['goc_giao'] = goc_giao
-                res['h_tn_tb'] = h_tn_tb
-                res['MNCN'], res['MNTT'], res['MNTC'], res['MNTN'] = h1, h5, h10, h98
-
-                if res_geo.get("status") == "success":
-                    res['R_hinh_hoc'] = r_final_calc
-                    res['geo_logic'] = YTHH.tinh_toan_geo_logic(res, h_tn_tb if loai_c == "Vượt sông" else h1, res.get('day_dam', 0.0))
-                    imax_raw = res_geo.get('imax', '0')
-                    res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
-                    res['bc'] = b_cau
-                    res['loai_duong'] = l_hinhhoc
-                    res['vtk'] = res_geo.get("v_thiet_ke", 60)
-
-                    # Chạy dự báo AI dầm cầu chủ
-                    xlsx_path = os.path.join(os.path.dirname(__file__), "Girder.xlsx")
-                    models = GRD.train_bridge_ai_system(xlsx_path)
-                    if models:
-                        res['ai_result'] = GRD.predict_main_span(res['B'], goc_giao, res['bc'], "Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông", models, res['geo_logic']['L_cau'])
-                    
-                    # Cập nhật bộ đệm an toàn
-                    st.session_state.design_data = res
-                    st.session_state.chatbot_context = f"Vtk={res['vtk']}km/h, LoaiDam={res['ai_result']['loai_dam']}, L_nhip={res['ai_result']['chieu_dai']}m, L_cau={res['geo_logic']['L_cau']:.2f}m"
-                    st.toast("🎉 Đã tính toán xong! Bản vẽ phía dưới đã cập nhật số liệu mới.", icon="✅")
-
-    # BẢNG TÓM TẮT THÔNG SỐ TRỰC QUAN GỌN GÀNG (Hiện sau khi bấm tính toán)
+    # HIỂN THỊ DÒNG TÓM TẮT THÔNG SỐ GỌN GÀNG NGAY TRÊN ĐẦU BẢN VẼ
     if 'ai_result' in st.session_state.design_data:
         ai_p = st.session_state.design_data['ai_result']
         geo_p = st.session_state.design_data['geo_logic']
-        st.markdown(f"📊 **Thông số hiện hành:** Tổng chiều dài: **{geo_p['L_cau']:.2f}m** | Quy mô nhịp: **{ai_p['tong_so_nhip']} nhịp x {ai_p['chieu_dai']}m ({ai_p['loai_dam'].upper()})** | Chiều cao dầm: **{ai_p['chieu_cao']}m**")
+        st.markdown(f"📊 **Thông số hiện hành:** Tổng chiều dài: **{geo_p['L_cau']:.2f}m** | Sơ đồ nhịp: **{ai_p['tong_so_nhip']} nhịp x {ai_p['chieu_dai']}m ({ai_p['loai_dam'].upper()})** | Chiều cao dầm: **{ai_p['chieu_cao']}m**")
 
-    # --- HỆ THỐNG TAB HIỂN THỊ ĐỒ HỌA CHÍNH ---
+    # HỆ THỐNG TAB CON TRỰC QUAN XEM BẢN VẼ FULL VIEW
     tab_trac_doc, tab_mcn_draw = st.tabs(["📊 Bản vẽ Trắc dọc toàn cầu (Full View)", "📐 Bản vẽ Mặt cắt ngang điển hình"])
     
     with tab_trac_doc:
