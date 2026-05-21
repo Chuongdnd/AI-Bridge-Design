@@ -10,35 +10,6 @@ from streamlit_option_menu import option_menu
 # --- THIẾT LẬP TRANG CHUẨN KỸ THUẬT TOÀN MÀN HÌNH ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
-# =========================================================================
-# 🎨 🏙️ NHÚNG CSS NÂNG CAO: ẨN THANH ĐEN, GHIM CỐ ĐỊNH THANH ĐIỀU HƯỚNG & LỆNH (STIKY WORKSPACE)
-# =========================================================================
-st.markdown("""
-    <style>
-        /* 1. Ẩn hoàn toàn thanh đen Header mặc định phía trên cùng của Streamlit */
-        header[data-testid="stHeader"] {
-            display: none !important;
-        }
-        
-        /* Dọn dẹp khoảng trống thừa do thanh header để lại để đẩy bản vẽ lên sát mép màn hình */
-        .main .block-container {
-            padding-top: 10px !important;
-            padding-bottom: 10px !important;
-            padding-left: 20px !important;
-            padding-right: 20px !important;
-        }
-
-        /* 2. Ép dải menu chính và các khu vực chọn Option lơ lửng, cố định trên đỉnh khi cuộn trang */
-        div[data-testid="stVerticalBlock"] > div:has(.stMarkdown) {
-            position: -webkit-sticky;
-            position: sticky;
-            top: 0;
-            z-index: 999;
-            background-color: #0e1117; /* Trùng với màu nền tối (Dark mode) của bạn */
-        }
-    </style>
-""", unsafe_allow_html=True)
-
 # Khởi tạo bộ nhớ hội thoại chatbot
 if 'messages' not in st.session_state:
     st.session_state.messages = []
@@ -74,6 +45,7 @@ def load_all_standards(folder_name="Documents"):
                 pass
     return knowledge_text
 
+# Nạp hệ thống tài liệu vào bộ nhớ đệm
 if 'bridge_library' not in st.session_state:
     with st.spinner("📚 Đang nạp hệ thống tiêu chuẩn cầu đường..."):
         st.session_state.bridge_library = load_all_standards()
@@ -89,6 +61,7 @@ try:
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
 
+# --- KHỞI TẠO HOÀN CHỈNH BỘ NHỚ TRẠNG THÁI SESSION STATE ---
 if 'design_data' not in st.session_state:
     st.session_state.design_data = {
         'day_dam': 0.0, 'khau_do_ngang': 0.0, 'bc': 12.0, 'loai_duong': "Do thi",
@@ -102,11 +75,12 @@ if 'design_data' not in st.session_state:
 if 'chatbot_context' not in st.session_state:
     st.session_state.chatbot_context = "Chưa tiến hành chạy dự báo tính toán."
 
+# Quản lý việc giữ nguyên tab vẽ khi click mở hộp thoại
 if 'current_tab' not in st.session_state:
     st.session_state.current_tab = "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"
 
 # =========================================================================
-# ⚙️ ĐỊNH NGHĨA HỘP THOẠI KHAI BÁO SỐ LIỆU ĐỘC LẬP (OPTIONS WINDOW STYLE)
+# 🏗️ ĐỊNH NGHĨA HỘP THOẠI KHAI BÁO SỐ LIỆU ĐỘC LẬP (AUTOCAD OPTIONS STYLE)
 # =========================================================================
 @st.dialog("⚙️ HỘP THOẠI KHAI BÁO THÔNG SỐ TUYẾN & THỦY VĂN", width="large")
 def show_options_dialog():
@@ -170,6 +144,7 @@ def show_options_dialog():
 
     st.markdown("---")
     
+    # Nút nhấn OK để áp dữ liệu thiết kế và đóng cửa sổ
     if st.button("💾 OK - Áp dụng cấu hình và Chạy dự báo AI", use_container_width=True, type="primary"):
         with st.spinner("⚡ Đang cập nhật dữ liệu..."):
             res = TK.tra_cuu_tinh_khong_bridge(
@@ -200,20 +175,22 @@ def show_options_dialog():
                 st.session_state.design_data = res
                 st.session_state.chatbot_context = f"Vtk={res['vtk']}km/h, LoaiDam={res['ai_result']['loai_dam']}, L_nhip={res['ai_result']['chieu_dai']}m, L_cau={res['geo_logic']['L_cau']:.2f}m"
                 
+                # Trả thanh Ribbon về trạng thái view bản vẽ chính
                 st.session_state.current_tab = "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"
                 st.rerun()
 
 # =========================================================================
-# 🏢 SỬA ĐỔI CẤU TRÚC: ĐƯA NÚT "⚙️ THÔNG SỐ THIẾT KẾ" XUỐNG DƯỚI LÀM HỘP THOẠI ĐỘC LẬP
+# GIAO DIỆN RIBBON CHÍNH 3 CHỨC NĂNG (NÚT GIỮA LÀ POP-UP DIALOG)
 # =========================================================================
-# Khung dải Ribbon chính trên cùng chỉ giữ lại 2 vùng làm việc Workspace lớn
-ribbon_options = ["TAB TRANG CHỦ", "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"]
-default_idx = ribbon_options.index(st.session_state.current_tab) if st.session_state.current_tab in ribbon_options else 1
+ribbon_options = ["TAB TRANG CHỦ", "⚙️ THÔNG SỐ THIẾT KẾ (POP-UP)", "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"]
+
+# Định vị vị trí index mặc định của Ribbon dựa trên session state
+default_idx = ribbon_options.index(st.session_state.current_tab)
 
 selected_ribbon = option_menu(
     menu_title=None, 
     options=ribbon_options,
-    icons=["house", "layout-text-window-reverse"], 
+    icons=["house", "gear", "layout-text-window-reverse"], 
     menu_icon="cast", 
     default_index=default_idx,
     orientation="horizontal",
@@ -227,9 +204,18 @@ selected_ribbon = option_menu(
         "nav-link-selected": {"background-color": "#007acc"},
     }
 )
-st.session_state.current_tab = selected_ribbon
 
-st.markdown("<hr style='margin-top: 0px; margin-bottom: 10px; border-color: #007acc;'>", unsafe_allow_html=True)
+st.markdown("<hr style='margin-top: 0px; margin-bottom: 15px; border-color: #007acc;'>", unsafe_allow_html=True)
+
+# --- XỬ LÝ CLICK ĐẶC BIỆT CHO NÚT POP-UP ---
+if selected_ribbon == "⚙️ THÔNG SỐ THIẾT KẾ (POP-UP)":
+    # Kích hoạt mở hộp thoại độc lập đè lên giao diện
+    show_options_dialog()
+    # Ép luồng hiển thị chính giữ nguyên trạng thái ở trang Bản vẽ phía dưới nền
+    selected_ribbon = st.session_state.current_tab
+else:
+    # Lưu lại tab làm việc thực tế của người dùng
+    st.session_state.current_tab = selected_ribbon
 
 # --- THANH SIDEBAR TRÁI ---
 with st.sidebar:
@@ -269,22 +255,15 @@ if selected_ribbon == "TAB TRANG CHỦ":
     st.markdown("""
     ### Ứng dụng tích toán kỹ thuật thông minh UTH
     * Bấm chọn tab **BẢN VẼ KỸ THUẬT TƯƠNG TÁC** để vào không gian thiết kế chính.
+    * Click vào nút giữa **⚙️ THÔNG SỐ THIẾT KẾ (POP-UP)** trên thanh Ribbon để bật hộp thoại khai báo số liệu độc lập giống AutoCAD Options!
     """)
 
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
-    
-    # 🌟 CẢI TIẾN: BỐ TRÍ NÚT OPTIONS GỌN GÀNG VÀ DÒNG THÔNG SỐ ĐƯỢC CỐ ĐỊNH PHÍA TRÊN 🌟
-    ctrl_col1, ctrl_col2 = st.columns([1, 4])
-    with ctrl_col1:
-        # Khi bấm nút này, hộp thoại Options độc lập sẽ bung ra đè lên màn hình hệt như CAD
-        if st.button("⚙️ OPTIONS - KHAI BÁO SỐ LIỆU", use_container_width=True, type="secondary"):
-            show_options_dialog()
-            
-    with ctrl_col2:
-        if 'ai_result' in st.session_state.design_data:
-            ai_p = st.session_state.design_data['ai_result']
-            geo_p = st.session_state.design_data['geo_logic']
-            st.markdown(f"<div style='padding-top: 5px;'>📊 <b>Thông số hiện hành:</b> Chiều dài: <b>{geo_p['L_cau']:.2f}m</b> | Sơ đồ: <b>{ai_p['tong_so_nhip']} nhịp x {ai_p['chieu_dai']}m ({ai_p['loai_dam'].upper()})</b> | Chiều cao dầm: <b>{ai_p['chieu_cao']}m</b></div>", unsafe_allow_html=True)
+    # HIỂN THỊ DÒNG TÓM TẮT THÔNG SỐ GỌN GÀNG NGAY TRÊN ĐẦU BẢN VẼ
+    if 'ai_result' in st.session_state.design_data:
+        ai_p = st.session_state.design_data['ai_result']
+        geo_p = st.session_state.design_data['geo_logic']
+        st.markdown(f"📊 **Thông số hiện hành:** Tổng chiều dài: **{geo_p['L_cau']:.2f}m** | Sơ đồ nhịp: **{ai_p['tong_so_nhip']} nhịp x {ai_p['chieu_dai']}m ({ai_p['loai_dam'].upper()})** | Chiều cao dầm: **{ai_p['chieu_cao']}m**")
 
     # HỆ THỐNG TAB CON TRỰC QUAN XEM BẢN VẼ FULL VIEW
     tab_trac_doc, tab_mcn_draw = st.tabs(["📊 Bản vẽ Trắc dọc toàn cầu (Full View)", "📐 Bản vẽ Mặt cắt ngang điển hình"])
