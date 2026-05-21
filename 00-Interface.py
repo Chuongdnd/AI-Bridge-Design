@@ -355,11 +355,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT TƯƠNG TÁC":
             "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
             "📐 Bản vẽ Mặt cắt ngang điển hình"
         ])
-        
-        with tab_binhdo_2d:
-            fig_2d = TV.ve_binh_do_goc_2d(df_geology)
-            if fig_2d: st.plotly_chart(fig_2d, use_container_width=True)
-            
+                   
         with tab_dia_hinh_3d:
             # Thanh slider và hàm vẽ được căn lề thẳng hàng tuyệt đối
             he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ địa hình):", 0.01, 1.00, 0.25, step=0.01)
