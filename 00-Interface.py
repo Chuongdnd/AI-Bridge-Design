@@ -15,12 +15,12 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # =========================================================================
 st.markdown("""
     <style>
-        /* 1. Thiết lập nền móng ứng dụng mượt mà */
+        /* 1. Thiết lập nền móng ứng dụng mượt mà, loại bỏ overflow hidden để scroll tự nhiên */
         .stApp {
             background-color: #0e1117 !important;
         }
 
-        /* 2. Cân chỉnh Header: Giữ chỗ cho nút Sidebar bên trái nhưng trong suốt */
+        /* 2. Cân chỉnh Header mặc định: Cho trong suốt hoàn toàn để hiện nút đóng/mở Sidebar */
         div[data-testid="stHeader"], header {
             background-color: transparent !important;
             box-shadow: none !important;
@@ -28,11 +28,16 @@ st.markdown("""
             z-index: 99 !important;
         }
 
-        /* 3. 🎯 TIÊU DIỆT SẠCH CỤM 3 KÝ HIỆU BÊN PHẢI (Deploy, GitHub, Menu 3 chấm) */
+        /* 3. 🎯 TRUY QUÉT TẬN GỐC VÀ TIÊU DIỆT CỤM 3 KÝ HIỆU BÊN PHẢI (Deploy, GitHub, Menu 3 chấm) */
+        div[data-testid="stToolbar"],
+        div[data-testid="stHeader"] > div:first-child > div:last-child,
         div[data-testid="stActionButton"], 
         a[data-testid="stGitHubLink"], 
         #MainMenu {
             display: none !important;
+            visibility: hidden !important;
+            width: 0px !important;
+            height: 0px !important;
         }
 
         /* 4. Thiết kế thanh Tiêu đề ghi đè (Top Custom Banner) sang trọng nằm dưới nút Sidebar */
@@ -63,14 +68,14 @@ st.markdown("""
             text-shadow: 0px 2px 4px rgba(0,0,0,0.5);
         }
 
-        /* 5. Đẩy phân vùng nội dung chính xuống dưới thanh tiêu đề */
+        /* 5. 🎯 ĐẨY TOÀN BỘ NỘI DUNG WEB APP ĐI LÊN SÁT ĐỈNH (Xóa khoảng trống khoanh đỏ) */
         .main .block-container {
-            padding-top: 5rem !important;
+            padding-top: 4.2rem !important; /* Thu hẹp tối đa khoảng khoảng đệm sát mép Banner */
             padding-bottom: 2rem !important;
             max-width: 98% !important;
         }
 
-        /* 6. Định hình phân vùng hiển thị Tab bản vẽ */
+        /* 6. Định hình phân vùng hiển thị Tab bản vẽ phẳng */
         div[data-testid="stTabContent"] {
             background-color: #11151c !important;
             border: 1px solid #1e293b !important;
