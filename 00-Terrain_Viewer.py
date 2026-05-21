@@ -29,7 +29,7 @@ def parse_ntd_file(uploaded_file):
             
         token = parts[0].upper()
         
-        # 1. 🎯 LẤY CỌC TIM TUYẾN: Xác định Lý trình X và Cao độ Z tại vị trí tim Y = 0
+        # 1. LẤY CỌC TIM TUYẾN: Xác định Lý trình X và Cao độ Z tại vị trí tim Y = 0
         if token == 'POLE' and len(parts) >= 4:
             try:
                 current_x = float(parts[2])
@@ -44,7 +44,7 @@ def parse_ntd_file(uploaded_file):
             except ValueError:
                 pass
                 
-        # 2. 🎯 LẤY TRẮC NGANG CÁNH: Xác định Khoảng cách Y và Cao độ Z tương ứng
+        # 2. LẤY TRẮC NGANG CÁNH: Xác định Khoảng cách Y và Cao độ Z tương ứng
         elif token in ['TARGETL', 'TARGETR'] and len(parts) >= 3:
             try:
                 dist_offset = float(parts[1]) # Khoảng cách trắc ngang (Trục Y)
@@ -64,24 +64,24 @@ def parse_ntd_file(uploaded_file):
 def ve_binh_do_goc_2d(df):
     """
     HÀM DỰNG BÌNH ĐỒ GỐC 2D ĐƯỜNG ĐỒNG MỨC MỊN HÓA KHÔNG GIAN
+    Đã sửa cú pháp rolling() tương thích hoàn toàn với Pandas mới nhất
     """
     if df.empty or len(df.index) < 3:
         st.warning("⚠️ Dữ liệu địa hình quá ít, không đủ điều kiện dựng Bình đồ đồng mức.")
         return None
         
     try:
-        # Xây dựng ma trận lưới xoay dựa theo số liệu thực tế, không dùng bước nhảy cứng nhắc
         grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
         
-        # 📊 THUẬT TOÁN VUỐT NỐI MỊN BỀ MẶT PHƯƠNG NGANG VÀ PHƯƠNG DỌC KHÔNG GIAN
-        # Khôi phục liên kết hình học: Nội suy dọc theo trắc ngang Y (axis=0) để khép kín mặt cắt cọc trước
+        # Vuốt nối nội suy liên tục hình học: Phương đứng trắc ngang (axis=0) trước, Phương ngang trắc dọc (axis=1) sau
         grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
-        # Nối mượt các cọc với nhau chạy dọc theo lý trình tuyến X (axis=1) sau
         grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
         
-        # Áp dụng bộ lọc mài phẳng trung bình trượt đa chiều loại bỏ răng cưa rác dữ liệu
-        grid_df = grid_df.rolling(window=3, axis=0, min_periods=1, center=True).mean()
-        grid_df = grid_df.rolling(window=3, axis=1, min_periods=1, center=True).mean()
+        # ✨ THUẬT TOÁN MỚI: Mài mịn 2 chiều chuẩn Pandas mới không dùng tham số axis
+        # Làm mịn theo chiều dọc (Trắc ngang Y)
+        grid_df = grid_df.rolling(window=3, min_periods=1, center=True).mean()
+        # Làm mịn theo chiều ngang (Lý trình X) bằng cách dùng .T (Xoay ma trận) trước và sau khi rolling
+        grid_df = grid_df.T.rolling(window=3, min_periods=1, center=True).mean().T
         
         x_grid = grid_df.columns.values
         y_grid = grid_df.index.values
@@ -130,22 +130,23 @@ def ve_binh_do_goc_2d(df):
 def ve_dia_hinh_3d(df, he_so_z=0.25):
     """
     HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D LƯỚI KHÔNG GIAN PHẲNG PHIU (ANTI-CORRUGATED)
-    Ép cứng tỉ lệ kích thước thật thực địa 1:1:1 theo đúng hệ mét số liệu gốc
+    Đã sửa cú pháp rolling() tương thích hoàn toàn với Pandas mới nhất, tỷ lệ thực tế 1:1:1
     """
     if df.empty or len(df.index) < 3:
         return None
         
     try:
-        # Xây dựng ma trận lưới xoay dựa theo dữ liệu trắc dọc, trắc ngang nguyên bản
         grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
         
-        # 📊 VÒNG 1: Vuốt nối nội suy liên tục phương trắc ngang Y (axis=0) rồi đến trắc dọc X (axis=1)
+        # Vuốt nối nội suy hình học liên tục phương trắc ngang Y rồi đến trắc dọc X
         grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
         grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
         
-        # 📊 VÒNG 2: Mài mịn bề mặt bằng bộ lọc ma trận rolling mean khử sạch nếp gấp lượn sóng "múi tôn"
-        grid_df = grid_df.rolling(window=5, axis=0, min_periods=1, center=True).mean()
-        grid_df = grid_df.rolling(window=5, axis=1, min_periods=1, center=True).mean()
+        # ✨ THUẬT TOÁN MỚI: Khử sạch sọc "múi tôn" bằng rolling + xoay ma trận .T
+        # Mài mịn phương trắc ngang Y
+        grid_df = grid_df.rolling(window=5, min_periods=1, center=True).mean()
+        # Mài mịn phương lý trình X bằng kỹ thuật Transpose xoay trục an toàn
+        grid_df = grid_df.T.rolling(window=5, min_periods=1, center=True).mean().T
         
         x_grid = grid_df.columns.values
         y_grid = grid_df.index.values
@@ -155,7 +156,7 @@ def ve_dia_hinh_3d(df, he_so_z=0.25):
             x=x_grid,
             y=y_grid,
             z=z_grid,
-            colorscale='Earth',    # Hệ màu chuẩn địa chất, sông ngòi tự nhiên
+            colorscale='Earth',    # Hệ màu chuẩn địa hình tự nhiên
             opacity=0.95,
             colorbar=dict(
                 title=dict(text="Cao độ Z (m)", side="right"),
@@ -172,7 +173,7 @@ def ve_dia_hinh_3d(df, he_so_z=0.25):
                 xaxis_title="Lý trình X (m)",
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z (m)",
-                # 📌 ÉP TUYỆT ĐỐI VỀ TỶ LỆ KÍCH THƯỚC THẬT THỰC ĐỊA 1:1:1
+                # ÉP TUYỆT ĐỐI VỀ TỶ LỆ KÍCH THƯỚC THẬT THỰC ĐỊA 1:1:1
                 aspectmode='data' 
             ),
             template="plotly_dark",
