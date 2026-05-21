@@ -15,78 +15,65 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # =========================================================================
 st.markdown("""
     <style>
-        /* 1. KHÓA TOÀN BỘ KHUNG GỐC: ÉP CHỈ CUỘN TRONG VÙNG BẢN VẼ */
+        /* 1. Khóa liên kết gốc màn hình để ép phân vùng bản vẽ tự cuộn độc lập */
         .stApp {
             height: 100vh !important;
             overflow: hidden !important;
             background-color: #0e1117 !important;
         }
 
-        /* 2. TIÊU DIỆT HOÀN TOÀN THANH HEADER GỐC MẶC ĐỊNH */
+        /* 2. Tiêu diệt hoàn toàn dải nền đen mặc định của Header Streamlit */
         div[data-testid="stHeader"], header {
-            display: none !important;
+            background-color: transparent !important;
+            box-shadow: none !important;
             height: 0px !important;
-            opacity: 0 !important;
+            z-index: 1 !important;
         }
 
-        /* 3. CỦM RIBBON LƠ LỬNG: TỰ ĐỘNG CHỪA LỀ TRÁI CHO NÚT BẤM VÀ THANH SIDEBAR BÊN TRÁI */
-        #custom-ribbon-container {
+        /* 3. Khóa ghim thanh lệnh điều khiển trên đỉnh (Dịch sang phải để chừa chỗ cho nút Sidebar) */
+        #custom-top-toolbar {
             position: fixed !important;
             top: 0 !important;
-            /* Thay vì bám sát left: 0, ta lùi sang phải 60px để chừa hẳn một khoảng trống cho nút mở Sidebar */
-            left: 60px !important; 
-            /* Chiều rộng tự động bằng 100% màn hình trừ đi 60px lề để không bao giờ đè lên nút hệ thống */
+            left: 60px !important; /* Dịch lùi sang phải để nhường góc trái cho nút mặc định */
             width: calc(100vw - 60px) !important;
-            height: auto !important;
-            z-index: 9999999 !important; /* Đẩy lên tầng cao nhất */
-            background-color: #0e1117 !important; /* Đổ đặc màu nền tối trùng màu hệ thống */
-            padding-top: 5px !important;
+            height: 60px !important;
+            z-index: 999999 !important;
+            background-color: #0e1117 !important;
+            padding-top: 12px !important;
             padding-bottom: 5px !important;
             padding-left: 15px !important;
             padding-right: 25px !important;
-            border-bottom: 2px solid #007acc !important; /* Chỉ xanh CAD mảnh liền mạch */
-            box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.6) !important; /* Tạo bóng đổ tách biệt không gian */
+            border-bottom: 2px solid #007acc !important; /* Line xanh mảnh CAD xuyên suốt */
+            display: flex !important;
+            align-items: center !important;
         }
 
-        /* 4. CẤU TRÚC LẠI KHUNG CHỨA BẢN VẼ (MAIN): ĐÓNG GÓI HỘP CUỘN ĐỘC LẬP */
+        /* 4. Định vị phân vùng nội dung chính (Đẩy xuống dưới chân thanh lệnh 60px) */
         .main {
-            margin-top: 95px !important; /* Đẩy nội dung xuống vừa khít dưới chân thanh menu cố định */
-            height: calc(100vh - 95px) !important; /* Chiều cao tự động tính toán bằng phần còn lại của màn hình */
-            overflow-y: auto !important; /* Chỉ cho phép cuộn chuột bên trong phân vùng này */
+            margin-top: 60px !important;
+            height: calc(100vh - 60px) !important;
+            overflow-y: auto !important;
             overflow-x: hidden !important;
         }
 
-        /* Dọn dẹp khoảng đệm thừa của khối nội dung để giải phóng diện tích tối đa */
+        /* Giải phóng hoàn toàn lề thừa của khối bản vẽ */
         div[data-testid="stAppViewBlockContainer"] {
-            padding-top: 0px !important;
+            padding-top: 15px !important;
             padding-bottom: 30px !important;
             padding-left: 15px !important;
             padding-right: 15px !important;
         }
 
-        /* 5. ĐỒNG BỘ PHONG CÁCH CỦA CÁC TAB CON VÀ ĐỊNH VỊ LẠI NÚT SIDEBAR */
-        .stTabs [data-baseweb="tab-list"] {
-            background-color: #0e1117 !important;
-        }
-        
-        /* 🛠️ QUAN TRỌNG: ĐẨY NÚT MŨI TÊN ĐỒNG MỞ SIDEBAR LÊN TẦNG CAO NHẤT VÀ NẰM TRONG KHE TRỐNG 60PX */
+        /* 5. Định vị lại nút bấm đóng mở Sidebar trái lọt vào khe trống 60px an toàn */
         div[data-testid="stSidebarCollapsedControl"] {
             position: fixed !important;
-            top: 10px !important;
+            top: 8px !important;
             left: 10px !important;
-            width: 45px !important;
-            height: 45px !important;
-            z-index: 100000000 !important; /* Cao hơn cả Ribbon để luôn hiển thị và bấm được */
-            background-color: #1e1e1e !important; /* Tạo một khối đệm xám để nút nổi bật như CAD */
-            border-radius: 4px !important;
-            border: 1px solid #333333 !important;
-            display: flex !important;
-            align-items: center !important;
-            justify-content: center !important;
+            z-index: 1000000 !important;
         }
-        
-        /* Triệt tiêu dải nút Deploy góc phải của Streamlit Cloud */
-        .stAppDeployDropdown, .stAppHeader {
+
+        /* Ẩn nút Deploy thừa của Streamlit Cloud */
+        .stAppDeployDropdown {
             display: none !important;
         }
     </style>
