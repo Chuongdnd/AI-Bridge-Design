@@ -142,10 +142,10 @@ def ve_binh_do_goc_2d(df):
         st.error(f"Lỗi cấu trúc ma trận bình đồ: {e}")
         return None
 
-def ve_dia_hinh_3d(df):
+def ve_dia_hinh_3d(df, he_so_z=0.25):
     """
     HÀM DỰNG KHỐI MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D (TERRAIN DIGITAL MODEL)
-    Đã khóa cứng tỉ lệ kích thước thật 1:1:1 theo số liệu khảo sát thực địa
+    Đã bổ sung nhận tham số he_so_z từ slider của file giao diện chính
     """
     if df.empty or len(df.index) < 3:
         return None
@@ -158,7 +158,7 @@ def ve_dia_hinh_3d(df):
         # 2. Xoay bảng dữ liệu thành ma trận lưới 2D đồng bộ
         grid_df = df_smooth.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
         
-        # Nội suy toán học điền đầy các lỗ hổng
+        # Nội suy toán học điền đầy các lỗ hổng thiếu điểm mia giữa các cọc
         grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
         grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
         
@@ -166,12 +166,12 @@ def ve_dia_hinh_3d(df):
         y_grid = grid_df.index.values
         z_grid = grid_df.values
         
-        # Dùng go.Surface để trải mịn tấm thảm địa hình
+        # Dùng go.Surface để trải phẳng mịn tấm thảm địa hình
         fig = go.Figure(data=[go.Surface(
             x=x_grid,
             y=y_grid,
             z=z_grid,
-            colorscale='Earth',    
+            colorscale='Earth',    # Hệ màu địa chất chuẩn
             opacity=0.9,
             colorbar=dict(
                 title=dict(text="Cao độ Z (m)", side="right"),
@@ -179,22 +179,19 @@ def ve_dia_hinh_3d(df):
             )
         )])
         
-        # 🌟 CẬP NHẬT PHÂN VÙNG LAYOUT GIỮ KÍCH THƯỚC THẬT 🌟
+        # Cấu hình không gian hiển thị camera 3D CAD Style
         fig.update_layout(
             title=dict(
-                text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D CHUẨN TRỰC QUAN",
+                text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D TÙY CHỈNH TỶ LỆ",
                 font=dict(size=16, color='#007acc', family='Arial')
             ),
             scene=dict(
                 xaxis_title="Lý trình X (m)",
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z (m)",
-                # 📌 THAY ĐỔI CỐT LÕI TẠI ĐÂY:
                 aspectmode='manual',
-                aspectratio=dict(x=3, y=1, z=he_so_z)
-                # Giải thích: Chiều dài hiển thị gấp 3 lần chiều rộng, 
-                # và chiều cao đứng chiếm 25% chiều rộng. 
-                # Tỷ lệ này giúp Chương nhìn rõ mố cát, lòng sông mà không bị biến dạng thành gai nhọn!
+                # 📌 GẮN BIẾN HE_SO_Z NHẬN TRỰC TIẾP TỪ SLIDER ĐỂ THAY ĐỔI ĐỘ CAO
+                aspectratio=dict(x=3, y=1, z=he_so_z) 
             ),
             template="plotly_dark",
             margin=dict(l=10, r=10, t=40, b=10),
