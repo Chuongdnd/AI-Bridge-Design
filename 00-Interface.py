@@ -15,30 +15,34 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # =========================================================================
 st.markdown("""
     <style>
-        /* 1. KHÓA LIÊN KẾT MÀN HÌNH GỐC: Giao diện sáng sủa (Light Mode) */
+        /* 1. KHÓA LIÊN KẾT MÀN HÌNH GỐC: Chế độ sáng (Light Mode) */
         .stApp {
             height: 100vh !important;
             overflow: hidden !important;
             background-color: #ffffff !important;
         }
 
-        /* 2. TIÊU DIỆT THANH HEADER VÀ ẨN RIÊNG CỤM NÚT HỆ THỐNG (FORK, GITHUB, 3 CHẤM) */
+        /* 2. TIÊU DIỆT HOÀN TOÀN THANH HEADER MẶC ĐỊNH */
         div[data-testid="stHeader"], header {
             background-color: transparent !important;
             box-shadow: none !important;
             height: 0px !important;
-            z-index: 1 !important;
+            z-index: -100 !important; /* Đẩy hẳn ra sau cùng */
+            display: none !important;
         }
         
-        /* 🎯 ĐÂY LÀ ĐOẠN ẨN RIÊNG BIỆT CỤM NÚT HỆ THỐNG PHÍA GÓC PHẢI MÀN HÌNH */
-        .stAppDeployDropdown, 
-        div[data-testid="stAppDeployDropdown"],
-        .stActionButton,
-        header div[role="navigation"] {
+        /* 🎯 CÁCH KHÁC: QUÉT SẠCH TOÀN BỘ CỤM NÚT HỆ THỐNG GÓC PHẢI (FORK, GITHUB, 3 CHẤM) */
+        /* Nhắm mục tiêu trực tiếp vào container chứa các nút hành động góc phải và ẩn mọi thứ bên trong */
+        [data-testid="stHeader"] *, 
+        header *,
+        .stAppDeployDropdown,
+        iframe + div div[class*="StyledActionButton"],
+        div[class*="stAppHeader"] div[class*="stAppDeployDropdown"] {
             display: none !important;
             visibility: hidden !important;
             width: 0px !important;
             height: 0px !important;
+            opacity: 0 !important;
         }
 
         /* 3. KHÓA GHIM TOÀN BỘ HỆ THỐNG ĐIỀU KHIỂN TRÊN ĐỈNH (Màu xám trắng Excel tinh tế) */
@@ -48,7 +52,7 @@ st.markdown("""
             left: 60px !important; /* Chừa khoảng trống bên trái cho nút mở Sidebar */
             width: calc(100vw - 60px) !important;
             height: auto !important;
-            z-index: 9999999 !important; /* Đẩy lên tầng cao nhất */
+            z-index: 9999999 !important; /* Đẩy lên tầng cao nhất tuyệt đối */
             background-color: #f1f3f4 !important; /* Nền màu xám nhạt như Office Excel */
             padding-top: 5px !important;
             padding-bottom: 8px !important;
