@@ -11,51 +11,52 @@ from streamlit_option_menu import option_menu
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
 # =========================================================================
-# 🎨 🏙️ NHÚNG CSS NÂNG CAO: GIỮ LẠI SIDEBAR, ẨN NỀN HEADER & ĐÓNG BĂNG THANH LỆNH
+# 🎨 🏙️ NHÚNG CSS NÂNG CAO: DIỆT SẠCH KHOẢNG ĐEN, CHỪA CHỖ CHO NÚT THANH BÊN (SIDEBAR)
 # =========================================================================
 st.markdown("""
     <style>
-        /* 1. KHÓA TOÀN BỘ KHUNG GỐC: Ép trang web không xuất hiện thanh cuộn kép */
+        /* 1. KHÓA TOÀN BỘ KHUNG GỐC: ÉP CHỈ CUỘN TRONG VÙNG BẢN VẼ */
         .stApp {
             height: 100vh !important;
             overflow: hidden !important;
             background-color: #0e1117 !important;
         }
 
-        /* 2. TIÊU DIỆT HOÀN TOÀN THANH HEADER MẶC ĐỊNH CỦA STREAMLIT CLOUD (PHẦN KHOANH ĐỎ) */
+        /* 2. TIÊU DIỆT HOÀN TOÀN THANH HEADER GỐC MẶC ĐỊNH */
         div[data-testid="stHeader"], header {
             display: none !important;
             height: 0px !important;
             opacity: 0 !important;
         }
 
-        /* 3. ĐẨY THANH MENU XANH LÊN SÁT MÉP ĐỈNH MÀN HÌNH KHÔNG CÒN KHOẢNG TRỐNG */
+        /* 3. CỦM RIBBON LƠ LỬNG: TỰ ĐỘNG CHỪA LỀ TRÁI CHO NÚT BẤM VÀ THANH SIDEBAR BÊN TRÁI */
         #custom-ribbon-container {
             position: fixed !important;
             top: 0 !important;
-            left: 0 !important;
-            right: 0 !important;
-            width: 100vw !important;
+            /* Thay vì bám sát left: 0, ta lùi sang phải 60px để chừa hẳn một khoảng trống cho nút mở Sidebar */
+            left: 60px !important; 
+            /* Chiều rộng tự động bằng 100% màn hình trừ đi 60px lề để không bao giờ đè lên nút hệ thống */
+            width: calc(100vw - 60px) !important;
             height: auto !important;
-            z-index: 9999999 !important; /* Đẩy lên tầng cao nhất tuyệt đối để không bị đè */
+            z-index: 9999999 !important; /* Đẩy lên tầng cao nhất */
             background-color: #0e1117 !important; /* Đổ đặc màu nền tối trùng màu hệ thống */
-            padding-top: 2px !important; /* Thu nhỏ lề tối đa */
+            padding-top: 5px !important;
             padding-bottom: 5px !important;
             padding-left: 15px !important;
-            padding-right: 15px !important;
+            padding-right: 25px !important;
             border-bottom: 2px solid #007acc !important; /* Chỉ xanh CAD mảnh liền mạch */
             box-shadow: 0px 4px 15px rgba(0, 0, 0, 0.6) !important; /* Tạo bóng đổ tách biệt không gian */
         }
 
-        /* 4. CẤU TRÚC LẠI KHUNG CHỨA BẢN VẼ (MAIN): Biến vùng này thành hộp cuộn độc lập */
+        /* 4. CẤU TRÚC LẠI KHUNG CHỨA BẢN VẼ (MAIN): ĐÓNG GÓI HỘP CUỘN ĐỘC LẬP */
         .main {
-            margin-top: 95px !important; /* Đẩy vùng nội dung xuống vừa khít dưới chân thanh menu cố định */
+            margin-top: 95px !important; /* Đẩy nội dung xuống vừa khít dưới chân thanh menu cố định */
             height: calc(100vh - 95px) !important; /* Chiều cao tự động tính toán bằng phần còn lại của màn hình */
             overflow-y: auto !important; /* Chỉ cho phép cuộn chuột bên trong phân vùng này */
             overflow-x: hidden !important;
         }
 
-        /* Xóa sạch mọi khoảng đệm thừa của khối nội dung chính để giải phóng không gian diện tích rộng nhất */
+        /* Dọn dẹp khoảng đệm thừa của khối nội dung để giải phóng diện tích tối đa */
         div[data-testid="stAppViewBlockContainer"] {
             padding-top: 0px !important;
             padding-bottom: 30px !important;
@@ -63,15 +64,25 @@ st.markdown("""
             padding-right: 15px !important;
         }
 
-        /* 5. ĐỒNG BỘ PHONG CÁCH CỦA CÁC TAB CON VÀ ẨN CÁC NÚT THỪA */
+        /* 5. ĐỒNG BỘ PHONG CÁCH CỦA CÁC TAB CON VÀ ĐỊNH VỊ LẠI NÚT SIDEBAR */
         .stTabs [data-baseweb="tab-list"] {
             background-color: #0e1117 !important;
         }
         
-        /* Đẩy nút mũi tên đóng mở Sidebar lên sát góc góc để tránh bị menu đè */
+        /* 🛠️ QUAN TRỌNG: ĐẨY NÚT MŨI TÊN ĐỒNG MỞ SIDEBAR LÊN TẦNG CAO NHẤT VÀ NẰM TRONG KHE TRỐNG 60PX */
         div[data-testid="stSidebarCollapsedControl"] {
-            top: 5px !important;
-            z-index: 10000000 !important;
+            position: fixed !important;
+            top: 10px !important;
+            left: 10px !important;
+            width: 45px !important;
+            height: 45px !important;
+            z-index: 100000000 !important; /* Cao hơn cả Ribbon để luôn hiển thị và bấm được */
+            background-color: #1e1e1e !important; /* Tạo một khối đệm xám để nút nổi bật như CAD */
+            border-radius: 4px !important;
+            border: 1px solid #333333 !important;
+            display: flex !important;
+            align-items: center !important;
+            justify-content: center !important;
         }
         
         /* Triệt tiêu dải nút Deploy góc phải của Streamlit Cloud */
