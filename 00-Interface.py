@@ -26,8 +26,9 @@ st.markdown("""
         }
 
         /* =========================================================================
-           2. QUÉT SẠCH HOÀN TOÀN THANH HEADER VÀ 3 NÚT HỆ THỐNG GÓC PHẢI (FORK, GIT, 3 CHẤM)
+           2. 🎯 CHỈ ẨN 3 KÝ HIỆU CỦA STREAMLIT (FORK, GITHUB, DẤU 3 CHẤM)
            ========================================================================= */
+        /* Giữ nguyên thuộc tính ẩn Header gốc của bạn */
         div[data-testid="stHeader"], header {
             background-color: transparent !important;
             box-shadow: none !important;
@@ -36,12 +37,13 @@ st.markdown("""
             display: none !important;
         }
         
-        /* Selector quét sâu tất cả các phần tử con nằm trong khu vực header góc phải */
+        /* Selector quét sâu quét sạch cụm nút hành động hệ thống ở góc phải trên cùng */
         [data-testid="stHeader"] *, 
         header *,
         .stAppDeployDropdown,
         iframe + div div[class*="StyledActionButton"],
-        div[class*="stAppHeader"] div[class*="stAppDeployDropdown"] {
+        div[class*="stAppHeader"] div[class*="stAppDeployDropdown"],
+        .stActionButton {
             display: none !important;
             visibility: hidden !important;
             width: 0px !important;
