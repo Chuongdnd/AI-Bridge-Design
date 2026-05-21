@@ -15,77 +15,67 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # =========================================================================
 st.markdown("""
     <style>
-        /* 1. Khóa liên kết gốc màn hình để ép phân vùng bản vẽ tự cuộn độc lập */
+        /* 1. Thiết lập nền móng ứng dụng mượt mà, không khóa cứng để Sidebar hoạt động ổn định */
         .stApp {
-            height: 100vh !important;
-            overflow: hidden !important;
             background-color: #0e1117 !important;
         }
 
-        /* 2. Tiêu diệt hoàn toàn dải nền đen mặc định và CHỈ ẨN TRỰC DIỆN 3 KÝ HIỆU (FORK, GITHUB, 3 CHẤM) */
+        /* 2. Cân chỉnh Header mặc định để không che khuất nút đóng/mở Sidebar */
         div[data-testid="stHeader"], header {
-            background-color: transparent !important;
-            box-shadow: none !important;
-            height: 0px !important;
-            z-index: 1 !important;
+            background-color: rgba(14, 17, 23, 0.8) !important;
+            backdrop-filter: blur(8px) !important;
+            height: 3.5rem !important;
+            z-index: 99 !important;
+        }
+
+        /* 3. Thiết kế thanh Tiêu đề ghi đè (Top Custom Banner) sang trọng */
+        .custom-top-bar {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 3.5rem;
+            background: linear-gradient(90deg, #1e293b 0%, #0f172a 100%);
+            border-bottom: 2px solid #007acc;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 98;
+            box-shadow: 0px 4px 10px rgba(0,0,0,0.4);
         }
         
-        /* Bộ quét sâu nhắm trúng và ẩn sạch cụm nút Fork, biểu tượng Git và Menu 3 chấm góc phải */
-        [data-testid="stHeader"] *, 
-        header *,
-        .stAppDeployDropdown,
-        iframe + div div[class*="StyledActionButton"],
-        div[class*="stAppHeader"] div[class*="stAppDeployDropdown"],
-        .stActionButton {
-            display: none !important;
-            visibility: hidden !important;
-            width: 0px !important;
-            height: 0px !important;
-            opacity: 0 !important;
+        .custom-top-title {
+            color: #007acc !important;
+            font-family: 'Arial', sans-serif;
+            font-size: 1.3rem !important;
+            font-weight: bold !important;
+            letter-spacing: 1px;
+            margin: 0 !important;
+            padding: 0 !important;
+            text-transform: uppercase;
+            text-shadow: 0px 2px 4px rgba(0,0,0,0.5);
         }
 
-        /* 3. Khóa ghim thanh lệnh điều khiển trên đỉnh (Dịch sang phải để chừa chỗ cho nút Sidebar) */
-        #custom-top-toolbar {
-            position: fixed !important;
-            top: 0 !important;
-            left: 60px !important; /* Dịch lùi sang phải để nhường góc trái cho nút mặc định */
-            width: calc(100vw - 60px) !important;
-            height: 60px !important;
-            z-index: 999999 !important;
-            background-color: #0e1117 !important;
-            padding-top: 12px !important;
-            padding-bottom: 5px !important;
-            padding-left: 15px !important;
-            padding-right: 25px !important;
-            border-bottom: 2px solid #007acc !important; /* Line xanh mảnh CAD xuyên suốt */
-            display: flex !important;
-            align-items: center !important;
+        /* 4. Đẩy phân vùng nội dung chính xuống dưới thanh tiêu đề để không bị che khuất */
+        .main .block-container {
+            padding-top: 5rem !important;
+            padding-bottom: 2rem !important;
+            max-width: 98% !important;
         }
 
-        /* 4. Định vị phân vùng nội dung chính (Đẩy xuống dưới chân thanh lệnh 60px) */
-        .main {
-            margin-top: 60px !important;
-            height: calc(100vh - 60px) !important;
-            overflow-y: auto !important;
-            overflow-x: hidden !important;
-        }
-
-        /* Giải phóng hoàn toàn lề thừa của khối bản vẽ */
-        div[data-testid="stAppViewBlockContainer"] {
-            padding-top: 15px !important;
-            padding-bottom: 30px !important;
-            padding-left: 15px !important;
-            padding-right: 15px !important;
-        }
-
-        /* 5. Định vị lại nút bấm đóng mở Sidebar trái lọt vào khe trống 60px an toàn */
-        div[data-testid="stSidebarCollapsedControl"] {
-            position: fixed !important;
-            top: 8px !important;
-            left: 10px !important;
-            z-index: 1000000 !important;
+        /* 5. Định hình phân vùng hiển thị Tab bản vẽ */
+        div[data-testid="stTabContent"] {
+            background-color: #11151c !important;
+            border: 1px solid #1e293b !important;
+            border-radius: 6px !important;
+            padding: 1.5rem !important;
+            box-shadow: inset 0px 0px 15px rgba(0,0,0,0.5) !important;
         }
     </style>
+    
+    <div class="custom-top-bar">
+        <h1 class="custom-top-title">🏗️ HỆ THỐNG THIẾT KẾ CẦU THÔNG MINH ỨNG DỤNG AI — UTH</h1>
+    </div>
 """, unsafe_allow_html=True)
 
 # Khởi tạo bộ nhớ hội thoại chatbot
