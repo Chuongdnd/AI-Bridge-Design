@@ -57,11 +57,11 @@ def parse_ntd_file(uploaded_file):
 
 def parse_coordinate_file(uploaded_file):
     """
-    BỘ GIẢI MÃ BẢNG TOẠ ĐỘ VN-2000 ĐÃ KHẮC PHỤC LỖI INDEX OUT OF RANGE
+    BỘ GIẢI MÃ BẢNG TOẠ ĐỘ VN-2000 ĐÃ FIX TRIỆT ĐỂ LỖI STRING TO FLOAT 'X(M)'
     """
     try:
         if uploaded_file.name.endswith('.csv'):
-            # Đọc bỏ qua dòng tiêu đề lớn đầu tiên, lấy hàng số 2 làm Header
+            # Đọc file bỏ qua dòng tiêu đề lớn đầu tiên, lấy hàng số 2 làm Header
             df_coord = pd.read_csv(uploaded_file, skiprows=1)
         else:
             df_coord = pd.read_excel(uploaded_file, skiprows=1)
@@ -69,26 +69,25 @@ def parse_coordinate_file(uploaded_file):
         # Chuẩn hóa tên cột viết hoa, xóa khoảng trắng
         df_coord.columns = [str(c).strip().upper() for c in df_coord.columns]
         
-        # 🎯 GIẢI PHÁP THÔNG MINH: Tìm cột TÊN CỌC bằng chữ, nhưng cố định vị trí cột X và Y
-        # Tìm cột tên cọc (Thường là cột thứ 2, chỉ số index = 1)
-        try:
-            col_name = [c for c in df_coord.columns if 'CỌC' in c or 'TEN' in c][0]
-        except IndexError:
-            # Dự phòng nếu không tìm thấy chữ 'CỌC', tự lấy cột thứ 2 trong bảng
-            col_name = df_coord.columns[1]
-            
-        # Ép cứng lấy cột thứ 4 và cột thứ 5 làm X và Y (bất chấp hàng tiêu đề số 3 viết chữ gì)
-        # Hệ chỉ số Python bắt đầu từ 0, nên cột 4 là index 3, cột 5 là index 4
+        # 1. Định vị vị trí cột dựa trên chỉ số Index cố định trong bảng tính của bạn
+        # Cột 2 (index 1) là Tên cọc, cột 3 (index 2) là Lý trình
+        col_name = df_coord.columns[1]
+        
+        # Ép cứng lấy cột thứ 4 (index 3) và cột thứ 5 (index 4) làm tọa độ X và Y
         col_x = df_coord.columns[3]
         col_y = df_coord.columns[4]
         
+        # 2. 🎯 GIẢI PHÁP CORE: Ép kiểu số thông minh, tự động biến chữ 'X(M)', 'Y(M)' thành rỗng (NaN)
+        x_numeric = pd.to_numeric(df_coord[col_x], errors='coerce')
+        y_numeric = pd.to_numeric(df_coord[col_y], errors='coerce')
+        
         df_clean = pd.DataFrame({
             'Cọc_Excel': df_coord[col_name].astype(str).str.strip().str.upper(),
-            'X_VN2000': df_coord[col_x].astype(float),
-            'Y_VN2000': df_coord[col_y].astype(float)
+            'X_VN2000': x_numeric,
+            'Y_VN2000': y_numeric
         })
         
-        # Lọc sạch dòng trống và reset Index liên tục chống KeyError
+        # 3. Quét sạch các hàng rỗng (chính là hàng chứa chữ 'X(M)' cũ) và reset cứng lại Index
         df_clean = df_clean.dropna(subset=['X_VN2000', 'Y_VN2000']).reset_index(drop=True)
         return df_clean
         
