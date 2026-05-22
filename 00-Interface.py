@@ -268,65 +268,61 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
     st.markdown("---")
     
     # 2. Kiểm tra trạng thái file để chia nhánh hiển thị Tab con độc lập
-   # Thêm Tab Bình đồ 2D song song cùng Mô hình 3D trên hệ tọa độ thực VN-2000
-if file_khao_sat is not None and file_toa_do is not None:
-    # 1. Giải mã file ntd cục bộ
-    df_ntd = TV.parse_ntd_file(file_khao_sat)
-    # 2. Giải mã file tọa độ thực
-    df_coord = TV.parse_coordinate_file(file_toa_do)
-    
-    if df_coord is not None and not df_ntd.empty:
-        # 3. Tính toán lượng giác chuyển trục đưa sang hệ phẳng thực VN-2000
-        df_geology = TV.convert_to_vn2000(df_ntd, df_coord)
+   # Chế độ xử lý phân nhánh nâng cao: Kích hoạt khi tải CẢ 2 FILE khảo sát và tọa độ thực
+    if file_khao_sat is not None and file_toa_do is not None:
+        df_ntd = TV.parse_ntd_file(file_khao_sat)
+        df_coord = TV.parse_coordinate_file(file_toa_do)
         
-        if not df_geology.empty:
-            st.success(f"⚡ Hệ thống đã định vị thành công {len(df_geology)} điểm mia không gian lên tọa độ thực VN-2000!")
+        if df_coord is not None and not df_ntd.empty:
+            df_geology = TV.convert_to_vn2000(df_ntd, df_coord)
             
-            # Khởi tạo nhóm 4 Tab con hiển thị bản vẽ thiết kế
-            tab_binhdo_2d, tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
-                "🗺️ Bình đồ số thực tế VN-2000",
-                "🏔️ Mô hình Địa hình 3D",
-                "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
-                "📐 Bản vẽ Mặt cắt ngang điển hình"
-            ])
-            
-            with tab_binhdo_2d:
-                fig_2d = TV.ve_binh_do_goc_2d(df_geology)
-                if fig_2d: st.plotly_chart(fig_2d, use_container_width=True)
-                       
-            with tab_dia_hinh_3d:
-                he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.01, 2.00, 0.50, step=0.01)
-                fig_3d = TV.ve_dia_hinh_3d(df_geology, he_so_z=he_so_z)
-                if fig_3d: st.plotly_chart(fig_3d, use_container_width=True)
+            if not df_geology.empty:
+                st.success(f"⚡ Hệ thống đã định vị thành công {len(df_geology)} điểm mia không gian lên tọa độ thực VN-2000!")
                 
-            with tab_trac_doc:
-                try:
-                    fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
-                    if fig_plotly is not None:
-                        st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-                except Exception as e:
-                    st.error(f"Lỗi bản vẽ trắc dọc: {e}")
+                # Khởi tạo nhóm 4 Tab con hiển thị bản vẽ thiết kế trên hệ tọa độ thực tế
+                tab_binhdo_2d, tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
+                    "🗺️ Bình đồ số thực tế VN-2000",
+                    "🏔️ Mô hình Địa hình 3D",
+                    "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
+                    "📐 Bản vẽ Mặt cắt ngang điển hình"
+                ])
+                
+                with tab_binhdo_2d:
+                    fig_2d = TV.ve_binh_do_goc_2d(df_geology)
+                    if fig_2d: 
+                        st.plotly_chart(fig_2d, use_container_width=True)
+                           
+                with tab_dia_hinh_3d:
+                    he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.01, 2.00, 0.50, step=0.01)
+                    fig_3d = TV.ve_dia_hinh_3d(df_geology, he_so_z=he_so_z)
+                    if fig_3d: 
+                        st.plotly_chart(fig_3d, use_container_width=True)
                     
-            with tab_mcn_draw:
-                try:
-                    mcn_input_draw = {
-                        'bc_cau': float(st.session_state.design_data.get('bc', 12.0)),
-                        'w_lc': 0.5
-                    }
-                    fig_mn = PLOT.ve_mat_cat_ngang(mcn_input_draw)
-                    if fig_mn is not None:
-                        st.plotly_chart(fig_mn, use_container_width=True, config={'scrollZoom': True})
+                with tab_trac_doc:
+                    try:
+                        fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
+                        if fig_plotly is not None:
+                            st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+                    except Exception as e:
+                        st.error(f"Lỗi bản vẽ trắc dọc: {e}")
                         
-                        st.subheader("📋 Cấu tạo chi tiết các lớp mặt cắt")
-                        res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
-                        st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
-                except Exception as e:
-                    st.error(f"Lỗi bản vẽ mặt cắt ngang: {e}")
-else:
-    st.info("💡 Vui lòng tải lên cả FILE KHẢO SÁT (.NTD) và BẢNG TOẠ ĐỘ (.CSV/.XLSX) ở thanh bên để kích hoạt mô hình tọa độ thực địa.")
-                
+                with tab_mcn_draw:
+                    try:
+                        mcn_input_draw = {
+                            'bc_cau': float(st.session_state.design_data.get('bc', 12.0)),
+                            'w_lc': 0.5
+                        }
+                        fig_mn = PLOT.ve_mat_cat_ngang(mcn_input_draw)
+                        if fig_mn is not None:
+                            st.plotly_chart(fig_mn, use_container_width=True, config={'scrollZoom': True})
+                            
+                            st.subheader("📋 Cấu tạo chi tiết các lớp mặt cắt")
+                            res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
+                            st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
+                    except Exception as e:
+                        st.error(f"Lỗi bản vẽ mặt cắt ngang: {e}")
     else:
-        # Nhóm 2 Tab mặc định khi CHƯA CÓ file khảo sát
+        # Nhóm 2 Tab mặc định khi CHƯA CÓ đủ file dữ liệu
         tab_trac_doc, tab_mcn_draw = st.tabs([
             "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
             "📐 Bản vẽ Mặt cắt ngang điển hình"
