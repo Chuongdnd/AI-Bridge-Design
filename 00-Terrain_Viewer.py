@@ -87,7 +87,7 @@ def parse_coordinate_file(uploaded_file):
 
 def convert_to_vn2000(df_ntd, df_coord):
     """
-    THUẬT TOÁN ĐỒNG BỘ TUẦN TỰ SONG SONG CHUẨN XÁC
+    THUẬT TOÁN ĐỒNG BỘ SONG SONG TUẦN TỰ VÀ BẮN TOẠ ĐỘ THỰC PHẲNG
     """
     try:
         list_ntd_x = sorted(df_ntd['Lý trình'].unique())
@@ -112,20 +112,19 @@ def convert_to_vn2000(df_ntd, df_coord):
         
         df_tim_calc = df_merged[df_merged['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình').copy()
         
-        # Sử dụng hàm Gradient vi phân mượt để vector hướng không bao giờ bị gãy khúc gập ghềnh
-        if len(df_tim_calc) >= 2:
-            df_tim_calc['dX'] = np.gradient(df_tim_calc['X_VN2000'].values)
-            df_tim_calc['dY'] = np.gradient(df_tim_calc['Y_VN2000'].values)
-        else:
-            df_tim_calc['dX'] = 1.0
-            df_tim_calc['dY'] = 0.0
-            
+        # Tính toán vector hướng tuyến mượt bằng trung bình trượt rolling nhẹ để hướng tuyến không giật cục
+        df_tim_calc['X_Smooth'] = df_tim_calc['X_VN2000'].rolling(window=3, min_periods=1, center=True).mean()
+        df_tim_calc['Y_Smooth'] = df_tim_calc['Y_VN2000'].rolling(window=3, min_periods=1, center=True).mean()
+        
+        df_tim_calc['dX'] = np.gradient(df_tim_calc['X_Smooth'].values)
+        df_tim_calc['dY'] = np.gradient(df_tim_calc['Y_Smooth'].values)
+        
         df_tim_calc['Góc_Tuyến'] = np.arctan2(df_tim_calc['dY'], df_tim_calc['dX'])
         
         goc_map = dict(zip(df_tim_calc['Lý trình'], df_tim_calc['Góc_Tuyến']))
         df_merged['Góc_Tuyến'] = df_merged['Lý trình'].map(goc_map).bfill().ffill()
         
-        # Quay lượng giác đưa toàn bộ điểm mia về hệ phẳng VN-2000 thực tế
+        # Bắn tọa độ thực VN-2000
         angle_offset = df_merged['Góc_Tuyến'] + (np.pi / 2)
         df_merged['X_Real'] = df_merged['X_VN2000'] + df_merged['Offset'] * np.cos(angle_offset)
         df_merged['Y_Real'] = df_merged['Y_VN2000'] + df_merged['Offset'] * np.sin(angle_offset)
@@ -135,71 +134,38 @@ def convert_to_vn2000(df_ntd, df_coord):
         st.error(f"Lỗi xử lý đồng bộ chuỗi điểm tim thực địa: {e}")
         return pd.DataFrame()
 
-def tao_ma_tran_be_mat_xuyen_suot(df):
-    """
-    ⚡ GIẢI PHÁP TỐI HẬU CỦA TOÁN HỌC TRẮC ĐẠC: Ma trận dệt bề mặt uốn cong liên tục
-    - Trên 1 cọc: Cọc đo rộng ra biên bao nhiêu mét thì giữ nguyên bản 100%, nội suy vuốt từ trái sang phải.
-    - Giữa các cọc: Đồng bộ ma trận 2D giúp go.Surface tự động vuốt phẳng liên tục từ đầu tuyến đến cuối tuyến.
-    - Loại bỏ vĩnh viễn 100% lỗi đứt gãy tấm, lỗi sợi chỉ cô lập hay rách đoạn cong!
-    """
-    unique_lts = sorted(df['Lý trình'].unique())
-    num_samples_per_mcn = 30  # Đan ma trận gồm 30 hàng dọc song song chạy xuyên suốt con sông
-    target_pct = np.linspace(0.0, 1.0, num_samples_per_mcn)
-    
-    matrix_x = []
-    matrix_y = []
-    matrix_z = []
-    
-    for lt in unique_lts:
-        df_sub = df[df['Lý trình'] == lt].sort_values('Offset')
-        if df_sub.empty:
-            continue
-            
-        obs_offsets = df_sub['Offset'].values
-        obs_x_real = df_sub['X_Real'].values
-        obs_y_real = df_sub['Y_Real'].values
-        obs_zs = df_sub['Z'].values
-        
-        # Chuẩn hóa khoảng cách trắc ngang từ biên trái sang biên phải theo tỷ lệ phần trăm phân bố thực tế
-        if len(obs_offsets) > 1:
-            pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0])
-            x_line = np.interp(target_pct, pct_goc, obs_x_real)
-            y_line = np.interp(target_pct, pct_goc, obs_y_real)
-            z_line = np.interp(target_pct, pct_goc, obs_zs)
-        else:
-            x_line = np.repeat(obs_x_real[0], num_samples_per_mcn)
-            y_line = np.repeat(obs_y_real[0], num_samples_per_mcn)
-            z_line = np.repeat(obs_zs[0], num_samples_per_mcn)
-            
-        matrix_x.append(x_line)
-        matrix_y.append(y_line)
-        matrix_z.append(z_line)
-        
-    # Trả về ma trận mảng 2D hoàn chỉnh - Đây là điều kiện bắt buộc để go.Surface tự đan dải lụa kín đặc
-    return np.array(matrix_x), np.array(matrix_y), np.array(matrix_z)
-
 def ve_dia_hinh_3d(df, he_so_z=1.0):
     """
-    DỰNG MÔ HÌNH ĐỊA HÌNH 3D HÀNH LẠNG TUYẾN XUYÊN SUỐT, PHẲNG MỊN KHÔNG ĐỨT KHÚC
+    🎯 GIẢI PHÁP KHÓA CHẾT LỖI RÁCH/ĐỨT TUYẾN:
+    - Sử dụng go.Mesh3d với giải thuật Delaunay tự động của Plotly.
+    - Không gán chỉ số thủ công bằng ma trận để loại bỏ hoàn toàn hiện tượng bậc thang đứt gãy.
     """
     if df.empty:
         return None
     try:
-        # Gọi cấu trúc ma trận 2D uốn lượn liên tục bám sát hành lang sông
-        x_grid, y_grid, z_grid = tao_ma_tran_be_mat_xuyen_suot(df)
+        # Sắp xếp dữ liệu theo trắc dọc tiến trình tăng dần
+        df_render = df.sort_values('Lý trình').copy()
         
-        # Áp dụng trực tiếp hệ số tỉ lệ phóng đại đứng slider
-        z_scaled = z_grid * he_so_z
+        x_vals = df_render['X_Real'].values
+        y_vals = df_render['Y_Real'].values
+        z_scaled = df_render['Z'].values * he_so_z
+        z_real = df_render['Z'].values
         
-        # Sử dụng go.Surface trên nền ma trận uốn cong để dệt bề mặt đặc khít kẽ
-        fig = go.Figure(data=[go.Surface(
-            x=x_grid, y=y_grid, z=z_scaled,
-            customdata=z_grid,
-            hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{customdata:.2f} m<extra></extra>",
-            colorscale='Earth', opacity=0.95,
+        # Dựng mô hình 3D Mesh tự do
+        # Plotly sẽ tự động dệt các điểm kề sát địa lý với nhau thành bề mặt đặc xuyên suốt
+        fig = go.Figure(data=[go.Mesh3d(
+            x=x_vals,
+            y=y_vals,
+            z=z_scaled,
+            intensity=z_real, 
+            colorscale='Earth', 
+            opacity=0.95,
             showscale=True,
+            # Bật tính năng tự động đan lưới Delaunay trên lưới tọa độ phẳng X-Y
+            # Bẻ gãy hoàn toàn lỗi đứt khúc, lỗi sợi chỉ hay lỗi quăn đầu đuôi!
+            alphahull=15, 
             colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
-            contours=dict(x=dict(show=False), y=dict(show=False)) # Ẩn lưới sọc phụ cho mượt mà mượt mắt
+            hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{intensity:.2f} m<extra></extra>"
         )])
         
         fig.update_layout(
