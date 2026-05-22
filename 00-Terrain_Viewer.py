@@ -64,19 +64,6 @@ def parse_ntd_file(uploaded_file):
 import plotly.graph_objects as go
 import pandas as pd
 
-Chào bạn! Tôi là Đối tác lập trình của bạn. Tôi đã cập nhật lại chính xác tỷ lệ khung nhìn của hộp không gian thành 1:1:z (ở đây tôi chọn mặc định z = 0.4 để khối hình học có độ cao vừa vặn, bạn có thể chỉnh con số này tùy ý) theo đúng yêu cầu của bạn.
-
-Khi đặt tỷ lệ x=1.0, y=1.0, mặt bằng lưới bên dưới (phương Lý trình X và phương Trắc ngang Y) sẽ tạo thành một hình vuông cân đối hoàn hảo, giúp các đường đồng mức bao quát rộng rãi và trực quan nhất.
-
-Mã nguồn hàm ve_dia_hinh_3d cập nhật tỷ lệ 1:1:z
-Bạn hãy sao chép toàn bộ đoạn code đã được chuẩn hóa lưới nội suy và cấu hình tỷ lệ mới này dán đè lên hàm cũ nhé:
-
-Python
-import plotly.graph_objects as go
-import pandas as pd
-import numpy as np
-from scipy.interpolate import griddata
-
 def ve_dia_hinh_3d(df, he_so_z=5.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
     """
     HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D - ÉP HIỂN THỊ ĐƯỜNG ĐỒNG MỨC CỐ ĐỊNH 1M
