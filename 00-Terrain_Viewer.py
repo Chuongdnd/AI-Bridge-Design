@@ -216,16 +216,28 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
 
         # 🎯 ĐƯỜNG CHỈ TIM TUYẾN XUYÊN SUỐT: Vuốt nối điểm tim (Offset=0) của TẤT CẢ các cọc
         df_tim_all = df_clean[df_clean['Offset'] == 0].sort_values('Lý trình')
+        
+        # Tạo chuỗi văn bản hiển thị: "Tên Cọc (Km...)" hoặc "Tên Cọc (LT: ...)"
+        nhan_hien_thi = df_tim_all.apply(
+            lambda r: f"{r['Cọc']} (LT: {r['Lý trình']:.1f}m)", axis=1
+        ).values
+
         fig.add_trace(go.Scatter3d(
             x=df_tim_all['X_Real'].values,
             y=df_tim_all['Y_Real'].values,
             z=df_tim_all['Z'].values * he_so_z,
-            mode='lines+markers',
+            mode='lines+markers+text',  # ✨ KÍCH HOẠT CHẾ ĐỘ HIỂN THỊ CHỮ (TEXT) TRÊN NỀN 3D
             line=dict(color='red', width=4),
-            marker=dict(size=3, color='yellow'),
+            marker=dict(size=4, color='yellow', symbol='circle'),
+            text=nhan_hien_thi,         # Gán chuỗi tên cọc + lý trình vào mảng hiển thị
+            textposition="top center",  # Đẩy chữ lên phía trên dấu chấm vàng để không bị che khuất
+            textfont=dict(
+                family="Arial, sans-serif",
+                size=11,                # Kích cỡ chữ vừa vặn, dễ nhìn trong không gian 3D
+                color="lightblue"       # Màu chữ xanh sáng tương phản tốt với nền tối (Dark mode)
+            ),
             name='Đường tim tuyến dọc sông',
-            hovertemplate="Tim cọc: %{text}<br>Z Tim: %{z:.2f} m<extra></extra>",
-            text=df_tim_all['Cọc'].values
+            hovertemplate="Cọc: %{text}<br>Z Tim: %{z:.2f} m<extra></extra>"
         ))
 
         fig.update_layout(
