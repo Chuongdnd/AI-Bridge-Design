@@ -61,9 +61,10 @@ def parse_ntd_file(uploaded_file):
                 
     return pd.DataFrame(data_points)
 
-def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
+def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=0.2):
     """
-    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D - ÉP ĐƯỜNG ĐỒNG MỨC HIỂN THỊ RÕ NÉT NGAY TỪ ĐẦU
+    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D - ÉP HIỂN THỊ ĐƯỜNG ĐỒNG MỨC CHO ĐỊA HÌNH PHẲNG/DỐC THẤP
+    - buoc_nhay_cao_do: Đặt mặc định nhỏ xuống (0.2m hoặc 0.1m) để ép sinh đường đồng mức
     """
     if df.empty or len(df.index) < 3:
         return None
@@ -82,34 +83,40 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
         y_grid = grid_df.index.values
         z_real = grid_df.values
         
+        # Tính toán biên độ cao độ THỰC TẾ
+        z_min_real = np.min(z_real)
+        z_max_real = np.max(z_real)
+        delta_z = z_max_real - z_min_real
+        
         # Áp dụng hệ số scale trục Z
         z_scaled = z_real * he_so_z 
         
-        z_min = np.min(z_scaled)
-        z_max = np.max(z_scaled)
-        
-        chenh_lech_z = z_max - z_min
-        if chenh_lech_z > 0 and (buoc_nhay_cao_do * he_so_z) > chenh_lech_z:
-            buoc_ve = chenh_lech_z / 15
+        # 2. GIẢI PHÁP MỚI: TỰ ĐỘNG ÉP PHÂN LỚP ĐỒNG MỨC THEO BIẾN THIÊN THỰC TẾ
+        # Nếu địa hình quá phẳng (lệch nhau < 2m), ta ép bước nhảy nhỏ mịn (0.1m - 0.2m)
+        if delta_z <= 2.0:
+            step = 0.1 * he_so_z
         else:
-            buoc_ve = buoc_nhay_cao_do * he_so_z
+            step = buoc_nhay_cao_do * he_so_z
 
-        # 2. CẤU HÌNH ĐƯỜNG ĐỒNG MỨC SIÊU TƯƠNG PHẢN
         if hien_dong_muc:
+            # Tạo một danh sách các mốc cao độ chính xác để ép Plotly phải vẽ
+            cac_moc_cao_do = np.arange(np.min(z_scaled), np.max(z_scaled) + step, step)
+            
             contour_config = dict(
                 show=True,
-                start=z_min,
-                end=z_max,
-                size=buoc_ve,
+                type='constraint',              # ÉP BUỘC toán học vẽ theo mốc
+                coloring='lines',               # Hiển thị rõ ràng dạng đường nét
+                start=np.min(z_scaled),
+                end=np.max(z_scaled),
+                size=step,
                 usecolormap=False,
-                color="rgb(255, 255, 255)",        # ĐỔI THÀNH MÀU TRẮNG TINH KHIẾT (Hoặc "fuchsia" nếu muốn màu hồng neon)
-                width=4,                            # TĂNG ĐỘ DÀY NÉT LÊN ĐỘ RỘNG 4 PIXEL ĐỂ HIỆN RÕ
-                project=dict(z=True)                # Vẫn giữ bản đồ bóng chiếu ở đáy bình đồ
+                color="black",                  # Đổi thành màu ĐEN đậm để nổi bần bật trên nền dải cát vàng/trắng hiện tại
+                width=4                         # Độ dày nét vẽ cực đậm
             )
         else:
             contour_config = dict(show=False)
         
-        # 3. Khởi tạo bề mặt địa hình với cấu hình GIẢM ĐỔ BÓNG (Lighting)
+        # 3. Khởi tạo bề mặt địa hình
         surface = go.Surface(
             x=x_grid,
             y=y_grid,
@@ -117,16 +124,15 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
             customdata=z_real,
             hovertemplate="X: %{x:.2f} m<br>Y: %{y:.2f} m<br>Z gốc: %{customdata:.2f} m<extra></extra>",
             colorscale='Earth',
-            opacity=0.9,
-            contours=dict(z=contour_config),
+            opacity=1.0,
+            contours=dict(z=contour_config),    # Nạp cấu hình contours ép buộc vào trục Z
             
-            # ✨ THUẬT TOÁN ĐỒ HỌA MỚI: TĂNG ĐỘ SÁNG BỀ MẶT ĐỂ ĐƯỜNG NÉT KHÔNG BỊ NUỐT
+            # Khử toàn bộ bóng mờ che khuất nét vẽ
             lighting=dict(
-                ambient=0.8,      # Tăng ánh sáng môi trường đều khắp bề mặt (mặc định là 0.8)
-                diffuse=0.9,      # Tăng độ khuếch tán ánh sáng phẳng (mặc định là 0.9)
-                roughness=0.1,    # Giảm độ nhám bề mặt xuống thấp để chống bóng mờ
-                specular=0.1,     # Giảm độ phản chiếu chói lóa từ góc camera
-                fresnel=0.1
+                ambient=1.0,                    # Ánh sáng phủ đều 100%, biến mô hình thành dạng bản đồ phẳng dễ nhìn
+                diffuse=0.0,
+                specular=0.0,
+                roughness=1.0
             ),
             colorbar=dict(
                 title=dict(text="Cao độ Z (m)", side="right"),
@@ -136,23 +142,24 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
         
         fig = go.Figure(data=[surface])
         
-        # 4. Thiết lập khung hình
+        # 4. THAY ĐỔI TOÀN BỘ TỶ LỆ KHUNG NHÌN (BẮT BUỘC)
         fig.update_layout(
             title=dict(
-                text=f"🏔️ BÌNH ĐỒ ĐỊA HÌNH 3D & ĐƯỜNG ĐỒNG MỨC SẮC NÉT",
+                text="🏔️ BÌNH ĐỒ ĐỊA HÌNH TỰ NHIÊN & ĐƯỜNG ĐỒNG MỨC ÉP NÉT",
                 font=dict(size=16, color='#007acc', family='Arial')
             ),
             scene=dict(
                 xaxis_title="Lý trình X (m)",
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z (m)",
+                
+                # SỬA LỖI QUAN TRỌNG: Chuyển từ 'data' sang 'manual'
+                # Nếu để 'data', trục X dài 600m sẽ ép trục Y và Z nhỏ tí ti không thể thấy nét vẽ
                 aspectmode='manual',
-                aspectratio=dict(x=1, y=1, z=0.4),
-                zaxis=dict(
-                    range=[z_min - (chenh_lech_z * 0.2) - 1, z_max + 2]
-                ),
+                aspectratio=dict(x=1, y=0.5, z=0.3), # Ép hộp không gian rộng rãi theo phương trắc ngang Y
+                
                 camera=dict(
-                    eye=dict(x=1.6, y=1.6, z=1.2)
+                    eye=dict(x=0.0, y=0.0, z=2.0) # ĐẶT CAMERA NHÌN THẲNG TỪ TRÊN TRỜI XUỐNG (Orthographic-like) giống hệt Bản đồ Bình đồ phẳng
                 )
             ),
             template="plotly_dark",
