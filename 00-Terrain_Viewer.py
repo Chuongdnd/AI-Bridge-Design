@@ -61,37 +61,71 @@ def parse_ntd_file(uploaded_file):
                 
     return pd.DataFrame(data_points)
 
-def ve_dia_hinh_3d(df, he_so_z=0.25):
+def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
     """
     HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D LƯỚI KHÔNG GIAN PHẲNG PHIU (ANTI-CORRUGATED)
-    Đã sửa cú pháp rolling() tương thích hoàn toàn với Pandas mới nhất, tỷ lệ thực tế 1:1:1
+    - Giữ nguyên cấu trúc pivot_table, nội suy và mài mịn rolling gốc của bạn.
+    - Cập nhật: Ép hiển thị đường đồng mức tĩnh màu đen rõ nét ngay từ đầu trên khối 3D.
     """
     if df.empty or len(df.index) < 3:
         return None
         
     try:
+        # Giữ nguyên bước tạo ma trận lưới địa hình của bạn
         grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
         
         # Vuốt nối nội suy hình học liên tục phương trắc ngang Y rồi đến trắc dọc X
         grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
         grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
         
-        # ✨ THUẬT TOÁN MỚI: Khử sạch sọc "múi tôn" bằng rolling + xoay ma trận .T
-        # Mài mịn phương trắc ngang Y
+        # ✨ Thuật toán khử sọc "múi tôn" bằng rolling + xoay ma trận .T gốc của bạn
         grid_df = grid_df.rolling(window=5, min_periods=1, center=True).mean()
-        # Mài mịn phương lý trình X bằng kỹ thuật Transpose xoay trục an toàn
         grid_df = grid_df.T.rolling(window=5, min_periods=1, center=True).mean().T
         
         x_grid = grid_df.columns.values
         y_grid = grid_df.index.values
-        z_grid = grid_df.values
+        z_real = grid_df.values
         
+        # Kích hoạt hệ số tỉ lệ he_so_z vào ma trận cao độ hiển thị
+        z_scaled = z_real * he_so_z
+        
+        z_min_real = np.min(z_real)
+        z_max_real = np.max(z_real)
+        
+        # BỔ SUNG: Cấu hình lưới đường đồng mức cố định hiện tĩnh ngay từ đầu
+        if hien_dong_muc:
+            contour_config = dict(
+                show=True,                           # Ép buộc vẽ đường đồng mức lên mô hình
+                start=np.floor(z_min_real) * he_so_z, # Điểm mét chẵn bắt đầu
+                end=np.ceil(z_max_real) * he_so_z,   # Điểm mét chẵn kết thúc
+                size=buoc_nhay_cao_do * he_so_z,     # Khoảng cao đều (Ví dụ: 1 mét vẽ 1 đường)
+                usecolormap=False,                   # Tách màu đường nét khỏi dải màu nền
+                color="rgb(0, 0, 0)",                # Đường nét màu ĐEN TUYỀN nét mực sắc sảo
+                width=4,                             # Nét vẽ dày đậm 4 pixel để nhìn thấy luôn
+                highlight=False,                     # TẮT CHẾ ĐỘ HOVER: Hiện cố định từ đầu, không đợi chỉ chuột
+                project=dict(z=False)                # Chỉ hiện trên khối 3D, không chiếu xuống đáy
+            )
+        else:
+            contour_config = dict(show=False)
+        
+        # Khởi tạo khối bề mặt Surface (Có bổ sung contours và làm sáng bề mặt)
         fig = go.Figure(data=[go.Surface(
             x=x_grid,
             y=y_grid,
-            z=z_grid,
-            colorscale='Earth',    # Hệ màu chuẩn địa hình tự nhiên
+            z=z_scaled,
+            customdata=z_real,
+            hovertemplate="X: %{x:.1f} m<br>Y: %{y:.2f} m<br>Z thực: %{customdata:.2f} m<extra></extra>",
+            colorscale='Earth',    # Hệ màu chuẩn địa hình tự nhiên gốc của bạn
             opacity=0.95,
+            contours=dict(z=contour_config), # NẠP LƯỚI ĐƯỜNG ĐỒNG MỨC ĐÃ CẤU HÌNH BIẾN ĐỔI KHỐI TRỤC Z
+            
+            # Cải tiến ánh sáng phẳng để nét mực đen không bị bóng mờ camera che khuất
+            lighting=dict(
+                ambient=1.0, 
+                diffuse=0.0,
+                specular=0.0,
+                roughness=1.0
+            ),
             colorbar=dict(
                 title=dict(text="Cao độ Z (m)", side="right"),
                 thickness=15
@@ -107,7 +141,7 @@ def ve_dia_hinh_3d(df, he_so_z=0.25):
                 xaxis_title="Lý trình X (m)",
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z (m)",
-                # ÉP TUYỆT ĐỐI VỀ TỶ LỆ KÍCH THƯỚC THẬT THỰC ĐỊA 1:1:1
+                # Giữ nguyên ép tuyệt đối về tỷ lệ kích thước thật thực địa 1:1:1 của bạn
                 aspectmode='data' 
             ),
             template="plotly_dark",
@@ -117,5 +151,7 @@ def ve_dia_hinh_3d(df, he_so_z=0.25):
         return fig
         
     except Exception as e:
+        # Đoạn bẫy lỗi hiển thị trên Streamlit gốc của bạn
+        import streamlit as st
         st.error(f"Lỗi dựng mô hình địa hình 3D: {e}")
         return None
