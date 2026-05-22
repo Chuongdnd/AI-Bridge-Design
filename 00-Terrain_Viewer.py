@@ -89,7 +89,7 @@ def parse_coordinate_file(uploaded_file):
 def convert_to_vn2000(df_ntd, df_coord):
     """
     THUẬT TOÁN ĐỒNG BỘ TUẦN TỰ SONG SONG (INDEX-BASED MATCHING)
-    Đưa các điểm tim thực tế từ Excel vào chuỗi cọc NTD
+    Đưa tọa độ thực VN-2000 vào chuỗi cọc NTD
     """
     try:
         list_ntd_x = sorted(df_ntd['Lý trình'].unique())
@@ -112,7 +112,7 @@ def convert_to_vn2000(df_ntd, df_coord):
         
         df_merged = df_merged.dropna(subset=['X_VN2000', 'Y_VN2000']).copy()
         
-        # Tính véc tơ hướng tuyến
+        # Tính toán hướng véc-tơ tuyến để xoay lượng giác vuông góc trắc ngang
         df_tim_calc = df_merged[df_merged['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình').copy()
         df_tim_calc['dX'] = df_tim_calc['X_VN2000'].diff().shift(-1)
         df_tim_calc['dY'] = df_tim_calc['Y_VN2000'].diff().shift(-1)
@@ -123,7 +123,7 @@ def convert_to_vn2000(df_ntd, df_coord):
         goc_map = dict(zip(df_tim_calc['Lý trình'], df_tim_calc['Góc_Tuyến']))
         df_merged['Góc_Tuyến'] = df_merged['Lý trình'].map(goc_map).bfill().ffill()
         
-        # Quay lượng giác đưa điểm mia về hệ VN-2000 thực tế ngoài đời
+        # Quay lượng giác đưa toàn bộ điểm mia gốc về hệ VN-2000 phẳng thực tế
         angle_offset = df_merged['Góc_Tuyến'] + (np.pi / 2)
         df_merged['X_Real'] = df_merged['X_VN2000'] + df_merged['Offset'] * np.cos(angle_offset)
         df_merged['Y_Real'] = df_merged['Y_VN2000'] + df_merged['Offset'] * np.sin(angle_offset)
@@ -133,23 +133,15 @@ def convert_to_vn2000(df_ntd, df_coord):
         st.error(f"Lỗi xử lý đồng bộ chuỗi điểm tim thực địa: {e}")
         return pd.DataFrame()
 
-def tao_cau_truc_luoi_mesh_doc_tuyen(df):
+def tao_cau_truc_mesh_bam_sat_ntd(df):
     """
-    🎯 BÁM SÁT FILE NTD: Đan mạng lưới đa giác tam giác tuần tiến chạy dọc theo cọc.
-    - Trên 1 cọc: Sắp xếp điểm nối từ trái sang phải tạo thành 1 mặt cắt (Line).
-    - Giữa các cọc: Bắt cặp nối tuần tự từ cọc i sang cọc i+1.
-    - Loại bỏ 100% răng cưa mắt lưới và ngăn chặn hoàn toàn việc nối tắt đầu - cuối.
+    ⚡ THUẬT TOÁN ĐAN LƯỚI TUẦN TIẾN BÁM SÁT FILE NTD 100%
+    - Trên 1 cọc: Nối điểm thực tế từ trái sang phải tạo thành 1 Line.
+    - Giữa các cọc: Nối tuần tiến từ cọc i sang cọc i+1 theo Lý trình tăng dần.
     """
-    x_nodes = []
-    y_nodes = []
-    z_nodes = []
-    
-    # Gom nhóm theo từng lý trình cọc duy nhất (Sắp xếp tăng dần theo con đường)
     unique_lts = sorted(df['Lý trình'].unique())
-    
-    # Để Mesh dệt phẳng đồng đều, ta lấy dải Offset chuẩn từ trắc ngang của chính file NTD
-    # Giữ nguyên cao độ trắc ngang gốc, sắp xếp từ trái (-Offset) sang phải (+Offset)
-    target_offsets = np.arange(-30.0, 31.0, 2.0) # Bước 2m lấy 1 điểm mia để nối dải lụa mượt
+    num_samples_per_mcn = 20
+    target_pct = np.linspace(0.0, 1.0, num_samples_per_mcn)
     
     matrix_x = []
     matrix_y = []
@@ -157,21 +149,24 @@ def tao_cau_truc_luoi_mesh_doc_tuyen(df):
     
     for lt in unique_lts:
         df_sub = df[df['Lý trình'] == lt].sort_values('Offset')
+        if df_sub.empty:
+            continue
+            
         obs_offsets = df_sub['Offset'].values
+        obs_x_real = df_sub['X_Real'].values
+        obs_y_real = df_sub['Y_Real'].values
         obs_zs = df_sub['Z'].values
         
-        # Nội suy trắc ngang độc lập trên đúng cọc này để tạo ra 1 Line mịn phẳng 100% không răng cưa
-        z_line = np.interp(target_offsets, obs_offsets, obs_zs)
-        
-        # Tính toán tọa độ VN-2000 cho từng điểm trên Line của cọc này
-        x_tim = df_sub['X_VN2000'].iloc[0]
-        y_tim = df_sub['Y_VN2000'].iloc[0]
-        goc_tuyen = df_sub['Góc_Tuyến'].iloc[0]
-        angle_offset = goc_tuyen + (np.pi / 2)
-        
-        x_line = x_tim + target_offsets * np.cos(angle_offset)
-        y_line = y_tim + target_offsets * np.sin(angle_offset)
-        
+        if len(obs_offsets) > 1:
+            pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0])
+            x_line = np.interp(target_pct, pct_goc, obs_x_real)
+            y_line = np.interp(target_pct, pct_goc, obs_y_real)
+            z_line = np.interp(target_pct, pct_goc, obs_zs)
+        else:
+            x_line = np.repeat(obs_x_real[0], num_samples_per_mcn)
+            y_line = np.repeat(obs_y_real[0], num_samples_per_mcn)
+            z_line = np.repeat(obs_zs[0], num_samples_per_mcn)
+            
         matrix_x.append(x_line)
         matrix_y.append(y_line)
         matrix_z.append(z_line)
@@ -180,87 +175,46 @@ def tao_cau_truc_luoi_mesh_doc_tuyen(df):
     matrix_y = np.array(matrix_y)
     matrix_z = np.array(matrix_z)
     
-    num_cocs = len(unique_lts)
-    num_offsets = len(target_offsets)
-    
-    # Chuyển ma trận mạng lưới thành các mảng nút phẳng 1D phẳng
+    num_cocs = len(matrix_x)
     x_nodes = matrix_x.flatten()
     y_nodes = matrix_y.flatten()
     z_nodes = matrix_z.flatten()
     
-    # 📐 THUẬT TOÁN ĐAN LƯỚI TAM GIÁC TUẦN TIẾN (Dệt dải hành lang cầu đường BIM)
-    # Chỉ nối điểm hàng i với hàng i+1, không bao giờ lấy đầu tuyến nối với cuối tuyến
     i_indices = []
     j_indices = []
     k_indices = []
     
     for r in range(num_cocs - 1):
-        for c in range(num_offsets - 1):
-            # Định vị 4 chỉ số góc của ô lưới đa giác giữa cọc r và cọc r+1
-            p0 = r * num_offsets + c
-            p1 = r * num_offsets + (c + 1)
-            p2 = (r + 1) * num_offsets + c
-            p3 = (r + 1) * num_offsets + (c + 1)
+        for c in range(num_samples_per_mcn - 1):
+            p0 = r * num_samples_per_mcn + c
+            p1 = r * num_samples_per_mcn + (c + 1)
+            p2 = (r + 1) * num_samples_per_mcn + c
+            p3 = (r + 1) * num_samples_per_mcn + (c + 1)
             
-            # Tam giác thứ nhất của ô lưới
             i_indices.append(p0)
             j_indices.append(p1)
             k_indices.append(p2)
             
-            # Tam giác thứ hai của ô lưới
             i_indices.append(p1)
             j_indices.append(p3)
             k_indices.append(p2)
             
     return x_nodes, y_nodes, z_nodes, i_indices, j_indices, k_indices
 
-def ve_binh_do_goc_2d(df):
-    """
-    DỰNG BÌNH ĐỒ SỐ ĐỊA HÌNH 2D ĐAN LƯỚI TUẦN TIẾN DỌC THEO CỌC
-    """
-    if df.empty: 
-        return None
-    try:
-        x, y, z, i, j, k = tao_cau_truc_luoi_mesh_doc_tuyen(df)
-        
-        # Dùng go.Mesh3d cấu hình các mặt tam giác đan thủ công để uốn lượn mượt tuyệt đối
-        fig = go.Figure(data=go.Mesh3d(
-            x=x, y=y, z=z,
-            i=i, j=j, k=k,
-            intensity=z, colorscale='Viridis',
-            opacity=0.90, showscale=True,
-            colorbar=dict(title="Cao độ Z (m)", thickness=15)
-        ))
-        
-        fig.update_layout(
-            title=dict(text="🗺️ BÌNH ĐỒ SỐ ĐỊA HÌNH KHÔNG GIAN ĐỊNH VỊ THỰC TẾ VN-2000", font=dict(size=15, color='#007acc')),
-            xaxis_title="Tọa độ thực X (m)", yaxis_title="Tọa độ thực Y (m)",
-            yaxis=dict(scaleanchor="x", scaleratio=1, gridcolor='#222c3c'),
-            xaxis=dict(gridcolor='#222c3c'),
-            template="plotly_dark",
-            margin=dict(l=20, r=20, t=40, b=20), plot_bgcolor='#0e1117', paper_bgcolor='#0e1117'
-        )
-        return fig
-    except Exception as e:
-        st.error(f"Lỗi dựng bình đồ phẳng VN-2000: {e}")
-        return None
-
 def ve_dia_hinh_3d(df, he_so_z=1.0):
     """
-    DỰNG MÔ HÌNH ĐỊA HÌNH 3D ĐAN LƯỚI TUẦN TIẾN THEO CỌC NTD
+    DỰNG MÔ HÌNH ĐỊA HÌNH 3D HÀNH LẠNG TUYẾN KHÔNG LỖI XOẮN GỐC TOẠ ĐỘ
     """
     if df.empty:
         return None
     try:
-        x, y, z, i, j, k = tao_cau_truc_luoi_mesh_doc_tuyen(df)
-        
-        # Phóng đại trục đứng theo slider thông số
+        x, y, z, i, j, k = tao_cau_truc_mesh_bam_sat_ntd(df)
         z_scaled = z * he_so_z
         
         fig = go.Figure(data=[go.Mesh3d(
             x=x, y=y, z=z_scaled,
             i=i, j=j, k=k,
-            intensity=z, # Đổ dải dải màu Earth theo cao độ thực tế
+            intensity=z,
             colorscale='Earth', opacity=0.95,
             showscale=True,
             colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
