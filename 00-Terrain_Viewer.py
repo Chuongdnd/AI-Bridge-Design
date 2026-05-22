@@ -63,102 +63,95 @@ def parse_ntd_file(uploaded_file):
 
 def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
     """
-    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D - CỐ ĐỊNH KHOẢNG CAO ĐỀU ĐƯỜNG ĐỒNG MỨC THEO MÉT
-    - buoc_nhay_cao_do: Mặc định cố định là 1.0 (1 mét một đường đồng mức)
+    HÀM DỰNG ĐỊA HÌNH 3D CHỐNG PHẲNG VÀ ÉP HIỂN THỊ ĐƯỜNG ĐỒNG MỨC
     """
     if df.empty or len(df.index) < 3:
         return None
         
     try:
-        # 1. Tạo ma trận lưới địa hình và nội suy làm mịn
+        # 1. Tạo ma trận lưới địa hình
         grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
         grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
         grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
         
-        # Mài mịn bề mặt khử sọc múi tôn
-        grid_df = grid_df.rolling(window=5, min_periods=1, center=True).mean()
-        grid_df = grid_df.T.rolling(window=5, min_periods=1, center=True).mean().T
+        # SỬA LỖI 2: Bảo vệ dữ liệu không bị san phẳng phẳng lỳ bởi rolling
+        win_y = max(2, min(5, grid_df.shape[0] // 2))
+        win_x = max(2, min(5, grid_df.shape[1] // 2))
+        
+        if grid_df.shape[0] >= win_y:
+            grid_df = grid_df.rolling(window=win_y, min_periods=1, center=True).mean()
+        if grid_df.shape[1] >= win_x:
+            grid_df = grid_df.T.rolling(window=win_x, min_periods=1, center=True).mean().T
         
         x_grid = grid_df.columns.values
         y_grid = grid_df.index.values
         z_real = grid_df.values
         
-        # Áp dụng hệ số scale trục Z lên ma trận cao độ hiển thị
-        z_scaled = z_real * he_so_z 
-        
-        z_min_scaled = np.min(z_scaled)
-        z_max_scaled = np.max(z_scaled)
-        
-        # Lấy giá trị cao độ thực tế nhỏ nhất và lớn nhất để tính toán mốc chẵn
         z_min_real = np.min(z_real)
         z_max_real = np.max(z_real)
-
-        # 2. CẤU HÌNH ĐƯỜNG ĐỒNG MỨC CỐ ĐỊNH 1M VÀ NỔI BẬT
-        if hien_dong_muc:
-            # Ép bước nhảy trên đồ thị bằng cách nhân Khoảng cao đều gốc (1m) với hệ số phóng đại Z
-            buoc_ve_scaled = buoc_nhay_cao_do * he_so_z
+        delta_z = z_max_real - z_min_real
+        
+        # SỬA LỖI 3: Nếu toàn bộ địa hình lệch nhau chưa đầy 1 mét, ta phải dùng bước nhảy nhỏ hơn
+        if delta_z < 1.0:
+            buoc_tinh = 0.1  # Vẽ đường đồng mức mỗi 10cm để chắc chắn có đường xuất hiện
+            title_text = f"ĐƯỜNG ĐỒNG MỨC MỊN 0.1M (Do địa hình phẳng, biên độ Z = {delta_z:.2f}m)"
+        else:
+            buoc_tinh = buoc_nhay_cao_do
+            title_text = f"ĐƯỜNG ĐỒNG MỨC CỐ ĐỊNH {buoc_nhay_cao_do}M"
             
+        # Áp dụng hệ số scale trục Z hiển thị
+        z_scaled = z_real * he_so_z 
+        buoc_ve_scaled = buoc_tinh * he_so_z
+
+        # 2. CẤU HÌNH ĐƯỜNG ĐỒNG MỨC ÉP HIỂN THỊ ĐẬM ĐẶC
+        if hien_dong_muc:
             contour_config = dict(
                 show=True,
-                # Làm tròn xuống mốc mét chẵn dưới cùng và nhân scale Z
-                start=np.floor(z_min_real) * he_so_z, 
-                # Làm tròn lên mốc mét chẵn trên cùng và nhân scale Z
-                end=np.ceil(z_max_real) * he_so_z,   
-                size=buoc_ve_scaled,                 # Cố định khoảng cao đều 1m (sau khi scale)
-                usecolormap=False,                   # Không dùng chung màu bề mặt để tránh bị chìm nét
-                color="rgb(255, 0, 0)",              # ĐỔI THÀNH MÀU ĐỎ RỰC RỠ hiển thị rõ nét ngay từ đầu
-                width=4,                             # Độ dày nét vẽ đậm 4 pixel chống nuốt nét
-                project=dict(z=True)                 # In bóng bản đồ đường đồng mức phẳng xuống đáy bình đồ
+                start=np.floor(z_min_real) * he_so_z,
+                end=np.ceil(z_max_real) * he_so_z,
+                size=buoc_ve_scaled,
+                usecolormap=False,
+                color="black",                  # Đổi thành đường nét màu ĐEN để nổi bật trên nền cát vàng
+                width=4,                        # Nét vẽ siêu đậm (4px) chống mất nét
+                project=dict(z=True)            # Ép in bóng bản đồ 2D xuống đáy
             )
         else:
             contour_config = dict(show=False)
         
-        # 3. Khởi tạo bề mặt địa hình với ánh sáng cân bằng
+        # 3. Khởi tạo bề mặt địa hình
         surface = go.Surface(
             x=x_grid,
             y=y_grid,
             z=z_scaled,
             customdata=z_real,
-            hovertemplate="X (Lý trình): %{x:.2f} m<br>Y (Trắc ngang): %{y:.2f} m<br>Z (Cao độ gốc): %{customdata:.2f} m<extra></extra>",
+            hovertemplate="X: %{x:.2f} m<br>Y: %{y:.2f} m<br>Z thực tế: %{customdata:.2f} m<extra></extra>",
             colorscale='Earth',
-            opacity=0.85,                        # Hơi trong suốt để nhìn thấy bản đồ đỏ dưới đáy
-            contours=dict(z=contour_config),     # Nạp cấu hình contours vào trục Z
-            
-            # Điều chỉnh ánh sáng để làm nổi bật nét vẽ cơ học
-            lighting=dict(
-                ambient=0.7,
-                diffuse=0.8,
-                specular=0.1,
-                roughness=0.5
-            ),
-            colorbar=dict(
-                title=dict(text="Cao độ Z (m)", side="right"),
-                thickness=15
-            )
+            opacity=0.85,
+            contours=dict(z=contour_config),
+            lighting=dict(ambient=0.9, diffuse=0.3, specular=0.0, roughness=1.0), # Khử bóng mờ camera
+            colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15)
         )
         
         fig = go.Figure(data=[surface])
         
-        # 4. Thiết lập tỷ lệ khung nhìn cân đối (Tránh lỗi co cụm dải hẹp)
+        # 4. SỬA LỖI 1: HỦY BỎ TUYỆT ĐỐI ASPECTMODE='DATA'
         fig.update_layout(
             title=dict(
-                text=f"🏔️ BÌNH ĐỒ ĐỊA HÌNH 3D - ĐƯỜNG ĐỒNG MỨC CỐ ĐỊNH {buoc_nhay_cao_do}M",
-                font=dict(size=16, color='#007acc', family='Arial')
+                text=f"🏔️ {title_text}",
+                font=dict(size=14, color='#007acc', family='Arial')
             ),
             scene=dict(
                 xaxis_title="Lý trình X (m)",
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z (m)",
                 
-                # Khắc phục lỗi hình ảnh bị kéo dài như sợi dây ở các lượt trước
+                # Ép hộp không gian hiển thị cân đối hình hộp chữ nhật, kéo giãn trục Y và trục Z ra
                 aspectmode='manual',
-                aspectratio=dict(x=1, y=0.6, z=0.35), # Ép giãn rộng trục ngang Y cho cân đối
+                aspectratio=dict(x=1, y=0.5, z=0.3), 
                 
-                zaxis=dict(
-                    range=[z_min_scaled - 3, z_max_scaled + 2] # Tạo khoảng trống dưới đáy để chứa bản đồ chiếu
-                ),
+                zaxis=dict(range=[np.min(z_scaled) - 2, np.max(z_scaled) + 1]),
                 camera=dict(
-                    eye=dict(x=1.3, y=1.3, z=0.9) # Góc nhìn tối ưu nhất để thấy cả khối 3D và bản đồ đáy
+                    eye=dict(x=0.0, y=0.0, z=1.8) # Đưa camera lên đỉnh đầu nhìn vuông góc xuống dạng Bình đồ
                 )
             ),
             template="plotly_dark",
