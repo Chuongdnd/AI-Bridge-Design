@@ -66,45 +66,53 @@ import pandas as pd
 
 def ve_dia_hinh_3d(df, he_so_z=5.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
     """
-    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D - ÉP HIỂN THỊ ĐƯỜNG ĐỒNG MỨC CỐ ĐỊNH 1M
-    - Sử dụng thuật toán GridData để xử lý dữ liệu tuyến dài 3000m.
-    - Cập nhật tỷ lệ hiển thị hình hộp phẳng cân đối x=1, y=1, z=0.4 theo yêu cầu.
+    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D - TRẢ VỀ TỶ LỆ THỰC ĐỊA 1:1 GIỮA X VÀ Y
+    - Tự động tính toán tỉ lệ thực của tuyến để chống biến dạng bề mặt.
+    - Ép hiển thị đường đồng mức tĩnh rực rỡ trực tiếp trên khối 3D.
     """
     if df.empty or len(df.index) < 3:
         return None
         
     try:
-        # 1. Trích xuất biên độ thực tế từ file dữ liệu (.ntd)
+        # 1. Lấy giá trị cực trị thực tế từ file dữ liệu (.ntd)
         x_min, x_max = df['X'].min(), df['X'].max()
         y_min, y_max = df['Y'].min(), df['Y'].max()
         z_min_real, z_max_real = df['Z'].min(), df['Z'].max()
         
-        # Tạo lưới ô cờ đồng đều tuyệt đối để tính toán độ dốc thực tế
-        xi = np.linspace(x_min, x_max, 200)
+        # Tính toán khoảng kích thước thực tế của các trục
+        range_x = x_max - x_min
+        range_y = y_max - y_min
+        
+        # ✨ THUẬT TOÁN TÍNH TỶ LỆ THỰC ĐỊA TUYẾN CHUẨN X : Y
+        # Ví dụ: Nếu X = 3000m, Y = 60m -> ty_le_y = 60 / 3000 = 0.02
+        ty_le_y_thuc = range_y / range_x
+        
+        # Đan lưới ô cờ mịn theo cấu trúc tuyến dài
+        xi = np.linspace(x_min, x_max, 300)
         yi = np.linspace(y_min, y_max, 60)
         X_grid, Y_grid = np.meshgrid(xi, yi)
         
-        # Tiến hành nội suy không gian 2D (Khắc phục triệt để lỗi phẳng lỳ của pivot_table)
+        # Nội suy không gian trắc đạc 2D
         z_grid_linear = griddata((df['X'], df['Y']), df['Z'], (X_grid, Y_grid), method='linear')
         z_grid_nearest = griddata((df['X'], df['Y']), df['Z'], (X_grid, Y_grid), method='nearest')
         z_real = np.where(np.isnan(z_grid_linear), z_grid_nearest, z_grid_linear)
         
-        # Áp dụng tỷ lệ khuếch đại trục Z để mô hình nhô cao rõ nét
+        # Áp dụng hệ số scale trục Z hiển thị
         z_scaled = z_real * he_so_z 
         buoc_ve_scaled = buoc_nhay_cao_do * he_so_z
 
-        # 2. CẤU HÌNH ĐƯỜNG ĐỒNG MỨC HIỂN THỊ TĨNH 100% TRÊN KHỐI 3D
+        # 2. CẤU HÌNH ĐƯỜNG ĐỒNG MỨC HIỂN THỊ TĨNH 100%
         if hien_dong_muc:
             contour_config = dict(
-                show=True,                          # Ép buộc vẽ ngay từ giây đầu tiên khi tải trang
+                show=True,                          # Hiện ngay từ đầu không đợi chuột
                 start=np.floor(z_min_real) * he_so_z,
                 end=np.ceil(z_max_real) * he_so_z,
-                size=buoc_ve_scaled,                # Khoảng cao đều cố định đúng 1m
-                usecolormap=False,                  # Tách biệt màu đường nét khỏi màu nền dải màu
-                color="rgb(0, 0, 0)",               # Đường nét màu ĐEN TUYỀN nét mực rõ ràng
-                width=5,                            # Nét vẽ siêu dày (5px) để nhìn thấy luôn
-                highlight=False,                    # Tắt cơ chế chờ hover (chuột chỉ vào mới hiện)
-                project=dict(z=False)               # Tắt tính năng in bóng xuống đáy bản đồ
+                size=buoc_ve_scaled,                # Cố định đúng bước nhảy 1m
+                usecolormap=False,
+                color="rgb(255, 0, 0)",              # Đổi sang màu ĐỎ RỰC RỠ để nổi bật trên dải màu thuôn dài
+                width=4,                            # Nét vẽ siêu dày (4px)
+                highlight=False,                    # Tắt chế độ chờ chuột hover
+                project=dict(z=False)               # Chỉ hiển thị duy nhất ở phần khối 3D
             )
         else:
             contour_config = dict(show=False)
@@ -115,22 +123,20 @@ def ve_dia_hinh_3d(df, he_so_z=5.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
             y=Y_grid,
             z=z_scaled,
             customdata=z_real,
-            hovertemplate="Lý trình X: %{x:.1f} m<br>Trắc ngang Y: %{y:.2f} m<br>Cao độ Z gốc: %{customdata:.2f} m<extra></extra>",
+            hovertemplate="X: %{x:.1f} m<br>Y: %{y:.2f} m<br>Z gốc: %{customdata:.2f} m<extra></extra>",
             colorscale='Earth',
             opacity=1.0,
-            contours=dict(z=contour_config),    # Đưa lưới đường đồng mức tĩnh vào mô hình
-            
-            # Triệt tiêu bóng mờ đổ bóng của camera để nhìn rõ nét mực đen
+            contours=dict(z=contour_config),
             lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0, roughness=1.0),
             colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15)
         )
         
         fig = go.Figure(data=[surface])
         
-        # 4. THIẾT LẬP CẤU HÌNH TỶ LỆ HÌNH HỘP 1:1:z THEO YÊU CẦU
+        # 4. THIẾT LẬP CẤU HÌNH TỶ LỆ HÌNH HỘP THỰC ĐỊA TUYẾN
         fig.update_layout(
             title=dict(
-                text=f"🏔️ BÌNH ĐỒ ĐỊA HÌNH 3D NỘI SUY TỶ LỆ KHUNG NHÌN 1:1:z",
+                text=f"🏔️ BÌNH ĐỒ ĐỊA HÌNH 3D - TỶ LỆ THỰC ĐỊA TUYẾN X VÀ Y",
                 font=dict(size=14, color='#007acc', family='Arial')
             ),
             scene=dict(
@@ -138,16 +144,16 @@ def ve_dia_hinh_3d(df, he_so_z=5.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z (m)",
                 
-                # Chế độ manual cho phép ta tự định nghĩa tỷ lệ hiển thị
                 aspectmode='manual',
                 
-                # ✨ ĐÂY LÀ DÒNG CODE CHỈNH TỶ LỆ 1:1:z THEO YÊU CẦU CỦA BẠN
-                # X và Y bằng nhau tạo thành hình vuông, trục Z chiếm tỷ lệ 0.4 độ cao của hộp
-                aspectratio=dict(x=1.0, y=1.0, z=0.4), 
+                # ✨ ĐÂY LÀ DÒNG CHỈNH SỬA MẤU CHỐT:
+                # Trục X chiếm trọn chiều dài 1.0, trục Y tự động co nhỏ đúng tỷ lệ thật (ví dụ 0.02)
+                # Trục Z đặt tầm 0.15 đến 0.2 để khối hình học nhô lên vừa vặn dễ nhìn đường đồng mức
+                aspectratio=dict(x=1.0, y=ty_le_y_thuc, z=0.2), 
                 
                 zaxis=dict(range=[np.min(z_scaled) - 1, np.max(z_scaled) + 1]),
                 camera=dict(
-                    eye=dict(x=1.3, y=1.3, z=1.1)   # Góc nhìn từ trên cao chếch xuống bao quát rộng rãi
+                    eye=dict(x=0.8, y=0.8, z=0.8) # Góc nhìn tối ưu cho mô hình tuyến thuôn dài
                 )
             ),
             template="plotly_dark",
