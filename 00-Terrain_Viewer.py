@@ -64,53 +64,44 @@ def parse_ntd_file(uploaded_file):
 import plotly.graph_objects as go
 import pandas as pd
 
-def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
+def ve_dia_hinh_3d(df, he_so_z=5.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
     """
-    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D VÀ HIỂN THỊ ĐƯỜNG ĐỒNG MỨC CHI TIẾT
-    Đã sửa lỗi không hiển thị đường đồng mức do sai lệch tỉ lệ trục dữ liệu.
+    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D - HIỂN THỊ ĐƯỜNG ĐỒNG MỨC CỐ ĐỊNH 1M TRÊN BỀ MẶT
+    - Chỉ hiển thị trên khối 3D, không chiếu đáy.
+    - Hiển thị tĩnh ngay từ đầu, không phụ thuộc vào con trỏ chuột.
     """
     if df.empty or len(df.index) < 3:
         return None
         
     try:
-        # 1. Tạo ma trận lưới địa hình và nội suy làm mịn
+        # 1. Tạo ma trận lưới địa hình từ dữ liệu X, Y, Z của file NTD
         grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
         grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
         grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
-        
-        # Mài mịn bề mặt khử sọc múi tôn
-        grid_df = grid_df.rolling(window=5, min_periods=1, center=True).mean()
-        grid_df = grid_df.T.rolling(window=5, min_periods=1, center=True).mean().T
         
         x_grid = grid_df.columns.values
         y_grid = grid_df.index.values
         z_real = grid_df.values
         
-        # Áp dụng hệ số scale trục Z
+        z_min_real = np.min(z_real)
+        z_max_real = np.max(z_real)
+        
+        # Áp dụng hệ số scale trục Z hiển thị
         z_scaled = z_real * he_so_z 
-        
-        z_min = np.min(z_scaled)
-        z_max = np.max(z_scaled)
-        
-        # TỰ ĐỘNG TÍNH TOÁN KHOẢNG CAO ĐỀU NẾU NGƯỜI DÙNG ĐẶT QUÁ NHỎ HOẶC QUÁ LỚN
-        # Đảm bảo luôn có từ 10 đến 30 đường đồng mức xuất hiện trên mô hình
-        chenh_lech_z = z_max - z_min
-        if chenh_lech_z > 0 and (buoc_nhay_cao_do * he_so_z) > chenh_lech_z:
-            buoc_ve = chenh_lech_z / 15
-        else:
-            buoc_ve = buoc_nhay_cao_do * he_so_z
+        buoc_ve_scaled = buoc_nhay_cao_do * he_so_z
 
-        # 2. CẤU HÌNH ĐƯỜNG ĐỒNG MỨC ĐƯỢC ÉP HIỂN THỊ RÕ NÉT
+        # 2. CẤU HÌNH ĐƯỜNG ĐỒNG MỨC HIỂN THỊ TĨNH 100% TRÊN BỀ MẶT 3D
         if hien_dong_muc:
             contour_config = dict(
-                show=True,
-                start=z_min,
-                end=z_max,
-                size=buoc_ve,
-                usecolormap=False,
-                color="rgba(255, 255, 255, 0.9)", # Màu trắng độ nét cao 90% để nổi bật trên nền Earth
-                width=3,                           # Tăng độ dày nét vẽ lên 3 để không bị nuốt nét
-                project=dict(z=True)               # Chiếu bản đồ phẳng xuống đáy
+                show=True,                          # ÉP BUỘC HIỂN THỊ NGAY TỪ ĐẦU
+                start=np.ceil(z_min_real) * he_so_z, # Mốc mét chẵn bắt đầu
+                end=np.floor(z_max_real) * he_so_z, # Mốc mét chẵn kết thúc
+                size=buoc_ve_scaled,                # Khoảng cao đều cố định đúng 1m (đã tỷ lệ theo Z)
+                usecolormap=False,                  # Không dùng màu nền để đường nét không bị chìm
+                color="rgb(0, 0, 0)",               # Đường đồng mức màu ĐEN TUYỀN sắc nét
+                width=5,                            # Độ dày nét vẽ cực đậm (5px) để nhìn thấy ngay
+                highlight=False,                    # TẮT CHẾ ĐỘ HOVER: Không đợi con trỏ chỉ vào mới hiện
+                project=dict(z=False)               # TẮT CHIẾU ĐÁY: Chỉ hiển thị duy nhất ở phần 3D theo yêu cầu
             )
         else:
             contour_config = dict(show=False)
@@ -121,40 +112,42 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
             y=y_grid,
             z=z_scaled,
             customdata=z_real,
-            hovertemplate="X: %{x:.2f} m<br>Y: %{y:.2f} m<br>Z gốc: %{customdata:.2f} m<extra></extra>",
+            hovertemplate="X: %{x:.1f} m<br>Y: %{y:.2f} m<br>Z gốc: %{customdata:.2f} m<extra></extra>",
             colorscale='Earth',
-            opacity=0.9,
-            contours=dict(z=contour_config), # Ép cấu hình contours vào bề mặt 3D
-            colorbar=dict(
-                title=dict(text="Cao độ Z (m)", side="right"),
-                thickness=15
-            )
+            opacity=1.0,
+            contours=dict(z=contour_config),    # Nạp cấu hình đường đồng mức tĩnh
+            
+            # Khử toàn bộ bóng mờ của Camera để lộ rõ nét vẽ mực đen
+            lighting=dict(
+                ambient=1.0, 
+                diffuse=0.0,
+                specular=0.0,
+                roughness=1.0
+            ),
+            colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15)
         )
         
         fig = go.Figure(data=[surface])
         
-        # 4. THAY ĐỔI CHIẾN LƯỢC ASPECT RATIO ĐỂ BẢN BẢO KHÔNG BỊ CO CỤM
-        # Thay vì dùng 'data' (bị kéo dài theo trục X 600m), ta dùng 'manual' để ép khung hình cân đối
+        # 4. THIẾT LẬP KÉO GIÃN KHUNG NHÌN CHỐNG CO CỤM DẢI MẢNH
         fig.update_layout(
             title=dict(
-                text=f"🏔️ BÌNH ĐỒ ĐỊA HÌNH 3D & ĐƯỜNG ĐỒNG MỨC",
-                font=dict(size=16, color='#007acc', family='Arial')
+                text=f"🏔️ BÌNH ĐỒ ĐỊA HÌNH 3D - ĐƯỜNG ĐỒNG MỨC CỐ ĐỊNH {buoc_nhay_cao_do}M",
+                font=dict(size=14, color='#007acc', family='Arial')
             ),
             scene=dict(
                 xaxis_title="Lý trình X (m)",
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z (m)",
-                # SỬA LỖI CO CỤM: Ép tỉ lệ hiển thị của hộp không gian thành hình hộp cân đối (X:Y:Z = 1:1:0.4)
-                aspectmode='manual',
-                aspectratio=dict(x=1, y=1, z=0.4),
                 
-                # Cấu hình mặt phẳng chứa bản đồ chiếu ở đáy
-                zaxis=dict(
-                    range=[z_min - (chenh_lech_z * 0.2) - 1, z_max + 2]
-                ),
-                # Thiết lập góc nhìn Camera từ trên chéo xuống để thấy rõ đường đồng mức đáy và khối 3D
+                # BẮT BUỘC: Thay đổi sang 'manual' để bẻ gãy tỷ lệ kéo dài của file gốc
+                aspectmode='manual',
+                # Tỷ lệ hộp hiển thị: X dài 1 phần, Y rộng hẳn ra 0.7 phần, Z cao 0.4 phần
+                aspectratio=dict(x=1.0, y=0.7, z=0.4), 
+                
+                zaxis=dict(range=[np.min(z_scaled) - 1, np.max(z_scaled) + 1]),
                 camera=dict(
-                    eye=dict(x=1.5, y=1.5, z=1.2)
+                    eye=dict(x=1.2, y=1.2, z=1.2) # Góc nhìn xéo từ trên xuống bao quát toàn bộ mặt đường 3D
                 )
             ),
             template="plotly_dark",
