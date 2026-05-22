@@ -87,7 +87,7 @@ def parse_coordinate_file(uploaded_file):
 
 def convert_to_vn2000(df_ntd, df_coord):
     """
-    THUẬT TOÁN ĐỒNG BỘ NÂNG CAO - SỬ DỤNG TIẾP TUYẾN GRADIENT CHỐNG LỖI XOẮN ĐỊA HÌNH
+    THUẬT TOÁN ĐỒNG BỘ NÂNG CAO - XỬ LÝ VECTOR GRADIENT MƯỢT TUYẾN TRÁNH SAI LỆCH GÓC CONG
     """
     try:
         list_ntd_x = sorted(df_ntd['Lý trình'].unique())
@@ -110,24 +110,20 @@ def convert_to_vn2000(df_ntd, df_coord):
         
         df_merged = df_merged.dropna(subset=['X_VN2000', 'Y_VN2000']).copy()
         
-        # Trích xuất chuỗi tim tuyến
         df_tim_calc = df_merged[df_merged['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình').copy()
         
         if len(df_tim_calc) >= 2:
-            # 🎯 CẢI TIẾN LỚN: Dùng thuật toán Gradient vi phân để lấy véc-tơ tiếp tuyến mượt mà tại mọi điểm
             df_tim_calc['dX'] = np.gradient(df_tim_calc['X_VN2000'].values)
             df_tim_calc['dY'] = np.gradient(df_tim_calc['Y_VN2000'].values)
         else:
             df_tim_calc['dX'] = 1.0
             df_tim_calc['dY'] = 0.0
             
-        # Tính góc phương vị hướng tuyến tịnh tiến mượt mà
         df_tim_calc['Góc_Tuyến'] = np.arctan2(df_tim_calc['dY'], df_tim_calc['dX'])
         
         goc_map = dict(zip(df_tim_calc['Lý trình'], df_tim_calc['Góc_Tuyến']))
         df_merged['Góc_Tuyến'] = df_merged['Lý trình'].map(goc_map).bfill().ffill()
         
-        # Quay lượng giác bắn tọa độ điểm trắc ngang chuẩn vuông góc hệ VN-2000
         angle_offset = df_merged['Góc_Tuyến'] + (np.pi / 2)
         df_merged['X_Real'] = df_merged['X_VN2000'] + df_merged['Offset'] * np.cos(angle_offset)
         df_merged['Y_Real'] = df_merged['Y_VN2000'] + df_merged['Offset'] * np.sin(angle_offset)
@@ -137,12 +133,14 @@ def convert_to_vn2000(df_ntd, df_coord):
         st.error(f"Lỗi xử lý đồng bộ chuỗi điểm tim thực địa: {e}")
         return pd.DataFrame()
 
-def tao_cau_truc_mesh_bam_sat_ntd(df):
+def tao_ma_tran_be_mat_chuan(df):
     """
-    ⚡ THUẬT TOÁN ĐAN LƯỚI TUẦN TIẾN BÁM SÁT 100% FILE NTD - ĐÃ KHỬ RÁCH VÀ KHỬ SỢI CHỈ
+    🎯 GIẢI PHÁP CORE: Tạo cấu trúc ma trận 2D chuẩn (Curvilinear Grid) bám sát file NTD.
+    - Trích xuất cao độ và tọa độ thực tế theo từng hàng cọc (Lý trình) độc lập.
+    - Đồng bộ số mắt lưới trắc ngang để tự động vuốt mượt liên tục từ cọc này sang cọc khác.
     """
     unique_lts = sorted(df['Lý trình'].unique())
-    num_samples_per_mcn = 20  # Khóa cứng số lượng mắt lưới trên 1 trắc ngang cọc
+    num_samples_per_mcn = 25  # Khóa cứng mật độ 25 điểm trên mỗi Line trắc ngang cọc
     target_pct = np.linspace(0.0, 1.0, num_samples_per_mcn)
     
     matrix_x = []
@@ -173,56 +171,31 @@ def tao_cau_truc_mesh_bam_sat_ntd(df):
         matrix_y.append(y_line)
         matrix_z.append(z_line)
         
-    matrix_x = np.array(matrix_x)
-    matrix_y = np.array(matrix_y)
-    matrix_z = np.array(matrix_z)
-    
-    num_cocs = len(matrix_x)
-    x_nodes = matrix_x.flatten()
-    y_nodes = matrix_y.flatten()
-    z_nodes = matrix_z.flatten()
-    
-    i_indices = []
-    j_indices = []
-    k_indices = []
-    
-    for r in range(num_cocs - 1):
-        for c in range(num_samples_per_mcn - 1):
-            p0 = r * num_samples_per_mcn + c
-            p1 = r * num_samples_per_mcn + (c + 1)
-            p2 = (r + 1) * num_samples_per_mcn + c
-            p3 = (r + 1) * num_samples_per_mcn + (c + 1)
-            
-            # Đan mặt 1
-            i_indices.append(p0)
-            j_indices.append(p1)
-            k_indices.append(p2)
-            
-            # Đan mặt 2
-            i_indices.append(p1)
-            j_indices.append(p3)
-            k_indices.append(p2)
-            
-    return x_nodes, y_nodes, z_nodes, i_indices, j_indices, k_indices
+    # Chuyển đổi về cấu trúc ma trận mảng 2D hoàn chỉnh
+    return np.array(matrix_x), np.array(matrix_y), np.array(matrix_z)
 
 def ve_dia_hinh_3d(df, he_so_z=1.0):
     """
-    DỰNG MÔ HÌNH ĐỊA HÌNH 3D TOÀN DIỆN VỮNG CHẮC CHO MỌI LOẠI FILE KHẢO SÁT
+    DỰNG MÔ HÌNH ĐỊA HÌNH 3D HÀNH LẠNG TUYẾN CHUẨN MƯỢT, ÉP VUỐT LIÊN TỤC GIỮA CÁC CỌC
     """
     if df.empty:
         return None
     try:
-        x, y, z, i, j, k = tao_cau_truc_mesh_bam_sat_ntd(df)
-        z_scaled = z * he_so_z
+        # Gọi cấu trúc ma trận hành lang liên tục uốn lượn
+        x_grid, y_grid, z_grid = tao_ma_tran_be_mat_chuan(df)
         
-        fig = go.Figure(data=[go.Mesh3d(
-            x=x, y=y, z=z_scaled,
-            i=i, j=j, k=k,
-            intensity=z,
+        # Áp dụng hệ số phóng đại trục đứng trực tiếp vào ma trận hiển thị
+        z_scaled = z_grid * he_so_z
+        
+        # Sử dụng go.Surface trên nền ma trận cong để tự động dệt khối đặc phẳng mịn 100%
+        fig = go.Figure(data=[go.Surface(
+            x=x_grid, y=y_grid, z=z_scaled,
+            customdata=z_grid,
+            hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{customdata:.2f} m<extra></extra>",
             colorscale='Earth', opacity=0.95,
             showscale=True,
             colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
-            hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{intensity:.2f} m<extra></extra>"
+            contours=dict(x=dict(show=False), y=dict(show=False)) # Ẩn lưới phụ phụ cho mượt mắt
         )])
         
         fig.update_layout(
