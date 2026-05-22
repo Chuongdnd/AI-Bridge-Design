@@ -288,44 +288,47 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     "📐 Bản vẽ Mặt cắt ngang điển hình"
                 ])
                 
-            with tab_dia_hinh_3d:
-            # 🛠️ KHU VỰC THIẾT LẬP NÂNG CAO CHO GOOGLE MAPS API
-                with st.expander("📡 Cấu hình lớp nền Vệ tinh Google Maps (PA2)"):
-                    col_sat1, col_sat2 = st.columns(2)
-                    with col_sat1:
-                        on_satellite = st.toggle("🌐 Kích hoạt bản đồ vệ tinh", value=False, 
-                                                help="Tự động nạp dữ liệu không gian từ Google dán lên mô hình 3D.")
-                        ktt_value = st.number_input("🧭 Kinh tuyến trục của tỉnh (KTT):", value=105.0, step=0.5,
-                                                    help="Nhập đúng kinh tuyến trục để tọa độ VN-2000 dịch chuyển không bị lệch.")
-                    with col_sat2:
-                        google_key = st.text_input("🔑 Google Static Maps API Key:", type="password",
-                                                help="Nhập API Key của bạn để tải ảnh chất lượng cao không giới hạn.")
-                
-                # 🛠️ BẢNG ĐIỀU KHIỂN CÁC OPTION CŨ
-                col_opt1, col_opt2, col_opt3 = st.columns(3)
-                with col_opt1:
-                    che_do_view = st.selectbox("🎨 Chế độ hiển thị địa hình:", ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"])
-                with col_opt2:
-                    he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
-                with col_opt3:
-                    do_min_view = st.select_slider("✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", options=[1, 3, 5, 7], value=3)
-
-                data_to_render = st.session_state.get('df_merged_safe', pd.DataFrame())
-
-                if not data_to_render.empty:
-                    # Gọi hàm vẽ nâng cao thế hệ mới tích hợp PA2
-                    fig_3d = TV.ve_dia_hinh_3d(
-                        data_to_render, 
-                        he_so_z=he_so_z, 
-                        che_do=che_do_view, 
-                        do_min=do_min_view,
-                        kich_hoat_ve_tinh=on_satellite,
-                        ktt=ktt_value,
-                        api_key=google_key
-                    )
+                with tab_dia_hinh_3d:
+                    # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
+                    col_opt1, col_opt2, col_opt3 = st.columns(3)
                     
-                    if fig_3d: 
-                        st.plotly_chart(fig_3d, use_container_width=True)
+                    with col_opt1:
+                        che_do_view = st.selectbox(
+                            "🎨 Chế độ hiển thị địa hình:", 
+                            ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
+                        )
+                    with col_opt2:
+                        he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
+                    with col_opt3:
+                        do_min_view = st.select_slider(
+                            "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
+                            options=[1, 3, 5, 7], 
+                            value=3, 
+                            help="Mức số càng lớn địa hình uốn lượn uốn cong dọc tuyến sông càng mượt phẳng."
+                        )
+
+                    # SỬA LỖI: Sử dụng chính xác biến dữ liệu đã được đồng bộ VN-2000 trong file Interface của bạn
+                    # Thay thế df_geology thành df_merged (hoặc biến chứa dữ liệu cuối cùng của bạn)
+                    if 'df_merged' in locals() or 'df_merged' in globals():
+                        data_to_render = df_merged
+                    elif 'df_final' in locals() or 'df_final' in globals():
+                        data_to_render = df_final
+                    else:
+                        # Nếu không tìm thấy, hệ thống tự động bốc biến chứa bảng dữ liệu đang hiển thị trên giao diện của bạn
+                        data_to_render = st.session_state.get('df_merged', pd.DataFrame())
+
+                    if not data_to_render.empty:
+                        fig_3d = TV.ve_dia_hinh_3d(
+                            data_to_render, 
+                            he_so_z=he_so_z, 
+                            che_do=che_do_view, 
+                            do_min=do_min_view
+                        )
+                        
+                        if fig_3d: 
+                            st.plotly_chart(fig_3d, use_container_width=True)
+                    else:
+                        st.warning("⚠️ Vui lòng nạp và đồng bộ file dữ liệu khảo sát trước khi xem mô hình 3D.")
                         
                 with tab_mcn_draw:
                     try:
