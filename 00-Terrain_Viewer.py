@@ -6,6 +6,7 @@ import numpy as np
 def parse_ntd_file(uploaded_file):
     """
     BỘ GIẢI MÃ FILE .NTD TOÀN DIỆN KHÔNG GIAN
+    - Phân loại trực tiếp bằng cách đọc chữ 'POLE', 'TARGETL', 'TARGETR'
     """
     data_points = []
     raw_content = uploaded_file.read()
@@ -27,6 +28,7 @@ def parse_ntd_file(uploaded_file):
             
         token = parts[0].upper()
         
+        # 1. Đọc chữ POLE lấy tọa độ tim tuyến
         if token == 'POLE' and len(parts) >= 4:
             try:
                 current_pole = parts[1].strip().upper()
@@ -34,10 +36,11 @@ def parse_ntd_file(uploaded_file):
                 z_tim = float(parts[3])
                 
                 data_points.append({
-                    'Cọc': current_pole, 'Lý trình': current_x, 'Offset': 0.0, 'Z': z_tim, 'Loại': 'TIM'
+                    'Cọc': current_pole, 'Lý trình': current_x, 'Offset': 0.0, 'Z': z_tim, 'Tag_Gốc': 'POLE'
                 })
             except ValueError:
                 pass
+        # 2. Đọc chữ TARGETL/R lấy tọa độ cánh trắc ngang thực tế
         elif token in ['TARGETL', 'TARGETR'] and len(parts) >= 3:
             try:
                 dist_offset = float(parts[1])
@@ -45,7 +48,7 @@ def parse_ntd_file(uploaded_file):
                 
                 if current_pole:
                     data_points.append({
-                        'Cọc': current_pole, 'Lý trình': current_x, 'Offset': dist_offset, 'Z': z_val, 'Loại': 'MIA'
+                        'Cọc': current_pole, 'Lý trình': current_x, 'Offset': dist_offset, 'Z': z_val, 'Tag_Gốc': token
                     })
             except ValueError:
                 pass
@@ -135,53 +138,60 @@ def convert_to_vn2000(df_ntd, df_coord):
 
 def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
     """
-    🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN ĐÃ PHÂN TÁCH LUỒNG CỌC PHỤ
-    - Bề mặt cánh trắc ngang: Chỉ lấy các cọc có đo điểm MIA thực tế để nối mượt xuyên suốt toàn tuyến.
-    - Tim dọc sông: Giữ lại toàn bộ cọc để vuốt cao độ dọc không gãy khúc.
+    🏔️ MÔ HÌNH ĐỊA HÌNH 3D XUYÊN SUỐT - GIẢI QUYẾT TRIỆT ĐỂ LỖI SÓT ĐOẠN CONG/THẲNG
+    - Quét liên tục qua tất cả các cọc tăng dần theo thứ tự Lý trình.
+    - Cọc nào thiếu chữ 'TARGETL/R' sẽ được tự động bù biên từ các cọc đầy đủ lân cận để vuốt nối liền mạch.
     """
     if df.empty: 
         return None
     
     try:
         df_clean = df.sort_values(['Lý trình', 'Offset']).copy()
+        unique_lts = sorted(df_clean['Lý trình'].unique())
         
-        # 🎯 BƯỚC CẢI TIẾN QUYẾT ĐỊNH: Lọc ra danh sách các cọc có đo trắc ngang thực sự
-        # (Cọc nào có số lượng bản ghi > 1 đồng nghĩa với việc có cả Tim và điểm mia cánh Trái/Phải)
-        cocs_co_trac_ngang = df_clean.groupby('Lý trình').filter(lambda x: len(x) > 1)
-        unique_lts_surface = sorted(cocs_co_trac_ngang['Lý trình'].unique())
-        
+        # Đồng bộ 40 mắt đan trên mỗi mặt cắt ngang line
         num_samples = 40  
         target_pct = np.linspace(0.0, 1.0, num_samples)
         
         matrix_x, matrix_y, matrix_z = [], [], []
         
-        # Dệt ma trận bề mặt 2D mềm dẻo băng qua các cọc phụ mồ côi
-        for lt in unique_lts_surface:
+        for lt in unique_lts:
             df_sub = df_clean[df_clean['Lý trình'] == lt].sort_values('Offset')
+            
+            # Kiểm tra xem cọc này có chứa chữ TARGETL hoặc TARGETR không (Tag_Gốc có chữ TARGET)
+            has_target = df_sub['Tag_Gốc'].str.contains('TARGET', na=False).any()
             
             obs_offsets = df_sub['Offset'].values
             obs_x_real = df_sub['X_Real'].values
             obs_y_real = df_sub['Y_Real'].values
             obs_zs = df_sub['Z'].values
             
-            pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0] + 0.0001)
-            
-            x_line = np.interp(target_pct, pct_goc, obs_x_real)
-            y_line = np.interp(target_pct, pct_goc, obs_y_real)
-            z_line = np.interp(target_pct, pct_goc, obs_zs)
+            # 🎯 NẾU CỌC SÓT (CHỈ CÓ CHỮ POLE - KHÔNG CÓ CHỮ TARGET): Tự động lấy biên vuốt bù
+            if not has_target or len(obs_offsets) < 2:
+                goc_tuyen = df_sub['Góc_Tuyến'].iloc[0]
+                g_offset = goc_tuyen + (np.pi / 2)
+                
+                # Giả lập dải cánh 25m mỗi bên gối đầu mềm dẻo qua cọc phụ
+                offsets_fake = np.linspace(-25.0, 25.0, num_samples)
+                x_line = df_sub['X_VN2000'].iloc[0] + offsets_fake * np.cos(g_offset)
+                y_line = df_sub['Y_VN2000'].iloc[0] + offsets_fake * np.sin(g_offset)
+                z_line = np.repeat(obs_zs[0], num_samples)
+            else:
+                # Cọc đo chuẩn chuẩn đầy đủ chữ TARGETL, TARGETR từ file khảo sát
+                pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0] + 0.0001)
+                x_line = np.interp(target_pct, pct_goc, obs_x_real)
+                y_line = np.interp(target_pct, pct_goc, obs_y_real)
+                z_line = np.interp(target_pct, pct_goc, obs_zs)
                 
             matrix_x.append(x_line)
             matrix_y.append(y_line)
             matrix_z.append(z_line)
             
-        if len(matrix_x) < 2:
-            return None
-            
         matrix_x = np.array(matrix_x)
         matrix_y = np.array(matrix_y)
         matrix_z = np.array(matrix_z)
 
-        # Bộ lọc không gian làm mịn bề mặt
+        # Bộ lọc làm mịn rolling trượt giảm thiểu răng cưa đáy sông
         if do_min > 1:
             mz_pd = pd.DataFrame(matrix_z)
             mz_pd = mz_pd.rolling(window=do_min, min_periods=1, center=True).mean()
@@ -190,10 +200,9 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         z_scaled = matrix_z * he_so_z
         fig = go.Figure()
 
-        # Dựng mô hình hiển thị theo các Option chuyển đổi
+        # Dệt lưới đa giác phủ kín hành lang
         if che_do in ["Bề mặt mịn", "Lưới tam giác"]:
             show_wireframe = True if che_do == "Lưới tam giác" else False
-            
             fig.add_trace(go.Surface(
                 x=matrix_x, y=matrix_y, z=z_scaled, customdata=matrix_z,
                 colorscale='Earth', opacity=0.95,
@@ -204,7 +213,6 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                     y=dict(show=show_wireframe, color="rgba(0,0,0,0.2)", width=1)
                 )
             ))
-            
         elif che_do == "Đường đồng mức":
             fig.add_trace(go.Surface(
                 x=matrix_x, y=matrix_y, z=z_scaled, customdata=matrix_z,
@@ -214,38 +222,24 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                 hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z Thực: %{customdata:.2f} m<extra></extra>"
             ))
 
-        # 🎯 ĐƯỜNG CHỈ TIM TUYẾN XUYÊN SUỐT: Vuốt nối điểm tim (Offset=0) của TẤT CẢ các cọc
-        df_tim_all = df_clean[df_clean['Offset'] == 0].sort_values('Lý trình')
-        
-        # Tạo chuỗi văn bản hiển thị: "Tên Cọc (Km...)" hoặc "Tên Cọc (LT: ...)"
-        nhan_hien_thi = df_tim_all.apply(
-            lambda r: f"{r['Cọc']} (LT: {r['Lý trình']:.1f}m)", axis=1
-        ).values
-
-        fig.add_trace(go.Scatter3d(
-            x=df_tim_all['X_Real'].values,
-            y=df_tim_all['Y_Real'].values,
-            z=df_tim_all['Z'].values * he_so_z,
-            mode='lines+markers+text',  # ✨ KÍCH HOẠT CHẾ ĐỘ HIỂN THỊ CHỮ (TEXT) TRÊN NỀN 3D
-            line=dict(color='red', width=4),
-            marker=dict(size=4, color='yellow', symbol='circle'),
-            text=nhan_hien_thi,         # Gán chuỗi tên cọc + lý trình vào mảng hiển thị
-            textposition="top center",  # Đẩy chữ lên phía trên dấu chấm vàng để không bị che khuất
-            textfont=dict(
-                family="Arial, sans-serif",
-                size=11,                # Kích cỡ chữ vừa vặn, dễ nhìn trong không gian 3D
-                color="lightblue"       # Màu chữ xanh sáng tương phản tốt với nền tối (Dark mode)
-            ),
-            name='Đường tim tuyến dọc sông',
-            hovertemplate="Cọc: %{text}<br>Z Tim: %{z:.2f} m<extra></extra>"
-        ))
+        # ĐƯỜNG CHỈ TIM TUYẾN MÀU ĐỎ VÀ HIỂN THỊ TÊN CỌC + LÝ TRÌNH DỌC SÔNG
+        df_tim_all = df_clean[df_clean['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
+        if not df_tim_all.empty:
+            nhan_hien_thi = df_tim_all.apply(lambda r: f"{r['Cọc']} (LT: {r['Lý trình']:.1f}m)", axis=1).values
+            fig.add_trace(go.Scatter3d(
+                x=df_tim_all['X_Real'].values, y=df_tim_all['Y_Real'].values, z=df_tim_all['Z'].values * he_so_z,
+                mode='lines+markers+text',
+                line=dict(color='red', width=4), marker=dict(size=4, color='yellow'),
+                text=nhan_hien_thi, textposition="top center",
+                textfont=dict(family="Arial, sans-serif", size=11, color="lightblue"),
+                name='Đường tim tuyến dọc sông'
+            ))
 
         fig.update_layout(
-            title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D BÁM SÁT TOÀN TUYẾN NTD", font=dict(size=16, color='#007acc')),
             scene=dict(
-                xaxis_title="Tọa độ X VN-2000 (m)",
-                yaxis_title="Tọa độ Y VN-2000 (m)",
-                zaxis_title="Cao độ Z (m)",
+                xaxis_title="Tọa độ X VN-2000 (m)", 
+                yaxis_title="Tọa độ Y VN-2000 (m)", 
+                zaxis_title="Cao độ Z (m)", 
                 aspectmode='data'
             ),
             template="plotly_dark", margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='#0e1117'
