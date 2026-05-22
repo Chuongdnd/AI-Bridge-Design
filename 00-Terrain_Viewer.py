@@ -17,6 +17,7 @@ def parse_ntd_file(uploaded_file):
         lines = raw_content.decode("latin1").splitlines()
         
     current_x = 0.0  # Lý trình trắc dọc (Trục X tổng thể)
+    current_pole = ""
     
     for line in lines:
         line = line.strip()
@@ -32,10 +33,12 @@ def parse_ntd_file(uploaded_file):
         # 1. LẤY CỌC TIM TUYẾN: Xác định Lý trình X và Cao độ Z tại vị trí tim Y = 0
         if token == 'POLE' and len(parts) >= 4:
             try:
+                current_pole = parts[1].strip().upper() # Lưu tên cọc chuẩn hóa để so khớp VN-2000
                 current_x = float(parts[2])
                 z_tim = float(parts[3])
                 
                 data_points.append({
+                    'Cọc': current_pole,
                     'X': current_x, 
                     'Y': 0.0, 
                     'Z': z_tim,
@@ -50,98 +53,147 @@ def parse_ntd_file(uploaded_file):
                 dist_offset = float(parts[1]) # Khoảng cách trắc ngang (Trục Y)
                 z_val = float(parts[2])        # Cao độ trắc ngang (Trục Z)
                 
-                data_points.append({
-                    'X': current_x, 
-                    'Y': dist_offset, 
-                    'Z': z_val,
-                    'Type': 'Mia địa hình'
-                })
+                if current_pole:
+                    data_points.append({
+                        'Cọc': current_pole,
+                        'X': current_x, 
+                        'Y': dist_offset, 
+                        'Z': z_val,
+                        'Type': 'Mia địa hình'
+                    })
             except ValueError:
                 pass
                 
     return pd.DataFrame(data_points)
 
+def parse_coordinate_file(uploaded_file):
+    """
+    BỘ GIẢI MÃ FILE BẢNG TOẠ ĐỘ THỰC VN-2000 (.CSV HOẶC .XLSX)
+    Tự động xử lý bỏ qua các dòng tiêu đề giới thiệu để lấy chính xác dữ liệu số
+    """
+    try:
+        if uploaded_file.name.endswith('.csv'):
+            # File CSV thực tế thường có 1-2 dòng tiêu đề lớn ở đỉnh -> nhảy dòng lấy header
+            df_coord = pd.read_csv(uploaded_file, skiprows=1)
+        else:
+            df_coord = pd.read_excel(uploaded_file, skiprows=1)
+            
+        # Chuẩn hóa toàn bộ tên tiêu đề cột viết hoa và cắt khoảng trắng
+        df_coord.columns = [str(c).strip().upper() for c in df_coord.columns]
+        
+        # Nhận diện cột tự động bằng từ khóa trắc đạc
+        col_name = [c for c in df_coord.columns if 'CỌC' in c or 'TEN' in c][0]
+        col_x = [c for c in df_coord.columns if 'X(M)' in c or 'X' in c][0]
+        col_y = [c for c in df_coord.columns if 'Y(M)' in c or 'Y' in c][0]
+        
+        df_clean = pd.DataFrame({
+            'Cọc': df_coord[col_name].astype(str).str.strip().str.upper(),
+            'X_VN2000': df_coord[col_x].astype(float),
+            'Y_VN2000': df_coord[col_y].astype(float)
+        })
+        return df_clean.drop_duplicates(subset=['Cọc'])
+    except Exception as e:
+        st.error(f"Lỗi đọc file bảng tọa độ VN-2000: {e}")
+        return None
+
+def convert_to_vn2000(df_ntd, df_coord):
+    """
+    THUẬT TOÁN PHÉP QUAY HÌNH HỌC KHÔNG GIAN TRẮC ĐẠC
+    Bắn tọa độ các điểm mia vuông góc sang 2 bên cánh mố cầu theo hệ VN-2000 thực tế
+    """
+    # Đồng bộ liên kết tên cọc giữa dữ liệu hình học tuyến và tọa độ trắc địa thực tế
+    df_merged = pd.merge(df_ntd, df_coord, on='Cọc', how='inner')
+    
+    if df_merged.empty:
+        return pd.DataFrame()
+        
+    # Tính toán véc-tơ hướng tuyến dựa trên các mốc cọc tim thực (Y == 0)
+    df_tim = df_merged[df_merged['Y'] == 0].drop_duplicates(subset=['X']).sort_values('X').copy()
+    
+    df_tim['dX'] = df_tim['X_VN2000'].diff().shift(-1)
+    df_tim['dY'] = df_tim['Y_VN2000'].diff().shift(-1)
+    
+    # Điền bù dữ liệu cọc cuối cùng bám sát cọc kề trước nó
+    df_tim['dX'] = df_tim['dX'].bfill().ffill()
+    df_tim['dY'] = df_tim['dY'].bfill().ffill()
+    
+    # Tính góc phương vị chỉ phương của con đường ngoài thực tế bằng hàm lượng giác arctan2
+    df_tim['Góc_Tuyến'] = np.arctan2(df_tim['dY'], df_tim['dX'])
+    
+    goc_map = dict(zip(df_tim['X'], df_tim['Góc_Tuyến']))
+    df_merged['Góc_Tuyến'] = df_merged['X'].map(goc_map).bfill().ffill()
+    
+    # 🎯 BẮN TOẠ ĐỘ LƯỢNG GIÁC SANG 2 CÁNH VUÔNG GÓC TIM ĐƯỜNG (X_Real, Y_Real)
+    angle_offset = df_merged['Góc_Tuyến'] + (np.pi / 2)
+    df_merged['X_Real'] = df_merged['X_VN2000'] + df_merged['Y'] * np.cos(angle_offset)
+    df_merged['Y_Real'] = df_merged['Y_VN2000'] + df_merged['Y'] * np.sin(angle_offset)
+    
+    return df_merged
+
+def ve_binh_do_goc_2d(df):
+    """
+    DỰNG BÌNH ĐỒ SỐ ĐỊA HÌNH KHÔNG GIAN 2D TRÊN TOẠ ĐỘ THỰC VN-2000
+    """
+    if df.empty: 
+        return None
+    try:
+        fig = go.Figure(data=go.Mesh3d(
+            x=df['X_Real'], y=df['Y_Real'], z=df['Z'],
+            intensity=df['Z'], colorscale='Viridis',
+            opacity=0.90, showscale=True,
+            colorbar=dict(title="Cao độ Z (m)", thickness=15)
+        ))
+        
+        fig.update_layout(
+            title=dict(text="🗺️ BÌNH ĐỒ SỐ ĐỊA HÌNH KHÔNG GIAN ĐỊNH VỊ THỰC TẾ VN-2000", font=dict(size=15, color='#007acc')),
+            xaxis_title="Tọa độ thực X (m)", yaxis_title="Tọa độ thực Y (m)",
+            yaxis=dict(scaleanchor="x", scaleratio=1, gridcolor='#222c3c'),
+            xaxis=dict(gridcolor='#222c3c'),
+            template="plotly_dark",
+            margin=dict(l=20, r=20, t=40, b=20), plot_bgcolor='#0e1117', paper_bgcolor='#0e1117'
+        )
+        return fig
+    except Exception as e:
+        st.error(f"Lỗi dựng bình đồ phẳng VN-2000: {e}")
+        return None
+
 def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
     """
-    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D LƯỚI KHÔNG GIAN PHẲNG PHIU (ANTI-CORRUGATED)
-    - Giữ nguyên cấu trúc pivot_table, nội suy và mài mịn rolling gốc của bạn.
-    - Cập nhật: Ép hiển thị đường đồng mức tĩnh màu đen rõ nét ngay từ đầu trên khối 3D.
+    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D TRÊN HỆ TOẠ ĐỘ THỰC VN-2000
+    Sử dụng Mesh3d (Delaunay Triangulation) để tự động nối lưới uốn cong tự do mượt mà, chống đơ máy.
     """
-    if df.empty or len(df.index) < 3:
+    if df.empty:
         return None
         
     try:
-        # Giữ nguyên bước tạo ma trận lưới địa hình của bạn
-        grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
+        # Nếu số lượng điểm mia quá dày đặc, tự động lọc trích mẫu để tăng tốc đồ họa trình duyệt
+        df_render = df.iloc[::2].copy() if len(df.index) > 2000 else df.copy()
         
-        # Vuốt nối nội suy hình học liên tục phương trắc ngang Y rồi đến trắc dọc X
-        grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
-        grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
+        # Áp dụng hệ số tỉ lệ trục đứng he_so_z trực tiếp vào cao độ Z hiển thị
+        z_scaled = df_render['Z'] * he_so_z
         
-        # ✨ Thuật toán khử sọc "múi tôn" bằng rolling + xoay ma trận .T gốc của bạn
-        grid_df = grid_df.rolling(window=5, min_periods=1, center=True).mean()
-        grid_df = grid_df.T.rolling(window=5, min_periods=1, center=True).mean().T
-        
-        x_grid = grid_df.columns.values
-        y_grid = grid_df.index.values
-        z_real = grid_df.values
-        
-        # Kích hoạt hệ số tỉ lệ he_so_z vào ma trận cao độ hiển thị
-        z_scaled = z_real * he_so_z
-        
-        z_min_real = np.min(z_real)
-        z_max_real = np.max(z_real)
-        
-        # BỔ SUNG: Cấu hình lưới đường đồng mức cố định hiện tĩnh ngay từ đầu
-        if hien_dong_muc:
-            contour_config = dict(
-                show=True,                           # Ép buộc vẽ đường đồng mức lên mô hình
-                start=np.floor(z_min_real) * he_so_z, # Điểm mét chẵn bắt đầu
-                end=np.ceil(z_max_real) * he_so_z,   # Điểm mét chẵn kết thúc
-                size=buoc_nhay_cao_do * he_so_z,     # Khoảng cao đều (Ví dụ: 1 mét vẽ 1 đường)
-                usecolormap=False,                   # Tách màu đường nét khỏi dải màu nền
-                color="rgb(0, 0, 0)",                # Đường nét màu ĐEN TUYỀN nét mực sắc sảo
-                width=4,                             # Nét vẽ dày đậm 4 pixel để nhìn thấy luôn
-                highlight=False,                     # TẮT CHẾ ĐỘ HOVER: Hiện cố định từ đầu, không đợi chỉ chuột
-                project=dict(z=False)                # Chỉ hiện trên khối 3D, không chiếu xuống đáy
-            )
-        else:
-            contour_config = dict(show=False)
-        
-        # Khởi tạo khối bề mặt Surface (Có bổ sung contours và làm sáng bề mặt)
-        fig = go.Figure(data=[go.Surface(
-            x=x_grid,
-            y=y_grid,
+        # Dựng mô hình lưới tam giác không gian đa hướng chuẩn trắc địa VN-2000
+        fig = go.Figure(data=[go.Mesh3d(
+            x=df_render['X_Real'],
+            y=df_render['Y_Real'],
             z=z_scaled,
-            customdata=z_real,
-            hovertemplate="X: %{x:.1f} m<br>Y: %{y:.2f} m<br>Z thực: %{customdata:.2f} m<extra></extra>",
-            colorscale='Earth',    # Hệ màu chuẩn địa hình tự nhiên gốc của bạn
+            intensity=df_render['Z'], # Đổ màu dải màu theo cao độ thực tự nhiên
+            colorscale='Earth',
             opacity=0.95,
-            contours=dict(z=contour_config), # NẠP LƯỚI ĐƯỜNG ĐỒNG MỨC ĐÃ CẤU HÌNH BIẾN ĐỔI KHỐI TRỤC Z
-            
-            # Cải tiến ánh sáng phẳng để nét mực đen không bị bóng mờ camera che khuất
-            lighting=dict(
-                ambient=1.0, 
-                diffuse=0.0,
-                specular=0.0,
-                roughness=1.0
-            ),
-            colorbar=dict(
-                title=dict(text="Cao độ Z (m)", side="right"),
-                thickness=15
-            )
+            showscale=False,
+            hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Cao độ: %{intensity:.2f} m<extra></extra>"
         )])
         
         fig.update_layout(
             title=dict(
-                text="🏔️ MÔ HÌNH BỀ MẶT ĐỊA HÌNH TỰ NHIÊN TỶ LỆ THỰC ĐỊA 1:1:1",
+                text="🏔️ MÔ HÌNH KHÔNG GIAN ĐỊA HÌNH 3D ĐỊNH VỊ TOÀN CẦU VN-2000",
                 font=dict(size=16, color='#007acc', family='Arial')
             ),
             scene=dict(
-                xaxis_title="Lý trình X (m)",
-                yaxis_title="Trắc ngang Y (m)",
+                xaxis_title="Tọa độ X VN-2000 (m)",
+                yaxis_title="Tọa độ Y VN-2000 (m)",
                 zaxis_title="Cao độ Z (m)",
-                # Giữ nguyên ép tuyệt đối về tỷ lệ kích thước thật thực địa 1:1:1 của bạn
+                # Khóa tỷ lệ hệ mét đồng dạng, Chương kéo slider he_so_z để tăng giảm độ nhô lòng sông trực quan
                 aspectmode='data' 
             ),
             template="plotly_dark",
@@ -151,7 +203,5 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
         return fig
         
     except Exception as e:
-        # Đoạn bẫy lỗi hiển thị trên Streamlit gốc của bạn
-        import streamlit as st
-        st.error(f"Lỗi dựng mô hình địa hình 3D: {e}")
+        st.error(f"Lỗi dựng mô hình địa hình 3D VN-2000: {e}")
         return None
