@@ -289,35 +289,41 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                 ])
                 
                 with tab_dia_hinh_3d:
-                    # 🛠️ KHU VỰC OPTION CHUYỂN ĐỔI
-                    col_opt1, col_opt2, col_opt3 = st.columns(3)
-                    
-                    with col_opt1:
-                        che_do_view = st.selectbox("🎨 Chế độ hiển thị:", 
-                                                ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"])
-                    with col_opt2:
-                        he_so_z = st.slider("📐 Phóng đại trục đứng:", 0.1, 3.0, 1.0, step=0.1)
-                    with col_opt3:
-                        do_min_view = st.select_slider("✨ Độ mịn bề mặt:", 
-                                                    options=[1, 3, 5, 7], value=3, 
-                                                    help="Số càng cao địa hình càng mượt, giảm bớt răng cưa.")
+                        # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
+                        col_opt1, col_opt2, col_opt3 = st.columns(3)
+                        
+                        with col_opt1:
+                            che_do_view = st.selectbox(
+                                "🎨 Chế độ hiển thị địa hình:", 
+                                ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
+                            )
+                        with col_opt2:
+                            he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
+                        with col_opt3:
+                            do_min_view = st.select_slider(
+                                "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
+                                options=[1, 3, 5, 7], 
+                                value=3, 
+                                help="Mức số càng lớn địa hình uốn lượn uốn cong dọc tuyến sông càng mượt phẳng."
+                            )
 
-                    # Gọi hàm vẽ nâng cao với các Option đã chọn
-                    fig_3d = TV.ve_dia_hinh_3d_nang_cao(df_geology, 
-                                                        he_so_z=he_so_z, 
-                                                        che_do=che_do_view, 
-                                                        do_min=do_min_view)
-                    
-                    if fig_3d:
-                        st.plotly_chart(fig_3d, use_container_width=True, theme=None)
-                        st.info("💡 Mẹo: Dùng 'Độ mịn bề mặt' để khử các vùng gồ ghề do sai số điểm mia.")
-                with tab_trac_doc:
-                    try:
-                        fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
-                        if fig_plotly is not None:
-                            st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-                    except Exception as e:
-                        st.error(f"Lỗi bản vẽ trắc dọc: {e}")
+                        # Gọi đúng hàm định danh đã cấu hình khóa an toàn lỗi AttributeError
+                        fig_3d = TV.ve_dia_hinh_3d(
+                            df_geology, 
+                            he_so_z=he_so_z, 
+                            che_do=che_do_view, 
+                            do_min=do_min_view
+                        )
+                        
+                        if fig_3d: 
+                            st.plotly_chart(fig_3d, use_container_width=True)
+                            with tab_trac_doc:
+                                try:
+                                    fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
+                                    if fig_plotly is not None:
+                                        st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+                                except Exception as e:
+                                    st.error(f"Lỗi bản vẽ trắc dọc: {e}")
                         
                 with tab_mcn_draw:
                     try:

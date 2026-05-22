@@ -202,42 +202,105 @@ def ve_dia_hinh_nang_cao(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
     except Exception as e:
         st.error(f"Lỗi đồ họa: {e}")
         return None
-def ve_dia_hinh_3d(df, he_so_z=1.0):
+def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
     """
-    🎯 GIẢI PHÁP KHÓA CHẾT LỖI RÁCH/ĐỨT TUYẾN:
-    - Sử dụng go.Mesh3d với giải thuật Delaunay tự động của Plotly.
-    - Không gán chỉ số thủ công bằng ma trận để loại bỏ hoàn toàn hiện tượng bậc thang đứt gãy.
+    HÀM XỬ LÝ ĐỊA HÌNH 3D NÂNG CAO: ĐÃ FIX LỖI ATTRIBUTEERROR
+    - che_do: "Bề mặt mịn" (Surface), "Đường đồng mức" (Contours), "Lưới tam giác" (Mesh3d)
+    - do_min: Cửa số vuốt lọc mịn (1, 3, 5, 7) giúp khử gồ ghề lòng sông
     """
-    if df.empty:
+    if df.empty: 
         return None
+    
     try:
-        # Sắp xếp dữ liệu theo trắc dọc tiến trình tăng dần
-        df_render = df.sort_values('Lý trình').copy()
+        # 1. Định hình ma trận hành lang cong (Curvilinear Grid) tuần tiến
+        unique_lts = sorted(df['Lý trình'].unique())
+        num_samples = 30  # Số mắt lưới đan trên một Line trắc ngang cọc
+        target_pct = np.linspace(0.0, 1.0, num_samples)
         
-        x_vals = df_render['X_Real'].values
-        y_vals = df_render['Y_Real'].values
-        z_scaled = df_render['Z'].values * he_so_z
-        z_real = df_render['Z'].values
+        matrix_x = []
+        matrix_y = []
+        matrix_z = []
         
-        # Dựng mô hình 3D Mesh tự do
-        # Plotly sẽ tự động dệt các điểm kề sát địa lý với nhau thành bề mặt đặc xuyên suốt
-        fig = go.Figure(data=[go.Mesh3d(
-            x=x_vals,
-            y=y_vals,
-            z=z_scaled,
-            intensity=z_real, 
-            colorscale='Earth', 
-            opacity=0.95,
-            showscale=True,
-            # Bật tính năng tự động đan lưới Delaunay trên lưới tọa độ phẳng X-Y
-            # Bẻ gãy hoàn toàn lỗi đứt khúc, lỗi sợi chỉ hay lỗi quăn đầu đuôi!
-            alphahull=15, 
-            colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
-            hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{intensity:.2f} m<extra></extra>"
-        )])
+        for lt in unique_lts:
+            df_sub = df[df['Lý trình'] == lt].sort_values('Offset')
+            if df_sub.empty: 
+                continue
+                
+            obs_offsets = df_sub['Offset'].values
+            obs_x_real = df_sub['X_Real'].values
+            obs_y_real = df_sub['Y_Real'].values
+            obs_zs = df_sub['Z'].values
+            
+            # Chia mắt lưới phần trăm độc lập cho từng cọc chống rách rách lưới
+            if len(obs_offsets) > 1:
+                pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0] + 0.001)
+                x_line = np.interp(target_pct, pct_goc, obs_x_real)
+                y_line = np.interp(target_pct, pct_goc, obs_y_real)
+                z_line = np.interp(target_pct, pct_goc, obs_zs)
+            else:
+                x_line = np.repeat(obs_x_real[0], num_samples)
+                y_line = np.repeat(obs_y_real[0], num_samples)
+                z_line = np.repeat(obs_zs[0], num_samples)
+                
+            matrix_x.append(x_line)
+            matrix_y.append(y_line)
+            matrix_z.append(z_line)
+            
+        matrix_x = np.array(matrix_x)
+        matrix_y = np.array(matrix_y)
+        matrix_z = np.array(matrix_z)
+
+        # 2. 🎯 THUẬT TOÁN KHỬ GỒ GHỀ (MOVING AVERAGE SPATIAL FILTER)
+        # Sử dụng rolling window để san phẳng dập dềnh lồi lõm cục bộ cục bộ
+        if do_min > 1:
+            mz_pd = pd.DataFrame(matrix_z)
+            # Vuốt mịn tịnh tiến dọc tuyến
+            mz_pd = mz_pd.rolling(window=do_min, min_periods=1, center=True).mean()
+            # Vuốt mịn phẳng trắc ngang
+            matrix_z = mz_pd.T.rolling(window=do_min, min_periods=1, center=True).mean().T.values
+
+        z_scaled = matrix_z * he_so_z
         
+        fig = go.Figure()
+
+        # 3. PHÂN CHIỂN CÁC TRẠNG THÁI THEO THÔNG SỐ OPTION TRÊN WEB
+        if che_do == "Bề mặt mịn":
+            fig.add_trace(go.Surface(
+                x=matrix_x, y=matrix_y, z=z_scaled, customdata=matrix_z,
+                colorscale='Earth', opacity=0.95,
+                colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
+                hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{customdata:.2f} m<extra></extra>",
+                contours=dict(x=dict(show=False), y=dict(show=False))
+            ))
+            
+        elif che_do == "Đường đồng mức":
+            # Kích hoạt dải lưới đồng mức hiện hữu Project phẳng
+            fig.add_trace(go.Surface(
+                x=matrix_x, y=matrix_y, z=z_scaled, customdata=matrix_z,
+                colorscale='Viridis', opacity=0.95,
+                colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
+                contours_z=dict(
+                    show=True, 
+                    usecolormap=False, 
+                    color="rgb(0,0,0)", 
+                    width=3,
+                    project=dict(z=True) # Chiếu bóng hình học xuống mặt phẳng đáy
+                ),
+                hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z: %{customdata:.2f} m<extra></extra>"
+            ))
+            
+        else: # Chế độ Lưới tam giác (Gốc thô kiểm tra)
+            fig.add_trace(go.Mesh3d(
+                x=matrix_x.flatten(), y=matrix_y.flatten(), z=z_scaled.flatten(),
+                intensity=matrix_z.flatten(), 
+                colorscale='Earth', 
+                opacity=0.85,
+                colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
+                hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{intensity:.2f} m<extra></extra>"
+            ))
+
         fig.update_layout(
-            title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH 3D ĐỊNH VỊ TOÀN CẦU CHUẨN VN-2000", font=dict(size=16, color='#007acc')),
+            title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D ĐỊNH VỊ TOÀN CẦU CHUẨN VN-2000", font=dict(size=16, color='#007acc')),
             scene=dict(
                 xaxis_title="Tọa độ X VN-2000 (m)",
                 yaxis_title="Tọa độ Y VN-2000 (m)",
@@ -248,5 +311,5 @@ def ve_dia_hinh_3d(df, he_so_z=1.0):
         )
         return fig
     except Exception as e:
-        st.error(f"Lỗi dựng mô hình địa hình 3D VN-2000: {e}")
+        st.error(f"Lỗi phân tích đồ họa không gian: {e}")
         return None
