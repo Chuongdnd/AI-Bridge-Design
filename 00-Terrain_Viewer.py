@@ -61,52 +61,63 @@ def parse_ntd_file(uploaded_file):
                 
     return pd.DataFrame(data_points)
 
-def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True):
+def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
     """
-    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D LƯỚI KHÔNG GIAN PHẲNG PHIU (ANTI-CORRUGATED)
-    Cập nhật: Cho phép cấu hình biến scale Z và ẩn/hiện đường đồng mức (contours).
+    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D VÀ HIỂN THỊ ĐƯỜNG ĐỒNG MỨC CHI TIẾT
+    - buoc_nhay_cao_do: Khoảng cao đều giữa 2 đường đồng mức kế tiếp (ví dụ: mỗi 1m, 2m hoặc 5m).
     """
     if df.empty or len(df.index) < 3:
         return None
         
     try:
-        # Tạo bảng ma trận lưới (Grid) từ dữ liệu khảo sát X, Y, Z
+        # 1. Tạo ma trận lưới địa hình
         grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
         
-        # Vuốt nối nội suy hình học liên tục phương trắc ngang Y rồi đến trắc dọc X
+        # Nội suy làm đầy các điểm thiếu dữ liệu
         grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
         grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
         
-        # ✨ THUẬT TOÁN KHỬ SỌC "MÚI TÔN": Mài mịn bằng rolling trung bình trượt
+        # Mài mịn bề mặt (Khử sọc múi tôn)
         grid_df = grid_df.rolling(window=5, min_periods=1, center=True).mean()
         grid_df = grid_df.T.rolling(window=5, min_periods=1, center=True).mean().T
         
         x_grid = grid_df.columns.values
         y_grid = grid_df.index.values
-        z_real = grid_df.values  # Giữ lại giá trị cao độ thực tế để hiển thị khi di chuột (Hover text)
+        z_real = grid_df.values
         
-        # Áp dụng hệ số scale Z cho mô hình trực quan
-        # Nếu he_so_z > 1: Địa hình sẽ dốc và nhấp nhô rõ hơn để dễ quan sát
+        # Áp dụng hệ số scale trục Z cho giao diện trực quan
         z_scaled = z_real * he_so_z 
         
-        # Cấu hình đường đồng mức dựa trên biến điều khiển hien_dong_muc
-        contour_config = dict(
-            show=True,
-            usecolormap=True,  # Đường đồng mức đổ màu theo hệ màu địa hình
-            highlightcolor="limegreen",
-            project=dict(z=False) # Không chiếu đường đồng mức xuống đáy (để thẳng trên bề mặt 3D)
-        ) if hien_dong_muc else dict(show=False)
+        # Tính toán cao độ thấp nhất để làm mặt phẳng chiếu đáy
+        z_min_scaled = np.min(z_scaled) if len(z_scaled) > 0 else 0
         
-        # Khởi tạo đối tượng đồ họa Surface
+        # 2. CẤU HÌNH CHI TIẾT ĐƯỜNG ĐỒNG MỨC (CONTOURS)
+        if hien_dong_muc:
+            contour_config = dict(
+                show=True,
+                start=np.min(z_scaled),         # Cao độ bắt đầu vẽ
+                end=np.max(z_scaled),           # Cao độ kết thúc
+                size=buoc_nhay_cao_do * he_so_z,# Khoảng cao đều (phải nhân với scale Z để khớp mô hình)
+                usecolormap=False,              # Không dùng chung màu bề mặt để dễ phân biệt
+                color="white",                  # Đổi đường đồng mức sang màu trắng (hoặc màu nổi bật)
+                width=2,                        # Độ dày đường đồng mức
+                project=dict(
+                    z=True                      # KÍCH HOẠT: Chiếu bản đồ đường đồng mức 2D xuống đáy 3D
+                )
+            )
+        else:
+            contour_config = dict(show=False)
+        
+        # 3. Tạo đối tượng bề mặt địa hình
         surface = go.Surface(
             x=x_grid,
             y=y_grid,
-            z=z_scaled,          # Trục Z hiển thị theo tỷ lệ đã biến đổi
-            customdata=z_real,   # Gắn cao độ gốc vào dữ liệu ngầm để làm hover text
+            z=z_scaled,
+            customdata=z_real,
             hovertemplate="Lý trình X: %{x:.2f} m<br>Trắc ngang Y: %{y:.2f} m<br>Cao độ Z gốc: %{customdata:.2f} m<extra></extra>",
-            colorscale='Earth',   # Hệ màu chuẩn địa hình tự nhiên
-            opacity=0.95,
-            contours=dict(z=contour_config), # Áp dụng ẩn/hiện đường đồng mức
+            colorscale='Earth',
+            opacity=0.85,                       # Hơi trong suốt một chút để thấy lưới chiếu ở đáy
+            contours=dict(z=contour_config),    # Nạp cấu hình đường đồng mức vào trục Z
             colorbar=dict(
                 title=dict(text="Cao độ Z (m)", side="right"),
                 thickness=15
@@ -115,17 +126,22 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True):
         
         fig = go.Figure(data=[surface])
         
+        # 4. Thiết lập cấu hình Layout không gian 3D
         fig.update_layout(
             title=dict(
-                text=f"🏔️ MÔ HÌNH BỀ MẶT ĐỊA HÌNH TỰ NHIÊN (Scale Z = {he_so_z})",
+                text=f"🏔️ BÌNH ĐỒ ĐỊA HÌNH 3D & ĐƯỜNG ĐỒNG MỨC (Khoảng cao đều = {buoc_nhay_cao_do}m)",
                 font=dict(size=16, color='#007acc', family='Arial')
             ),
             scene=dict(
                 xaxis_title="Lý trình X (m)",
                 yaxis_title="Trắc ngang Y (m)",
                 zaxis_title="Cao độ Z hiển thị (m)",
-                # Thiết lập aspectmode='data' để tỷ lệ X và Y luôn chuẩn thực địa 1:1, riêng Z biến thiên tự do theo he_so_z
-                aspectmode='data' 
+                aspectmode='data',
+                # Cấu hình mặt phẳng chiếu đáy z
+                zaxis=dict(
+                    showexponent="none",
+                    range=[z_min_scaled - 5, np.max(z_scaled) + 5] # Tạo không gian trống dưới đáy để chứa bản đồ chiếu
+                )
             ),
             template="plotly_dark",
             margin=dict(l=10, r=10, t=40, b=10),
@@ -134,7 +150,5 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, hien_dong_muc=True):
         return fig
         
     except Exception as e:
-        # Nếu chạy trong môi trường Streamlit, dòng dưới sẽ hiển thị lên UI, hoặc có thể dùng print() thông thường
-        import streamlit as st
-        st.error(f"Lỗi dựng mô hình địa hình 3D: {e}")
+        print(f"Lỗi dựng mô hình địa hình 3D: {e}")
         return None
