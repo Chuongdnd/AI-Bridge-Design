@@ -28,7 +28,7 @@ def parse_ntd_file(uploaded_file):
             
         token = parts[0].upper()
         
-        # 1. Quét cọc tim tuyến
+        # 1. Quét mốc cọc tim tuyến chính
         if token == 'POLE' and len(parts) >= 4:
             try:
                 current_pole = parts[1].strip().upper()
@@ -58,7 +58,7 @@ def parse_ntd_file(uploaded_file):
 def parse_coordinate_file(uploaded_file):
     """
     BỘ GIẢI MÃ BẢNG TOẠ ĐỘ VN-2000
-    Bỏ qua dòng tiêu đề phụ thứ nhất (skiprows=1) để nhận diện đúng cấu trúc cột Excel/CSV của bạn
+    Bỏ qua dòng tiêu đề phụ thứ nhất (skiprows=1) để nhận diện đúng cấu trúc cột Excel/CSV
     """
     try:
         if uploaded_file.name.endswith('.csv'):
@@ -79,7 +79,9 @@ def parse_coordinate_file(uploaded_file):
             'X_VN2000': df_coord[col_x].astype(float),
             'Y_VN2000': df_coord[col_y].astype(float)
         })
-        return df_clean.dropna(subset=['X_VN2000', 'Y_VN2000']).reset_index(drop=True)
+        # Loại bỏ triệt để dòng trống và Reset cứng Index về chuỗi tăng dần liên tục
+        df_clean = df_clean.dropna(subset=['X_VN2000', 'Y_VN2000']).reset_index(drop=True)
+        return df_clean
     except Exception as e:
         st.error(f"Lỗi đọc file bảng tọa độ VN-2000: {e}")
         return None
@@ -87,27 +89,27 @@ def parse_coordinate_file(uploaded_file):
 def convert_to_vn2000(df_ntd, df_coord):
     """
     THUẬT TOÁN ĐỒNG BỘ TUẦN TỰ SONG SONG (INDEX-BASED MATCHING)
-    Đồng bộ chuẩn xác tọa độ thực tế cho các điểm mốc tim tương ứng (kể cả B1, B2, MN...)
+    Đồng bộ chuẩn xác tọa độ thực tế cho các điểm mốc tim tương ứng bất chấp lệch Index (.iloc tuyển chọn)
     """
     try:
         # 1. Trích xuất thứ tự danh sách lý trình tim tuyến duy nhất từ file NTD (Sắp xếp tăng dần)
         list_ntd_x = sorted(df_ntd['Lý trình'].unique())
         
         # 2. Lấy chuỗi danh sách tọa độ thực tế từ file Excel
-        df_coord_clean = df_coord.copy().reset_index(drop=True)
+        df_coord_clean = df_coord.copy()
         
         # Tính toán chiều dài giới hạn khớp chuỗi liên tiếp của cả 2 tệp dữ liệu
         min_len = min(len(list_ntd_x), len(df_coord_clean))
         if min_len == 0:
             return pd.DataFrame()
             
-        # 3. Tiến hành ép cặp tuần tự từng điểm tim song song dựa theo thứ tự hàng (Index)
+        # 3. 🎯 SỬA LỖI CORE: Ép cặp dùng .iloc[i] để định vị tuyệt đối theo số thứ tự dòng, bẻ gãy hoàn toàn lỗi KeyError
         map_x_real = {}
         map_y_real = {}
         for i in range(min_len):
             ly_trinh_ntd = list_ntd_x[i]
-            map_x_real[ly_trinh_ntd] = df_coord_clean.loc[i, 'X_VN2000']
-            map_y_real[ly_trinh_ntd] = df_coord_clean.loc[i, 'Y_VN2000']
+            map_x_real[ly_trinh_ntd] = df_coord_clean['X_VN2000'].iloc[i]
+            map_y_real[ly_trinh_ntd] = df_coord_clean['Y_VN2000'].iloc[i]
             
         # 4. Gắn tọa độ thực VN-2000 của mốc tim vào bảng dữ liệu tổng thể điểm mia hình học
         df_merged = df_ntd.copy()
@@ -128,7 +130,7 @@ def convert_to_vn2000(df_ntd, df_coord):
         goc_map = dict(zip(df_tim_calc['Lý trình'], df_tim_calc['Góc_Tuyến']))
         df_merged['Góc_Tuyến'] = df_merged['Lý trình'].map(goc_map).bfill().ffill()
         
-        # 6. 🎯 PHÉP QUAY LƯỢNG GIÁC PHẲNG: Bắn tọa độ điểm trắc ngang cánh vuông góc ra 2 bên tim thực VN-2000
+        # 6. PHÉP QUAY LƯỢNG GIÁC PHẲNG: Bắn tọa độ điểm trắc ngang cánh vuông góc ra 2 bên tim thực VN-2000
         angle_offset = df_merged['Góc_Tuyến'] + (np.pi / 2)
         df_merged['X_Real'] = df_merged['X_VN2000'] + df_merged['Offset'] * np.cos(angle_offset)
         df_merged['Y_Real'] = df_merged['Y_VN2000'] + df_merged['Offset'] * np.sin(angle_offset)
@@ -169,7 +171,6 @@ def ve_dia_hinh_3d(df, he_so_z=1.0):
     """
     HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D TRÊN HỆ TOẠ ĐỘ THỰC VN-2000
     - Sử dụng Mesh3d đan lưới đa hướng tự do chuẩn trắc địa nhằm xử lý tuyến uốn cong.
-    - Ép nén giảm tải lưới đồ họa đa giác nếu file chứa điểm mia quá dày đặc giúp mượt trình duyệt.
     """
     if df.empty:
         return None
@@ -185,7 +186,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0):
             x=df_render['X_Real'],
             y=df_render['Y_Real'],
             z=z_scaled,
-            intensity=df_render['Z'], # Đổ dải hệ màu bám sát theo cao độ tự nhiên gốc của bạn
+            intensity=df_render['Z'], # Đổ dải hệ màu bám sát theo cao độ tự nhiên gốc
             colorscale='Earth',       # Giữ nguyên hệ màu chuẩn địa hình gốc
             opacity=0.95,
             showscale=True,
@@ -202,7 +203,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0):
                 xaxis_title="Tọa độ X VN-2000 (m)",
                 yaxis_title="Tọa độ Y VN-2000 (m)",
                 zaxis_title="Cao độ Z (m)",
-                aspectmode='data' # Giữ nguyên ép tuyệt đối về tỷ lệ kích thước thật thực địa của bạn
+                aspectmode='data' # Giữ nguyên ép tuyệt đối về tỷ lệ kích thước thật thực địa
             ),
             template="plotly_dark",
             margin=dict(l=10, r=10, t=40, b=10),
@@ -211,6 +212,5 @@ def ve_dia_hinh_3d(df, he_so_z=1.0):
         return fig
         
     except Exception as e:
-        import streamlit as st
         st.error(f"Lỗi dựng mô hình địa hình 3D VN-2000: {e}")
         return None
