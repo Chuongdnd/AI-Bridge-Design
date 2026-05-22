@@ -57,31 +57,41 @@ def parse_ntd_file(uploaded_file):
 
 def parse_coordinate_file(uploaded_file):
     """
-    BỘ GIẢI MÃ BẢNG TOẠ ĐỘ VN-2000
-    Bỏ qua dòng tiêu đề phụ thứ nhất (skiprows=1) để nhận diện đúng cấu trúc cột Excel/CSV
+    BỘ GIẢI MÃ BẢNG TOẠ ĐỘ VN-2000 ĐÃ KHẮC PHỤC LỖI INDEX OUT OF RANGE
     """
     try:
         if uploaded_file.name.endswith('.csv'):
+            # Đọc bỏ qua dòng tiêu đề lớn đầu tiên, lấy hàng số 2 làm Header
             df_coord = pd.read_csv(uploaded_file, skiprows=1)
         else:
             df_coord = pd.read_excel(uploaded_file, skiprows=1)
             
-        # Chuẩn hóa viết hoa và xóa khoảng trắng ở tên tiêu đề cột
+        # Chuẩn hóa tên cột viết hoa, xóa khoảng trắng
         df_coord.columns = [str(c).strip().upper() for c in df_coord.columns]
         
-        # Nhận diện cột tự động bằng bộ lọc từ khóa kỹ thuật trắc đạc
-        col_name = [c for c in df_coord.columns if 'CỌC' in c or 'TEN' in c][0]
-        col_x = [c for c in df_coord.columns if 'X(M)' in c or 'X' in c][0]
-        col_y = [c for c in df_coord.columns if 'Y(M)' in c or 'Y' in c][0]
+        # 🎯 GIẢI PHÁP THÔNG MINH: Tìm cột TÊN CỌC bằng chữ, nhưng cố định vị trí cột X và Y
+        # Tìm cột tên cọc (Thường là cột thứ 2, chỉ số index = 1)
+        try:
+            col_name = [c for c in df_coord.columns if 'CỌC' in c or 'TEN' in c][0]
+        except IndexError:
+            # Dự phòng nếu không tìm thấy chữ 'CỌC', tự lấy cột thứ 2 trong bảng
+            col_name = df_coord.columns[1]
+            
+        # Ép cứng lấy cột thứ 4 và cột thứ 5 làm X và Y (bất chấp hàng tiêu đề số 3 viết chữ gì)
+        # Hệ chỉ số Python bắt đầu từ 0, nên cột 4 là index 3, cột 5 là index 4
+        col_x = df_coord.columns[3]
+        col_y = df_coord.columns[4]
         
         df_clean = pd.DataFrame({
             'Cọc_Excel': df_coord[col_name].astype(str).str.strip().str.upper(),
             'X_VN2000': df_coord[col_x].astype(float),
             'Y_VN2000': df_coord[col_y].astype(float)
         })
-        # Loại bỏ triệt để dòng trống và Reset cứng Index về chuỗi tăng dần liên tục
+        
+        # Lọc sạch dòng trống và reset Index liên tục chống KeyError
         df_clean = df_clean.dropna(subset=['X_VN2000', 'Y_VN2000']).reset_index(drop=True)
         return df_clean
+        
     except Exception as e:
         st.error(f"Lỗi đọc file bảng tọa độ VN-2000: {e}")
         return None
