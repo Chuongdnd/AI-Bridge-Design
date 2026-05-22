@@ -133,7 +133,75 @@ def convert_to_vn2000(df_ntd, df_coord):
     except Exception as e:
         st.error(f"Lỗi xử lý đồng bộ chuỗi điểm tim thực địa: {e}")
         return pd.DataFrame()
+def ve_dia_hinh_nang_cao(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
+    """
+    HÀM XỬ LÝ ĐỊA HÌNH NÂNG CAO:
+    - che_do: "Bề mặt mịn" (Surface), "Lưới tam giác" (Mesh3d), "Đường đồng mức" (Contours)
+    - do_min: Hệ số lọc nhiễu (càng cao càng mịn nhưng sẽ làm phẳng các chi tiết nhỏ)
+    """
+    if df.empty: return None
+    
+    try:
+        # 1. Tạo ma trận lưới hành lang (Curvilinear Grid)
+        unique_lts = sorted(df['Lý trình'].unique())
+        num_samples = 30 # Số mắt lưới trắc ngang
+        target_pct = np.linspace(0.0, 1.0, num_samples)
+        
+        mx, my, mz = [], [], []
+        
+        for lt in unique_lts:
+            df_sub = df[df['Lý trình'] == lt].sort_values('Offset')
+            if df_sub.empty: continue
+            
+            # Nội suy trắc ngang
+            pct_goc = (df_sub['Offset'].values - df_sub['Offset'].min()) / (df_sub['Offset'].max() - df_sub['Offset'].min() + 0.01)
+            mx.append(np.interp(target_pct, pct_goc, df_sub['X_Real'].values))
+            my.append(np.interp(target_pct, pct_goc, df_sub['Y_Real'].values))
+            mz.append(np.interp(target_pct, pct_goc, df_sub['Z'].values))
+            
+        mx, my, mz = np.array(mx), np.array(my), np.array(mz)
 
+        # 2. 🎯 THUẬT TOÁN LÀM MỊN (SMOOTHING FILTER)
+        # Sử dụng Rolling Mean trên ma trận 2D để khử các điểm gồ ghề nhiễu
+        if do_min > 1:
+            mz_pd = pd.DataFrame(mz)
+            # Lọc theo chiều dọc tuyến
+            mz_pd = mz_pd.rolling(window=do_min, min_periods=1, center=True).mean()
+            # Lọc theo chiều ngang trắc ngang
+            mz = mz_pd.T.rolling(window=do_min, min_periods=1, center=True).mean().T.values
+
+        z_display = mz * he_so_z
+        
+        fig = go.Figure()
+
+        if che_do == "Bề mặt mịn":
+            fig.add_trace(go.Surface(
+                x=mx, y=my, z=z_display, customdata=mz,
+                colorscale='Earth', opacity=0.95,
+                hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z thực: %{customdata:.2f}m<extra></extra>"
+            ))
+        elif che_do == "Đường đồng mức":
+            # Vẽ Surface kèm đường đồng mức hiện rõ
+            fig.add_trace(go.Surface(
+                x=mx, y=my, z=z_display, customdata=mz,
+                colorscale='Viridis',
+                contours_z=dict(show=True, usecolormap=True, highlightcolor="limegreen", project_z=True),
+                hovertemplate="Z: %{customdata:.2f}m<extra></extra>"
+            ))
+        else: # Lưới tam giác (Mesh3d)
+            fig.add_trace(go.Mesh3d(
+                x=mx.flatten(), y=my.flatten(), z=z_display.flatten(),
+                intensity=mz.flatten(), colorscale='Earth', opacity=0.8
+            ))
+
+        fig.update_layout(
+            scene=dict(xaxis_title="X (m)", yaxis_title="Y (m)", zaxis_title="Z (m)", aspectmode='data'),
+            template="plotly_dark", margin=dict(l=0, r=0, b=0, t=40)
+        )
+        return fig
+    except Exception as e:
+        st.error(f"Lỗi đồ họa: {e}")
+        return None
 def ve_dia_hinh_3d(df, he_so_z=1.0):
     """
     🎯 GIẢI PHÁP KHÓA CHẾT LỖI RÁCH/ĐỨT TUYẾN:
