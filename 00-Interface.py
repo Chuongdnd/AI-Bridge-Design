@@ -288,10 +288,6 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     "📐 Bản vẽ Mặt cắt ngang điển hình"
                 ])
                 
-                with tab_binhdo_2d:
-                    fig_2d = TV.ve_binh_do_goc_2d(df_geology)
-                    if fig_2d: st.plotly_chart(fig_2d, use_container_width=True)
-                           
                 with tab_dia_hinh_3d:
                     # Thanh slider và hàm vẽ được căn lề thẳng hàng tuyệt đối
                     he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.01, 2.00, 0.50, step=0.01)
