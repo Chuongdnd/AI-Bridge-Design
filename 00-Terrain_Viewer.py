@@ -135,28 +135,27 @@ def convert_to_vn2000(df_ntd, df_coord):
 
 def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
     """
-    🎯 NGUYÊN TẮC: BÁM SÁT 100% SỐ LIỆU FILE NTD
-    - Giữ nguyên Offset và cao độ Z gốc của từng điểm thuộc mỗi cọc.
-    - Vuốt nối tuần tiến giữa cọc i và cọc i+1 dọc theo thứ tự Lý trình để tạo bề mặt đặc xuyên suốt.
+    ⚡ THUẬT TOÁN ĐAN MA TRẬN 2D NỐI TIẾP LIỀN MẠCH - KHÓA CHẾT LỖI MẤT ĐOẠN/ĐỨT KHÚC BẬC THANG
+    - Bám sát 100% dữ liệu hình học trắc ngang (Offset, Z) của file gốc NTD.
+    - Sắp xếp tuần tự theo Lý trình để Plotly dệt dải lụa không gian kín đặc, uốn cong tự nhiên.
     """
     if df.empty: 
         return None
     
     try:
-        unique_lts = sorted(df['Lý trình'].unique())
+        # Bước cực kỳ quan trọng: Sắp xếp dữ liệu liên tục toàn tuyến, bỏ qua phân cụm rời rạc
+        df_clean = df.sort_values(['Lý trình', 'Offset']).copy()
+        unique_lts = sorted(df_clean['Lý trình'].unique())
         
-        # Để đan được lưới liên tục giữa các cọc có số lượng điểm mia khác nhau, 
-        # ta chuẩn hóa số mắt đan trắc ngang về cùng 30 mắt nhưng giữ nguyên biên hình học thực tế.
-        num_samples = 30  
+        # Tạo lưới trắc ngang chuẩn gồm 40 điểm để liên kết các cọc có số điểm đo khác nhau
+        num_samples = 40  
         target_pct = np.linspace(0.0, 1.0, num_samples)
         
-        matrix_x = []
-        matrix_y = []
-        matrix_z = []
+        matrix_x, matrix_y, matrix_z = [], [], []
         
         for lt in unique_lts:
-            df_sub = df[df['Lý trình'] == lt].sort_values('Offset')
-            if df_sub.empty: 
+            df_sub = df_clean[df_clean['Lý trình'] == lt].sort_values('Offset')
+            if df_sub.empty or len(df_sub) < 2: 
                 continue
                 
             obs_offsets = df_sub['Offset'].values
@@ -164,40 +163,50 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
             obs_y_real = df_sub['Y_Real'].values
             obs_zs = df_sub['Z'].values
             
-            if len(obs_offsets) > 1:
-                pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0] + 0.001)
-                x_line = np.interp(target_pct, pct_goc, obs_x_real)
-                y_line = np.interp(target_pct, pct_goc, obs_y_real)
-                z_line = np.interp(target_pct, pct_goc, obs_zs)
-            else:
-                x_line = np.repeat(obs_x_real[0], num_samples)
-                y_line = np.repeat(obs_y_real[0], num_samples)
-                z_line = np.repeat(obs_zs[0], num_samples)
+            # Giữ nguyên độ rộng biên thực tế của cọc (Mép trái sang mép phải)
+            pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0] + 0.0001)
+            
+            # Vuốt nối hình học mượt mà bám sát cao độ và tọa độ thực tế
+            x_line = np.interp(target_pct, pct_goc, obs_x_real)
+            y_line = np.interp(target_pct, pct_goc, obs_y_real)
+            z_line = np.interp(target_pct, pct_goc, obs_zs)
                 
             matrix_x.append(x_line)
             matrix_y.append(y_line)
             matrix_z.append(z_line)
             
+        if len(matrix_x) < 2:
+            return None
+            
         matrix_x = np.array(matrix_x)
         matrix_y = np.array(matrix_y)
         matrix_z = np.array(matrix_z)
 
-        # Bộ lọc làm mịn cục bộ nếu người dùng yêu cầu (Khử nhiễu gồ ghề nhảy bậc)
+        # Áp dụng bộ lọc mịn (Moving Average Spatial Filter) làm mượt răng cưa gồ ghề
         if do_min > 1:
             mz_pd = pd.DataFrame(matrix_z)
+            # Lọc mượt tịnh tiến dọc tuyến sông
             mz_pd = mz_pd.rolling(window=do_min, min_periods=1, center=True).mean()
+            # Lọc mượt phẳng trắc ngang đáy sông
             matrix_z = mz_pd.T.rolling(window=do_min, min_periods=1, center=True).mean().T.values
 
         z_scaled = matrix_z * he_so_z
         fig = go.Figure()
 
-        if che_do == "Bề mặt mịn":
+        # SỬ DỤNG GO.SURFACE TRÊN NỀN MA TRẬN 2D LIỀN MẠCH ĐỂ ĐẢM BẢO KHÔNG BỊ RÁCH/ĐỨT KHÚC
+        if che_do in ["Bề mặt mịn", "Lưới tam giác"]:
+            # Để hiển thị dạng "Lưới tam giác" mượt mà không lỗi hình học, ta bật chế độ wireframe của Surface
+            show_wireframe = True if che_do == "Lưới tam giác" else False
+            
             fig.add_trace(go.Surface(
                 x=matrix_x, y=matrix_y, z=z_scaled, customdata=matrix_z,
                 colorscale='Earth', opacity=0.95,
                 colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
                 hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{customdata:.2f} m<extra></extra>",
-                contours=dict(x=dict(show=False), y=dict(show=False))
+                contours=dict(
+                    x=dict(show=show_wireframe, color="rgba(0,0,0,0.2)", width=1), 
+                    y=dict(show=show_wireframe, color="rgba(0,0,0,0.2)", width=1)
+                )
             ))
             
         elif che_do == "Đường đồng mức":
@@ -205,34 +214,18 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                 x=matrix_x, y=matrix_y, z=z_scaled, customdata=matrix_z,
                 colorscale='Viridis', opacity=0.95,
                 colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
-                contours_z=dict(show=True, usecolormap=False, color="rgb(0,0,0)", width=2, project=dict(z=True)),
-                hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z: %{customdata:.2f} m<extra></extra>"
-            ))
-            
-        else: # Lưới tam giác tuần tiến dọc tuyến
-            num_cocs = len(matrix_x)
-            i_idx, j_idx, k_idx = [], [], []
-            
-            for r in range(num_cocs - 1):
-                for c in range(num_samples - 1):
-                    p0 = r * num_samples + c
-                    p1 = r * num_samples + (c + 1)
-                    p2 = (r + 1) * num_samples + c
-                    p3 = (r + 1) * num_samples + (c + 1)
-                    
-                    i_idx.extend([p0, p1])
-                    j_idx.extend([p1, p3])
-                    k_idx.extend([p2, p2])
-
-            fig.add_trace(go.Mesh3d(
-                x=matrix_x.flatten(), y=matrix_y.flatten(), z=z_scaled.flatten(),
-                i=i_idx, j=j_idx, k=k_idx,
-                intensity=matrix_z.flatten(), colorscale='Earth', opacity=0.90,
-                colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
-                hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{intensity:.2f} m<extra></extra>"
+                contours_z=dict(
+                    show=True, 
+                    usecolormap=False, 
+                    color="rgb(0,0,0)", 
+                    width=2, 
+                    project=dict(z=True) # Chiếu bóng bản đồ đồng mức xuống nền phẳng đáy
+                ),
+                hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z Thực: %{customdata:.2f} m<extra></extra>"
             ))
 
         fig.update_layout(
+            title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D XUYÊN SUỐT TOÀN TUYẾN", font=dict(size=16, color='#007acc')),
             scene=dict(
                 xaxis_title="Tọa độ X VN-2000 (m)",
                 yaxis_title="Tọa độ Y VN-2000 (m)",
