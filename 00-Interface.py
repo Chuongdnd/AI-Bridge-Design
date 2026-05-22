@@ -289,37 +289,27 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                 ])
                 
                 with tab_dia_hinh_3d:
-                    # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
-                    col_opt1, col_opt2, col_opt3 = st.columns(3)
-                    
-                    with col_opt1:
-                        che_do_view = st.selectbox(
-                            "🎨 Chế độ hiển thị địa hình:", 
-                            ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
-                        )
-                    with col_opt2:
-                        he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
-                    with col_opt3:
-                        do_min_view = st.select_slider(
-                            "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
-                            options=[1, 3, 5, 7], 
-                            value=3, 
-                            help="Mức số càng lớn địa hình uốn lượn uốn cong dọc tuyến sông càng mượt phẳng."
-                        )
+                        # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
+                        col_opt1, col_opt2, col_opt3 = st.columns(3)
+                        
+                        with col_opt1:
+                            che_do_view = st.selectbox(
+                                "🎨 Chế độ hiển thị địa hình:", 
+                                ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
+                            )
+                        with col_opt2:
+                            he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
+                        with col_opt3:
+                            do_min_view = st.select_slider(
+                                "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
+                                options=[1, 3, 5, 7], 
+                                value=3, 
+                                help="Mức số càng lớn địa hình uốn lượn uốn cong dọc tuyến sông càng mượt phẳng."
+                            )
 
-                    # SỬA LỖI: Sử dụng chính xác biến dữ liệu đã được đồng bộ VN-2000 trong file Interface của bạn
-                    # Thay thế df_geology thành df_merged (hoặc biến chứa dữ liệu cuối cùng của bạn)
-                    if 'df_merged' in locals() or 'df_merged' in globals():
-                        data_to_render = df_merged
-                    elif 'df_final' in locals() or 'df_final' in globals():
-                        data_to_render = df_final
-                    else:
-                        # Nếu không tìm thấy, hệ thống tự động bốc biến chứa bảng dữ liệu đang hiển thị trên giao diện của bạn
-                        data_to_render = st.session_state.get('df_merged', pd.DataFrame())
-
-                    if not data_to_render.empty:
+                        # Gọi đúng hàm định danh đã cấu hình khóa an toàn lỗi AttributeError
                         fig_3d = TV.ve_dia_hinh_3d(
-                            data_to_render, 
+                            df_geology, 
                             he_so_z=he_so_z, 
                             che_do=che_do_view, 
                             do_min=do_min_view
@@ -327,8 +317,13 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                         
                         if fig_3d: 
                             st.plotly_chart(fig_3d, use_container_width=True)
-                    else:
-                        st.warning("⚠️ Vui lòng nạp và đồng bộ file dữ liệu khảo sát trước khi xem mô hình 3D.")
+                            with tab_trac_doc:
+                                try:
+                                    fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
+                                    if fig_plotly is not None:
+                                        st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+                                except Exception as e:
+                                    st.error(f"Lỗi bản vẽ trắc dọc: {e}")
                         
                 with tab_mcn_draw:
                     try:
