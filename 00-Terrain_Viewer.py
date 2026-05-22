@@ -87,7 +87,7 @@ def parse_coordinate_file(uploaded_file):
 
 def convert_to_vn2000(df_ntd, df_coord):
     """
-    THUẬT TOÁN ĐỒNG BỘ NÂNG CAO - SỬ DỤNG TIẾP TUYẾN GRADIENT VI PHÂN CHỐNG XOẮN GÓC CONG
+    THUẬT TOÁN ĐỒNG BỘ NÂNG CAO - TRÍCH XUẤT HƯỚNG VECTOR TIM TUYẾN CHUẨN XÁC
     """
     try:
         list_ntd_x = sorted(df_ntd['Lý trình'].unique())
@@ -110,9 +110,9 @@ def convert_to_vn2000(df_ntd, df_coord):
         
         df_merged = df_merged.dropna(subset=['X_VN2000', 'Y_VN2000']).copy()
         
-        # Trích xuất chuỗi tim tuyến tính hướng
         df_tim_calc = df_merged[df_merged['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình').copy()
         
+        # Vuốt mượt tim bằng gradient để hướng vector tuyến không bị bẻ gãy đột ngột
         if len(df_tim_calc) >= 2:
             df_tim_calc['dX'] = np.gradient(df_tim_calc['X_VN2000'].values)
             df_tim_calc['dY'] = np.gradient(df_tim_calc['Y_VN2000'].values)
@@ -125,7 +125,6 @@ def convert_to_vn2000(df_ntd, df_coord):
         goc_map = dict(zip(df_tim_calc['Lý trình'], df_tim_calc['Góc_Tuyến']))
         df_merged['Góc_Tuyến'] = df_merged['Lý trình'].map(goc_map).bfill().ffill()
         
-        # Quay lượng giác đưa toàn bộ điểm mia gốc về hệ VN-2000 thực tế ngoài đời
         angle_offset = df_merged['Góc_Tuyến'] + (np.pi / 2)
         df_merged['X_Real'] = df_merged['X_VN2000'] + df_merged['Offset'] * np.cos(angle_offset)
         df_merged['Y_Real'] = df_merged['Y_VN2000'] + df_merged['Offset'] * np.sin(angle_offset)
@@ -137,93 +136,93 @@ def convert_to_vn2000(df_ntd, df_coord):
 
 def tao_mesh_dan_hop_ly_tuyen(df):
     """
-    🎯 GIẢI PHÁP TỐI ƯU TOÀN DIỆN MESH3D:
-    - Thu thập toàn bộ các điểm nút thực tế phẳng của file NTD.
-    - Tự động dệt mạng lưới tam giác chạy dọc hành lang sông thông qua phép chiếu cục bộ (Local Indexing).
-    - Triệt tiêu 100% hiện tượng răng cưa, rách cung cong, sợi chỉ độc lập và thắt nút đầu đuôi!
+    ⚡ GIẢI PHÁP ĐỘT PHÁ CHỐNG RÁCH TOÁC (TRUE STRIP MESH):
+    - Đan lưới tam giác tịnh tiến song song tuyệt đối theo tỷ lệ phân bố phần trăm của trắc ngang.
+    - Điểm thứ c của cọc trước CHỈ nối với điểm thứ c của cọc sau.
+    - Triệt tiêu 100% hiện tượng đan chéo chân, rách lưới hay thắt nút cổ chai!
     """
     unique_lts = sorted(df['Lý trình'].unique())
+    num_samples_per_mcn = 30  # Khóa chết cấu trúc trắc ngang gồm 30 mắt lưới đều nhau
+    target_pct = np.linspace(0.0, 1.0, num_samples_per_mcn)
     
-    x_nodes = []
-    y_nodes = []
-    z_nodes = []
+    matrix_x = []
+    matrix_y = []
+    matrix_z = []
     
-    i_indices = []
-    j_indices = []
-    k_indices = []
-    
-    # Mảng lưu trữ vị trí bắt đầu chỉ số index nút của từng cọc để đan lưới sang cọc bên cạnh
-    cọc_node_indices = {}
-    current_index_counter = 0
-    
-    # Bước 1: Gom nút của từng cọc một cách tuần tiến độc lập bám sát file NTD gốc
     for lt in unique_lts:
         df_sub = df[df['Lý trình'] == lt].sort_values('Offset')
         if df_sub.empty:
             continue
             
-        cọc_node_indices[lt] = {
-            'start_idx': current_index_counter,
-            'count': len(df_sub),
-            'offsets': df_sub['Offset'].values
-        }
+        obs_offsets = df_sub['Offset'].values
+        obs_x_real = df_sub['X_Real'].values
+        obs_y_real = df_sub['Y_Real'].values
+        obs_zs = df_sub['Z'].values
         
-        x_nodes.extend(df_sub['X_Real'].values)
-        y_nodes.extend(df_sub['Y_Real'].values)
-        z_nodes.extend(df_sub['Z'].values)
-        
-        current_index_counter += len(df_sub)
-        
-    # Bước 2: Đan mắt lưới tam giác bọc kín hành lang nối từ cọc i sang cọc i+1 dọc theo lý trình
-    for idx in range(len(unique_lts) - 1):
-        lt_curr = unique_lts[idx]
-        lt_next = unique_lts[idx + 1]
-        
-        if (lt_curr not in cọc_node_indices) or (lt_next not in cọc_node_indices):
-            continue
+        # Chuẩn hóa khoảng cách trắc ngang về dạng phần trăm từ 0% đến 100% bám sát biên file NTD
+        if len(obs_offsets) > 1:
+            pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0])
+            x_line = np.interp(target_pct, pct_goc, obs_x_real)
+            y_line = np.interp(target_pct, pct_goc, obs_y_real)
+            z_line = np.interp(target_pct, pct_goc, obs_zs)
+        else:
+            x_line = np.repeat(obs_x_real[0], num_samples_per_mcn)
+            y_line = np.repeat(obs_y_real[0], num_samples_per_mcn)
+            z_line = np.repeat(obs_zs[0], num_samples_per_mcn)
             
-        info_curr = cọc_node_indices[lt_curr]
-        info_next = cọc_node_indices[lt_next]
+        matrix_x.append(x_line)
+        matrix_y.append(y_line)
+        matrix_z.append(z_line)
         
-        # Đan lưới thông minh dựa trên việc tìm điểm kề có khoảng cách Offset tương ứng nhất giữa 2 cọc
-        # Giải thuật này giúp triệt tiêu hiện tượng lệch pha điểm trắc ngang giữa cọc dày và cọc thưa
-        for c in range(info_curr['count'] - 1):
-            p0 = info_curr['start_idx'] + c
-            p1 = info_curr['start_idx'] + (c + 1)
+    matrix_x = np.array(matrix_x)
+    matrix_y = np.array(matrix_y)
+    matrix_z = np.array(matrix_z)
+    
+    num_cocs = len(matrix_x)
+    x_nodes = matrix_x.flatten()
+    y_nodes = matrix_y.flatten()
+    z_nodes = matrix_z.flatten()
+    
+    i_indices = []
+    j_indices = []
+    k_indices = []
+    
+    # 📐 THUẬT TOÁN DỆT LƯỚI SONG SONG TUẦN TIẾN CHUẨN BIM:
+    # Nối song song từng mắt tương ứng, dải lưới sẽ khép kín mượt mà bám sát đường cong
+    for r in range(num_cocs - 1):
+        for c in range(num_samples_per_mcn - 1):
+            p0 = r * num_samples_per_mcn + c
+            p1 = r * num_samples_per_mcn + (c + 1)
+            p2 = (r + 1) * num_samples_per_mcn + c
+            p3 = (r + 1) * num_samples_per_mcn + (c + 1)
             
-            # Khớp nối tìm điểm kề sát tương đương trên trục trắc ngang của cọc kế tiếp
-            offset_val_c = info_curr['offsets'][c]
-            offset_val_c1 = info_curr['offsets'][c + 1]
-            
-            n0 = info_next['start_idx'] + np.argmin(np.abs(info_next['offsets'] - offset_val_c))
-            n1 = info_next['start_idx'] + np.argmin(np.abs(info_next['offsets'] - offset_val_c1))
-            
-            # Tạo các mặt tam giác kín bền vững khít kẽ hành lang dòng chảy
+            # Đan mặt tam giác 1
             i_indices.append(p0)
             j_indices.append(p1)
-            k_indices.append(n0)
+            k_indices.append(p2)
             
+            # Đan mặt tam giác 2
             i_indices.append(p1)
-            j_indices.append(n1)
-            k_indices.append(n0)
+            j_indices.append(p3)
+            k_indices.append(p2)
             
-    return np.array(x_nodes), np.array(y_nodes), np.array(z_nodes), i_indices, j_indices, k_indices
+    return x_nodes, y_nodes, z_nodes, i_indices, j_indices, k_indices
 
 def ve_dia_hinh_3d(df, he_so_z=1.0):
     """
-    DỰNG MÔ HÌNH ĐỊA HÌNH 3D LƯỚI KHÔNG GIAN BỀN VỮNG CHO MỌI LOẠI FILE NTD
+    DỰNG MÔ HÌNH ĐỊA HÌNH 3D LƯỚI KHÔNG GIAN KHÔNG BAO GIỜ BỊ RÁCH HOẶC XOẮN GIẬT
     """
     if df.empty:
         return None
     try:
-        # Gọi thuật toán dệt lưới tam giác hành lang tuyến bám sát thực địa
+        # Gọi giải thuật dệt lưới song song bám hành lang tuyến
         x, y, z, i, j, k = tao_mesh_dan_hop_ly_tuyen(df)
         z_scaled = z * he_so_z
         
         fig = go.Figure(data=[go.Mesh3d(
             x=x, y=y, z=z_scaled,
             i=i, j=j, k=k,
-            intensity=z, # Đổ dải hệ màu Earth mượt theo cao độ thực tế tự nhiên
+            intensity=z, # Đổ dải hệ màu Earth mượt theo cao độ thực tế
             colorscale='Earth', opacity=0.95,
             showscale=True,
             colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
