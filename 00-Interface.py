@@ -263,7 +263,7 @@ if selected_ribbon == "THUYẾT MINH":
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
     
     st.markdown("##### 📥 Nạp Cơ sở dữ liệu Khảo sát Địa hình Thực địa")
-    # 🎯 FIX LỖI: Khai báo đầy đủ cả 2 ô upload file để tạo biến hợp lệ
+    # Khai báo chuẩn xác 2 biến đầu vào để không bao giờ bị NameError
     file_khao_sat = st.file_uploader("Kéo và thả file .NTD trắc dọc trắc ngang tại đây", type=["ntd"])
     file_toa_do = st.file_uploader("Kéo và thả bảng tọa độ tim thực tế (.CSV hoặc .XLSX) tại đây", type=["csv", "xlsx"])
     st.markdown("---")
@@ -274,13 +274,13 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
         df_coord = TV.parse_coordinate_file(file_toa_do)
         
         if df_coord is not None and not df_ntd.empty:
-            # Thuật toán đồng bộ tuần tự theo thứ tự dòng giữa NTD và Excel
+            # Đồng bộ hóa tuần tự theo hàng (Index) khớp các điểm tim tương ứng
             df_geology = TV.convert_to_vn2000(df_ntd, df_coord)
             
             if not df_geology.empty:
                 st.success(f"⚡ Hệ thống đã đồng bộ thành công {len(df_geology)} điểm mia địa hình theo tọa độ thực tế VN-2000!")
                 
-                # Nhóm 4 Tab con khi có ĐẦY ĐỦ dữ liệu
+                # Khởi tạo 4 Tab bản vẽ kỹ thuật đầy đủ
                 tab_binhdo_2d, tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
                     "🗺️ Bình đồ số VN-2000",
                     "🏔️ Mô hình Địa hình 3D",
@@ -293,7 +293,6 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     if fig_2d: st.plotly_chart(fig_2d, use_container_width=True)
                            
                 with tab_dia_hinh_3d:
-                    # Thanh slider và hàm vẽ được căn lề thẳng hàng tuyệt đối
                     he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ địa hình):", 0.01, 2.00, 0.50, step=0.01)
                     fig_3d = TV.ve_dia_hinh_3d(df_geology, he_so_z=he_so_z)
                     if fig_3d: st.plotly_chart(fig_3d, use_container_width=True)
@@ -322,10 +321,10 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     except Exception as e:
                         st.error(f"Lỗi bản vẽ mặt cắt ngang: {e}")
         else:
-            st.error("❌ Không thể phân tích cấu trúc tệp dữ liệu!")
+            st.error("❌ Không thể phân tích cấu trúc cấu trúc dữ liệu tệp đầu vào!")
                 
     else:
-        # Nhóm 2 Tab mặc định khi chưa nạp đủ 2 file dữ liệu khảo sát
+        # Nhóm 2 Tab dự phòng mặc định khi chưa tải đủ file
         tab_trac_doc, tab_mcn_draw = st.tabs([
             "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
             "📐 Bản vẽ Mặt cắt ngang điển hình"

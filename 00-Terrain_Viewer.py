@@ -168,25 +168,20 @@ def ve_binh_do_goc_2d(df):
 def ve_dia_hinh_3d(df, he_so_z=1.0):
     """
     HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D TRÊN HỆ TOẠ ĐỘ THỰC VN-2000
-    - Sử dụng Mesh3d đan lưới đa hướng tự do chuẩn trắc địa nhằm xử lý tuyến uốn cong.
-    - Ép nén giảm tải lưới đồ họa đa giác nếu file chứa điểm mia quá dày đặc giúp mượt trình duyệt.
     """
     if df.empty:
         return None
-        
     try:
-        # Bộ lọc thưa nén lưới đa giác nếu tổng số điểm khảo sát quá đồ sộ (>2000 điểm mia)
+        # Tự động nén lọc thưa lưới đa giác nếu điểm mia quá dày đặc giúp mượt web
         df_render = df.iloc[::2].copy() if len(df.index) > 2000 else df.copy()
-        
-        # Áp dụng trực tiếp hệ số tỉ lệ trục đứng slider (he_so_z) vào ma trận hiển thị
         z_scaled = df_render['Z'] * he_so_z
         
         fig = go.Figure(data=[go.Mesh3d(
             x=df_render['X_Real'],
             y=df_render['Y_Real'],
             z=z_scaled,
-            intensity=df_render['Z'], # Đổ dải hệ màu bám sát theo cao độ tự nhiên gốc của bạn
-            colorscale='Earth',       # Giữ nguyên hệ màu chuẩn địa hình gốc
+            intensity=df_render['Z'],
+            colorscale='Earth',
             opacity=0.95,
             showscale=True,
             colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
@@ -194,22 +189,16 @@ def ve_dia_hinh_3d(df, he_so_z=1.0):
         )])
         
         fig.update_layout(
-            title=dict(
-                text="🏔️ MÔ HÌNH ĐỊA HÌNH 3D ĐỊNH VỊ TOÀN CẦU CHUẨN VN-2000",
-                font=dict(size=16, color='#007acc', family='Arial')
-            ),
+            title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH 3D ĐỊNH VỊ TOÀN CẦU CHUẨN VN-2000", font=dict(size=16, color='#007acc')),
             scene=dict(
                 xaxis_title="Tọa độ X VN-2000 (m)",
                 yaxis_title="Tọa độ Y VN-2000 (m)",
                 zaxis_title="Cao độ Z (m)",
-                aspectmode='data' # Giữ nguyên ép tuyệt đối về tỷ lệ kích thước thật thực địa của bạn
+                aspectmode='data'
             ),
-            template="plotly_dark",
-            margin=dict(l=10, r=10, t=40, b=10),
-            paper_bgcolor='#0e1117'
+            template="plotly_dark", margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='#0e1117'
         )
         return fig
-        
     except Exception as e:
         import streamlit as st
         st.error(f"Lỗi dựng mô hình địa hình 3D VN-2000: {e}")
