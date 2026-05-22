@@ -6,7 +6,6 @@ import numpy as np
 def parse_ntd_file(uploaded_file):
     """
     BỘ GIẢI MÃ FILE .NTD TOÀN DIỆN KHÔNG GIAN
-    Trích xuất danh sách điểm mia trắc ngang theo từng cọc chuẩn xác
     """
     data_points = []
     raw_content = uploaded_file.read()
@@ -88,8 +87,7 @@ def parse_coordinate_file(uploaded_file):
 
 def convert_to_vn2000(df_ntd, df_coord):
     """
-    THUẬT TOÁN ĐỒNG BỘ TUẦN TỰ SONG SONG (INDEX-BASED MATCHING)
-    Đưa tọa độ thực VN-2000 vào chuỗi cọc NTD
+    THUẬT TOÁN ĐỒNG BỘ NÂNG CAO - LÀM MỊN VECTOR HƯỚNG TUYẾN CHỐNG XOẮN ĐỊA HÌNH
     """
     try:
         list_ntd_x = sorted(df_ntd['Lý trình'].unique())
@@ -99,6 +97,7 @@ def convert_to_vn2000(df_ntd, df_coord):
         if min_len == 0:
             return pd.DataFrame()
             
+        # 1. Ép cặp lấy tọa độ tim thực tế từ Excel gắn vào Lý trình NTD
         map_x_real = {}
         map_y_real = {}
         for i in range(min_len):
@@ -112,18 +111,26 @@ def convert_to_vn2000(df_ntd, df_coord):
         
         df_merged = df_merged.dropna(subset=['X_VN2000', 'Y_VN2000']).copy()
         
-        # Tính toán hướng véc-tơ tuyến để xoay lượng giác vuông góc trắc ngang
+        # 2. 🎯 CẢI TIẾN THUẬT TOÁN: Làm mịn chuỗi tim đường trước khi tính toán góc phương vị
         df_tim_calc = df_merged[df_merged['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình').copy()
-        df_tim_calc['dX'] = df_tim_calc['X_VN2000'].diff().shift(-1)
-        df_tim_calc['dY'] = df_tim_calc['Y_VN2000'].diff().shift(-1)
+        
+        # Vuốt mượt tọa độ tim bằng bộ lọc Rolling trung bình trượt cửa sổ 3 để triệt tiêu các mốc nhảy cóc cục bộ gây xoắn
+        df_tim_calc['X_Smooth'] = df_tim_calc['X_VN2000'].rolling(window=3, min_periods=1, center=True).mean()
+        df_tim_calc['Y_Smooth'] = df_tim_calc['Y_VN2000'].rolling(window=3, min_periods=1, center=True).mean()
+        
+        # Tính véc-tơ vi phân hướng tuyến mượt
+        df_tim_calc['dX'] = df_tim_calc['X_Smooth'].diff().shift(-1)
+        df_tim_calc['dY'] = df_tim_calc['Y_Smooth'].diff().shift(-1)
         df_tim_calc['dX'] = df_tim_calc['dX'].bfill().ffill()
         df_tim_calc['dY'] = df_tim_calc['dY'].bfill().ffill()
         
+        # Tính góc phương vị mượt không bao giờ bị đổi hướng đột ngột
         df_tim_calc['Góc_Tuyến'] = np.arctan2(df_tim_calc['dY'], df_tim_calc['dX'])
+        
         goc_map = dict(zip(df_tim_calc['Lý trình'], df_tim_calc['Góc_Tuyến']))
         df_merged['Góc_Tuyến'] = df_merged['Lý trình'].map(goc_map).bfill().ffill()
         
-        # Quay lượng giác đưa toàn bộ điểm mia gốc về hệ VN-2000 phẳng thực tế
+        # 3. Quay lượng giác đưa toàn bộ điểm mia về hệ VN-2000 phẳng thực tế
         angle_offset = df_merged['Góc_Tuyến'] + (np.pi / 2)
         df_merged['X_Real'] = df_merged['X_VN2000'] + df_merged['Offset'] * np.cos(angle_offset)
         df_merged['Y_Real'] = df_merged['Y_VN2000'] + df_merged['Offset'] * np.sin(angle_offset)
@@ -136,11 +143,9 @@ def convert_to_vn2000(df_ntd, df_coord):
 def tao_cau_truc_mesh_bam_sat_ntd(df):
     """
     ⚡ THUẬT TOÁN ĐAN LƯỚI TUẦN TIẾN BÁM SÁT FILE NTD 100%
-    - Trên 1 cọc: Nối điểm thực tế từ trái sang phải tạo thành 1 Line.
-    - Giữa các cọc: Nối tuần tiến từ cọc i sang cọc i+1 theo Lý trình tăng dần.
     """
     unique_lts = sorted(df['Lý trình'].unique())
-    num_samples_per_mcn = 20
+    num_samples_per_mcn = 25  # Tăng mật độ mắt lưới lên 25 để dải sông phẳng mịn hơn nữa
     target_pct = np.linspace(0.0, 1.0, num_samples_per_mcn)
     
     matrix_x = []
@@ -203,7 +208,7 @@ def tao_cau_truc_mesh_bam_sat_ntd(df):
 
 def ve_dia_hinh_3d(df, he_so_z=1.0):
     """
-    DỰNG MÔ HÌNH ĐỊA HÌNH 3D HÀNH LẠNG TUYẾN KHÔNG LỖI XOẮN GỐC TOẠ ĐỘ
+    DỰNG MÔ HÌNH ĐỊA HÌNH 3D HÀNH LẠNG TUYẾN CHUẨN BIM MƯỢT PHẲNG PHIU
     """
     if df.empty:
         return None
