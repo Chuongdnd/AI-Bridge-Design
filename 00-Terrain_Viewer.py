@@ -63,91 +63,155 @@ def parse_ntd_file(uploaded_file):
 
 def ve_dia_hinh_3d(df, he_so_z=5.0, hien_dong_muc=True, buoc_nhay_cao_do=1.0):
     """
-    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D - SỬ DỤNG LƯỚI NỘI SUY GRIDDATA CHUYÊN DỤNG
-    - Đã sửa lỗi triệt tiêu độ dốc của pivot_table trên tuyến dài 3000m
-    - Ép hiển thị đường đồng mức màu đen cực đậm trực tiếp trên bề mặt tĩnh
+    HÀM DỰNG KHỐI BỀ MẶT ĐỊA HÌNH 3D - HIỂN THỊ ĐƯỜNG ĐỒNG MỨC CỐ ĐỊNH TRÊN BỀ MẶT
+    - Đường đồng mức hiển thị tĩnh trực tiếp trên bề mặt 3D ngay từ đầu.
+    - Không chiếu đáy, không phụ thuộc hover chuột.
     """
     if df.empty or len(df.index) < 3:
         return None
-        
+
     try:
-        # Lấy giá trị cực trị thực tế từ file dữ liệu
-        x_min, x_max = df['X'].min(), df['X'].max()
-        y_min, y_max = df['Y'].min(), df['Y'].max()
-        z_min_real, z_max_real = df['Z'].min(), df['Z'].max()
-        
-        # ✨ GIẢI PHÁP MỚI: Đan lưới ô cờ mịn (Chia trục X dài thành 200 đoạn, trục Y thành 60 đoạn)
-        xi = np.linspace(x_min, x_max, 200)
-        yi = np.linspace(y_min, y_max, 60)
-        X_grid, Y_grid = np.meshgrid(xi, yi)
-        
-        # Tiến hành nội suy toán học không gian để giữ nguyên độ lồi lõm của triền dốc
-        z_grid_linear = griddata((df['X'], df['Y']), df['Z'], (X_grid, Y_grid), method='linear')
-        z_grid_nearest = griddata((df['X'], df['Y']), df['Z'], (X_grid, Y_grid), method='nearest')
-        z_real = np.where(np.isnan(z_grid_linear), z_grid_nearest, z_grid_linear)
-        
-        # Áp dụng hệ số scale trục Z hiển thị
-        z_scaled = z_real * he_so_z 
+        # ── 1. XÂY DỰNG LƯỚI ĐỊA HÌNH ──────────────────────────────────────────
+        grid_df = df.pivot_table(index='Y', columns='X', values='Z', aggfunc='mean')
+        grid_df = grid_df.interpolate(method='linear', axis=0).ffill(axis=0).bfill(axis=0)
+        grid_df = grid_df.interpolate(method='linear', axis=1).ffill(axis=1).bfill(axis=1)
+
+        x_grid = grid_df.columns.values
+        y_grid = grid_df.index.values
+        z_real = grid_df.values
+
+        z_min_real = np.min(z_real)
+        z_max_real = np.max(z_real)
+        z_range    = z_max_real - z_min_real
+
+        # ── 2. TỰ ĐIỀU CHỈNH BƯỚC CAO ĐỀU NẾU BIÊN ĐỘ Z QUÁ HẸP ───────────────
+        if z_range > 0 and buoc_nhay_cao_do > z_range / 3:
+            buoc_nhay_cao_do = round(z_range / 5, 2)
+            buoc_nhay_cao_do = max(buoc_nhay_cao_do, 0.1)   # tối thiểu 0.1 m
+
+        # Scale trục Z để khối nhìn cân đối hơn
+        z_scaled       = z_real * he_so_z
         buoc_ve_scaled = buoc_nhay_cao_do * he_so_z
 
-        # 2. CẤU HÌNH ĐƯỜNG ĐỒNG MỨC HIỂN THỊ TĨNH SIÊU ĐẬM
-        if hien_dong_muc:
+        contour_start = np.ceil(z_min_real  / buoc_nhay_cao_do) * buoc_nhay_cao_do * he_so_z
+        contour_end   = np.floor(z_max_real / buoc_nhay_cao_do) * buoc_nhay_cao_do * he_so_z
+
+        # ── 3. CẤU HÌNH ĐƯỜNG ĐỒNG MỨC HIỂN THỊ TĨNH TRÊN BỀ MẶT 3D ───────────
+        if hien_dong_muc and contour_start < contour_end:
             contour_config = dict(
-                show=True,                          # Ép buộc vẽ ngay khi tải trang
-                start=np.floor(z_min_real) * he_so_z,
-                end=np.ceil(z_max_real) * he_so_z,
-                size=buoc_ve_scaled,                # Khoảng cao đều cố định đúng 1m
-                usecolormap=False,                  # Tách biệt màu đường nét khỏi màu nền
-                color="rgb(0, 0, 0)",               # Đường nét màu ĐEN TUYỀN nét mực
-                width=5,                            # Nét vẽ siêu dày (5px) để nhìn thấy luôn
-                highlight=False,                    # Tắt chế độ chờ chuột hover mới hiện
-                project=dict(z=False)               # Không chiếu bóng xuống đáy theo yêu cầu
+                show           = True,
+                start          = contour_start,
+                end            = contour_end,
+                size           = buoc_ve_scaled,
+                usecolormap    = False,
+                color          = "rgba(255, 255, 255, 0.95)",  # TRẮNG - nổi rõ trên Earth
+                width          = 3,
+                highlight      = True,                          # BẬT để Plotly render tĩnh ngay
+                highlightcolor = "rgba(255, 80, 80, 1.0)",     # ĐỎ khi hover - phân biệt rõ
+                highlightwidth = 6,
+                project        = dict(z=False)                  # KHÔNG chiếu xuống đáy
             )
         else:
             contour_config = dict(show=False)
-        
-        # 3. Khởi tạo bề mặt địa hình với ánh sáng phẳng hoàn toàn
+
+        # ── 4. BỀ MẶT ĐỊA HÌNH ──────────────────────────────────────────────────
         surface = go.Surface(
-            x=X_grid,
-            y=Y_grid,
-            z=z_scaled,
-            customdata=z_real,
-            hovertemplate="Lý trình X: %{x:.1f} m<br>Trắc ngang Y: %{y:.2f} m<br>Cao độ Z thực: %{customdata:.2f} m<extra></extra>",
-            colorscale='Earth',
-            opacity=1.0,
-            contours=dict(z=contour_config),
-            
-            # Khử toàn bộ bóng râm của camera để lộ rõ vân đồng mức màu đen
-            lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0, roughness=1.0),
-            colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15)
+            x          = x_grid,
+            y          = y_grid,
+            z          = z_scaled,
+            customdata = z_real,
+            hovertemplate = (
+                "X: %{x:.1f} m<br>"
+                "Y: %{y:.2f} m<br>"
+                "Z gốc: %{customdata:.2f} m<extra></extra>"
+            ),
+            colorscale = 'Earth',
+            opacity    = 1.0,
+            flatshading = True,          # PHẲNG HOÁ BỀ MẶT → đường đồng mức không bị che
+            contours   = dict(z=contour_config),
+
+            # Ánh sáng phẳng tuyệt đối — không bóng đổ che khuất nét đường
+            lighting = dict(
+                ambient  = 1.0,
+                diffuse  = 0.0,
+                specular = 0.0,
+                roughness= 1.0,
+                fresnel  = 0.0
+            ),
+            lightposition = dict(x=0, y=0, z=1e5),
+
+            colorbar = dict(
+                title     = dict(text="Cao độ Z (m)", side="right"),
+                thickness = 15,
+                tickvals  = np.arange(
+                    np.ceil(z_min_real),
+                    np.floor(z_max_real) + 1,
+                    buoc_nhay_cao_do
+                ) * he_so_z,
+                ticktext  = [
+                    f"{v/he_so_z:.1f} m"
+                    for v in np.arange(
+                        np.ceil(z_min_real),
+                        np.floor(z_max_real) + 1,
+                        buoc_nhay_cao_do
+                    ) * he_so_z
+                ]
+            )
         )
-        
+
         fig = go.Figure(data=[surface])
-        
-        # 4. THIẾT LẬP KÉO GIÃN KHUNG NHÌN BIẾN "SỢI DÂY" THÀNH "MẶT BẰNG"
+
+        # ── 5. LAYOUT & KHUNG NHÌN ───────────────────────────────────────────────
         fig.update_layout(
-            title=dict(
-                text=f"🏔️ BÌNH ĐỒ ĐỊA HÌNH 3D NỘI SUY - ĐƯỜNG ĐỒNG MỨC CỐ ĐỊNH {buoc_nhay_cao_do}M",
-                font=dict(size=14, color='#007acc', family='Arial')
+            title = dict(
+                text   = f"🏔️ BÌNH ĐỒ ĐỊA HÌNH 3D  —  ĐƯỜNG ĐỒNG MỨC {buoc_nhay_cao_do:.2f} M",
+                font   = dict(size=14, color='#7ec8e3', family='Arial'),
+                x      = 0.5,
+                xanchor= 'center'
             ),
-            scene=dict(
-                xaxis_title="Lý trình X (m)",
-                yaxis_title="Trắc ngang Y (m)",
-                zaxis_title="Cao độ Z (m)",
-                
-                aspectmode='manual',
-                # Ép giãn rộng hộp không gian theo phương ngang Y để hiển thị rõ các đường uốn lượn
-                aspectratio=dict(x=1.2, y=0.7, z=0.4), 
-                
-                zaxis=dict(range=[np.min(z_scaled) - 1, np.max(z_scaled) + 1]),
-                camera=dict(eye=dict(x=1.3, y=1.3, z=1.1)) # Góc nhìn từ trên cao chếch xuống bao quát rộng
+            scene = dict(
+                xaxis_title = "Lý trình X (m)",
+                yaxis_title = "Trắc ngang Y (m)",
+                zaxis_title = "Cao độ Z (m)",
+
+                aspectmode  = 'manual',
+                aspectratio = dict(x=1.0, y=0.7, z=0.4),
+
+                xaxis = dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
+                yaxis = dict(showgrid=True, gridcolor='rgba(255,255,255,0.1)'),
+                zaxis = dict(
+                    range    = [np.min(z_scaled) - buoc_ve_scaled,
+                                np.max(z_scaled) + buoc_ve_scaled],
+                    showgrid = True,
+                    gridcolor= 'rgba(255,255,255,0.1)',
+                    tickvals = np.arange(
+                        np.ceil(z_min_real),
+                        np.floor(z_max_real) + 1,
+                        buoc_nhay_cao_do
+                    ) * he_so_z,
+                    ticktext = [
+                        f"{v:.1f} m"
+                        for v in np.arange(
+                            np.ceil(z_min_real),
+                            np.floor(z_max_real) + 1,
+                            buoc_nhay_cao_do
+                        )
+                    ]
+                ),
+
+                camera = dict(
+                    eye  = dict(x=1.25, y=1.25, z=0.8),   # Góc nhìn bao quát, không quá cao
+                    up   = dict(x=0, y=0, z=1)
+                )
             ),
-            template="plotly_dark",
-            margin=dict(l=10, r=10, t=40, b=10),
-            paper_bgcolor='#0e1117'
+            template       = "plotly_dark",
+            margin         = dict(l=10, r=10, t=50, b=10),
+            paper_bgcolor  = '#0e1117',
+            hoverlabel     = dict(bgcolor='#1e2130', font_size=12)
         )
+
         return fig
-        
+
     except Exception as e:
         print(f"Lỗi dựng mô hình địa hình 3D: {e}")
         return None
