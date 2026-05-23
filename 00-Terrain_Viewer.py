@@ -376,15 +376,17 @@ def doc_excel_dia_chat_nguyen_ban(uploaded_file):
                 'Ho_Khoan': ten_hk, 'X_VN2000': x_hk, 'Y_VN2000': y_hk, 'Z_Mieng': z_mieng
             })
             
-            # Tìm dòng tiêu đề bảng để bóc lớp đất
+            # ✨ SỬA LỖI DÒ HEADER CHÍNH XÁC:
             header_row_idx = 0
             for idx, row in df_raw.iterrows():
-                row_vals_upper = [str(v).upper() for v in row.values if pd.notna(v)]
-                if 'TU_CHIEU_SAU' in row_vals_upper or 'TEN_LOP' in row_vals_upper:
+                row_vals_upper = [str(v).upper().strip() for v in row.values if pd.notna(v)]
+                # Quét trúng dòng chứa các từ khóa tiêu đề của Chương
+                if 'TEN_LOP' in row_vals_upper or 'TU_CHIEU_SAU' in row_vals_upper:
                     header_row_idx = idx
                     break
-                    
-            df_table = pd.read_excel(uploaded_file, sheet_name=sheet, skiprows=header_row_idx + 1)
+            
+            # Đọc chuẩn xác dòng header_row_idx làm tiêu đề cột (Không dùng + 1 làm mất dòng tiêu đề nữa)
+            df_table = pd.read_excel(uploaded_file, sheet_name=sheet, skiprows=header_row_idx)
             df_table.columns = [str(c).strip() for c in df_table.columns]
             df_table = df_table.dropna(subset=['Ten_Lop', 'Tu_Chieu_Sau', 'Den_Chieu_Sau'])
             
