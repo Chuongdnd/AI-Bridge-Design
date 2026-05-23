@@ -102,59 +102,49 @@ def parse_coordinate_file(uploaded_file):
 
 def convert_to_vn2000(df_ntd, df_coord):
     """
-    THUẬT TOÁN ĐỒNG BỘ SONG SONG VÀ XOAY LƯỢNG GIÁC THEO TIM TUYẾN THỰC ĐỊA
-    - Sửa lỗi NameError: df_coord
-    - Tự động fallback nếu file tọa độ thiếu cột 'Lý trình'
+    🎯 THUẬT TOÁN ĐỒNG BỘ ĐỊA HÌNH HỆ VN-2000 CHUẨN ĐỒ HỌA TOÁN HỌC:
+    - Trục X_Real nhận giá trị dải 6 số (Y_VN2000 trong Excel mốc)
+    - Trục Y_Real nhận giá trị dải 7 số (X_VN2000 trong Excel mốc)
     """
     try:
-        if df_coord is None or df_coord.empty or df_ntd.empty:
+        if df_ntd is None or df_ntd.empty or df_coord is None or df_coord.empty:
             return pd.DataFrame()
             
+        df_ntd_clean = df_ntd.copy()
         df_coord_clean = df_coord.copy()
-        list_ntd_x = sorted(df_ntd['Lý trình'].unique())
         
-        # Tạo bản copy để xử lý dữ liệu trộn
-        df_merged = df_ntd.copy()
+        # Chuẩn hóa chuỗi tên cọc để khớp nối chính xác
+        df_ntd_clean['Cọc'] = df_ntd_clean['Cọc'].astype(str).str.strip().str.upper()
+        df_coord_clean['Cọc_Excel'] = df_coord_clean['Cọc_Excel'].astype(str).str.strip().str.upper()
         
-        # Kiểm tra xem file tọa độ đầu vào có cột 'Lý trình' để nội suy hay không
-        if 'Lý trình' in df_coord_clean.columns:
-            from scipy.interpolate import interp1d
-            
-            # Loại bỏ dòng trùng lý trình trong file mốc tọa độ để tránh lỗi hàm nội suy
-            df_coord_nodup = df_coord_clean.drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
-            
-            if len(df_coord_nodup) >= 2:
-                interp_x = interp1d(df_coord_nodup['Lý trình'], df_coord_nodup['X_VN2000'], kind='linear', fill_value="extrapolate")
-                interp_y = interp1d(df_coord_nodup['Lý trình'], df_coord_nodup['Y_VN2000'], kind='linear', fill_value="extrapolate")
-                
-                df_merged['X_VN2000'] = interp_x(df_merged['Lý trình'])
-                df_merged['Y_VN2000'] = interp_y(df_merged['Lý trình'])
-            else:
-                # Nếu chỉ có 1 điểm mốc, gán mốc cố định cho toàn tuyến
-                df_merged['X_VN2000'] = df_coord_nodup['X_VN2000'].iloc[0]
-                df_merged['Y_VN2000'] = df_coord_nodup['Y_VN2000'].iloc[0]
-        else:
-            # 🔄 FALLBACK BAN ĐẦU CỦA CHƯƠNG (Nếu file tọa độ chỉ có chuỗi điểm xếp tuần tự):
+        # Đổi trục đồ họa toán học 3D ngay từ khâu ánh xạ mốc:
+        # X_Toán = Y_Excel (6 số), Y_Toán = X_Excel (7 số)
+        map_x = dict(zip(df_coord_clean['Cọc_Excel'], df_coord_clean['Y_VN2000']))
+        map_y = dict(zip(df_coord_clean['Cọc_Excel'], df_coord_clean['X_VN2000']))
+        
+        df_merged = df_ntd_clean.copy()
+        df_merged['X_VN2000'] = df_merged['Cọc'].map(map_x)
+        df_merged['Y_VN2000'] = df_merged['Cọc'].map(map_y)
+        
+        # Dự phòng: Nếu không khớp được tên cọc, nội suy tuần tự theo thứ tự Lý trình
+        if df_merged['X_VN2000'].isna().all():
+            list_ntd_x = sorted(df_merged['Lý trình'].unique())
             min_len = min(len(list_ntd_x), len(df_coord_clean))
-            if min_len == 0:
-                return pd.DataFrame()
-                
-            map_x_real = {}
-            map_y_real = {}
+            map_x_lt, map_y_lt = {}, {}
             for i in range(min_len):
                 ly_trinh_ntd = list_ntd_x[i]
-                map_x_real[ly_trinh_ntd] = df_coord_clean['X_VN2000'].iloc[i]
-                map_y_real[ly_trinh_ntd] = df_coord_clean['Y_VN2000'].iloc[i]
-                
-            df_merged['X_VN2000'] = df_merged['Lý trình'].map(map_x_real)
-            df_merged['Y_VN2000'] = df_merged['Lý trình'].map(map_y_real)
+                map_x_lt[ly_trinh_ntd] = df_coord_clean['Y_VN2000'].iloc[i] # Ép 6 số về X_Toán
+                map_y_lt[ly_trinh_ntd] = df_coord_clean['X_VN2000'].iloc[i] # Ép 7 số về Y_Toán
+            df_merged['X_VN2000'] = df_merged['Lý trình'].map(map_x_lt)
+            df_merged['Y_VN2000'] = df_merged['Lý trình'].map(map_y_lt)
 
-        # Loại bỏ các dòng trống không nội suy được tọa độ mốc tim
+        # Loại bỏ các hàng bị thiếu tọa độ mốc
         df_merged = df_merged.dropna(subset=['X_VN2000', 'Y_VN2000']).copy()
-        
-        # Trích xuất riêng tim tuyến (Offset == 0) để tính vector chỉ phương
+        if df_merged.empty:
+            return pd.DataFrame()
+            
+        # Tính toán hướng đi của tuyến để tịnh tiến lượng giác các điểm cánh trắc ngang
         df_tim_calc = df_merged[df_merged['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình').copy()
-        
         if len(df_tim_calc) >= 2:
             df_tim_calc['dX'] = np.gradient(df_tim_calc['X_VN2000'].values)
             df_tim_calc['dY'] = np.gradient(df_tim_calc['Y_VN2000'].values)
@@ -163,11 +153,10 @@ def convert_to_vn2000(df_ntd, df_coord):
             df_tim_calc['dY'] = 0.0
             
         df_tim_calc['Góc_Tuyến'] = np.arctan2(df_tim_calc['dY'], df_tim_calc['dX'])
-        
         goc_map = dict(zip(df_tim_calc['Lý trình'], df_tim_calc['Góc_Tuyến']))
         df_merged['Góc_Tuyến'] = df_merged['Lý trình'].map(goc_map).bfill().ffill()
         
-        # Tính toán tọa độ pháp tuyến trắc ngang thực địa phẳng
+        # Dịch chuyển pháp tuyến trắc ngang theo đúng tọa độ mặt bằng thực tế
         angle_offset = df_merged['Góc_Tuyến'] + (np.pi / 2)
         df_merged['X_Real'] = df_merged['X_VN2000'] + df_merged['Offset'] * np.cos(angle_offset)
         df_merged['Y_Real'] = df_merged['Y_VN2000'] + df_merged['Offset'] * np.sin(angle_offset)
@@ -377,17 +366,16 @@ def doc_excel_dia_chat_nguyen_ban(uploaded_file):
 
 def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
     """
-    🎯 PHIÊN BẢN NÂNG CẤP DỆT MẶT PHẲNG ĐÁY CÁC LỚP ĐỊA CHẤT:
-    - Vẽ trục tim đứng hố khoan bám số búa SPT.
-    - Nội suy dữ liệu không gian giữa các hố khoan để tạo tấm thảm bề mặt 3D (go.Surface)
-      thể hiện các tầng địa chất nằm khít kẽ dưới lòng đa giác sông.
+    🏗️ THUẬT TOÁN ĐỊA CHẤT KHỚP RẠT HỆ ĐỊA HÌNH VN-2000:
+    - Bốc chính xác tọa độ Excel địa chất: Đưa Y_VN2000 (6 số) vào X_Toán, X_VN2000 (7 số) vào Y_Toán.
+    - Gióng thẳng đứng và dệt mặt lớp phẳng bám khít biên dạng lòng sông phương X, Y.
     """
     if fig is None or df_hk is None or df_hk.empty:
         return fig
         
     mau_quy_uoc = {'K': '#8B4513', '1': '#A0522D', '2B': '#4682B4', 'TK4': '#DEB887', '5': '#D2B48C'}
     
-    # 📐 1. TRÍCH XUẤT MA TRẬN ĐƯỜNG BAO ĐỊA HÌNH SÔNG (X, Y BOUNDARY)
+    # 📐 1. TRÍCH XUẤT MA TRẬN ĐƯỜNG BAO LÒNG SÔNG ĐỂ LÀM KHUNG GIỚI HẠN
     points_terrain = []
     for data in fig.data:
         if data.type == 'surface' and data.x is not None and data.y is not None:
@@ -409,31 +397,32 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
     boundary_polygon = points_arr[hull.vertices]
     terrain_path = mpath.Path(boundary_polygon)
 
-    # Khởi tạo lưới tọa độ chuẩn bám theo địa hình sông để dệt mặt phẳng địa chất
+    # Khởi tạo ma trận lưới không gian phục vụ nội suy các tầng địa chất
     grid_x, grid_y = np.meshgrid(
-        np.linspace(points_arr[:, 0].min(), points_arr[:, 0].max(), 30),
-        np.linspace(points_arr[:, 1].min(), points_arr[:, 1].max(), 30)
+        np.linspace(points_arr[:, 0].min(), points_arr[:, 0].max(), 35),
+        np.linspace(points_arr[:, 1].min(), points_arr[:, 1].max(), 35)
     )
 
-    # Cấu trúc lưu trữ điểm cao độ đáy của từng lớp đất đá để nội suy bề mặt
-    layer_profiles = {} # Cấu trúc: { 'TEN_LOP': { 'x': [], 'y': [], 'z_bot': [] } }
+    layer_profiles = {}
 
-    # 🗂️ 2. VẼ TRỤC TIM HỐ KHOAN VÀ THU THẬP DỮ LIỆU ĐỂ DỆT MẶT PHẲNG ĐÁY
+    # 🗺️ 2. ĐỌC FILE EXCEL ĐỊA CHẤT VÀ CẮM ĐỊNH VỊ TRỤC ĐỨNG HỐ KHOAN
     for _, hk in df_hk.iterrows():
         try:
             ten_hk = str(hk['Ho_Khoan']).strip()
-            x_hk = float(hk['Y_VN2000'])  # Quy ước toán học 3D (Y_Excel -> X_Toán)
-            y_hk = float(hk['X_VN2000'])  # Quy ước toán học 3D (X_Excel -> Y_Toán)
+            
+            # 🔥 ĐỒNG NHẤT KHÓA TỌA ĐỘ PHẲNG:
+            # Bốc đúng cột Excel địa chất và gán theo quy ước đồ họa toán học giống địa hình
+            x_hk = float(hk['Y_VN2000'])  # Cột Y_Excel (6 số) -> Đưa vào trục X đồ họa
+            y_hk = float(hk['X_VN2000'])  # Cột X_Excel (7 số) -> Đưa vào trục Y đồ họa
             z_mieng = float(hk['Z_Mieng'])
             
             if np.isnan(x_hk) or np.isnan(y_hk) or np.isnan(z_mieng):
                 continue
                 
-            # Gióng lọc không gian phương phẳng X, Y
+            # Lọc không gian phương X, Y: Chỉ xử lý hố khoan nằm lọt trong dải sông
             if not terrain_path.contains_point((x_hk, y_hk)):
                 continue 
                 
-            # Vẽ đường trục tim đứng hố khoan thể hiện điểm mốc kết cấu
             max_depth_hk = 0.0
             if df_layers is not None and not df_layers.empty:
                 df_sub_layers = df_layers[df_layers['Ho_Khoan'] == ten_hk].sort_values('Tu_Chieu_Sau_Lop')
@@ -450,38 +439,37 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                         z_top = (z_mieng - tu_d) * he_so_z
                         z_bot = (z_mieng - den_d) * he_so_z
                         
-                        # Lưu tọa độ không gian để chuẩn bị nội suy tấm thảm đáy lớp
+                        # Thu thập dữ liệu phục vụ nội suy thảm đáy
                         if ten_lop not in layer_profiles:
                             layer_profiles[ten_lop] = {'x': [], 'y': [], 'z_bot': []}
                         layer_profiles[ten_lop]['x'].append(x_hk)
                         layer_profiles[ten_lop]['y'].append(y_hk)
                         layer_profiles[ten_lop]['z_bot'].append(z_mieng - den_d)
                         
-                        # Vẫn giữ lại line trục hố khoan dày để định vị trực quan
+                        # Vẽ cột trụ đứng đại diện vị trí hố khoan công trình
                         mau_nen = mau_quy_uoc.get(ten_lop, '#808080')
                         fig.add_trace(go.Scatter3d(
                             x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_top, z_bot],
                             mode='lines',
-                            line=dict(color=mau_nen, width=10),
+                            line=dict(color=mau_nen, width=12),
                             name=f"Trục {ten_hk}: Lớp {ten_lop}",
                             hoverinfo="skip"
                         ))
                     except:
                         continue
             
-            # Vẽ đường dích dắc biểu đồ số búa SPT dọc thân hố khoan
+            # Vẽ biểu đồ thí nghiệm SPT màu vàng bám dọc trục hố
             if df_spt is not None and not df_spt.empty:
                 col_n = [c for c in df_spt.columns if ten_hk in c]
                 if col_n and 'Độ sâu thí nghiệm (m)' in df_spt.columns:
                     spt_col_name = col_n[0]
                     df_sub_spt = df_spt[['Độ sâu thí nghiệm (m)', spt_col_name]].dropna()
                     
-                    spt_x, spt_y, spt_z, spt_n = [], [], [], []
+                    spt_x, spt_y, spt_z = [], [], []
                     for _, r_spt in df_sub_spt.iterrows():
                         try:
                             text_sau = str(r_spt['Độ sâu thí nghiệm (m)'])
                             n_val = float(r_spt[spt_col_name])
-                            
                             if np.isnan(n_val):
                                 continue
                                 
@@ -491,10 +479,9 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                                 depth_spt = numbers[0]
                                 z_spt = (z_mieng - depth_spt) * he_so_z
                                 
-                                spt_x.append(x_hk + 15.0 + n_val * 1.2)
+                                spt_x.append(x_hk + 8.0 + n_val * 0.8)
                                 spt_y.append(y_hk)
                                 spt_z.append(z_spt)
-                                spt_n.append(n_val)
                         except:
                             continue
                             
@@ -502,12 +489,10 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                         spt_indices = np.argsort(spt_z)[::-1]
                         fig.add_trace(go.Scatter3d(
                             x=np.array(spt_x)[spt_indices], y=np.array(spt_y)[spt_indices], z=np.array(spt_z)[spt_indices],
-                            mode='lines+markers+text',
-                            line=dict(color='yellow', width=3), marker=dict(size=4, color='orange'),
-                            text=[f"N={n:.0f}" for n in np.array(spt_n)[spt_indices]], textposition="middle right",
-                            textfont=dict(size=9, color='yellow'),
-                            name=f"Đồ thị SPT {ten_hk}",
-                            hovertemplate="Số búa SPT: %{text}<br>Cao độ: %{z:.2f}m<extra></extra>"
+                            mode='lines+markers',
+                            line=dict(color='yellow', width=2.5), marker=dict(size=3.5, color='orange'),
+                            name=f"SPT {ten_hk}",
+                            hoverinfo="skip"
                         ))
                         
                         fig.add_trace(go.Scatter3d(
@@ -517,37 +502,32 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
         except:
             continue
             
-    # 🗺️ 3. THUẬT TOÁN TOÁN HỌC DỆT MẶT PHẲNG ĐÁY LỚP (go.Surface) VÀ GIỚI HẠN BIÊN ĐỘ X, Y
+    # 🌊 3. NỐI ĐÁY ĐỊA CHẤT THÀNH BỀ MẶT 3D LIÊN TỤC GIỚI HẠN TRONG ĐƯỜNG BAO SÔNG
     for ten_lop, data in layer_profiles.items():
         try:
-            # Điều kiện: Cần tối thiểu 3 hố khoan chứa lớp đất đó để nội suy ra một mặt phẳng phẳng 3D
             if len(set(zip(data['x'], data['y']))) < 3:
                 continue
                 
-            # Tiến hành nội suy lưới cao độ phẳng
             grid_z = griddata(
                 (data['x'], data['y']), data['z_bot'],
                 (grid_x, grid_y), method='linear'
             )
             
-            # Khóa lỗi đường bao: Thay thế các điểm nằm ngoài đa giác lòng sông thành NaN để cắt gọt rìa
+            # Cắt gọt rìa đa giác theo phương phẳng X, Y
             for r in range(grid_x.shape[0]):
                 for c in range(grid_x.shape[1]):
                     if not terrain_path.contains_point((grid_x[r, c], grid_y[r, c])):
                         grid_z[r, c] = np.nan
                         
-            # Nhân hệ số phóng đại đồng bộ cao độ trục đứng Z với sa bàn
             grid_z_scaled = grid_z * he_so_z
             mau_lop = mau_quy_uoc.get(ten_lop, '#808080')
             
-            # Thêm tấm thảm mặt phẳng trắc ngang đáy địa chất vào không gian Plotly
             fig.add_trace(go.Surface(
                 x=grid_x, y=grid_y, z=grid_z_scaled, customdata=grid_z,
                 colorscale=[[0, mau_lop], [1, mau_lop]],
-                showscale=False,
-                opacity=0.65, # Đặt độ trong suốt 65% để nhìn xuyên thấu cấu trúc các tầng đất đá dưới lòng sông
+                showscale=False, opacity=0.6,
                 name=f"Mặt đáy: Lớp {ten_lop}",
-                hovertemplate=f"<b>Mặt đáy địa chất: Lớp {ten_lop}</b><br>X VN2000: %{{x:.1f}} m<br>Y VN2000: %{{y:.1f}} m<br>Cao độ đáy thực: %{{customdata:.2f}} m<extra></extra>"
+                hovertemplate=f"<b>Mặt đáy: Lớp {ten_lop}</b><br>X VN2000: %{{x:.1f}} m<br>Y VN2000: %{{y:.1f}} m<br>Cao độ đáy thực: %{{customdata:.2f}} m<extra></extra>"
             ))
         except:
             continue
