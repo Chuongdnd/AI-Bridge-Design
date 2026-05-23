@@ -321,7 +321,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
 
                         # Gọi đúng hàm định danh đã cấu hình và truyền thêm dữ liệu địa chất vào mô hình 3D
                         fig_3d = TV.ve_dia_hinh_3d(
-                            st.session_state.df_clean if 'df_clean' in st.session_state else df_geology
+                            st.session_state.df_clean if 'df_clean' in st.session_state else df_geology,
                             he_so_z=he_so_z, 
                             che_do=che_do_view, 
                             do_min=do_min_view,
