@@ -387,18 +387,29 @@ def doc_excel_dia_chat_nguyen_ban(uploaded_file):
             
             # Đọc chuẩn xác dòng header_row_idx làm tiêu đề cột (Không dùng + 1 làm mất dòng tiêu đề nữa)
             df_table = pd.read_excel(uploaded_file, sheet_name=sheet, skiprows=header_row_idx)
-            df_table.columns = [str(c).strip() for c in df_table.columns]
-            df_table = df_table.dropna(subset=['Ten_Lop', 'Tu_Chieu_Sau', 'Den_Chieu_Sau'])
+            
+            # ✨ BƯỚC KHÓA LỖI: Ép toàn bộ tiêu đề cột về chữ thường và xóa khoảng trắng dư thừa
+            df_table.columns = [str(c).strip().lower() for c in df_table.columns]
+            
+            # Lọc bỏ dòng trống dựa trên các cột (bằng chữ thường)
+            df_table = df_table.dropna(subset=['ten_lop', 'tu_chieu_sau', 'den_chieu_sau'])
             
             for _, row in df_table.iterrows():
+                try:
+                    tu_depth = float(str(row['tu_chieu_sau']).replace(',', '.'))
+                    den_depth = float(str(row['den_chieu_sau']).replace(',', '.'))
+                    ten_lop = str(row['ten_lop']).strip()
+                    mo_ta = str(row.get('mo_ta', '')) # Nếu không có cột mô tả thì bỏ qua
+                except Exception as e:
+                    continue
+                    
                 list_df_layer.append({
                     'Ho_Khoan': ten_hk,
-                    'Tu_Chieu_Sau_Lop': float(row['Tu_Chieu_Sau']),
-                    'Den_Chieu_Sau_Lop': float(row['Den_Chieu_Sau']),
-                    'Ten_Lop': str(row['Ten_Lop']).strip(),
-                    'Mo_Ta': str(row.get('Mo_Ta_Chi_Tiet_Dat', ''))
-                })
-                
+                    'Tu_Chieu_Sau_Lop': tu_depth,
+                    'Den_Chieu_Sau_Lop': den_depth,
+                    'Ten_Lop': ten_lop,
+                    'Mo_Ta': mo_ta
+                })  
         # 2. Đọc sheet SPT
         df_spt_raw = pd.read_excel(uploaded_file, sheet_name='SPT')
         df_spt_raw.columns = [str(c).strip() for c in df_spt_raw.columns]
