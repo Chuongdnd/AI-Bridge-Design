@@ -274,7 +274,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
         df_coord = TV.parse_coordinate_file(file_toa_do)
         
         if df_coord is not None and not df_ntd.empty:
-            # Thuật toán đồng bộ tuần tự các điểm tim tương ứng giữa NTD và Excel
+            # ✨ NÂNG CẤP: Thuật toán nội suy tuyến tính đồng bộ tọa độ phẳng trắc đạc VN-2000
             df_geology = TV.convert_to_vn2000(df_ntd, df_coord)
             
             if not df_geology.empty:
@@ -314,24 +314,24 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     
                     df_hk, df_layers, df_spt = None, None, None
                     if file_excel_dc is not None:
-                        # Gọi bộ đọc cấu trúc nguyên bản bóc tách thông minh của bạn
+                        # Gọi bộ đọc cấu trúc nguyên bản bóc tách thông minh của Chương
                         df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_nguyen_ban(file_excel_dc)
                         if df_hk is not None:
                             st.success("🎉 Đã đọc thành công tệp số liệu địa chất công trình!")
 
-                    # 🟩 LUỒNG 1: Dựng mô hình địa hình sông nguyên bản của Chương (Tuyệt đối an toàn)
+                    # 🟩 LUỒNG 1: Dựng mô hình địa hình sông thực tế từ file NTD đã đồng bộ phẳng (Tuyệt đối an toàn)
                     fig_3d = TV.ve_dia_hinh_3d(
-                        df_geology, 
+                        df_merged_safe,  # ✨ BẮT BUỘC PHẢI DÙNG BIẾN NÀY
                         he_so_z=he_so_z, 
                         che_do=che_do_view, 
                         do_min=do_min_view
                     )
                     
-                    # 🟨 LUỒNG 2: Nếu có file Excel địa chất, gọi hàm đắp thêm hố khoan rời rạc lên trên fig_3d
+                    # 🟨 LUỒNG 2: Nếu nạp file Excel địa chất, gọi hàm đắp thêm hố khoan Scatter3D siêu nhẹ lên trên
                     if fig_3d is not None and df_hk is not None:
                         fig_3d = TV.ve_them_ho_khoan_3d(fig_3d, df_hk, df_layers, df_spt, he_so_z=he_so_z)
                     
-                    # Hiển thị đồ thị ra màn hình chính (Địa hình luôn hiện, hố khoan đắp thêm nếu hợp lệ)
+                    # Hiển thị sa bàn đồ họa tích hợp ra màn hình chính
                     if fig_3d: 
                         st.plotly_chart(fig_3d, use_container_width=True)
                         
