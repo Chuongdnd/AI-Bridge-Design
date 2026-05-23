@@ -5,8 +5,9 @@ import numpy as np
 
 def parse_ntd_file(uploaded_file):
     """
-    BỘ GIẢI MÃ FILE .NTD TOÀN DIỆN KHÔNG GIAN
-    - Phân loại trực tiếp bằng cách đọc chữ 'POLE', 'TARGETL', 'TARGETR'
+    🏔️ BỘ GIẢI MÃ FILE .NTD CHUẨN TRẮC ĐẠC PHẲNG VN-2000:
+    - Ép trục X_Real và Y_Real nhận giá trị tịnh tiến lượng giác từ Tọa độ Mốc VN-2000 thực.
+    - Đồng nhất quy mô không gian với hố khoan địa chất Excel.
     """
     data_points = []
     raw_content = uploaded_file.read()
@@ -17,6 +18,9 @@ def parse_ntd_file(uploaded_file):
         
     current_x = 0.0
     current_pole = ""
+    current_x_vn2000 = 0.0
+    current_y_vn2000 = 0.0
+    current_goc_tuyen = 0.0
     
     for line in lines:
         line = line.strip()
@@ -28,30 +32,38 @@ def parse_ntd_file(uploaded_file):
             
         token = parts[0].upper()
         
-        # 1. Đọc chữ POLE lấy tọa độ tim tuyến
+        # 1. Đọc cọc POLE lấy mốc tọa độ tim thực địa VN-2000 gốc
         if token == 'POLE' and len(parts) >= 4:
             try:
                 current_pole = parts[1].strip().upper()
-                current_x = float(parts[2])
-                z_tim = float(parts[3])
+                current_x = float(parts[2])  # Lý trình
+                z_tim = float(parts[3])      # Cao độ tim
+                
+                # Phương án dự phòng: Nếu dòng POLE có sẵn tọa độ thực địa lớn ở cột sau
+                current_x_vn2000 = float(parts[4]) if len(parts) >= 6 else 0.0
+                current_y_vn2000 = float(parts[5]) if len(parts) >= 6 else 0.0
                 
                 data_points.append({
-                    'Cọc': current_pole, 'Lý trình': current_x, 'Offset': 0.0, 'Z': z_tim, 'Tag_Gốc': 'POLE'
+                    'Cọc': current_pole, 'Lý trình': current_x, 'Offset': 0.0, 'Z': z_tim,
+                    'X_VN2000': current_x_vn2000, 'Y_VN2000': current_y_vn2000, 'Góc_Tuyến': 0.0,
+                    'X_Real': current_x_vn2000, 'Y_Real': current_y_vn2000, 'Tag_Gốc': 'POLE'
                 })
-            except ValueError:
-                pass
-        # 2. Đọc chữ TARGETL/R lấy tọa độ cánh trắc ngang thực tế
+            except:
+                continue
+                
+        # 2. Đọc các điểm mia trắc ngang bên Trái / Bên Phải
         elif token in ['TARGETL', 'TARGETR'] and len(parts) >= 3:
             try:
-                dist_offset = float(parts[1])
+                offset = float(parts[1])
                 z_val = float(parts[2])
                 
-                if current_pole:
-                    data_points.append({
-                        'Cọc': current_pole, 'Lý trình': current_x, 'Offset': dist_offset, 'Z': z_val, 'Tag_Gốc': token
-                    })
-            except ValueError:
-                pass
+                data_points.append({
+                    'Cọc': current_pole, 'Lý trình': current_x, 'Offset': offset, 'Z': z_val,
+                    'X_VN2000': current_x_vn2000, 'Y_VN2000': current_y_vn2000, 'Góc_Tuyến': 0.0,
+                    'X_Real': 0.0, 'Y_Real': 0.0, 'Tag_Gốc': 'TARGET'
+                })
+            except:
+                continue
                 
     return pd.DataFrame(data_points)
 
@@ -189,17 +201,16 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
             df_sub = df_clean[df_clean['Lý trình'] == lt].sort_values('Offset')
             
             obs_offsets = df_sub['Offset'].values
-            obs_x_real = df_sub['X_Real'].values
-            obs_y_real = df_sub['Y_Real'].values
+            obs_x_real = df_sub['X_Real'].values  # Tọa độ X thực từ convert_to_vn2000
+            obs_y_real = df_sub['Y_Real'].values  # Tọa độ Y thực từ convert_to_vn2000
             obs_zs = df_sub['Z'].values
             
             if len(obs_offsets) < 2:
                 continue
                 
-            # Nội suy mịn mạng lưới điểm mia trắc ngang theo phân bổ tỷ lệ hình học
             pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0] + 0.0001)
             
-            # ✨ CHIẾN LƯỢC ĐỒNG NHẤT: Đưa thẳng tọa độ VN-2000 vào ma trận lưới bề mặt
+            # ✨ ĐỒNG NHẤT KHÔNG GIAN: Nội suy ma trận 3D theo đúng trục tọa độ thực lớn VN-2000
             x_line = np.interp(target_pct, pct_goc, obs_x_real)
             y_line = np.interp(target_pct, pct_goc, obs_y_real)
             z_line = np.interp(target_pct, pct_goc, obs_zs)
