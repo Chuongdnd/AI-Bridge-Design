@@ -91,28 +91,56 @@ def parse_coordinate_file(uploaded_file):
 def convert_to_vn2000(df_ntd, df_coord):
     """
     THUẬT TOÁN ĐỒNG BỘ SONG SONG VÀ XOAY LƯỢNG GIÁC THEO TIM TUYẾN THỰC ĐỊA
+    - Sửa lỗi NameError: df_coord
+    - Tự động fallback nếu file tọa độ thiếu cột 'Lý trình'
     """
     try:
-        list_ntd_x = sorted(df_ntd['Lý trình'].unique())
-        df_coord_clean = df_coord.copy()
-        
-        min_len = min(len(list_ntd_x), len(df_coord_clean))
-        if min_len == 0:
+        if df_coord is None or df_coord.empty or df_ntd.empty:
             return pd.DataFrame()
             
-        map_x_real = {}
-        map_y_real = {}
-        for i in range(min_len):
-            ly_trinh_ntd = list_ntd_x[i]
-            map_x_real[ly_trinh_ntd] = df_coord_clean['X_VN2000'].iloc[i]
-            map_y_real[ly_trinh_ntd] = df_coord_clean['Y_VN2000'].iloc[i]
-            
-        df_merged = df_ntd.copy()
-        df_merged['X_VN2000'] = df_merged['Lý trình'].map(map_x_real)
-        df_merged['Y_VN2000'] = df_merged['Lý trình'].map(map_y_real)
+        df_coord_clean = df_coord.copy()
+        list_ntd_x = sorted(df_ntd['Lý trình'].unique())
         
+        # Tạo bản copy để xử lý dữ liệu trộn
+        df_merged = df_ntd.copy()
+        
+        # Kiểm tra xem file tọa độ đầu vào có cột 'Lý trình' để nội suy hay không
+        if 'Lý trình' in df_coord_clean.columns:
+            from scipy.interpolate import interp1d
+            
+            # Loại bỏ dòng trùng lý trình trong file mốc tọa độ để tránh lỗi hàm nội suy
+            df_coord_nodup = df_coord_clean.drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
+            
+            if len(df_coord_nodup) >= 2:
+                interp_x = interp1d(df_coord_nodup['Lý trình'], df_coord_nodup['X_VN2000'], kind='linear', fill_value="extrapolate")
+                interp_y = interp1d(df_coord_nodup['Lý trình'], df_coord_nodup['Y_VN2000'], kind='linear', fill_value="extrapolate")
+                
+                df_merged['X_VN2000'] = interp_x(df_merged['Lý trình'])
+                df_merged['Y_VN2000'] = interp_y(df_merged['Lý trình'])
+            else:
+                # Nếu chỉ có 1 điểm mốc, gán mốc cố định cho toàn tuyến
+                df_merged['X_VN2000'] = df_coord_nodup['X_VN2000'].iloc[0]
+                df_merged['Y_VN2000'] = df_coord_nodup['Y_VN2000'].iloc[0]
+        else:
+            # 🔄 FALLBACK BAN ĐẦU CỦA CHƯƠNG (Nếu file tọa độ chỉ có chuỗi điểm xếp tuần tự):
+            min_len = min(len(list_ntd_x), len(df_coord_clean))
+            if min_len == 0:
+                return pd.DataFrame()
+                
+            map_x_real = {}
+            map_y_real = {}
+            for i in range(min_len):
+                ly_trinh_ntd = list_ntd_x[i]
+                map_x_real[ly_trinh_ntd] = df_coord_clean['X_VN2000'].iloc[i]
+                map_y_real[ly_trinh_ntd] = df_coord_clean['Y_VN2000'].iloc[i]
+                
+            df_merged['X_VN2000'] = df_merged['Lý trình'].map(map_x_real)
+            df_merged['Y_VN2000'] = df_merged['Lý trình'].map(map_y_real)
+
+        # Loại bỏ các dòng trống không nội suy được tọa độ mốc tim
         df_merged = df_merged.dropna(subset=['X_VN2000', 'Y_VN2000']).copy()
         
+        # Trích xuất riêng tim tuyến (Offset == 0) để tính vector chỉ phương
         df_tim_calc = df_merged[df_merged['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình').copy()
         
         if len(df_tim_calc) >= 2:
@@ -127,6 +155,7 @@ def convert_to_vn2000(df_ntd, df_coord):
         goc_map = dict(zip(df_tim_calc['Lý trình'], df_tim_calc['Góc_Tuyến']))
         df_merged['Góc_Tuyến'] = df_merged['Lý trình'].map(goc_map).bfill().ffill()
         
+        # Tính toán tọa độ pháp tuyến trắc ngang thực địa phẳng
         angle_offset = df_merged['Góc_Tuyến'] + (np.pi / 2)
         df_merged['X_Real'] = df_merged['X_VN2000'] + df_merged['Offset'] * np.cos(angle_offset)
         df_merged['Y_Real'] = df_merged['Y_VN2000'] + df_merged['Offset'] * np.sin(angle_offset)
@@ -138,12 +167,16 @@ def convert_to_vn2000(df_ntd, df_coord):
 
 def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
     """
-    🏔️ MÔ HÌNH ĐỊA HÌNH 3D NGUYÊN BẢN - CHỈ VẼ ĐỊA HÌNH SÔNG CỦA CHƯƠNG
+    🏔️ MÔ HÌNH ĐỊA HÌNH 3D HỆ VN-2000 THỰC ĐỊA TUYỆT ĐỐI:
+    - Trục X nhận X_Real (Tọa độ phẳng VN-2000)
+    - Trục Y nhận Y_Real (Tọa độ phẳng VN-2000)
+    - Đồng nhất 100% không gian với vị trí cắm cọc địa chất Excel.
     """
     if df.empty: 
         return None
     
     try:
+        # Sắp xếp thứ tự trắc ngang bám dọc theo tuyến
         df_clean = df.sort_values(['Lý trình', 'Offset']).copy()
         unique_lts = sorted(df_clean['Lý trình'].unique())
         
@@ -154,25 +187,22 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         
         for lt in unique_lts:
             df_sub = df_clean[df_clean['Lý trình'] == lt].sort_values('Offset')
-            has_target = df_sub['Tag_Gốc'].str.contains('TARGET', na=False).any()
             
             obs_offsets = df_sub['Offset'].values
             obs_x_real = df_sub['X_Real'].values
             obs_y_real = df_sub['Y_Real'].values
             obs_zs = df_sub['Z'].values
             
-            if not has_target or len(obs_offsets) < 2:
-                goc_tuyen = df_sub['Góc_Tuyến'].iloc[0]
-                g_offset = goc_tuyen + (np.pi / 2)
-                offsets_fake = np.linspace(-25.0, 25.0, num_samples)
-                x_line = df_sub['X_VN2000'].iloc[0] + offsets_fake * np.cos(g_offset)
-                y_line = df_sub['Y_VN2000'].iloc[0] + offsets_fake * np.sin(g_offset)
-                z_line = np.repeat(obs_zs[0], num_samples)
-            else:
-                pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0] + 0.0001)
-                x_line = np.interp(target_pct, pct_goc, obs_x_real)
-                y_line = np.interp(target_pct, pct_goc, obs_y_real)
-                z_line = np.interp(target_pct, pct_goc, obs_zs)
+            if len(obs_offsets) < 2:
+                continue
+                
+            # Nội suy mịn mạng lưới điểm mia trắc ngang theo phân bổ tỷ lệ hình học
+            pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0] + 0.0001)
+            
+            # ✨ CHIẾN LƯỢC ĐỒNG NHẤT: Đưa thẳng tọa độ VN-2000 vào ma trận lưới bề mặt
+            x_line = np.interp(target_pct, pct_goc, obs_x_real)
+            y_line = np.interp(target_pct, pct_goc, obs_y_real)
+            z_line = np.interp(target_pct, pct_goc, obs_zs)
                 
             matrix_x.append(x_line)
             matrix_y.append(y_line)
@@ -182,6 +212,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         matrix_y = np.array(matrix_y)
         matrix_z = np.array(matrix_z)
 
+        # Bộ lọc Rolling Smooth làm mịn khử gồ ghề lòng sông
         if do_min > 1:
             mz_pd = pd.DataFrame(matrix_z)
             mz_pd = mz_pd.rolling(window=do_min, min_periods=1, center=True).mean()
@@ -196,7 +227,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                 x=matrix_x, y=matrix_y, z=z_scaled, customdata=matrix_z,
                 colorscale='Earth', opacity=0.95,
                 colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
-                hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{customdata:.2f} m<extra></extra>",
+                hovertemplate="X VN2000: %{x:.2f} m<br>Y VN2000: %{y:.2f} m<br>Z Cao độ: %{customdata:.2f} m<extra></extra>",
                 contours=dict(
                     x=dict(show=show_wireframe, color="rgba(0,0,0,0.2)", width=1), 
                     y=dict(show=show_wireframe, color="rgba(0,0,0,0.2)", width=1)
@@ -208,9 +239,10 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                 colorscale='Viridis', opacity=0.95,
                 colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
                 contours_z=dict(show=True, usecolormap=False, color="rgb(0,0,0)", width=2, project=dict(z=True)),
-                hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z Thực: %{customdata:.2f} m<extra></extra>"
+                hovertemplate="X VN2000: %{x:.2f}<br>Y VN2000: %{y:.2f}<br>Z Cao độ: %{customdata:.2f} m<extra></extra>"
             ))
 
+        # Vẽ đường tim cọc màu đỏ bám theo tọa độ VN-2000 thực địa
         df_tim_all = df_clean[df_clean['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
         if not df_tim_all.empty:
             nhan_hien_thi = df_tim_all.apply(lambda r: f"{r['Cọc']} (LT: {r['Lý trình']:.1f}m)", axis=1).values
@@ -220,17 +252,18 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                 line=dict(color='red', width=4), marker=dict(size=4, color='yellow'),
                 text=nhan_hien_thi, textposition="top center",
                 textfont=dict(family="Arial, sans-serif", size=11, color="lightblue"),
-                name='Đường tim tuyến dọc sông'
+                name='Tim tuyến dọc sông thực địa'
             ))
 
+        # ✨ ĐIỀU CHỈNH CAMERA PLOTLY: Ép khung nhìn tập trung vào đúng dải số lớn của VN-2000
         fig.update_layout(
-            title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D BÁM SÁT TOÀN TUYẾN NTD", font=dict(size=16, color='#007acc')),
+            title=dict(text="🏔️ SA BÀN KHÔNG GIAN BIM 3D - HỆ TOẠ ĐỘ PHẲNG THỰC ĐỊA VN-2000", font=dict(size=16, color='#007acc')),
             height=850,
             scene=dict(
-                xaxis_title="Tọa độ X VN-2000 (m)", 
-                yaxis_title="Tọa độ Y VN-2000 (m)", 
-                zaxis_title="Cao độ Z (m)", 
-                aspectmode='data'
+                xaxis=dict(title="Tọa độ X VN-2000 (m)", tickformat=".0f"), 
+                yaxis=dict(title="Tọa độ Y VN-2000 (m)", tickformat=".0f"), 
+                zaxis=dict(title="Cao độ Z (m)"), 
+                aspectmode='data' # Giữ nguyên tỉ lệ hình học thực tế, không méo bảng vẽ
             ),
             template="plotly_dark", 
             margin=dict(l=10, r=10, t=40, b=10), 
@@ -333,9 +366,9 @@ def doc_excel_dia_chat_nguyen_ban(uploaded_file):
 
 def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
     """
-    ⚡ PHIÊN BẢN SIÊU NHẸ (LIGHTWEIGHT 3D) - ĐÃ SỬA SẠCH LỖI LOGIC TRỘN CODE:
-    - Thay thế go.Surface (khối trụ nặng) bằng go.Scatter3d (đường dập line dày)
-    - Giảm 95% tải WebGL, giúp card màn hình xử lý mượt mà, không lo sập trắng màn hình.
+    ⚡ PHIÊN BẢN ĐỊA CHẤT HỆ VN-2000 NGUYÊN BẢN:
+    - Cắm trực tiếp hố khoan vào tọa độ thực thực địa phẳng không qua tịnh tiến tương đối.
+    - Kết hợp hoàn hảo với lưới địa hình Surface VN-2000 phía trên.
     """
     if fig is None or df_hk is None or df_hk.empty:
         return fig
@@ -352,7 +385,7 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
             if np.isnan(x_hk) or np.isnan(y_hk) or np.isnan(z_mieng):
                 continue
                 
-            # 1. VẼ ĐƯỜNG TRỤ ĐỊA CHẤT SIÊU NHẸ (Bằng Scatter3d Line dày)
+            # 1. VẼ ĐƯỜNG TRỤ ĐỊA CHẤT TUYỆT ĐỐI (Theo tọa độ thực VN-2000)
             if df_layers is not None and not df_layers.empty:
                 df_sub_layers = df_layers[df_layers['Ho_Khoan'] == ten_hk].sort_values('Tu_Chieu_Sau_Lop')
                 
@@ -370,18 +403,18 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                         z_top = (z_mieng - tu_d) * he_so_z
                         z_bot = (z_mieng - den_d) * he_so_z
                         
-                        # Sử dụng đường line dày thay cho khối trụ tròn xoay để giải phóng băng thông WebGL
+                        # Cắm cọc trực tiếp tại tọa độ thực phẳng VN-2000
                         fig.add_trace(go.Scatter3d(
                             x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_top, z_bot],
                             mode='lines',
-                            line=dict(color=mau_nen, width=12),
+                            line=dict(color=mau_nen, width=14),
                             name=f"{ten_hk}: Lớp {ten_lop}",
                             hovertemplate=f"<b>Hố khoan: {ten_hk}</b><br>Tên lớp: {ten_lop}<br>Độ sâu: {tu_d:.2f}m - {den_d:.2f}m<br>Mô tả: {txt_mo_ta}<extra></extra>"
                         ))
                     except:
                         continue
             
-            # 2. VẼ ĐƯỜNG BIỂU ĐỒ SPT DÍCH DẮC MÀU VÀNG
+            # 2. VẼ ĐƯỜNG BIỂU ĐỒ SPT MÀU VÀNG TUYỆT ĐỐI
             if df_spt is not None and not df_spt.empty:
                 col_n = [c for c in df_spt.columns if ten_hk in c]
                 if col_n and 'Độ sâu thí nghiệm (m)' in df_spt.columns:
@@ -403,7 +436,8 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                                 depth_spt = numbers[0]
                                 z_spt = (z_mieng - depth_spt) * he_so_z
                                 
-                                spt_x.append(x_hk + 6.0 + n_val * 0.3)
+                                # Tịnh tiến nhẹ đồ thị SPT theo trục X thực địa lớn (+20m để tách khỏi cọc)
+                                spt_x.append(x_hk + 20.0 + n_val * 1.5)
                                 spt_y.append(y_hk)
                                 spt_z.append(z_spt)
                                 spt_n.append(n_val)
@@ -420,13 +454,6 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                             textfont=dict(size=9, color='yellow'),
                             name=f"Đồ thị SPT {ten_hk}",
                             hovertemplate="Độ sâu SPT tính từ miệng: %{z:.2f}m<extra></extra>"
-                        ))
-                        
-                        # Vẽ thêm trục tim đứng nét đứt làm mốc trực quan cho hố khoan
-                        max_depth = df_sub_layers['Den_Chieu_Sau_Lop'].max() if not df_sub_layers.empty else 50.0
-                        fig.add_trace(go.Scatter3d(
-                            x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_mieng * he_so_z, (z_mieng - max_depth) * he_so_z],
-                            mode='lines', line=dict(color='white', width=1.5, dash='dash'), showlegend=False
                         ))
         except:
             continue
