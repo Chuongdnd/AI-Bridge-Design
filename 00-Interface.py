@@ -315,7 +315,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                         df_hk, df_layers, df_spt = None, None, None
                         if file_excel_dc is not None:
                             # Gọi bộ đọc cấu trúc nguyên bản bóc tách từ file của Chương sang
-                            df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_theo_template_chuong(file_excel_dc)
+                            df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_nguyen_ban(file_excel_dc)
                             if df_hk is not None:
                                 st.success("🎉 Đã đồng bộ cấu trúc hố khoan và dữ liệu độ sâu thí nghiệm SPT thực tế!")
 
