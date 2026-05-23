@@ -377,26 +377,59 @@ def doc_excel_dia_chat_nguyen_ban(uploaded_file):
 
 def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
     """
-    ⚡ PHIÊN BẢN ĐỊA CHẤT HỆ VN-2000 NGUYÊN BẢN:
-    - Cắm trực tiếp hố khoan vào tọa độ thực thực địa phẳng không qua tịnh tiến tương đối.
-    - Kết hợp hoàn hảo với lưới địa hình Surface VN-2000 phía trên.
+    🎯 PHIÊN BẢN GIỚI HẠN THEO PHƯƠNG X, Y (BOUNDING BOX / CONVEX HULL CLIPPING):
+    - Tự động dựng đường bao biên (Polygon) bao quanh toàn bộ tọa độ X_Real, Y_Real của địa hình sông.
+    - Gióng thẳng đứng xuống: Chỉ vẽ những hố khoan nào nằm TRONG phạm vi mặt bằng của lòng sông.
+    - Loại bỏ hoàn toàn các hố khoan nằm ngoài rìa biên địa hình.
     """
     if fig is None or df_hk is None or df_hk.empty:
         return fig
         
     mau_quy_uoc = {'K': '#8B4513', '1': '#A0522D', '2B': '#4682B4', 'TK4': '#DEB887', '5': '#D2B48C'}
     
+    # 📐 THUẬT TOÁN DỰNG ĐƯỜNG BAO ĐỊA HÌNH (X, Y BOUNDARY)
+    points_terrain = []
+    
+    # Quét qua các trace bề mặt (Surface) và đường tim để bốc toàn bộ các cặp tọa độ X, Y của địa hình
+    for data in fig.data:
+        if data.type == 'surface' and data.x is not None and data.y is not None:
+            xs_flat = np.array(data.x).flatten()
+            ys_flat = np.array(data.y).flatten()
+            for x, y in zip(xs_flat, ys_flat):
+                if not np.isnan(x) and not np.isnan(y):
+                    points_terrain.append([x, y])
+                    
+    if len(points_terrain) < 3:
+        # Nếu không bốc được lưới bề mặt, lấy dự phòng từ danh sách dữ liệu đầu vào (nếu có)
+        return fig
+
+    # Sử dụng Matplotlib Path để tạo vùng đa giác bao che từ đường bao lòng sông
+    from scipy.spatial import ConvexHull
+    import matplotlib.path as mpath
+    
+    points_arr = np.array(points_terrain)
+    hull = ConvexHull(points_arr)
+    # Lấy các điểm đỉnh sắp xếp tuần tự tạo thành đa giác khép kín
+    boundary_polygon = points_arr[hull.vertices]
+    terrain_path = mpath.Path(boundary_polygon)
+
+    # Tiến hành lặp qua từng hố khoan để lọc không gian
     for _, hk in df_hk.iterrows():
         try:
             ten_hk = str(hk['Ho_Khoan']).strip()
-            x_hk = float(hk['X_VN2000'])
-            y_hk = float(hk['Y_VN2000'])
+            x_hk = float(hk['Y_VN2000'])  # Đã đổi trục chuẩn quy ước đồ họa 3D toán học
+            y_hk = float(hk['X_VN2000'])  # Đã đổi trục chuẩn quy ước đồ họa 3D toán học
             z_mieng = float(hk['Z_Mieng'])
             
             if np.isnan(x_hk) or np.isnan(y_hk) or np.isnan(z_mieng):
                 continue
                 
-            # 1. VẼ ĐƯỜNG TRỤ ĐỊA CHẤT TUYỆT ĐỐI (Theo tọa độ thực VN-2000)
+            # ✨ KIỂM TRA ĐIỀU KIỆN BIÊN PHƯƠNG X, Y:
+            # Gióng hố khoan xuống mặt bằng, nếu (x_hk, y_hk) nằm ngoài đường bao lòng sông -> LOẠI BỎ
+            if not terrain_path.contains_point((x_hk, y_hk)):
+                continue # Bỏ qua hố khoan này, không vẽ bất kỳ thành phần nào của nó
+                
+            # 1. VẼ ĐƯỜNG TRỤ ĐỊA CHẤT (Chỉ dành cho hố hợp lệ nằm trong vùng bao che)
             if df_layers is not None and not df_layers.empty:
                 df_sub_layers = df_layers[df_layers['Ho_Khoan'] == ten_hk].sort_values('Tu_Chieu_Sau_Lop')
                 
@@ -414,7 +447,6 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                         z_top = (z_mieng - tu_d) * he_so_z
                         z_bot = (z_mieng - den_d) * he_so_z
                         
-                        # Cắm cọc trực tiếp tại tọa độ thực phẳng VN-2000
                         fig.add_trace(go.Scatter3d(
                             x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_top, z_bot],
                             mode='lines',
@@ -425,7 +457,7 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                     except:
                         continue
             
-            # 2. VẼ ĐƯỜNG BIỂU ĐỒ SPT MÀU VÀNG TUYỆT ĐỐI
+            # 2. VẼ ĐƯỜNG BIỂU ĐỒ SPT MÀU VÀNG CHO HỐ KHẢO SÁT HỢP LỆ
             if df_spt is not None and not df_spt.empty:
                 col_n = [c for c in df_spt.columns if ten_hk in c]
                 if col_n and 'Độ sâu thí nghiệm (m)' in df_spt.columns:
@@ -447,7 +479,6 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                                 depth_spt = numbers[0]
                                 z_spt = (z_mieng - depth_spt) * he_so_z
                                 
-                                # Tịnh tiến nhẹ đồ thị SPT theo trục X thực địa lớn (+20m để tách khỏi cọc)
                                 spt_x.append(x_hk + 20.0 + n_val * 1.5)
                                 spt_y.append(y_hk)
                                 spt_z.append(z_spt)
@@ -465,6 +496,12 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                             textfont=dict(size=9, color='yellow'),
                             name=f"Đồ thị SPT {ten_hk}",
                             hovertemplate="Độ sâu SPT tính từ miệng: %{z:.2f}m<extra></extra>"
+                        ))
+                        
+                        max_depth = df_sub_layers['Den_Chieu_Sau_Lop'].max() if not df_sub_layers.empty else 50.0
+                        fig.add_trace(go.Scatter3d(
+                            x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_mieng * he_so_z, (z_mieng - max_depth) * he_so_z],
+                            mode='lines', line=dict(color='white', width=1.5, dash='dash'), showlegend=False
                         ))
         except:
             continue
