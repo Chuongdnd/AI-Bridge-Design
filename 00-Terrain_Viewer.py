@@ -377,20 +377,18 @@ def doc_excel_dia_chat_nguyen_ban(uploaded_file):
 
 def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
     """
-    🎯 PHIÊN BẢN GIỚI HẠN THEO PHƯƠNG X, Y (BOUNDING BOX / CONVEX HULL CLIPPING):
-    - Tự động dựng đường bao biên (Polygon) bao quanh toàn bộ tọa độ X_Real, Y_Real của địa hình sông.
-    - Gióng thẳng đứng xuống: Chỉ vẽ những hố khoan nào nằm TRONG phạm vi mặt bằng của lòng sông.
-    - Loại bỏ hoàn toàn các hố khoan nằm ngoài rìa biên địa hình.
+    🎯 PHIÊN BẢN NÂNG CẤP DỆT MẶT PHẲNG ĐÁY CÁC LỚP ĐỊA CHẤT:
+    - Vẽ trục tim đứng hố khoan bám số búa SPT.
+    - Nội suy dữ liệu không gian giữa các hố khoan để tạo tấm thảm bề mặt 3D (go.Surface)
+      thể hiện các tầng địa chất nằm khít kẽ dưới lòng đa giác sông.
     """
     if fig is None or df_hk is None or df_hk.empty:
         return fig
         
     mau_quy_uoc = {'K': '#8B4513', '1': '#A0522D', '2B': '#4682B4', 'TK4': '#DEB887', '5': '#D2B48C'}
     
-    # 📐 THUẬT TOÁN DỰNG ĐƯỜNG BAO ĐỊA HÌNH (X, Y BOUNDARY)
+    # 📐 1. TRÍCH XUẤT MA TRẬN ĐƯỜNG BAO ĐỊA HÌNH SÔNG (X, Y BOUNDARY)
     points_terrain = []
-    
-    # Quét qua các trace bề mặt (Surface) và đường tim để bốc toàn bộ các cặp tọa độ X, Y của địa hình
     for data in fig.data:
         if data.type == 'surface' and data.x is not None and data.y is not None:
             xs_flat = np.array(data.x).flatten()
@@ -400,36 +398,43 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                     points_terrain.append([x, y])
                     
     if len(points_terrain) < 3:
-        # Nếu không bốc được lưới bề mặt, lấy dự phòng từ danh sách dữ liệu đầu vào (nếu có)
         return fig
 
-    # Sử dụng Matplotlib Path để tạo vùng đa giác bao che từ đường bao lòng sông
     from scipy.spatial import ConvexHull
+    from scipy.interpolate import griddata
     import matplotlib.path as mpath
     
     points_arr = np.array(points_terrain)
     hull = ConvexHull(points_arr)
-    # Lấy các điểm đỉnh sắp xếp tuần tự tạo thành đa giác khép kín
     boundary_polygon = points_arr[hull.vertices]
     terrain_path = mpath.Path(boundary_polygon)
 
-    # Tiến hành lặp qua từng hố khoan để lọc không gian
+    # Khởi tạo lưới tọa độ chuẩn bám theo địa hình sông để dệt mặt phẳng địa chất
+    grid_x, grid_y = np.meshgrid(
+        np.linspace(points_arr[:, 0].min(), points_arr[:, 0].max(), 30),
+        np.linspace(points_arr[:, 1].min(), points_arr[:, 1].max(), 30)
+    )
+
+    # Cấu trúc lưu trữ điểm cao độ đáy của từng lớp đất đá để nội suy bề mặt
+    layer_profiles = {} # Cấu trúc: { 'TEN_LOP': { 'x': [], 'y': [], 'z_bot': [] } }
+
+    # 🗂️ 2. VẼ TRỤC TIM HỐ KHOAN VÀ THU THẬP DỮ LIỆU ĐỂ DỆT MẶT PHẲNG ĐÁY
     for _, hk in df_hk.iterrows():
         try:
             ten_hk = str(hk['Ho_Khoan']).strip()
-            x_hk = float(hk['Y_VN2000'])  # Đã đổi trục chuẩn quy ước đồ họa 3D toán học
-            y_hk = float(hk['X_VN2000'])  # Đã đổi trục chuẩn quy ước đồ họa 3D toán học
+            x_hk = float(hk['Y_VN2000'])  # Quy ước toán học 3D (Y_Excel -> X_Toán)
+            y_hk = float(hk['X_VN2000'])  # Quy ước toán học 3D (X_Excel -> Y_Toán)
             z_mieng = float(hk['Z_Mieng'])
             
             if np.isnan(x_hk) or np.isnan(y_hk) or np.isnan(z_mieng):
                 continue
                 
-            # ✨ KIỂM TRA ĐIỀU KIỆN BIÊN PHƯƠNG X, Y:
-            # Gióng hố khoan xuống mặt bằng, nếu (x_hk, y_hk) nằm ngoài đường bao lòng sông -> LOẠI BỎ
+            # Gióng lọc không gian phương phẳng X, Y
             if not terrain_path.contains_point((x_hk, y_hk)):
-                continue # Bỏ qua hố khoan này, không vẽ bất kỳ thành phần nào của nó
+                continue 
                 
-            # 1. VẼ ĐƯỜNG TRỤ ĐỊA CHẤT (Chỉ dành cho hố hợp lệ nằm trong vùng bao che)
+            # Vẽ đường trục tim đứng hố khoan thể hiện điểm mốc kết cấu
+            max_depth_hk = 0.0
             if df_layers is not None and not df_layers.empty:
                 df_sub_layers = df_layers[df_layers['Ho_Khoan'] == ten_hk].sort_values('Tu_Chieu_Sau_Lop')
                 
@@ -439,25 +444,32 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                         den_d = float(lop['Den_Chieu_Sau_Lop'])
                         ten_lop = str(lop['Ten_Lop']).strip().upper()
                         
-                        txt_mo_ta = str(lop.get('Mo_Ta', ''))
-                        if txt_mo_ta.lower() == 'nan' or pd.isna(lop.get('Mo_Ta')):
-                            txt_mo_ta = "Không có mô tả chi tiết"
+                        if den_d > max_depth_hk:
+                            max_depth_hk = den_d
                             
-                        mau_nen = mau_quy_uoc.get(ten_lop, '#808080')
                         z_top = (z_mieng - tu_d) * he_so_z
                         z_bot = (z_mieng - den_d) * he_so_z
                         
+                        # Lưu tọa độ không gian để chuẩn bị nội suy tấm thảm đáy lớp
+                        if ten_lop not in layer_profiles:
+                            layer_profiles[ten_lop] = {'x': [], 'y': [], 'z_bot': []}
+                        layer_profiles[ten_lop]['x'].append(x_hk)
+                        layer_profiles[ten_lop]['y'].append(y_hk)
+                        layer_profiles[ten_lop]['z_bot'].append(z_mieng - den_d)
+                        
+                        # Vẫn giữ lại line trục hố khoan dày để định vị trực quan
+                        mau_nen = mau_quy_uoc.get(ten_lop, '#808080')
                         fig.add_trace(go.Scatter3d(
                             x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_top, z_bot],
                             mode='lines',
-                            line=dict(color=mau_nen, width=14),
-                            name=f"{ten_hk}: Lớp {ten_lop}",
-                            hovertemplate=f"<b>Hố khoan: {ten_hk}</b><br>Tên lớp: {ten_lop}<br>Độ sâu: {tu_d:.2f}m - {den_d:.2f}m<br>Mô tả: {txt_mo_ta}<extra></extra>"
+                            line=dict(color=mau_nen, width=10),
+                            name=f"Trục {ten_hk}: Lớp {ten_lop}",
+                            hoverinfo="skip"
                         ))
                     except:
                         continue
             
-            # 2. VẼ ĐƯỜNG BIỂU ĐỒ SPT MÀU VÀNG CHO HỐ KHẢO SÁT HỢP LỆ
+            # Vẽ đường dích dắc biểu đồ số búa SPT dọc thân hố khoan
             if df_spt is not None and not df_spt.empty:
                 col_n = [c for c in df_spt.columns if ten_hk in c]
                 if col_n and 'Độ sâu thí nghiệm (m)' in df_spt.columns:
@@ -479,7 +491,7 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                                 depth_spt = numbers[0]
                                 z_spt = (z_mieng - depth_spt) * he_so_z
                                 
-                                spt_x.append(x_hk + 20.0 + n_val * 1.5)
+                                spt_x.append(x_hk + 15.0 + n_val * 1.2)
                                 spt_y.append(y_hk)
                                 spt_z.append(z_spt)
                                 spt_n.append(n_val)
@@ -495,14 +507,48 @@ def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                             text=[f"N={n:.0f}" for n in np.array(spt_n)[spt_indices]], textposition="middle right",
                             textfont=dict(size=9, color='yellow'),
                             name=f"Đồ thị SPT {ten_hk}",
-                            hovertemplate="Độ sâu SPT tính từ miệng: %{z:.2f}m<extra></extra>"
+                            hovertemplate="Số búa SPT: %{text}<br>Cao độ: %{z:.2f}m<extra></extra>"
                         ))
                         
-                        max_depth = df_sub_layers['Den_Chieu_Sau_Lop'].max() if not df_sub_layers.empty else 50.0
                         fig.add_trace(go.Scatter3d(
-                            x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_mieng * he_so_z, (z_mieng - max_depth) * he_so_z],
-                            mode='lines', line=dict(color='white', width=1.5, dash='dash'), showlegend=False
+                            x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_mieng * he_so_z, (z_mieng - max_depth_hk) * he_so_z],
+                            mode='lines', line=dict(color='white', width=1, dash='dash'), showlegend=False
                         ))
+        except:
+            continue
+            
+    # 🗺️ 3. THUẬT TOÁN TOÁN HỌC DỆT MẶT PHẲNG ĐÁY LỚP (go.Surface) VÀ GIỚI HẠN BIÊN ĐỘ X, Y
+    for ten_lop, data in layer_profiles.items():
+        try:
+            # Điều kiện: Cần tối thiểu 3 hố khoan chứa lớp đất đó để nội suy ra một mặt phẳng phẳng 3D
+            if len(set(zip(data['x'], data['y']))) < 3:
+                continue
+                
+            # Tiến hành nội suy lưới cao độ phẳng
+            grid_z = griddata(
+                (data['x'], data['y']), data['z_bot'],
+                (grid_x, grid_y), method='linear'
+            )
+            
+            # Khóa lỗi đường bao: Thay thế các điểm nằm ngoài đa giác lòng sông thành NaN để cắt gọt rìa
+            for r in range(grid_x.shape[0]):
+                for c in range(grid_x.shape[1]):
+                    if not terrain_path.contains_point((grid_x[r, c], grid_y[r, c])):
+                        grid_z[r, c] = np.nan
+                        
+            # Nhân hệ số phóng đại đồng bộ cao độ trục đứng Z với sa bàn
+            grid_z_scaled = grid_z * he_so_z
+            mau_lop = mau_quy_uoc.get(ten_lop, '#808080')
+            
+            # Thêm tấm thảm mặt phẳng trắc ngang đáy địa chất vào không gian Plotly
+            fig.add_trace(go.Surface(
+                x=grid_x, y=grid_y, z=grid_z_scaled, customdata=grid_z,
+                colorscale=[[0, mau_lop], [1, mau_lop]],
+                showscale=False,
+                opacity=0.65, # Đặt độ trong suốt 65% để nhìn xuyên thấu cấu trúc các tầng đất đá dưới lòng sông
+                name=f"Mặt đáy: Lớp {ten_lop}",
+                hovertemplate=f"<b>Mặt đáy địa chất: Lớp {ten_lop}</b><br>X VN2000: %{{x:.1f}} m<br>Y VN2000: %{{y:.1f}} m<br>Cao độ đáy thực: %{{customdata:.2f}} m<extra></extra>"
+            ))
         except:
             continue
             
