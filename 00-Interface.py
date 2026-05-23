@@ -307,12 +307,27 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                                 help="Mức số càng lớn địa hình uốn lượn uốn cong dọc tuyến sông càng mượt phẳng."
                             )
 
-                        # Gọi đúng hàm định danh đã cấu hình khóa an toàn lỗi AttributeError
+                        # 📊 TÍCH HỢP DỮ LIỆU ĐỊA CHẤT CÔNG TRÌNH (TÙY CHỌN)
+                        st.markdown("---")
+                        st.subheader("📊 Tích hợp dữ liệu Địa chất công trình (Tùy chọn)")
+                        file_excel_dc = st.file_uploader("Tải lên file Excel số liệu địa chất nguyên bản:", type=['xlsx'])
+                        
+                        df_hk, df_layers, df_spt = None, None, None
+                        if file_excel_dc is not None:
+                            # Gọi bộ đọc cấu trúc nguyên bản bóc tách từ file của Chương sang
+                            df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_theo_template_chuong(file_excel_dc)
+                            if df_hk is not None:
+                                st.success("🎉 Đã đồng bộ cấu trúc hố khoan và dữ liệu độ sâu thí nghiệm SPT thực tế!")
+
+                        # Gọi đúng hàm định danh đã cấu hình và truyền thêm dữ liệu địa chất vào mô hình 3D
                         fig_3d = TV.ve_dia_hinh_3d(
                             df_geology, 
                             he_so_z=he_so_z, 
                             che_do=che_do_view, 
-                            do_min=do_min_view
+                            do_min=do_min_view,
+                            df_hk=df_hk,
+                            df_layers=df_layers,
+                            df_spt=df_spt
                         )
                         
                         if fig_3d: 
