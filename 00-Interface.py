@@ -282,7 +282,6 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                 
                 # Nhóm 4 Tab con hiển thị khi CÓ ĐẦY ĐỦ dữ liệu khảo sát và tọa độ thực
                 tab_binhdo_2d, tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
-                    "🗺️ Bình đồ định vị thực tế VN-2000",
                     "🏔️ Mô hình Địa hình 3D",
                     "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
                     "📐 Bản vẽ Mặt cắt ngang điển hình"
@@ -321,7 +320,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
 
                     # 🟩 LUỒNG 1: Dựng mô hình địa hình sông thực tế từ file NTD đã đồng bộ phẳng (Tuyệt đối an toàn)
                     fig_3d = TV.ve_dia_hinh_3d(
-                        df_merged_safe,  # ✨ BẮT BUỘC PHẢI DÙNG BIẾN NÀY
+                        df_geology,  # ✨ BẮT BUỘC PHẢI DÙNG BIẾN NÀY
                         he_so_z=he_so_z, 
                         che_do=che_do_view, 
                         do_min=do_min_view
