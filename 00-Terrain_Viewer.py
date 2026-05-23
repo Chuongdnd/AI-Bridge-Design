@@ -136,11 +136,9 @@ def convert_to_vn2000(df_ntd, df_coord):
         st.error(f"Lỗi xử lý đồng bộ chuỗi điểm tim thực địa: {e}")
         return pd.DataFrame()
 
-def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3, df_hk=None, df_layers=None, df_spt=None):
+def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
     """
-    🏔️ MÔ HÌNH ĐỊA HÌNH 3D XUYÊN SUỐT TÍCH HỢP ĐỊA CHẤT & SPT (ĐÃ FIX SÓT CỌC)
-    - Quét liên tục qua tất cả các cọc tăng dần theo thứ tự Lý trình.
-    - Tự động lồng ghép Trụ địa chất 3D và đồ thị chỉ số SPT bám theo độ sâu thực tế.
+    🏔️ MÔ HÌNH ĐỊA HÌNH 3D NGUYÊN BẢN - CHỈ VẼ ĐỊA HÌNH SÔNG CỦA CHƯƠNG
     """
     if df.empty: 
         return None
@@ -149,7 +147,6 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3, df_hk=N
         df_clean = df.sort_values(['Lý trình', 'Offset']).copy()
         unique_lts = sorted(df_clean['Lý trình'].unique())
         
-        # Đồng bộ 40 mắt đan trên mỗi mặt cắt ngang line
         num_samples = 40  
         target_pct = np.linspace(0.0, 1.0, num_samples)
         
@@ -157,8 +154,6 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3, df_hk=N
         
         for lt in unique_lts:
             df_sub = df_clean[df_clean['Lý trình'] == lt].sort_values('Offset')
-            
-            # Kiểm tra xem cọc này có chứa chữ TARGETL hoặc TARGETR không (Tag_Gốc có chữ TARGET)
             has_target = df_sub['Tag_Gốc'].str.contains('TARGET', na=False).any()
             
             obs_offsets = df_sub['Offset'].values
@@ -166,18 +161,14 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3, df_hk=N
             obs_y_real = df_sub['Y_Real'].values
             obs_zs = df_sub['Z'].values
             
-            # 🎯 NẾU CỌC SÓT (CHỈ CÓ CHỮ POLE - KHÔNG CÓ CHỮ TARGET): Tự động lấy biên vuốt bù
             if not has_target or len(obs_offsets) < 2:
                 goc_tuyen = df_sub['Góc_Tuyến'].iloc[0]
                 g_offset = goc_tuyen + (np.pi / 2)
-                
-                # Giả lập dải cánh 25m mỗi bên gối đầu mềm dẻo qua cọc phụ
                 offsets_fake = np.linspace(-25.0, 25.0, num_samples)
                 x_line = df_sub['X_VN2000'].iloc[0] + offsets_fake * np.cos(g_offset)
                 y_line = df_sub['Y_VN2000'].iloc[0] + offsets_fake * np.sin(g_offset)
                 z_line = np.repeat(obs_zs[0], num_samples)
             else:
-                # Cọc đo chuẩn chuẩn đầy đủ chữ TARGETL, TARGETR từ file khảo sát
                 pct_goc = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0] + 0.0001)
                 x_line = np.interp(target_pct, pct_goc, obs_x_real)
                 y_line = np.interp(target_pct, pct_goc, obs_y_real)
@@ -191,7 +182,6 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3, df_hk=N
         matrix_y = np.array(matrix_y)
         matrix_z = np.array(matrix_z)
 
-        # Bộ lọc làm mịn rolling trượt giảm thiểu răng cưa đáy sông
         if do_min > 1:
             mz_pd = pd.DataFrame(matrix_z)
             mz_pd = mz_pd.rolling(window=do_min, min_periods=1, center=True).mean()
@@ -200,7 +190,6 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3, df_hk=N
         z_scaled = matrix_z * he_so_z
         fig = go.Figure()
 
-        # Dệt lưới đa giác phủ kín hành lang
         if che_do in ["Bề mặt mịn", "Lưới tam giác"]:
             show_wireframe = True if che_do == "Lưới tam giác" else False
             fig.add_trace(go.Surface(
@@ -222,7 +211,6 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3, df_hk=N
                 hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z Thực: %{customdata:.2f} m<extra></extra>"
             ))
 
-        # ĐƯỜNG CHỈ TIM TUYẾN MÀU ĐỎ VÀ HIỂN THỊ TÊN CỌC + LÝ TRÌNH DỌC SÔNG
         df_tim_all = df_clean[df_clean['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
         if not df_tim_all.empty:
             nhan_hien_thi = df_tim_all.apply(lambda r: f"{r['Cọc']} (LT: {r['Lý trình']:.1f}m)", axis=1).values
@@ -235,86 +223,9 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3, df_hk=N
                 name='Đường tim tuyến dọc sông'
             ))
 
-        # 🎯 KHỐI CHÈN BỔ SUNG: DỰNG TRỤ HỐ KHOAN ĐỊA CHẤT & ĐỒ THỊ SPT THỰC TẾ TRÊN LƯỚI
-        if df_hk is not None and df_layers is not None and df_spt is not None:
-            mau_quy_uoc = {'K': '#8B4513', '1': '#A0522D', '2B': '#4682B4', 'TK4': '#DEB887', '5': '#D2B48C'}
-            
-            for _, hk in df_hk.iterrows():
-                ten_hk = str(hk['Ho_Khoan']).strip()
-                x_hk = float(hk['X_VN2000'])
-                y_hk = float(hk['Y_VN2000'])
-                z_mieng = float(hk['Z_Mieng'])
-                
-                # 1. Vẽ các lớp địa tầng đất đá dạng khối trụ
-                df_sub_layers = df_layers[df_layers['Ho_Khoan'] == ten_hk].sort_values('Tu_Chieu_Sau_Lop')
-                for _, lop in df_sub_layers.iterrows():
-                    tu_d = float(lop['Tu_Chieu_Sau_Lop'])
-                    den_d = float(lop['Den_Chieu_Sau_Lop'])
-                    ten_lop = str(lop['Ten_Lop']).strip().upper()
-                    
-                    mau_nen = mau_quy_uoc.get(ten_lop, '#808080')
-                    z_top = (z_mieng - tu_d) * he_so_z
-                    z_bot = (z_mieng - den_d) * he_so_z
-                    
-                    r_cylinder = 4.0  # Bán kính hình trụ 4 mét dễ quan sát
-                    theta = np.linspace(0, 2 * np.pi, 20)
-                    xs = x_hk + r_cylinder * np.cos(theta)
-                    ys = y_hk + r_cylinder * np.sin(theta)
-                    
-                    fig.add_trace(go.Surface(
-                        x=np.array([xs, xs]), y=np.array([ys, ys]), z=np.array([[z_top] * 20, [z_bot] * 20]),
-                        colorscale=[[0, mau_nen], [1, mau_nen]], showscale=False, opacity=0.9,
-                        name=f"{ten_hk}: Lớp {ten_lop}",
-                        hovertemplate=f"<b>Hố khoan: {ten_hk}</b><br>Tên lớp: {ten_lop}<br>Độ sâu: {tu_d}m - {den_d}m<br>Mô tả: {lop['Mo_Ta']}<extra></extra>"
-                    ))
-                
-                # 2. Vẽ đường biểu đồ biến thiên búa SPT dích dắc màu vàng riêng biệt
-                col_n = [c for c in df_spt.columns if ten_hk in c]
-                if col_n and 'Độ sâu thí nghiệm (m)' in df_spt.columns:
-                    spt_col_name = col_n[0]
-                    df_sub_spt = df_spt[['Độ sâu thí nghiệm (m)', spt_col_name]].dropna()
-                    
-                    spt_x, spt_y, spt_z, spt_n = [], [], [], []
-                    for _, r_spt in df_sub_spt.iterrows():
-                        try:
-                            text_sau = str(r_spt['Độ sâu thí nghiệm (m)'])
-                            n_val = float(r_spt[spt_col_name])
-                            
-                            import re
-                            numbers = [float(num.replace(',', '.')) for num in re.findall(r'[\d,\.]+', text_sau)]
-                            if numbers:
-                                depth_spt = numbers[0]  # Lấy mốc độ sâu bắt đầu thí nghiệm
-                                z_spt = (z_mieng - depth_spt) * he_so_z
-                                
-                                spt_x.append(x_hk + 6.0 + n_val * 0.3)  # Đẩy lệch hông 6m tránh đè lõi trụ
-                                spt_y.append(y_hk)
-                                spt_z.append(z_spt)
-                                spt_n.append(n_val)
-                        except:
-                            continue
-                            
-                    if spt_z:
-                        spt_indices = np.argsort(spt_z)[::-1]
-                        fig.add_trace(go.Scatter3d(
-                            x=np.array(spt_x)[spt_indices], y=np.array(spt_y)[spt_indices], z=np.array(spt_z)[spt_indices],
-                            mode='lines+markers+text',
-                            line=dict(color='yellow', width=3.5), marker=dict(size=5, color='orange'),
-                            text=[f"N={n:.0f}" for n in np.array(spt_n)[spt_indices]], textposition="middle right",
-                            textfont=dict(size=10, color='yellow'),
-                            name=f"Đồ thị SPT {ten_hk}",
-                            hovertemplate="Độ sâu SPT tính từ miệng: %{z:.2f}m<extra></extra>"
-                        ))
-                        
-                        # Trục tim hố chỉ nét đứt làm mốc đứng
-                        max_depth = df_sub_layers['Den_Chieu_Sau_Lop'].max() if not df_sub_layers.empty else 50.0
-                        fig.add_trace(go.Scatter3d(
-                            x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_mieng * he_so_z, (z_mieng - max_depth) * he_so_z],
-                            mode='lines', line=dict(color='white', width=1.5, dash='dash'), showlegend=False
-                        ))
-
         fig.update_layout(
             title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D BÁM SÁT TOÀN TUYẾN NTD", font=dict(size=16, color='#007acc')),
-            height=850,  # ✨ THÊM DÒNG NÀY: Ép chiều cao khung nhìn rộng ra (tăng từ mặc định lên 850px)
+            height=850,
             scene=dict(
                 xaxis_title="Tọa độ X VN-2000 (m)", 
                 yaxis_title="Tọa độ Y VN-2000 (m)", 
@@ -327,8 +238,9 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3, df_hk=N
         )
         return fig
     except Exception as e:
-        st.error(f"Lỗi phân tích đồ họa không gian: {e}")
+        st.error(f"Lỗi phân tích đồ họa không gian địa hình: {e}")
         return None
+ 
 def doc_excel_dia_chat_nguyen_ban(uploaded_file):
     """
     📥 BỘ ĐỌC KHỚP 100% CẤU TRÚC FILE EXCEL CỦA CHƯƠNG:
@@ -500,4 +412,108 @@ def tich_hop_tru_dia_chat_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
                     name=f"Đồ thị SPT {ten_hk}",
                     hovertemplate="Độ sâu SPT tính từ miệng: %{z:.2f}m<extra></extra>"
                 ))
+    return fig
+def ve_them_ho_khoan_3d(fig, df_hk, df_layers, df_spt, he_so_z=1.0):
+    """
+    ⚡ HÀM KHÓA LỖI TỐI HẬU: Đắp thêm hố khoan 3D vào biểu đồ địa hình có sẵn.
+    Có lỗi dữ liệu Excel ở hố nào, chỉ bỏ qua hố đó, KHÔNG LÀM SẬP TOÀN BỘ APP.
+    """
+    if fig is None or df_hk is None or df_hk.empty:
+        return fig
+        
+    mau_quy_uoc = {'K': '#8B4513', '1': '#A0522D', '2B': '#4682B4', 'TK4': '#DEB887', '5': '#D2B48C'}
+    
+    for _, hk in df_hk.iterrows():
+        try:
+            ten_hk = str(hk['Ho_Khoan']).strip()
+            x_hk = float(hk['X_VN2000'])
+            y_hk = float(hk['Y_VN2000'])
+            z_mieng = float(hk['Z_Mieng'])
+            
+            # Kiểm tra xem tọa độ hố khoan có bị rỗng toán học NaN không
+            if np.isnan(x_hk) or np.isnan(y_hk) or np.isnan(z_mieng):
+                continue
+                
+            # 1. Vẽ khối trụ địa tầng của riêng hố này
+            if df_layers is not None and not df_layers.empty:
+                df_sub_layers = df_layers[df_layers['Ho_Khoan'] == ten_hk].sort_values('Tu_Chieu_Sau_Lop')
+                
+                for _, lop in df_sub_layers.iterrows():
+                    try:
+                        tu_d = float(lop['Tu_Chieu_Sau_Lop'])
+                        den_d = float(lop['Den_Chieu_Sau_Lop'])
+                        ten_lop = str(lop['Ten_Lop']).strip().upper()
+                        
+                        txt_mo_ta = str(lop.get('Mo_Ta', ''))
+                        if txt_mo_ta.lower() == 'nan' or pd.isna(lop.get('Mo_Ta')):
+                            txt_mo_ta = "Không có mô tả chi tiết"
+                            
+                        mau_nen = mau_quy_uoc.get(ten_lop, '#808080')
+                        z_top = (z_mieng - tu_d) * he_so_z
+                        z_bot = (z_mieng - den_d) * he_so_z
+                        
+                        r_cylinder = 4.0
+                        theta = np.linspace(0, 2 * np.pi, 20)
+                        xs = x_hk + r_cylinder * np.cos(theta)
+                        ys = y_hk + r_cylinder * np.sin(theta)
+                        
+                        fig.add_trace(go.Surface(
+                            x=np.array([xs, xs]), y=np.array([ys, ys]), z=np.array([[z_top] * 20, [z_bot] * 20]),
+                            colorscale=[[0, mau_nen], [1, mau_nen]], showscale=False, opacity=0.9,
+                            name=f"{ten_hk}: Lớp {ten_lop}",
+                            hovertemplate=f"<b>Hố khoan: {ten_hk}</b><br>Tên lớp: {ten_lop}<br>Độ sâu: {tu_d:.2f}m - {den_d:.2f}m<br>Mô tả: {txt_mo_ta}<extra></extra>"
+                        ))
+                    except:
+                        continue
+            
+            # 2. Vẽ đường dích dắc biểu đồ số búa SPT màu vàng
+            if df_spt is not None and not df_spt.empty:
+                col_n = [c for c in df_spt.columns if ten_hk in c]
+                if col_n and 'Độ sâu thí nghiệm (m)' in df_spt.columns:
+                    spt_col_name = col_n[0]
+                    df_sub_spt = df_spt[['Độ sâu thí nghiệm (m)', spt_col_name]].dropna()
+                    
+                    spt_x, spt_y, spt_z, spt_n = [], [], [], []
+                    for _, r_spt in df_sub_spt.iterrows():
+                        try:
+                            text_sau = str(r_spt['Độ sâu thí nghiệm (m)'])
+                            n_val = float(r_spt[spt_col_name])
+                            
+                            if np.isnan(n_val):
+                                continue
+                                
+                            import re
+                            numbers = [float(num.replace(',', '.')) for num in re.findall(r'[\d,\.]+', text_sau)]
+                            if numbers:
+                                depth_spt = numbers[0]
+                                z_spt = (z_mieng - depth_spt) * he_so_z
+                                
+                                spt_x.append(x_hk + 6.0 + n_val * 0.3)
+                                spt_y.append(y_hk)
+                                spt_z.append(z_spt)
+                                spt_n.append(n_val)
+                        except:
+                            continue
+                            
+                    if spt_z:
+                        spt_indices = np.argsort(spt_z)[::-1]
+                        fig.add_trace(go.Scatter3d(
+                            x=np.array(spt_x)[spt_indices], y=np.array(spt_y)[spt_indices], z=np.array(spt_z)[spt_indices],
+                            mode='lines+markers+text',
+                            line=dict(color='yellow', width=3.5), marker=dict(size=5, color='orange'),
+                            text=[f"N={n:.0f}" for n in np.array(spt_n)[spt_indices]], textposition="middle right",
+                            textfont=dict(size=10, color='yellow'),
+                            name=f"Đồ thị SPT {ten_hk}",
+                            hovertemplate="Độ sâu SPT tính từ miệng: %{z:.2f}m<extra></extra>"
+                        ))
+                        
+                        max_depth = df_sub_layers['Den_Chieu_Sau_Lop'].max() if not df_sub_layers.empty else 50.0
+                        fig.add_trace(go.Scatter3d(
+                            x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_mieng * he_so_z, (z_mieng - max_depth) * he_so_z],
+                            mode='lines', line=dict(color='white', width=1.5, dash='dash'), showlegend=False
+                        ))
+        except Exception as e:
+            # Khóa lỗi cục bộ của một hố khoan để bảo vệ biểu đồ chính
+            continue
+            
     return fig

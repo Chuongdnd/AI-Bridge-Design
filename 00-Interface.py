@@ -289,56 +289,59 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                 ])
                 
                 with tab_dia_hinh_3d:
-                        # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
-                        col_opt1, col_opt2, col_opt3 = st.columns(3)
-                        
-                        with col_opt1:
-                            che_do_view = st.selectbox(
-                                "🎨 Chế độ hiển thị địa hình:", 
-                                ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
-                            )
-                        with col_opt2:
-                            he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
-                        with col_opt3:
-                            do_min_view = st.select_slider(
-                                "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
-                                options=[1, 3, 5, 7], 
-                                value=3, 
-                                help="Mức số càng lớn địa hình uốn lượn uốn cong dọc tuyến sông càng mượt phẳng."
-                            )
-
-                        # 📊 TÍCH HỢP DỮ LIỆU ĐỊA CHẤT CÔNG TRÌNH (TÙY CHỌN)
-                        st.markdown("---")
-                        st.subheader("📊 Tích hợp dữ liệu Địa chất công trình (Tùy chọn)")
-                        file_excel_dc = st.file_uploader("Tải lên file Excel số liệu địa chất nguyên bản:", type=['xlsx'])
-                        
-                        df_hk, df_layers, df_spt = None, None, None
-                        if file_excel_dc is not None:
-                            # Gọi bộ đọc cấu trúc nguyên bản bóc tách từ file của Chương sang
-                            df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_nguyen_ban(file_excel_dc)
-                            if df_hk is not None:
-                                st.success("🎉 Đã đồng bộ cấu trúc hố khoan và dữ liệu độ sâu thí nghiệm SPT thực tế!")
-
-                        # Gọi đúng hàm định danh đã cấu hình và truyền thêm dữ liệu địa chất vào mô hình 3D
-                        fig_3d = TV.ve_dia_hinh_3d(
-                            st.session_state.df_clean if 'df_clean' in st.session_state else df_geology,
-                            he_so_z=he_so_z, 
-                            che_do=che_do_view, 
-                            do_min=do_min_view,
-                            df_hk=df_hk,
-                            df_layers=df_layers,
-                            df_spt=df_spt
+                    # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
+                    col_opt1, col_opt2, col_opt3 = st.columns(3)
+                    
+                    with col_opt1:
+                        che_do_view = st.selectbox(
+                            "🎨 Chế độ hiển thị địa hình:", 
+                            ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
                         )
+                    with col_opt2:
+                        he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
+                    with col_opt3:
+                        do_min_view = st.select_slider(
+                            "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
+                            options=[1, 3, 5, 7], 
+                            value=3, 
+                            help="Mức số càng lớn địa hình uốn lượn uốn cong dọc tuyến sông càng mượt phẳng."
+                        )
+
+                    # 📊 TÍCH HỢP DỮ LIỆU ĐỊA CHẤT CÔNG TRÌNH (TÙY CHỌN)
+                    st.markdown("---")
+                    st.subheader("📊 Tích hợp dữ liệu Địa chất công trình (Tùy chọn)")
+                    file_excel_dc = st.file_uploader("Tải lên file Excel số liệu địa chất nguyên bản:", type=['xlsx'])
+                    
+                    df_hk, df_layers, df_spt = None, None, None
+                    if file_excel_dc is not None:
+                        # Gọi bộ đọc cấu trúc nguyên bản bóc tách thông minh của bạn
+                        df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_nguyen_ban(file_excel_dc)
+                        if df_hk is not None:
+                            st.success("🎉 Đã đọc thành công tệp số liệu địa chất công trình!")
+
+                    # 🟩 LUỒNG 1: Dựng mô hình địa hình sông nguyên bản của Chương (Tuyệt đối an toàn)
+                    fig_3d = TV.ve_dia_hinh_3d(
+                        df_geology, 
+                        he_so_z=he_so_z, 
+                        che_do=che_do_view, 
+                        do_min=do_min_view
+                    )
+                    
+                    # 🟨 LUỒNG 2: Nếu có file Excel địa chất, gọi hàm đắp thêm hố khoan rời rạc lên trên fig_3d
+                    if fig_3d is not None and df_hk is not None:
+                        fig_3d = TV.ve_them_ho_khoan_3d(fig_3d, df_hk, df_layers, df_spt, he_so_z=he_so_z)
+                    
+                    # Hiển thị đồ thị ra màn hình chính (Địa hình luôn hiện, hố khoan đắp thêm nếu hợp lệ)
+                    if fig_3d: 
+                        st.plotly_chart(fig_3d, use_container_width=True)
                         
-                        if fig_3d: 
-                            st.plotly_chart(fig_3d, use_container_width=True)
-                            with tab_trac_doc:
-                                try:
-                                    fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
-                                    if fig_plotly is not None:
-                                        st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-                                except Exception as e:
-                                    st.error(f"Lỗi bản vẽ trắc dọc: {e}")
+                        with tab_trac_doc:
+                            try:
+                                fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
+                                if fig_plotly is not None:
+                                    st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+                            except Exception as e:
+                                st.error(f"Lỗi bản vẽ trắc dọc: {e}")
                         
                 with tab_mcn_draw:
                     try:
