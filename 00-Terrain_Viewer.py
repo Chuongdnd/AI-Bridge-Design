@@ -261,11 +261,15 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3, df_hk=N
                     xs = x_hk + r_cylinder * np.cos(theta)
                     ys = y_hk + r_cylinder * np.sin(theta)
                     
+                    txt_mo_ta = str(lop.get('Mo_Ta', ''))
+                    if txt_mo_ta == 'nan' or pd.isna(lop.get('Mo_Ta')):
+                        txt_mo_ta = "Không có mô tả chi tiết"
+
                     fig.add_trace(go.Surface(
                         x=np.array([xs, xs]), y=np.array([ys, ys]), z=np.array([[z_top] * 20, [z_bot] * 20]),
                         colorscale=[[0, mau_nen], [1, mau_nen]], showscale=False, opacity=0.9,
                         name=f"{ten_hk}: Lớp {ten_lop}",
-                        hovertemplate=f"<b>Hố khoan: {ten_hk}</b><br>Tên lớp: {ten_lop}<br>Độ sâu: {tu_d}m - {den_d}m<br>Mô tả: {lop['Mo_Ta']}<extra></extra>"
+                        hovertemplate=f"<b>Hố khoan: {ten_hk}</b><br>Tên lớp: {ten_lop}<br>Độ sâu: {tu_d:.2f}m - {den_d:.2f}m<br>Mô tả: {txt_mo_ta}<extra></extra>"
                     ))
                 
                 # 2. Vẽ đường biểu đồ biến thiên búa SPT dích dắc màu vàng riêng biệt
