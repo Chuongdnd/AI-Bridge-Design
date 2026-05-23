@@ -236,13 +236,17 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
             ))
 
         fig.update_layout(
+            title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D BÁM SÁT TOÀN TUYẾN NTD", font=dict(size=16, color='#007acc')),
+            height=850,  # ✨ THÊM DÒNG NÀY: Ép chiều cao khung nhìn rộng ra (tăng từ mặc định lên 850px)
             scene=dict(
                 xaxis_title="Tọa độ X VN-2000 (m)", 
                 yaxis_title="Tọa độ Y VN-2000 (m)", 
                 zaxis_title="Cao độ Z (m)", 
                 aspectmode='data'
             ),
-            template="plotly_dark", margin=dict(l=10, r=10, t=40, b=10), paper_bgcolor='#0e1117'
+            template="plotly_dark", 
+            margin=dict(l=10, r=10, t=40, b=10), 
+            paper_bgcolor='#0e1117'
         )
         return fig
     except Exception as e:
