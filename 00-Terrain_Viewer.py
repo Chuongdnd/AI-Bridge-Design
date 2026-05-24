@@ -239,7 +239,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
 
         fig.update_layout(
             title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D BÁM SÁT TOÀN TUYẾN NTD", font=dict(size=16, color='#007acc')),
-            height=850,
+            height=850,  # ✨ THÊM DÒNG NÀY: Ép chiều cao khung nhìn rộng ra (tăng từ mặc định lên 850px)
             scene=dict(
                 xaxis_title="Tọa độ X VN-2000 (m)", 
                 yaxis_title="Tọa độ Y VN-2000 (m)", 
@@ -250,11 +250,10 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
             margin=dict(l=10, r=10, t=40, b=10), 
             paper_bgcolor='#0e1117'
         )
-        # Trả về fig + 2 ma trận gốc để Interface dùng trực tiếp cho địa chất
-        return fig, matrix_x, matrix_y
+        return fig
     except Exception as e:
         st.error(f"Lỗi phân tích đồ họa không gian: {e}")
-        return None, None, None
+        return None
 
 # =========================================================================
 # ⚙️ PHÂN HỆ XỬ LÝ ĐỊA CHẤT NÂNG CAO - LÀM SẠCH VÀ CHUẨN HÓA 100%
@@ -299,31 +298,43 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
                 
             df_layer_raw.columns = [str(c).strip().upper() for c in df_layer_raw.columns]
             
-            # ✨ THUẬT TOÁN DÒ TÌM AN TOÀN: Tránh bẫy [0] gây out of range
-            c_lop_list = [c for c in df_layer_raw.columns if any(k in c for k in ['TÊN LỚP', 'Ten_Lop', 'LỚP', 'LOP', 'ĐẤT', 'DAT'])]
-            c_tu_list = [c for c in df_layer_raw.columns if any(k in c for k in ['TỪ', 'Tu_Chieu_Sau', 'DEPTH', 'FROM'])]
-            c_den_list = [c for c in df_layer_raw.columns if any(k in c for k in ['ĐẾN', 'Den_Chieu_Sau', 'TO'])]
+            # ✅ THUẬT TOÁN DÒ TÌM AN TOÀN: keyword đã UPPER khớp với tên cột đã upper()
+            c_hk_list  = [c for c in df_layer_raw.columns if any(k in c for k in ['HO_KHOAN', 'HO KHOAN', 'TEN_HK', 'NAME'])]
+            c_lop_list = [c for c in df_layer_raw.columns if any(k in c for k in ['TEN_LOP', 'LOP', 'DAT'])]
+            c_tu_list  = [c for c in df_layer_raw.columns if any(k in c for k in ['TU_CHIEU_SAU', 'TU CHIEU', 'FROM'])]
+            c_den_list = [c for c in df_layer_raw.columns if any(k in c for k in ['DEN_CHIEU_SAU', 'DEN CHIEU'])]
             
-            # Khởi tạo chỉ mục mặc định nếu không dò ra từ khóa tiếng Việt/Anh
-            col_lop = c_lop_list[0] if c_lop_list else df_layer_raw.columns[0]
-            col_tu = c_tu_list[0] if c_tu_list else (df_layer_raw.columns[1] if len(df_layer_raw.columns) > 1 else None)
+            # Khởi tạo chỉ mục mặc định theo thứ tự cột nếu không dò ra từ khóa
+            col_hk  = c_hk_list[0]  if c_hk_list  else (df_layer_raw.columns[0] if len(df_layer_raw.columns) > 0 else None)
+            col_lop = c_lop_list[0] if c_lop_list else (df_layer_raw.columns[3] if len(df_layer_raw.columns) > 3 else df_layer_raw.columns[0])
+            col_tu  = c_tu_list[0]  if c_tu_list  else (df_layer_raw.columns[1] if len(df_layer_raw.columns) > 1 else None)
             col_den = c_den_list[0] if c_den_list else (df_layer_raw.columns[2] if len(df_layer_raw.columns) > 2 else None)
             
             if col_tu is None or col_den is None:
                 continue # Bỏ qua nếu sheet không đủ cột dữ liệu tối thiểu
             
+            seen_layers = set()  # Loại bỏ hàng trùng lặp cùng hố + chiều sâu + lớp
             for _, r in df_layer_raw.iterrows():
                 try:
                     tu_v = float(str(r[col_tu]).replace(',', '.'))
                     den_v = float(str(r[col_den]).replace(',', '.'))
                     if np.isnan(tu_v) or np.isnan(den_v): 
                         continue
-                        
+                    
+                    # ✅ LẤY TÊN HỐ KHOAN TỪ CỘT DATA (không dùng tên sheet)
+                    ten_hk = str(r[col_hk]).strip().upper() if col_hk else str(sheet).strip().upper()
+                    ten_lop = str(r[col_lop]).strip().upper()
+                    
+                    dedup_key = (ten_hk, round(tu_v, 3), round(den_v, 3), ten_lop)
+                    if dedup_key in seen_layers:
+                        continue
+                    seen_layers.add(dedup_key)
+                    
                     list_layers.append({
-                        'Ho_Khoan': str(sheet).strip().upper(),
+                        'Ho_Khoan': ten_hk,
                         'Tu_Chieu_Sau_Lop': tu_v,
                         'Den_Chieu_Sau_Lop': den_v,
-                        'Ten_Lop': str(r[col_lop]).strip().upper()
+                        'Ten_Lop': ten_lop
                     })
                 except: 
                     continue
@@ -488,10 +499,11 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
             # Dệt thảm mặt phân cách địa chất
             grid_z = griddata((pt_x, pt_y), pt_z_bot, (gx, gy), method='nearest')
             
-            # ✨ CẮT NGẮT PHƯƠNG NGANG: Bo trùm khít theo chu vi trắc ngang địa hình sông (vectorized)
-            pts_flat = np.column_stack((gx.ravel(), gy.ravel()))
-            mask_out = ~poly_terrain.contains_points(pts_flat).reshape(gx.shape)
-            grid_z[mask_out] = np.nan
+            # ✨ CẮT NGẮT PHƯƠNG NGANG: Bo trùm khít theo chu vi trắc ngang địa hình sông
+            for r in range(gx.shape[0]):
+                for c in range(gx.shape[1]):
+                    if not poly_terrain.contains_point((gx[r, c], gy[r, c])):
+                        grid_z[r, c] = np.nan
                         
             grid_z_scaled = grid_z * he_so_z
             m_color = mau_quy_uoc.get(lop_dat, '#808080')
