@@ -293,24 +293,39 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
             if 'SPT' in sheet.upper() or 'TOADO' in sheet.upper() or 'TỌA ĐỘ' in sheet.upper():
                 continue
             df_layer_raw = pd.read_excel(uploaded_file, sheet_name=sheet)
+            if df_layer_raw.empty:
+                continue
+                
             df_layer_raw.columns = [str(c).strip().upper() for c in df_layer_raw.columns]
             
-            c_lop = [c for c in df_layer_raw.columns if 'TÊN LỚP' in c or 'TEN_LOP' in c or 'LOP' in c][0]
-            c_tu = [c for c in df_layer_raw.columns if 'TỪ' in c or 'TU_' in c or 'DEPTH' in c][0]
-            c_den = [c for c in df_layer_raw.columns if 'ĐẾN' in c or 'DEN_' in c][0]
+            # ✨ THUẬT TOÁN DÒ TÌM AN TOÀN: Tránh bẫy [0] gây out of range
+            c_lop_list = [c for c in df_layer_raw.columns if any(k in c for k in ['TÊN LỚP', 'TEN_LOP', 'LỚP', 'LOP', 'ĐẤT', 'DAT'])]
+            c_tu_list = [c for c in df_layer_raw.columns if any(k in c for k in ['TỪ', 'TU_', 'DEPTH', 'FROM'])]
+            c_den_list = [c for c in df_layer_raw.columns if any(k in c for k in ['ĐẾN', 'DEN_', 'TO'])]
+            
+            # Khởi tạo chỉ mục mặc định nếu không dò ra từ khóa tiếng Việt/Anh
+            col_lop = c_lop_list[0] if c_lop_list else df_layer_raw.columns[0]
+            col_tu = c_tu_list[0] if c_tu_list else (df_layer_raw.columns[1] if len(df_layer_raw.columns) > 1 else None)
+            col_den = c_den_list[0] if c_den_list else (df_layer_raw.columns[2] if len(df_layer_raw.columns) > 2 else None)
+            
+            if col_tu is None or col_den is None:
+                continue # Bỏ qua nếu sheet không đủ cột dữ liệu tối thiểu
             
             for _, r in df_layer_raw.iterrows():
                 try:
-                    tu_v = float(str(r[c_tu]).replace(',', '.'))
-                    den_v = float(str(r[c_den]).replace(',', '.'))
-                    if np.isnan(tu_v) or np.isnan(den_v): continue
+                    tu_v = float(str(r[col_tu]).replace(',', '.'))
+                    den_v = float(str(r[col_den]).replace(',', '.'))
+                    if np.isnan(tu_v) or np.isnan(den_v): 
+                        continue
+                        
                     list_layers.append({
                         'Ho_Khoan': str(sheet).strip().upper(),
                         'Tu_Chieu_Sau_Lop': tu_v,
                         'Den_Chieu_Sau_Lop': den_v,
-                        'Ten_Lop': str(r[c_lop]).strip().upper()
+                        'Ten_Lop': str(r[col_lop]).strip().upper()
                     })
-                except: continue
+                except: 
+                    continue
         df_layers = pd.DataFrame(list_layers)
         
         # 3. Đọc thông số số búa thí nghiệm SPT
