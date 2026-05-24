@@ -239,7 +239,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
 
         fig.update_layout(
             title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D BÁM SÁT TOÀN TUYẾN NTD", font=dict(size=16, color='#007acc')),
-            height=850,  # ✨ THÊM DÒNG NÀY: Ép chiều cao khung nhìn rộng ra (tăng từ mặc định lên 850px)
+            height=850,
             scene=dict(
                 xaxis_title="Tọa độ X VN-2000 (m)", 
                 yaxis_title="Tọa độ Y VN-2000 (m)", 
@@ -250,10 +250,11 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
             margin=dict(l=10, r=10, t=40, b=10), 
             paper_bgcolor='#0e1117'
         )
-        return fig
+        # Trả về fig + 2 ma trận gốc để Interface dùng trực tiếp cho địa chất
+        return fig, matrix_x, matrix_y
     except Exception as e:
         st.error(f"Lỗi phân tích đồ họa không gian: {e}")
-        return None
+        return None, None, None
 
 # =========================================================================
 # ⚙️ PHÂN HỆ XỬ LÝ ĐỊA CHẤT NÂNG CAO - LÀM SẠCH VÀ CHUẨN HÓA 100%
@@ -487,11 +488,10 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
             # Dệt thảm mặt phân cách địa chất
             grid_z = griddata((pt_x, pt_y), pt_z_bot, (gx, gy), method='nearest')
             
-            # ✨ CẮT NGẮT PHƯƠNG NGANG: Bo trùm khít theo chu vi trắc ngang địa hình sông
-            for r in range(gx.shape[0]):
-                for c in range(gx.shape[1]):
-                    if not poly_terrain.contains_point((gx[r, c], gy[r, c])):
-                        grid_z[r, c] = np.nan
+            # ✨ CẮT NGẮT PHƯƠNG NGANG: Bo trùm khít theo chu vi trắc ngang địa hình sông (vectorized)
+            pts_flat = np.column_stack((gx.ravel(), gy.ravel()))
+            mask_out = ~poly_terrain.contains_points(pts_flat).reshape(gx.shape)
+            grid_z[mask_out] = np.nan
                         
             grid_z_scaled = grid_z * he_so_z
             m_color = mau_quy_uoc.get(lop_dat, '#808080')

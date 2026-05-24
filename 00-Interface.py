@@ -319,17 +319,12 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                             st.success(f"🎉 Hệ thống định vị thành công {len(df_hk)} hố khảo sát!")
 
                     # 🟩 LUỒNG 1: Dựng sa bàn lưới bề mặt địa hình sông thực địa VN-2000
-                    fig_3d = TV.ve_dia_hinh_3d(df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view)
+                    fig_3d, mx_terrain, my_terrain = TV.ve_dia_hinh_3d(df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view)
                     
                     # 🟨 LUỒNG 2: Nếu có file Excel địa chất, tiến hành đắp kết cấu phân tầng thấu kính & SPT lên trên fig_3d
-                    if fig_3d is not None and df_hk is not None and not df_hk.empty:
+                    if fig_3d is not None and mx_terrain is not None and df_hk is not None and not df_hk.empty:
                         try:
-                            # Trích xuất ma trận lưới trắc ngang thực tế đáy sông để khống chế biên hình học trùm khít
-                            surface_trace = [t for t in fig_3d.data if t.type == 'surface'][0]
-                            mx_terrain = surface_trace.x
-                            my_terrain = surface_trace.y
-                            
-                            # Gọi hàm bổ sung đắp địa chất bám sát theo biên ma trận trắc ngang lòng sông của Chương
+                            # Gọi hàm bổ sung đắp địa chất bám sát theo biên ma trận trắc ngang lòng sông
                             fig_3d = TV.dap_them_ket_cau_dia_chat_3d(
                                 fig_3d, df_hk, df_layers, df_spt, mx_terrain, my_terrain, he_so_z=he_so_z
                             )
