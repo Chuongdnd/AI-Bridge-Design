@@ -281,49 +281,61 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                 st.success(f"⚡ Hệ thống đã đồng bộ thành công {len(df_geology)} điểm mia không gian theo tọa độ tim thực tế VN-2000!")
                 
                 # Nhóm 4 Tab con hiển thị khi CÓ ĐẦY ĐỦ dữ liệu khảo sát và tọa độ thực
-                tab_binhdo_2d, tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
-                    "🗺️ Bình đồ định vị thực tế VN-2000",
+                tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
                     "🏔️ Mô hình Địa hình 3D",
                     "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
                     "📐 Bản vẽ Mặt cắt ngang điển hình"
                 ])
                 
                 with tab_dia_hinh_3d:
-                        # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
-                        col_opt1, col_opt2, col_opt3 = st.columns(3)
-                        
-                        with col_opt1:
-                            che_do_view = st.selectbox(
-                                "🎨 Chế độ hiển thị địa hình:", 
-                                ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
-                            )
-                        with col_opt2:
-                            he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
-                        with col_opt3:
-                            do_min_view = st.select_slider(
-                                "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
-                                options=[1, 3, 5, 7], 
-                                value=3, 
-                                help="Mức số càng lớn địa hình uốn lượn uốn cong dọc tuyến sông càng mượt phẳng."
-                            )
-
-                        # Gọi đúng hàm định danh đã cấu hình khóa an toàn lỗi AttributeError
-                        fig_3d = TV.ve_dia_hinh_3d(
-                            df_geology, 
-                            he_so_z=he_so_z, 
-                            che_do=che_do_view, 
-                            do_min=do_min_view
+                    # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
+                    col_opt1, col_opt2, col_opt3 = st.columns(3)
+                    with col_opt1:
+                        che_do_view = st.selectbox(
+                            "🎨 Chế độ hiển thị địa hình:", 
+                            ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
                         )
-                        
-                        if fig_3d: 
-                            st.plotly_chart(fig_3d, use_container_width=True)
-                            with tab_trac_doc:
-                                try:
-                                    fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
-                                    if fig_plotly is not None:
-                                        st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-                                except Exception as e:
-                                    st.error(f"Lỗi bản vẽ trắc dọc: {e}")
+                    with col_opt2:
+                        he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
+                    with col_opt3:
+                        do_min_view = st.select_slider(
+                            "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
+                            options=[1, 3, 5, 7], 
+                            value=3
+                        )
+
+                    # 📊 CỔNG PHÂN HỆ NẠP FILE EXCEL ĐỊA CHẤT 3 SHEET CỦA CHƯƠNG
+                    st.markdown("---")
+                    st.subheader("📊 Tích hợp Bản mô phỏng Địa chất Công trình chuyên sâu")
+                    file_excel_dc = st.file_uploader("Tải lên file Excel số liệu địa chất trọn gói ba sheet:", type=['xlsx'])
+                    
+                    df_hk, df_layers, df_spt = None, None, None
+                    if file_excel_dc is not None:
+                        df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
+                        if df_hk is not None and not df_hk.empty:
+                            st.success(f"🎉 Hệ thống định vị thành công {len(df_hk)} hố khảo sát và cấu trúc phân tầng thấu kính!")
+
+                    # 🟩 LUỒNG 1: Dựng sa bàn lưới bề mặt địa hình sông thực địa VN-2000
+                    fig_3d = TV.ve_dia_hinh_3d(df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view)
+                    
+                    # 🟨 LUỒNG 2: Nếu có file Excel địa chất, tiến hành đắp kết cấu phân tầng thấu kính & SPT lên trên fig_3d
+                    if fig_3d is not None and df_hk is not None and not df_hk.empty:
+                        try:
+                            # Trích xuất ma trận lưới trắc ngang thực tế đáy sông để khống chế biên hình học trùm khít
+                            surface_trace = [t for t in fig_3d.data if t.type == 'surface'][0]
+                            mx_terrain = surface_trace.x
+                            my_terrain = surface_trace.y
+                            
+                            # Gọi hàm bổ sung đắp địa chất bám sát theo biên ma trận trắc ngang lòng sông của Chương
+                            fig_3d = TV.dap_them_ket_cau_dia_chat_3d(
+                                fig_3d, df_hk, df_layers, df_spt, mx_terrain, my_terrain, he_so_z=he_so_z
+                            )
+                        except Exception as e:
+                            st.warning(f"Cảnh báo cấu trúc đồng bộ biên không gian: {e}")
+
+                    # Hiển thị sa bàn đồ họa tích hợp ra màn hình chính
+                    if fig_3d: 
+                        st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
                         
                 with tab_mcn_draw:
                     try:
