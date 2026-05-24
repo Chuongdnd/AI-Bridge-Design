@@ -7,8 +7,8 @@ from scipy.interpolate import griddata
 
 def parse_ntd_file(uploaded_file):
     """
-    🏔️ BỘ GIẢI MÃ FILE .NTD NGUYÊN BẢN CỦA CHƯƠNG:
-    - Trích xuất dữ liệu trắc ngang trắc dọc từ file khảo sát địa hình sông.
+    BỘ GIẢI MÃ FILE .NTD TOÀN DIỆN KHÔNG GIAN
+    - Phân loại trực tiếp bằng cách đọc chữ 'POLE', 'TARGETL', 'TARGETR'
     """
     data_points = []
     raw_content = uploaded_file.read()
@@ -30,59 +30,64 @@ def parse_ntd_file(uploaded_file):
             
         token = parts[0].upper()
         
+        # 1. Đọc chữ POLE lấy tọa độ tim tuyến
         if token == 'POLE' and len(parts) >= 4:
             try:
-                current_pole = parts[1].strip()
+                current_pole = parts[1].strip().upper()
                 current_x = float(parts[2])
                 z_tim = float(parts[3])
                 
                 data_points.append({
-                    'Cọc': current_pole, 'Lý trình': current_x, 'Offset': 0.0, 'Z': z_tim,
-                    'Tag_Gốc': 'POLE'
+                    'Cọc': current_pole, 'Lý trình': current_x, 'Offset': 0.0, 'Z': z_tim, 'Tag_Gốc': 'POLE'
                 })
-            except:
-                continue
-                
+            except ValueError:
+                pass
+        # 2. Đọc chữ TARGETL/R lấy tọa độ cánh trắc ngang thực tế
         elif token in ['TARGETL', 'TARGETR'] and len(parts) >= 3:
             try:
-                offset = float(parts[1])
+                dist_offset = float(parts[1])
                 z_val = float(parts[2])
                 
-                data_points.append({
-                    'Cọc': current_pole, 'Lý trình': current_x, 'Offset': offset, 'Z': z_val,
-                    'Tag_Gốc': 'TARGET'
-                })
-            except:
-                continue
+                if current_pole:
+                    data_points.append({
+                        'Cọc': current_pole, 'Lý trình': current_x, 'Offset': dist_offset, 'Z': z_val, 'Tag_Gốc': token
+                    })
+            except ValueError:
+                pass
                 
     return pd.DataFrame(data_points)
 
 def parse_coordinate_file(uploaded_file):
     """
-    📍 BỘ GIẢI MÃ TOẠ ĐỘ MỐC TIM TUYẾN:
-    - Đọc file Excel chứa tọa độ thực địa để đồng bộ phẳng VN-2000.
+    BỘ GIẢI MÃ BẢNG TOẠ ĐỘ VN-2000
     """
     try:
-        df = pd.read_excel(uploaded_file)
-        df.columns = [str(c).strip() for c in df.columns]
-        
-        c_name = [c for c in df.columns if any(k in c.upper() for k in ['TÊN', 'CỌC', 'POLE', 'MÃ'])]
-        c_x = [c for c in df.columns if 'X' in c.upper()]
-        c_y = [c for c in df.columns if 'Y' in c.upper()]
-        
-        if not c_name or not c_x or not c_y:
-            st.error("File toạ độ cọc thiếu cột tên cọc hoặc toạ độ X, Y!")
-            return None
+        if uploaded_file.name.endswith('.csv'):
+            df_coord = pd.read_csv(uploaded_file, skiprows=1)
+        else:
+            df_coord = pd.read_excel(uploaded_file, skiprows=1)
             
-        df_clean = pd.DataFrame({
-            'Cọc_Excel': df[c_name[0]].astype(str).str.strip().str.upper(),
-            'X_VN2000': pd.to_numeric(df[c_x[0]], errors='coerce'),
-            'Y_VN2000': pd.to_numeric(df[c_y[0]], errors='coerce')
-        }).dropna()
+        df_coord.columns = [str(c).strip().upper() for c in df_coord.columns]
         
-        return df_clean
+        try:
+            col_name = [c for c in df_coord.columns if 'CỌC' in c or 'TEN' in c][0]
+        except IndexError:
+            col_name = df_coord.columns[1]
+            
+        col_x = df_coord.columns[3]
+        col_y = df_coord.columns[4]
+        
+        x_numeric = pd.to_numeric(df_coord[col_x], errors='coerce')
+        y_numeric = pd.to_numeric(df_coord[col_y], errors='coerce')
+        
+        df_clean = pd.DataFrame({
+            'Cọc_Excel': df_coord[col_name].astype(str).str.strip().str.upper(),
+            'X_VN2000': x_numeric,
+            'Y_VN2000': y_numeric
+        })
+        return df_clean.dropna(subset=['X_VN2000', 'Y_VN2000']).reset_index(drop=True)
     except Exception as e:
-        st.error(f"Lỗi đọc file toạ độ mốc: {e}")
+        st.error(f"Lỗi đọc file bảng tọa độ VN-2000: {e}")
         return None
 
 def convert_to_vn2000(df_ntd, df_coord):
