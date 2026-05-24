@@ -299,9 +299,9 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
             df_layer_raw.columns = [str(c).strip().upper() for c in df_layer_raw.columns]
             
             # ✨ THUẬT TOÁN DÒ TÌM AN TOÀN: Tránh bẫy [0] gây out of range
-            c_lop_list = [c for c in df_layer_raw.columns if any(k in c for k in ['TÊN LỚP', 'TEN_LOP', 'LỚP', 'LOP', 'ĐẤT', 'DAT'])]
-            c_tu_list = [c for c in df_layer_raw.columns if any(k in c for k in ['TỪ', 'TU_', 'DEPTH', 'FROM'])]
-            c_den_list = [c for c in df_layer_raw.columns if any(k in c for k in ['ĐẾN', 'DEN_', 'TO'])]
+            c_lop_list = [c for c in df_layer_raw.columns if any(k in c for k in ['TÊN LỚP', 'Ten_Lop', 'LỚP', 'LOP', 'ĐẤT', 'DAT'])]
+            c_tu_list = [c for c in df_layer_raw.columns if any(k in c for k in ['TỪ', 'Tu_Chieu_Sau', 'DEPTH', 'FROM'])]
+            c_den_list = [c for c in df_layer_raw.columns if any(k in c for k in ['ĐẾN', 'Den_Chieu_Sau', 'TO'])]
             
             # Khởi tạo chỉ mục mặc định nếu không dò ra từ khóa tiếng Việt/Anh
             col_lop = c_lop_list[0] if c_lop_list else df_layer_raw.columns[0]
