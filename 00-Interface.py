@@ -274,73 +274,56 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
         df_coord = TV.parse_coordinate_file(file_toa_do)
         
         if df_coord is not None and not df_ntd.empty:
-            # ✨ NÂNG CẤP: Thuật toán nội suy tuyến tính đồng bộ tọa độ phẳng trắc đạc VN-2000
+            # Thuật toán đồng bộ tuần tự các điểm tim tương ứng giữa NTD và Excel
             df_geology = TV.convert_to_vn2000(df_ntd, df_coord)
             
             if not df_geology.empty:
                 st.success(f"⚡ Hệ thống đã đồng bộ thành công {len(df_geology)} điểm mia không gian theo tọa độ tim thực tế VN-2000!")
                 
                 # Nhóm 4 Tab con hiển thị khi CÓ ĐẦY ĐỦ dữ liệu khảo sát và tọa độ thực
-                tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
+                tab_binhdo_2d, tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
+                    "🗺️ Bình đồ định vị thực tế VN-2000",
                     "🏔️ Mô hình Địa hình 3D",
                     "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
                     "📐 Bản vẽ Mặt cắt ngang điển hình"
                 ])
                 
                 with tab_dia_hinh_3d:
-                    # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
-                    col_opt1, col_opt2, col_opt3 = st.columns(3)
-                    
-                    with col_opt1:
-                        che_do_view = st.selectbox(
-                            "🎨 Chế độ hiển thị địa hình:", 
-                            ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
-                        )
-                    with col_opt2:
-                        he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
-                    with col_opt3:
-                        do_min_view = st.select_slider(
-                            "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
-                            options=[1, 3, 5, 7], 
-                            value=3, 
-                            help="Mức số càng lớn địa hình uốn lượn uốn cong dọc tuyến sông càng mượt phẳng."
-                        )
-
-                    # 📊 TÍCH HỢP DỮ LIỆU ĐỊA CHẤT CÔNG TRÌNH (TÙY CHỌN)
-                    st.markdown("---")
-                    st.subheader("📊 Tích hợp dữ liệu Địa chất công trình (Tùy chọn)")
-                    file_excel_dc = st.file_uploader("Tải lên file Excel số liệu địa chất nguyên bản:", type=['xlsx'])
-                    
-                    df_hk, df_layers, df_spt = None, None, None
-                    if file_excel_dc is not None:
-                        # Gọi bộ đọc cấu trúc nguyên bản bóc tách thông minh của Chương
-                        df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_nguyen_ban(file_excel_dc)
-                        if df_hk is not None:
-                            st.success("🎉 Đã đọc thành công tệp số liệu địa chất công trình!")
-
-                    # 🟩 LUỒNG 1: Dựng mô hình địa hình sông thực tế từ file NTD đã đồng bộ phẳng (Tuyệt đối an toàn)
-                    fig_3d = TV.ve_dia_hinh_3d(
-                        df_geology,  # ✨ BẮT BUỘC PHẢI DÙNG BIẾN NÀY
-                        he_so_z=he_so_z, 
-                        che_do=che_do_view, 
-                        do_min=do_min_view
-                    )
-                    
-                    # 🟨 LUỒNG 2: Nếu nạp file Excel địa chất, gọi hàm đắp thêm hố khoan Scatter3D siêu nhẹ lên trên
-                    if fig_3d is not None and df_hk is not None:
-                        fig_3d = TV.ve_them_ho_khoan_3d(fig_3d, df_hk, df_layers, df_spt, he_so_z=he_so_z)
-                    
-                    # Hiển thị sa bàn đồ họa tích hợp ra màn hình chính
-                    if fig_3d: 
-                        st.plotly_chart(fig_3d, use_container_width=True)
+                        # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
+                        col_opt1, col_opt2, col_opt3 = st.columns(3)
                         
-                        with tab_trac_doc:
-                            try:
-                                fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
-                                if fig_plotly is not None:
-                                    st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-                            except Exception as e:
-                                st.error(f"Lỗi bản vẽ trắc dọc: {e}")
+                        with col_opt1:
+                            che_do_view = st.selectbox(
+                                "🎨 Chế độ hiển thị địa hình:", 
+                                ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
+                            )
+                        with col_opt2:
+                            he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
+                        with col_opt3:
+                            do_min_view = st.select_slider(
+                                "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
+                                options=[1, 3, 5, 7], 
+                                value=3, 
+                                help="Mức số càng lớn địa hình uốn lượn uốn cong dọc tuyến sông càng mượt phẳng."
+                            )
+
+                        # Gọi đúng hàm định danh đã cấu hình khóa an toàn lỗi AttributeError
+                        fig_3d = TV.ve_dia_hinh_3d(
+                            df_geology, 
+                            he_so_z=he_so_z, 
+                            che_do=che_do_view, 
+                            do_min=do_min_view
+                        )
+                        
+                        if fig_3d: 
+                            st.plotly_chart(fig_3d, use_container_width=True)
+                            with tab_trac_doc:
+                                try:
+                                    fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
+                                    if fig_plotly is not None:
+                                        st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
+                                except Exception as e:
+                                    st.error(f"Lỗi bản vẽ trắc dọc: {e}")
                         
                 with tab_mcn_draw:
                     try:
