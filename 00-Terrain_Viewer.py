@@ -145,7 +145,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
     - Cọc nào thiếu chữ 'TARGETL/R' sẽ được tự động bù biên từ các cọc đầy đủ lân cận để vuốt nối liền mạch.
     """
     if df.empty: 
-        return None
+        return None, None, None
     
     try:
         df_clean = df.sort_values(['Lý trình', 'Offset']).copy()
@@ -250,10 +250,10 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
             margin=dict(l=10, r=10, t=40, b=10), 
             paper_bgcolor='#0e1117'
         )
-        return fig
+        return fig, matrix_x, matrix_y
     except Exception as e:
         st.error(f"Lỗi phân tích đồ họa không gian: {e}")
-        return None
+        return None, None, None
 
 # =========================================================================
 # ⚙️ PHÂN HỆ XỬ LÝ ĐỊA CHẤT NÂNG CAO - LÀM SẠCH VÀ CHUẨN HÓA 100%
