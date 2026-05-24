@@ -332,7 +332,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                             st.warning(f"Cảnh báo cấu trúc đồng bộ biên không gian: {e}")
 
                     # Hiển thị sa bàn đồ họa tích hợp ra màn hình chính
-                    if fig_3d: 
+                    if fig_3d is not None:
                         st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
                         
                 with tab_mcn_draw:
