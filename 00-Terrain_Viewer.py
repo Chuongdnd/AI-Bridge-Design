@@ -3,7 +3,6 @@ import plotly.graph_objects as go
 import pandas as pd
 import numpy as np
 import re
-from scipy.interpolate import griddata
 
 def parse_ntd_file(uploaded_file):
     """
@@ -145,7 +144,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
     - Cọc nào thiếu chữ 'TARGETL/R' sẽ được tự động bù biên từ các cọc đầy đủ lân cận để vuốt nối liền mạch.
     """
     if df.empty: 
-        return None
+        return None, None, None, None
     
     try:
         df_clean = df.sort_values(['Lý trình', 'Offset']).copy()
@@ -250,10 +249,10 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
             margin=dict(l=10, r=10, t=40, b=10), 
             paper_bgcolor='#0e1117'
         )
-        return fig
+        return fig, matrix_x, matrix_y, matrix_z
     except Exception as e:
         st.error(f"Lỗi phân tích đồ họa không gian: {e}")
-        return None
+        return None, None, None, None
 
 # =========================================================================
 # ⚙️ PHÂN HỆ XỬ LÝ ĐỊA CHẤT NÂNG CAO - LÀM SẠCH VÀ CHUẨN HÓA 100%
@@ -278,7 +277,8 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
         c_name = [c for c in df_hk_raw.columns if any(k in c for k in ['HỐ KHOAN', 'Ho_Khoan', 'TÊN', 'CỌC'])][0]
         c_x = [c for c in df_hk_raw.columns if 'X_VN2000' in c or 'X=' in c or 'X ' in c][0]
         c_y = [c for c in df_hk_raw.columns if 'Y_VN2000' in c or 'Y=' in c or 'Y ' in c][0]
-        c_z = [c for c in df_hk_raw.columns if 'Z_Mieng' in c or 'CAO ĐỘ' in c or 'Z' in c][0]
+        c_z_list = [c for c in df_hk_raw.columns if 'Z_MIENG' in c or 'CAO ĐỘ' in c or 'CAO DO' in c]
+        c_z = c_z_list[0] if c_z_list else [c for c in df_hk_raw.columns if c.endswith('Z') or c == 'Z'][0]
         
         df_hk = pd.DataFrame({
             'Ho_Khoan': df_hk_raw[c_name].astype(str).str.strip().str.upper(),
@@ -339,168 +339,188 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
         st.error(f"Lỗi đọc dữ liệu cấu trúc Excel địa chất: {e}")
         return None, None, None
 
-def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix_y, he_so_z=1.0):
+def _lam_sach_ten_hk(text):
+    """Chuẩn hóa tên hố khoan: 'HK - 1' -> 'HK1'."""
+    return re.sub(r'[^A-Z0-9]', '', str(text).upper().strip())
+
+def _tinh_tuyen_dia_hinh(matrix_x, matrix_y):
     """
-    🏗️ HÀM TÍCH HỢP ĐỊA CHẤT 3D - CHUẨN HÓA KHỚP KÝ TỰ THÔNG MINH CỦA CHƯƠNG:
-    - Sử dụng Regex để làm sạch tên hố khoan, giải quyết triệt để lỗi ẩn hình do lệch dấu cách/gạch nối.
-    - Vuốt thấu kính dọc tuyến, kéo dài 50m, ngắt phẳng khít kẽ theo trắc ngang địa hình sông.
-    - Vẽ biểu đồ SPT độc lập dạng lines + markers + text.
+    Xác định tim tuyến địa hình và lý trình tích lũy trên từng mặt cắt ngang.
+    Trả về: (chainage_rows, ux, uy, x0, y0) — hướng và gốc chiếu dọc tuyến.
+    """
+    mid = matrix_x.shape[1] // 2
+    cx = matrix_x[:, mid]
+    cy = matrix_y[:, mid]
+    dx = np.diff(cx)
+    dy = np.diff(cy)
+    chainage = np.zeros(len(cx))
+    chainage[1:] = np.cumsum(np.sqrt(dx ** 2 + dy ** 2))
+    x0, y0 = cx[0], cy[0]
+    x1, y1 = cx[-1], cy[-1]
+    vlen = np.sqrt((x1 - x0) ** 2 + (y1 - y0) ** 2) + 1e-6
+    return chainage, (x1 - x0) / vlen, (y1 - y0) / vlen, x0, y0
+
+def _chainage_diem(x, y, ux, uy, x0, y0):
+    return (x - x0) * ux + (y - y0) * uy
+
+def _xay_dung_ho_so_lop(df_hk_v, df_layers, lop_dat, ext_m=50.0):
+    """
+    Dựng hồ sơ cao độ đáy lớp đất dọc tuyến:
+    - Nối thẳng giữa 2 hố cùng có lớp.
+    - Thấu kính: hố có lớp → trung điểm 2 hố (hố kia không có lớp).
+    - Kéo dài 50m tại hố đầu/cuối tuyến.
+    """
+    pt_c, pt_z = [], []
+    for idx in range(len(df_hk_v) - 1):
+        hk1, hk2 = df_hk_v.iloc[idx], df_hk_v.iloc[idx + 1]
+        sub1 = df_layers[(df_layers['Key_HK'] == hk1['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
+        sub2 = df_layers[(df_layers['Key_HK'] == hk2['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
+        c1, c2 = hk1['Chainage'], hk2['Chainage']
+        z1_bot = hk1['Z_Mieng'] - sub1['Den_Chieu_Sau_Lop'].iloc[0] if not sub1.empty else None
+        z2_bot = hk2['Z_Mieng'] - sub2['Den_Chieu_Sau_Lop'].iloc[0] if not sub2.empty else None
+
+        if z1_bot is not None and z2_bot is not None:
+            pt_c.extend([c1, c2])
+            pt_z.extend([z1_bot, z2_bot])
+        elif z1_bot is not None:
+            mid_c = (c1 + c2) / 2
+            pt_c.extend([c1, mid_c])
+            pt_z.extend([z1_bot, z1_bot])
+        elif z2_bot is not None:
+            mid_c = (c1 + c2) / 2
+            pt_c.extend([mid_c, c2])
+            pt_z.extend([z2_bot, z2_bot])
+
+    if len(pt_c) < 2:
+        return None, None
+
+    # Gộp điểm trùng chainage, giữ thứ tự dọc tuyến
+    df_prof = pd.DataFrame({'c': pt_c, 'z': pt_z}).groupby('c', as_index=False).mean().sort_values('c')
+    c_arr, z_arr = df_prof['c'].values, df_prof['z'].values
+
+    hk_dau, hk_cuoi = df_hk_v.iloc[0], df_hk_v.iloc[-1]
+    sub_d = df_layers[(df_layers['Key_HK'] == hk_dau['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
+    sub_c = df_layers[(df_layers['Key_HK'] == hk_cuoi['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
+    if not sub_d.empty:
+        z_d = hk_dau['Z_Mieng'] - sub_d['Den_Chieu_Sau_Lop'].iloc[0]
+        c_arr = np.insert(c_arr, 0, hk_dau['Chainage'] - ext_m)
+        z_arr = np.insert(z_arr, 0, z_d)
+    if not sub_c.empty:
+        z_c = hk_cuoi['Z_Mieng'] - sub_c['Den_Chieu_Sau_Lop'].iloc[0]
+        c_arr = np.append(c_arr, hk_cuoi['Chainage'] + ext_m)
+        z_arr = np.append(z_arr, z_c)
+
+    return c_arr, z_arr
+
+def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix_y, matrix_z, he_so_z=1.0):
+    """
+    Tích hợp địa chất 3D bám lưới địa hình VN-2000:
+    - Định vị hố khoan theo X/Y VN-2000 (cùng hệ với địa hình).
+    - Vuốt nối cao độ đáy lớp dọc tuyến, thấu kính tại hố thiếu lớp, kéo dài 50m 2 đầu.
+    - Phương ngang: mặt phẳng lớp trải theo bề rộng mặt cắt địa hình (từng hàng lưới).
+    - SPT: đường + điểm tròn + nhãn N bên cạnh trục hố khoan.
     """
     if fig is None or df_hk is None or df_hk.empty or df_layers is None or df_layers.empty:
         return fig
-        
+    if matrix_x is None or matrix_y is None:
+        return fig
+
     mau_quy_uoc = {'K': '#8B4513', '1': '#A0522D', '2B': '#4682B4', 'TK4': '#DEB887', '5': '#D2B48C'}
-    
-    # 📐 1. DỰNG ĐA GIÁC ĐƯỜNG BAO MẶT BẰNG ĐỊA HÌNH SÔNG ĐỂ NGẮT PHƯƠNG NGANG
-    import matplotlib.path as mpath
-    from scipy.spatial import ConvexHull
-    all_terrain_pts = np.column_stack((matrix_x.flatten(), matrix_y.flatten()))
-    hull_t = ConvexHull(all_terrain_pts)
-    poly_terrain = mpath.Path(all_terrain_pts[hull_t.vertices])
-    
-    gx, gy = np.meshgrid(
-        np.linspace(matrix_x.min() - 60, matrix_x.max() + 60, 40),
-        np.linspace(matrix_y.min() - 60, matrix_y.max() + 60, 40)
-    )
-    
-    # Hàm xử lý làm sạch chuỗi: "HK - 1" -> "HK1"
-    def lam_sach_ten(text):
-        return re.sub(r'[^A-Z0-9]', '', str(text).upper().strip())
-        
+
+    chainage_rows, ux, uy, x0, y0 = _tinh_tuyen_dia_hinh(matrix_x, matrix_y)
+    perp_x, perp_y = -uy, ux  # phương vuông góc tim tuyến (trắc ngang)
+
     df_hk_clean = df_hk.copy()
     df_layers_clean = df_layers.copy()
-    
-    df_hk_clean['Key_HK'] = df_hk_clean['Ho_Khoan'].apply(lam_sach_ten)
-    df_layers_clean['Key_HK'] = df_layers_clean['Ho_Khoan'].apply(lam_sach_ten)
-    
-    list_hk_valid = []
-    
-    # 🎯 Luồng A: Cắm trụ đứng hố khoan và vẽ biểu đồ SPT dích dắc
-    for _, hk in df_hk_clean.iterrows():
+    df_hk_clean['Key_HK'] = df_hk_clean['Ho_Khoan'].apply(_lam_sach_ten_hk)
+    df_layers_clean['Key_HK'] = df_layers_clean['Ho_Khoan'].apply(_lam_sach_ten_hk)
+    df_hk_clean['Chainage'] = df_hk_clean.apply(
+        lambda r: _chainage_diem(r['X_VN2000'], r['Y_VN2000'], ux, uy, x0, y0), axis=1
+    )
+    df_hk_v = df_hk_clean.sort_values('Chainage').reset_index(drop=True)
+
+    # --- Luồng A: Trụ hố khoan + biểu đồ SPT ---
+    for _, hk in df_hk_v.iterrows():
         try:
             ten_hk_goc = str(hk['Ho_Khoan']).strip()
             key_hk = hk['Key_HK']
             x_hk = float(hk['X_VN2000'])
             y_hk = float(hk['Y_VN2000'])
             z_mieng = float(hk['Z_Mieng'])
-            if np.isnan(x_hk) or np.isnan(y_hk): continue
-            
-            list_hk_valid.append({'name': key_hk, 'x': x_hk, 'y': y_hk, 'z_mieng': z_mieng})
-            
-            # Khớp tên theo mã khóa đã làm sạch ký tự đặc biệt
+            if np.isnan(x_hk) or np.isnan(y_hk):
+                continue
+
             df_sub_layers = df_layers_clean[df_layers_clean['Key_HK'] == key_hk].sort_values('Tu_Chieu_Sau_Lop')
-            
             for _, lop in df_sub_layers.iterrows():
                 z_top = (z_mieng - float(lop['Tu_Chieu_Sau_Lop'])) * he_so_z
                 z_bot = (z_mieng - float(lop['Den_Chieu_Sau_Lop'])) * he_so_z
                 mau_n = mau_quy_uoc.get(str(lop['Ten_Lop']).strip().upper(), '#808080')
                 fig.add_trace(go.Scatter3d(
-                    x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_top, z_bot], mode='lines',
-                    line=dict(color=mau_n, width=12), showlegend=False, hoverinfo="skip"
+                    x=[x_hk, x_hk], y=[y_hk, y_hk], z=[z_top, z_bot],
+                    mode='lines', line=dict(color=mau_n, width=10),
+                    showlegend=False, hoverinfo='skip',
+                    name=f"{ten_hk_goc} - Lớp {lop['Ten_Lop']}"
                 ))
-                
-            # Vẽ biểu đồ kết quả thí nghiệm SPT màu vàng đứng cạnh hố
+
             if df_spt is not None:
-                # Tìm cột SPT chứa tên hố bằng cách quét chuỗi thông minh
-                col_spt = [c for c in df_spt.columns if lam_sach_ten(c) in key_hk or key_hk in lam_sach_ten(c)]
-                if col_spt and 'Độ sâu thí nghiệm (m)' in df_spt.columns:
-                    df_sub_spt = df_spt[['Độ sâu thí nghiệm (m)', col_spt[0]]].dropna()
+                col_spt = [c for c in df_spt.columns
+                           if _lam_sach_ten_hk(c) in key_hk or key_hk in _lam_sach_ten_hk(c)]
+                col_depth = next((c for c in df_spt.columns if 'Độ sâu' in c or 'DO SAU' in c.upper()), None)
+                if col_spt and col_depth:
+                    df_sub_spt = df_spt[[col_depth, col_spt[0]]].dropna()
                     spt_x, spt_y, spt_z, spt_txt = [], [], [], []
+                    spt_base = 10.0  # khoảng cách từ trục hố khoan
                     for _, r_spt in df_sub_spt.iterrows():
                         try:
-                            n_val = float(r_spt[col_spt[0]])
-                            txt_sau = str(r_spt['Độ sâu thí nghiệm (m)'])
-                            nums = [float(n.replace(',', '.')) for n in re.findall(r'[\d,\.]+', txt_sau)]
-                            if nums:
-                                d_spt = nums[0]
-                                spt_x.append(x_hk + 12.0 + n_val * 0.8) # Khoảng hở 12m trực quan
-                                spt_y.append(y_hk)
-                                spt_z.append((z_mieng - d_spt) * he_so_z)
-                                spt_txt.append(f"N={n_val:.0f}")
-                        except: continue
+                            n_val = float(str(r_spt[col_spt[0]]).replace(',', '.'))
+                            nums = [float(n.replace(',', '.')) for n in re.findall(r'[\d,\.]+', str(r_spt[col_depth]))]
+                            if not nums:
+                                continue
+                            d_spt = nums[0]
+                            offset_ngang = spt_base + n_val * 0.6
+                            spt_x.append(x_hk + perp_x * offset_ngang)
+                            spt_y.append(y_hk + perp_y * offset_ngang)
+                            spt_z.append((z_mieng - d_spt) * he_so_z)
+                            spt_txt.append(f"N={n_val:.0f}")
+                        except (ValueError, TypeError):
+                            continue
                     if spt_z:
                         fig.add_trace(go.Scatter3d(
-                            x=spt_x, y=spt_y, z=spt_z, mode='lines+markers+text',
-                            line=dict(color='yellow', width=2.5), marker=dict(size=4.5, color='orange'),
-                            text=spt_txt, textposition="middle right",
-                            textfont=dict(size=9, color='yellow'), name=f"Biểu đồ SPT {ten_hk_goc}"
+                            x=spt_x, y=spt_y, z=spt_z,
+                            mode='lines+markers+text',
+                            line=dict(color='yellow', width=3),
+                            marker=dict(size=7, color='orange', symbol='circle'),
+                            text=spt_txt, textposition='middle right',
+                            textfont=dict(size=10, color='yellow'),
+                            name=f"SPT {ten_hk_goc}"
                         ))
-        except: continue
+        except (ValueError, TypeError):
+            continue
 
-    # 🎯 Luồng B: Toán học nội suy dệt màng ngăn cách liên tục (Xử lý thấu kính + Vuốt biên 50m)
-    df_hk_v = pd.DataFrame(list_hk_valid)
-    if len(df_hk_v) >= 2 and not df_layers_clean.empty:
-        df_hk_v['sort_key'] = df_hk_v['x'] + df_hk_v['y']
-        df_hk_v = df_hk_v.sort_values('sort_key').reset_index(drop=True)
-        all_unique_layers = df_layers_clean['Ten_Lop'].unique()
-        
-        for lop_dat in all_unique_layers:
+    # --- Luồng B: Mặt phẳng ngăn cách lớp đất (nội suy dọc tuyến, cắt theo bề rộng địa hình) ---
+    if len(df_hk_v) >= 2:
+        for lop_dat in df_layers_clean['Ten_Lop'].unique():
             lop_dat = str(lop_dat).strip().upper()
-            pt_x, pt_y, pt_z_bot = [], [], []
-            
-            for idx in range(len(df_hk_v) - 1):
-                hk1 = df_hk_v.iloc[idx]
-                hk2 = df_hk_v.iloc[idx + 1]
-                sub1 = df_layers_clean[(df_layers_clean['Key_HK'] == hk1['name']) & (df_layers_clean['Ten_Lop'] == lop_dat)]
-                sub2 = df_layers_clean[(df_layers_clean['Key_HK'] == hk2['name']) & (df_layers_clean['Ten_Lop'] == lop_dat)]
-                
-                h1_has = not sub1.empty
-                h2_has = not sub2.empty
-                
-                if h1_has and h2_has:
-                    pt_x.extend([hk1['x'], hk2['x']])
-                    pt_y.extend([hk1['y'], hk2['y']])
-                    pt_z_bot.extend([hk1['z_mieng'] - sub1['Den_Chieu_Sau_Lop'].iloc[0], hk2['z_mieng'] - sub2['Den_Chieu_Sau_Lop'].iloc[0]])
-                elif h1_has and not h2_has: # Thấu kính vuốt về trung điểm giữa 2 hố
-                    mid_x = (hk1['x'] + hk2['x']) / 2
-                    mid_y = (hk1['y'] + hk2['y']) / 2
-                    pt_x.extend([hk1['x'], mid_x])
-                    pt_y.extend([hk1['y'], mid_y])
-                    pt_z_bot.extend([hk1['z_mieng'] - sub1['Den_Chieu_Sau_Lop'].iloc[0], hk1['z_mieng'] - sub1['Den_Chieu_Sau_Lop'].iloc[0]])
-                elif not h1_has and h2_has: # Thấu kính vuốt ngược từ hố 2 về trung điểm
-                    mid_x = (hk1['x'] + hk2['x']) / 2
-                    mid_y = (hk1['y'] + hk2['y']) / 2
-                    pt_x.extend([mid_x, hk2['x']])
-                    pt_y.extend([mid_y, hk2['y']])
-                    pt_z_bot.extend([hk2['z_mieng'] - sub2['Den_Chieu_Sau_Lop'].iloc[0], hk2['z_mieng'] - sub2['Den_Chieu_Sau_Lop'].iloc[0]])
+            c_arr, z_arr = _xay_dung_ho_so_lop(df_hk_v, df_layers_clean, lop_dat)
+            if c_arr is None:
+                continue
 
-            if len(pt_x) < 2: continue
-            
-            # ✨ KÉO DÀI BIÊN ĐẦU VÀ CUỐI TUYẾN THÊM 50M
-            hk_dau, hk_cuoi = df_hk_v.iloc[0], df_hk_v.iloc[-1]
-            if lop_dat in df_layers_clean[df_layers_clean['Key_HK'] == hk_dau['name']]['Ten_Lop'].values:
-                sub_d = df_layers_clean[(df_layers_clean['Key_HK'] == hk_dau['name']) & (df_layers_clean['Ten_Lop'] == lop_dat)]
-                vx, vy = hk_dau['x'] - hk_cuoi['x'], hk_dau['y'] - hk_cuoi['y']
-                v_len = np.sqrt(vx**2 + vy**2 + 0.0001)
-                pt_x.insert(0, hk_dau['x'] + (vx / v_len) * 50.0)
-                pt_y.insert(0, hk_dau['y'] + (vy / v_len) * 50.0)
-                pt_z_bot.insert(0, hk_dau['z_mieng'] - sub_d['Den_Chieu_Sau_Lop'].iloc[0])
-                
-            if lop_dat in df_layers_clean[df_layers_clean['Key_HK'] == hk_cuoi['name']]['Ten_Lop'].values:
-                sub_c = df_layers_clean[(df_layers_clean['Key_HK'] == hk_cuoi['name']) & (df_layers_clean['Ten_Lop'] == lop_dat)]
-                vx, vy = hk_cuoi['x'] - hk_dau['x'], hk_cuoi['y'] - hk_dau['y']
-                v_len = np.sqrt(vx**2 + vy**2 + 0.0001)
-                pt_x.append(hk_cuoi['x'] + (vx / v_len) * 50.0)
-                pt_y.append(hk_cuoi['y'] + (vy / v_len) * 50.0)
-                pt_z_bot.append(hk_cuoi['z_mieng'] - sub_c['Den_Chieu_Sau_Lop'].iloc[0])
+            grid_z = np.full(matrix_x.shape, np.nan)
+            for i, c_row in enumerate(chainage_rows):
+                z_row = float(np.interp(c_row, c_arr, z_arr))
+                grid_z[i, :] = z_row
 
-            # Dệt thảm mặt phân cách địa chất
-            grid_z = griddata((pt_x, pt_y), pt_z_bot, (gx, gy), method='nearest')
-            
-            # ✨ CẮT NGẮT PHƯƠNG NGANG: Bo trùm khít theo chu vi trắc ngang địa hình sông
-            for r in range(gx.shape[0]):
-                for c in range(gx.shape[1]):
-                    if not poly_terrain.contains_point((gx[r, c], gy[r, c])):
-                        grid_z[r, c] = np.nan
-                        
             grid_z_scaled = grid_z * he_so_z
             m_color = mau_quy_uoc.get(lop_dat, '#808080')
-            
             fig.add_trace(go.Surface(
-                x=gx, y=gy, z=grid_z_scaled, customdata=grid_z,
-                colorscale=[[0, m_color], [1, m_color]], showscale=False, opacity=0.55,
-                name=f"Mặt sàn: Lớp {lop_dat}",
-                hovertemplate=f"<b>Mặt phân cách đáy lớp: {lop_dat}</b><br>Cao độ đáy thực: %{{customdata:.2f}} m<extra></extra>"
+                x=matrix_x, y=matrix_y, z=grid_z_scaled, customdata=grid_z,
+                colorscale=[[0, m_color], [1, m_color]],
+                showscale=False, opacity=0.5,
+                name=f"Mặt ngăn lớp {lop_dat}",
+                hovertemplate=(
+                    f"<b>Đáy lớp {lop_dat}</b><br>"
+                    "Cao độ: %{customdata:.2f} m<extra></extra>"
+                )
             ))
-            
+
     return fig

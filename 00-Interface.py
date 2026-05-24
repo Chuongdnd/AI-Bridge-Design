@@ -311,27 +311,21 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     
                     df_hk, df_layers, df_spt = None, None, None
                     if file_excel_dc is not None:
-                        df_hk, df_layers, df_spt = None, None, None
-                    if file_excel_dc is not None:
-                        # ✨ ĐỒNG BỘ TÊN HÀM: Đảm bảo gọi đúng hàm đã làm sạch trong Terrain_Viewer
                         df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
                         if df_hk is not None and not df_hk.empty:
                             st.success(f"🎉 Hệ thống định vị thành công {len(df_hk)} hố khảo sát!")
 
-                    # 🟩 LUỒNG 1: Dựng sa bàn lưới bề mặt địa hình sông thực địa VN-2000
-                    fig_3d, mx_terrain, my_terrain = TV.ve_dia_hinh_3d(df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view)
-                    
-                    # 🟨 LUỒNG 2: Nếu có file Excel địa chất, tiến hành đắp kết cấu phân tầng thấu kính & SPT lên trên fig_3d
-                    if fig_3d is not None and mx_terrain is not None and df_hk is not None and not df_hk.empty:
-                        try:
-                            fig_3d = TV.dap_them_ket_cau_dia_chat_3d(
-                                fig_3d, df_hk, df_layers, df_spt, mx_terrain, my_terrain, he_so_z=he_so_z
-                            )
-                        except Exception as e:
-                            st.warning(f"Cảnh báo cấu trúc đồng bộ biên không gian: {e}")
+                    fig_3d, mx, my, mz = TV.ve_dia_hinh_3d(
+                        df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view
+                    )
+
+                    if fig_3d is not None and df_hk is not None and not df_hk.empty:
+                        fig_3d = TV.dap_them_ket_cau_dia_chat_3d(
+                            fig_3d, df_hk, df_layers, df_spt, mx, my, mz, he_so_z=he_so_z
+                        )
 
                     # Hiển thị sa bàn đồ họa tích hợp ra màn hình chính
-                    if fig_3d is not None:
+                    if fig_3d: 
                         st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
                         
                 with tab_mcn_draw:
