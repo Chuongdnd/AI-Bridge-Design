@@ -269,16 +269,16 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
         sheet_names = excel_file.sheet_names
         
         # 1. Đọc bảng tọa độ định vị hố khoan
-        sheet_toado = [s for s in sheet_names if 'TOADO' in s.upper() or 'TỌA ĐỘ' in s.upper()]
+        sheet_toado = [s for s in sheet_names if 'Toado' in s.upper() or 'TỌA ĐỘ' in s.upper()]
         if not sheet_toado:
             return None, None, None
         df_hk_raw = pd.read_excel(uploaded_file, sheet_name=sheet_toado[0])
         df_hk_raw.columns = [str(c).strip().upper() for c in df_hk_raw.columns]
         
-        c_name = [c for c in df_hk_raw.columns if any(k in c for k in ['HỐ KHOAN', 'HO_KHOAN', 'TÊN', 'CỌC'])][0]
+        c_name = [c for c in df_hk_raw.columns if any(k in c for k in ['HỐ KHOAN', 'Ho_Khoan', 'TÊN', 'CỌC'])][0]
         c_x = [c for c in df_hk_raw.columns if 'X_VN2000' in c or 'X=' in c or 'X ' in c][0]
         c_y = [c for c in df_hk_raw.columns if 'Y_VN2000' in c or 'Y=' in c or 'Y ' in c][0]
-        c_z = [c for c in df_hk_raw.columns if 'Z_MIENG' in c or 'CAO ĐỘ' in c or 'Z' in c][0]
+        c_z = [c for c in df_hk_raw.columns if 'Z_Mieng' in c or 'CAO ĐỘ' in c or 'Z' in c][0]
         
         df_hk = pd.DataFrame({
             'Ho_Khoan': df_hk_raw[c_name].astype(str).str.strip().str.upper(),
@@ -290,7 +290,7 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
         # 2. Đọc chi tiết phân tầng đất từ các sheet hố khoan cụ thể
         list_layers = []
         for sheet in sheet_names:
-            if 'SPT' in sheet.upper() or 'TOADO' in sheet.upper() or 'TỌA ĐỘ' in sheet.upper():
+            if 'SPT' in sheet.upper() or 'Toado' in sheet.upper() or 'TỌA ĐỘ' in sheet.upper():
                 continue
             df_layer_raw = pd.read_excel(uploaded_file, sheet_name=sheet)
             if df_layer_raw.empty:
