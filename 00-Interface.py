@@ -311,9 +311,12 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     
                     df_hk, df_layers, df_spt = None, None, None
                     if file_excel_dc is not None:
+                        df_hk, df_layers, df_spt = None, None, None
+                    if file_excel_dc is not None:
+                        # ✨ ĐỒNG BỘ TÊN HÀM: Đảm bảo gọi đúng hàm đã làm sạch trong Terrain_Viewer
                         df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
                         if df_hk is not None and not df_hk.empty:
-                            st.success(f"🎉 Hệ thống định vị thành công {len(df_hk)} hố khảo sát và cấu trúc phân tầng thấu kính!")
+                            st.success(f"🎉 Hệ thống định vị thành công {len(df_hk)} hố khảo sát!")
 
                     # 🟩 LUỒNG 1: Dựng sa bàn lưới bề mặt địa hình sông thực địa VN-2000
                     fig_3d = TV.ve_dia_hinh_3d(df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view)
