@@ -400,6 +400,14 @@ def _chainage_diem(x, y, ux, uy, x0, y0):
     return (x - x0)*ux + (y - y0)*uy
 
 def _xay_dung_ho_so_lop(df_hk_v, df_layers, lop_dat, ext_m=50.0):
+    """
+    Xây dựng profile đáy lớp dọc tuyến.
+    - Nếu có >=2 hố: nội suy tuyến tính, kéo dài ext_m (mặc định 50m).
+    - Nếu chỉ có 1 hố:
+        * Tìm hố lân cận gần nhất bên trái và phải (nếu có)
+        * Kéo dài đến trung điểm với hố lân cận đó
+        * Nếu không có lân cận (đầu hoặc cuối tuyến) thì kéo dài 25m
+    """
     pt_c, pt_z = [], []
     for _, hk in df_hk_v.iterrows():
         sub = df_layers[(df_layers['Ho_Khoan'] == hk['Ho_Khoan']) & (df_layers['Ten_Lop'] == lop_dat)]
@@ -408,15 +416,53 @@ def _xay_dung_ho_so_lop(df_hk_v, df_layers, lop_dat, ext_m=50.0):
         cao_day = sub['Cao_Do_Day'].iloc[0]
         pt_c.append(hk['Chainage'])
         pt_z.append(cao_day)
-    if len(pt_c) < 2:
+    
+    if len(pt_c) == 0:
         return None, None
+    
+    # Sắp xếp theo chainage
     idx = np.argsort(pt_c)
     c_arr = np.array(pt_c)[idx]
     z_arr = np.array(pt_z)[idx]
-    c_arr = np.insert(c_arr, 0, c_arr[0] - ext_m)
-    z_arr = np.insert(z_arr, 0, z_arr[0])
-    c_arr = np.append(c_arr, c_arr[-1] + ext_m)
-    z_arr = np.append(z_arr, z_arr[-1])
+    
+    # Trường hợp chỉ có 1 hố
+    if len(c_arr) == 1:
+        c0 = c_arr[0]
+        z0 = z_arr[0]
+        all_c = df_hk_v['Chainage'].values
+        # Tìm hố bên trái và phải gần nhất
+        left = None
+        right = None
+        for c in all_c:
+            if c < c0:
+                if left is None or c > left:
+                    left = c
+            elif c > c0:
+                if right is None or c < right:
+                    right = c
+        
+        # Xác định biên trái
+        if left is not None:
+            left_bound = (c0 + left) / 2
+        else:
+            left_bound = c0 - 25.0   # kéo dài 25m nếu là hố biên trái
+        
+        # Xác định biên phải
+        if right is not None:
+            right_bound = (c0 + right) / 2
+        else:
+            right_bound = c0 + 25.0   # kéo dài 25m nếu là hố biên phải
+        
+        # Tạo 3 điểm: trái, hố, phải (cùng cao độ)
+        c_arr = np.array([left_bound, c0, right_bound])
+        z_arr = np.array([z0, z0, z0])
+    else:
+        # Có >=2 hố: nội suy tuyến tính và kéo dài ext_m
+        c_arr = np.insert(c_arr, 0, c_arr[0] - ext_m)
+        z_arr = np.insert(z_arr, 0, z_arr[0])
+        c_arr = np.append(c_arr, c_arr[-1] + ext_m)
+        z_arr = np.append(z_arr, z_arr[-1])
+    
     return c_arr, z_arr
 
 def _mask_bien_xy_dia_hinh(matrix_x, matrix_y):
