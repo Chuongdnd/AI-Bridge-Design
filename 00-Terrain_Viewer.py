@@ -522,32 +522,38 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
     mau_sac = ['#d73027', '#f46d43', '#fdae61', '#fee090', '#e0f3f8', '#abd9e9', '#74add1', '#4575b4', '#313695', '#a6d96a']
 
     for idx, lop in enumerate(danh_sach_lop):
+        # Lấy danh sách hố khoan có lớp này
+        hks = df_layers_clean[df_layers_clean['Ten_Lop'] == lop]['Ho_Khoan'].unique()
+        so_hk = len(hks)
+        
+        # Tạo profile (c_arr, z_arr) – vẫn dùng hàm cũ (có kéo dài)
         c_arr, z_arr = _xay_dung_ho_so_lop(df_hk_v, df_layers_clean, lop, ext_m=50.0)
         if c_arr is None:
             continue
-
-        # Tạo lưới mặt phẳng đáy lớp
+        
+        # Nội suy ra lưới
         grid_z = _dag_luoi_mat_lop(chainage_rows, c_arr, z_arr, matrix_x.shape)
         mask_xy = _mask_bien_xy_dia_hinh(matrix_x, matrix_y)
         grid_z[~mask_xy] = np.nan
-
-        # === CẮT THEO VÙNG ẢNH HƯỞNG CỦA LỚP (CHỈ HIỂN THỊ TRONG KHOẢNG [min_c, max_c]) ===
-        if len(c_arr) >= 2:
-            min_c = c_arr[0]
-            max_c = c_arr[-1]
-            mask_trong_vung = (chainage_rows >= min_c) & (chainage_rows <= max_c)
-            grid_z[~mask_trong_vung, :] = np.nan
-
-        # Tùy chọn: cắt thêm ±10m quanh hố khoan (nếu muốn giới hạn chặt hơn)
-        chainage_min_hk = df_hk_v['Chainage'].min()
-        chainage_max_hk = df_hk_v['Chainage'].max()
-        mask_gan_hk = (chainage_rows >= chainage_min_hk - 10) & (chainage_rows <= chainage_max_hk + 10)
-        grid_z[~mask_gan_hk, :] = np.nan
-
+        
+        # --- XỬ LÝ THEO SỐ LƯỢNG HỐ ---
+        if so_hk == 1:
+            # Lấy chainage của hố duy nhất
+            hk_chainage = df_hk_v[df_hk_v['Ho_Khoan'].isin(hks)]['Chainage'].values[0]
+            radius = 15.0  # Bán kính ảnh hưởng (m), có thể sửa thành 10, 20 tùy ý
+            mask_cuc_bo = (chainage_rows >= hk_chainage - radius) & (chainage_rows <= hk_chainage + radius)
+            grid_z[~mask_cuc_bo, :] = np.nan
+        else:
+            # Với >=2 hố, giới hạn trong khoảng profile (tránh tràn ra ngoài)
+            min_c = np.min(c_arr)
+            max_c = np.max(c_arr)
+            mask_profile = (chainage_rows >= min_c) & (chainage_rows <= max_c)
+            grid_z[~mask_profile, :] = np.nan
+        
         grid_z_scaled = grid_z * he_so_z
         if np.all(np.isnan(grid_z)):
             continue
-
+        
         if hien_mat_phang_lop:
             fig.add_trace(go.Surface(
                 x=matrix_x, y=matrix_y, z=grid_z_scaled,
