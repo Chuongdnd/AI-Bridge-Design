@@ -412,18 +412,79 @@ def _xay_dung_ho_so_lop(df_hk_v, df_layers, lop_dat, ext_m=50.0):
 
     return c_arr, z_arr
 
-def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix_y, matrix_z, he_so_z=1.0):
+def _mask_bien_xy_dia_hinh(matrix_x, matrix_y):
+    """
+    Mặt nạ 2D: ô lưới nằm trong đa giác biên địa hình (viền ngoài lưới khảo sát).
+    Chiếu thẳng đứng → phạm vi X,Y mặt phẳng lớp đất trùng phạm vi địa hình.
+    """
+    nr, nc = matrix_x.shape
+    bien_trai = np.column_stack([matrix_x[:, 0], matrix_y[:, 0]])
+    bien_phai = np.column_stack([matrix_x[:, -1], matrix_y[:, -1]])[::-1]
+    bien_duoi = np.column_stack([matrix_x[-1, :], matrix_y[-1, :]])
+    bien_tren = np.column_stack([matrix_x[0, :], matrix_y[0, :]])[::-1]
+    polygon = np.vstack([bien_trai, bien_duoi, bien_phai, bien_tren])
+
+    xq = matrix_x.ravel()
+    yq = matrix_y.ravel()
+    inside = np.zeros(xq.shape, dtype=bool)
+    n = len(polygon)
+    for i in range(n):
+        x1, y1 = polygon[i]
+        x2, y2 = polygon[(i + 1) % n]
+        cond = ((y1 > yq) != (y2 > yq)) & (xq < (x2 - x1) * (yq - y1) / (y2 - y1 + 1e-9) + x1)
+        inside ^= cond
+    return inside.reshape(matrix_x.shape)
+
+def _dag_luoi_mat_lop(chainage_rows, c_arr, z_arr, shape):
+    """Nội suy cao độ mặt phẳng lớp dọc tuyến, trải ngang theo từng mặt cắt địa hình."""
+    grid_z = np.full(shape, np.nan)
+    for i, c_row in enumerate(chainage_rows):
+        grid_z[i, :] = float(np.interp(c_row, c_arr, z_arr))
+    return grid_z
+
+def _cat_lop_duoi_dia_hinh(grid_z, matrix_z, eps=0.05):
+    """Ép mặt lớp nằm dưới (hoặc sát) bề mặt địa hình tại cùng (X,Y)."""
+    out = grid_z.copy()
+    valid = ~np.isnan(out) & ~np.isnan(matrix_z)
+    out[valid] = np.minimum(out[valid], matrix_z[valid] - eps)
+    return out
+
+def _tao_mat_phang_lop_3d(matrix_x, matrix_y, matrix_z, chainage_rows, c_arr, z_arr,
+                          he_so_z=1.0, cat_duoi_dia_hinh=True):
+    """
+    Tạo lưới mặt phẳng 3D đại diện đáy một lớp đất:
+    - X,Y bám lưới địa hình (chiếu thẳng đứng).
+    - Z nội suy từ hố khoan dọc tuyến, trải ngang full bề rộng mặt cắt.
+    """
+    grid_z = _dag_luoi_mat_lop(chainage_rows, c_arr, z_arr, matrix_x.shape)
+    mask_xy = _mask_bien_xy_dia_hinh(matrix_x, matrix_y)
+    grid_z[~mask_xy] = np.nan
+    if cat_duoi_dia_hinh:
+        grid_z = _cat_lop_duoi_dia_hinh(grid_z, matrix_z)
+    return grid_z, grid_z * he_so_z
+
+def _thu_tu_lop_dat(df_layers):
+    """Sắp lớp từ nông → sâu theo độ sâu đỉnh trung bình."""
+    depth = df_layers.groupby('Ten_Lop')['Tu_Chieu_Sau_Lop'].mean()
+    return [str(k).strip().upper() for k in depth.sort_values().index]
+
+def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix_y, matrix_z, he_so_z=1.0,
+                                 hien_mat_phang_lop=True, hien_khoi_lop=False, do_trong_dia_hinh=0.72):
     """
     Tích hợp địa chất 3D bám lưới địa hình VN-2000:
     - Định vị hố khoan theo X/Y VN-2000 (cùng hệ với địa hình).
     - Vuốt nối cao độ đáy lớp dọc tuyến, thấu kính tại hố thiếu lớp, kéo dài 50m 2 đầu.
     - Phương ngang: mặt phẳng lớp trải theo bề rộng mặt cắt địa hình (từng hàng lưới).
+    - Giới hạn X,Y trong biên địa hình (chiếu thẳng đứng), Z luôn dưới bề mặt địa hình.
     - SPT: đường + điểm tròn + nhãn N bên cạnh trục hố khoan.
     """
     if fig is None or df_hk is None or df_hk.empty or df_layers is None or df_layers.empty:
         return fig
-    if matrix_x is None or matrix_y is None:
+    if matrix_x is None or matrix_y is None or matrix_z is None:
         return fig
+
+    if fig.data and do_trong_dia_hinh < 1.0:
+        fig.data[0].opacity = do_trong_dia_hinh
 
     mau_quy_uoc = {'K': '#8B4513', '1': '#A0522D', '2B': '#4682B4', 'TK4': '#DEB887', '5': '#D2B48C'}
 
@@ -497,30 +558,57 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
         except (ValueError, TypeError):
             continue
 
-    # --- Luồng B: Mặt phẳng ngăn cách lớp đất (nội suy dọc tuyến, cắt theo bề rộng địa hình) ---
-    if len(df_hk_v) >= 2:
-        for lop_dat in df_layers_clean['Ten_Lop'].unique():
-            lop_dat = str(lop_dat).strip().upper()
+    # --- Luồng B: Mặt phẳng / khối lớp đất bám biên XY địa hình (chiếu thẳng đứng) ---
+    if len(df_hk_v) >= 2 and (hien_mat_phang_lop or hien_khoi_lop):
+        lop_sorted = _thu_tu_lop_dat(df_layers_clean)
+        mat_day_lop = {}
+
+        for lop_dat in lop_sorted:
             c_arr, z_arr = _xay_dung_ho_so_lop(df_hk_v, df_layers_clean, lop_dat)
             if c_arr is None:
                 continue
+            grid_z, grid_z_scaled = _tao_mat_phang_lop_3d(
+                matrix_x, matrix_y, matrix_z, chainage_rows, c_arr, z_arr, he_so_z=he_so_z
+            )
+            mat_day_lop[lop_dat] = grid_z
 
-            grid_z = np.full(matrix_x.shape, np.nan)
-            for i, c_row in enumerate(chainage_rows):
-                z_row = float(np.interp(c_row, c_arr, z_arr))
-                grid_z[i, :] = z_row
+            if hien_mat_phang_lop:
+                m_color = mau_quy_uoc.get(lop_dat, '#808080')
+                fig.add_trace(go.Surface(
+                    x=matrix_x, y=matrix_y, z=grid_z_scaled, customdata=grid_z,
+                    colorscale=[[0, m_color], [1, m_color]],
+                    showscale=False, opacity=0.55,
+                    name=f"Mặt phẳng đáy lớp {lop_dat}",
+                    hovertemplate=(
+                        f"<b>Đáy lớp {lop_dat}</b><br>"
+                        "X: %{x:.1f} m | Y: %{y:.1f} m<br>"
+                        "Cao độ: %{customdata:.2f} m<extra></extra>"
+                    )
+                ))
 
-            grid_z_scaled = grid_z * he_so_z
-            m_color = mau_quy_uoc.get(lop_dat, '#808080')
-            fig.add_trace(go.Surface(
-                x=matrix_x, y=matrix_y, z=grid_z_scaled, customdata=grid_z,
-                colorscale=[[0, m_color], [1, m_color]],
-                showscale=False, opacity=0.5,
-                name=f"Mặt ngăn lớp {lop_dat}",
-                hovertemplate=(
-                    f"<b>Đáy lớp {lop_dat}</b><br>"
-                    "Cao độ: %{customdata:.2f} m<extra></extra>"
-                )
-            ))
+        if hien_khoi_lop and mat_day_lop:
+            z_top_ref = matrix_z.copy()
+            for lop_dat in lop_sorted:
+                if lop_dat not in mat_day_lop:
+                    continue
+                z_bot = mat_day_lop[lop_dat]
+                z_top = z_top_ref.copy()
+                valid = ~np.isnan(z_bot) & ~np.isnan(z_top)
+                if not np.any(valid):
+                    continue
+                m_color = mau_quy_uoc.get(lop_dat, '#808080')
+                fig.add_trace(go.Surface(
+                    x=matrix_x, y=matrix_y, z=z_top * he_so_z,
+                    customdata=z_top, colorscale=[[0, m_color], [1, m_color]],
+                    showscale=False, opacity=0.12, name=f"Đỉnh khối {lop_dat}",
+                    hoverinfo='skip'
+                ))
+                fig.add_trace(go.Surface(
+                    x=matrix_x, y=matrix_y, z=z_bot * he_so_z,
+                    customdata=z_bot, colorscale=[[0, m_color], [1, m_color]],
+                    showscale=False, opacity=0.35, name=f"Khối lớp {lop_dat}",
+                    hovertemplate=f"<b>Lớp {lop_dat}</b><br>Cao độ: %{customdata:.2f} m<extra></extra>"
+                ))
+                z_top_ref = np.where(np.isnan(z_bot), z_top_ref, z_bot)
 
     return fig
