@@ -362,16 +362,10 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
                     cao_day = float(row[col_day])     # cao độ tuyệt đối đáy lớp
                 except:
                     continue
-                # Tính độ sâu so với mặt đất (để phù hợp với các hàm vẽ hiện tại)
-                tu_sau = z_mieng - cao_dinh
-                den_sau = z_mieng - cao_day
-                if tu_sau < 0: tu_sau = 0.0
-                if den_sau < tu_sau:
-                    tu_sau, den_sau = den_sau, tu_sau
                 list_layers.append({
                     'Ho_Khoan': ten_hk,
-                    'Tu_Chieu_Sau_Lop': tu_sau,
-                    'Den_Chieu_Sau_Lop': den_sau,
+                    'Cao_Do_Dinh': cao_dinh,
+                    'Cao_Do_Day': cao_day,
                     'Ten_Lop': ten_lop
                 })
 
@@ -384,7 +378,11 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
             st.dataframe(df5[['Ho_Khoan', 'Tu_Chieu_Sau_Lop', 'Den_Chieu_Sau_Lop']])
         else:
             st.warning("Không có lớp 5")
-
+        # Debug
+            st.write("### Cao độ đáy các lớp")
+            st.dataframe(df_layers[df_layers['Ten_Lop'] == '5'][['Ho_Khoan', 'Cao_Do_Day']])
+            return df_hk, df_layers, df_spt
+       
         # 3. Đọc SPT
         df_spt = None
         sheet_spt = next((s for s in sheet_names if 'spt' in s.lower()), None)
@@ -435,37 +433,27 @@ def _chainage_diem(x, y, ux, uy, x0, y0):
     return (x - x0) * ux + (y - y0) * uy
 
 def _xay_dung_ho_so_lop(df_hk_v, df_layers, lop_dat, ext_m=50.0):
-    """
-    Dựng profile đáy lớp dọc tuyến:
-    - Mỗi hố khoan đóng góp một điểm (chainage, cao độ đáy lớp).
-    - Nội suy tuyến tính giữa các hố.
-    - Kéo dài thêm ext_m về hai phía.
-    """
+    """Xây dựng profile đáy lớp từ cao độ đáy có sẵn."""
     pt_c, pt_z = [], []
     for _, hk in df_hk_v.iterrows():
         sub = df_layers[(df_layers['Key_HK'] == hk['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
         if sub.empty:
             continue
-        # Lấy độ sâu đáy lớn nhất của lớp này tại hố khoan
-        max_bottom = sub['Den_Chieu_Sau_Lop'].max()
-        z_bot = hk['Z_Mieng'] - max_bottom
+        # Lấy cao độ đáy lớn nhất (nếu nhiều khoảng) hoặc đơn trị
+        cao_day_max = sub['Cao_Do_Day'].max()
         pt_c.append(hk['Chainage'])
-        pt_z.append(z_bot)
+        pt_z.append(cao_day_max)   # Trực tiếp là cao độ đáy
     
     if len(pt_c) < 2:
         return None, None
-    
-    # Sắp xếp theo chainage
     idx = np.argsort(pt_c)
     c_arr = np.array(pt_c)[idx]
     z_arr = np.array(pt_z)[idx]
-    
-    # Kéo dài hai đầu
+    # Kéo dài
     c_arr = np.insert(c_arr, 0, c_arr[0] - ext_m)
     z_arr = np.insert(z_arr, 0, z_arr[0])
     c_arr = np.append(c_arr, c_arr[-1] + ext_m)
     z_arr = np.append(z_arr, z_arr[-1])
-    
     return c_arr, z_arr
 
 def _mask_bien_xy_dia_hinh(matrix_x, matrix_y):
