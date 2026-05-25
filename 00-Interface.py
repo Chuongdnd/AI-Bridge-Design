@@ -310,68 +310,45 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     file_excel_dc = st.file_uploader("Tải lên file Excel số liệu địa chất trọn gói ba sheet:", type=['xlsx'])
                     
                     df_hk, df_layers, df_spt = None, None, None
+                    hien_mat_lop, hien_khoi_lop, do_trong_dh = True, False, 1.0
                     if file_excel_dc is not None:
-                        # ✨ ĐỒNG BỘ TÊN HÀM: Đảm bảo gọi đúng hàm đã làm sạch trong Terrain_Viewer
                         df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
                         if df_hk is not None and not df_hk.empty:
                             st.success(f"🎉 Hệ thống định vị thành công {len(df_hk)} hố khảo sát!")
+                            col_dc1, col_dc2, col_dc3 = st.columns(3)
+                            with col_dc1:
+                                hien_mat_lop = st.checkbox(
+                                    "🪨 Hiển thị mặt phẳng lớp đất (bám biên địa hình)", value=True
+                                )
+                            with col_dc2:
+                                hien_khoi_lop = st.checkbox(
+                                    "📦 Hiển thị khối lớp đất (nền → sâu)", value=False
+                                )
+                            with col_dc3:
+                                do_trong_dh = st.slider(
+                                    "Độ trong suốt địa hình:", 0.35, 1.0, 0.72, step=0.05
+                                )
+                        else:
+                            st.warning("⚠️ Dữ liệu địa chất không hợp lệ hoặc không đọc được. Tiếp tục chỉ hiển thị địa hình.")
 
-                    # 🟩 LUỒNG 1: Dựng sa bàn lưới bề mặt địa hình sông thực địa VN-2000
-                    # (Hàm ve_dia_hinh_3d nguyên bản trả về đối tượng fig_3d)
-                    fig_3d = TV.ve_dia_hinh_3d(df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view)
-                    
-                    # 🟨 LUỒNG 2: Nếu có file Excel địa chất, tiến hành đắp kết cấu phân tầng thấu kính & SPT lên trên fig_3d
-                    if fig_3d is not None and df_hk is not None and not df_hk.empty:
-                        try:
-                            # Tự động bóc ma trận lưới X, Y từ khối dữ liệu địa hình sông gốc của Chương
-                            surface_trace = [t for t in fig_3d.data if t.type == 'surface'][0]
-                            mx_terrain = surface_trace.x
-                            my_terrain = surface_trace.y
-                            
-                            # Tiến hành dệt các thảm mặt phẳng ngăn cách giới hạn theo phương X,Y gióng xuống
+                    # Tạo mô hình địa hình 3D từ dữ liệu NTD
+                    fig_3d, mx, my, mz = TV.ve_dia_hinh_3d(
+                        df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view
+                    )
+
+                    if fig_3d is None:
+                        st.error("❌ Không thể tạo mô hình 3D từ dữ liệu khảo sát. Hãy kiểm tra lại file NTD và bảng tọa độ.")
+                    else:
+                        # Nếu có dữ liệu địa chất, phủ các lớp lên mô hình
+                        if df_hk is not None and not df_hk.empty:
                             fig_3d = TV.dap_them_ket_cau_dia_chat_3d(
-                                fig_3d, df_hk, df_layers, df_spt, mx_terrain, my_terrain, he_so_z=he_so_z
+                                fig_3d, df_hk, df_layers, df_spt, mx, my, mz, he_so_z=he_so_z,
+                                hien_mat_phang_lop=hien_mat_lop, hien_khoi_lop=hien_khoi_lop,
+                                do_trong_dia_hinh=do_trong_dh if (hien_mat_lop or hien_khoi_lop) else 1.0
                             )
-                            st.success("✨ Đã dựng thành công các mặt phẳng địa chất 3D giới hạn theo ranh giới địa hình!")
-                        except Exception as e:
-                            st.warning(f"Cảnh báo cấu trúc đồng bộ biên không gian: {e}")
-
-                    # Hiển thị sa bàn đồ họa tích hợp ra màn hình chính
-                    if fig_3d is not None:
-                        st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
                         
-                with tab_mcn_draw:
-                    try:
-                        mcn_input_draw = {
-                            'bc_cau': float(st.session_state.design_data.get('bc', 12.0)),
-                            'w_lc': 0.5
-                        }
-                        fig_mn = PLOT.ve_mat_cat_ngang(mcn_input_draw)
-                        if fig_mn is not None:
-                            st.plotly_chart(fig_mn, use_container_width=True, config={'scrollZoom': True})
-                            
-                            st.subheader("📋 Cấu tạo chi tiết các lớp mặt cắt")
-                            res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
-                            st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
-                    except Exception as e:
-                        st.error(f"Lỗi bản vẽ mặt cắt ngang: {e}")
-        else:
-            st.error("❌ Không thể đọc hoặc phân tích cấu trúc tệp dữ liệu đầu vào!")
-            
-    else:
-        # Nhóm 2 Tab mặc định khi CHƯA CÓ đủ file dữ liệu địa hình
-        tab_trac_doc, tab_mcn_draw = st.tabs([
-            "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
-            "📐 Bản vẽ Mặt cắt ngang điển hình"
-        ])
-        
-        with tab_trac_doc:
-            try:
-                fig_plotly = PLOT.ve_trac_doc_cau(st.session_state.design_data)
-                if fig_plotly is not None:
-                    st.plotly_chart(fig_plotly, use_container_width=True, config={'scrollZoom': True, 'displayModeBar': True})
-            except Exception as e:
-                st.error(f"Lỗi bản vẽ trắc dọc: {e}")
+                        # Hiển thị mô hình cuối cùng
+                        st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
                 
         with tab_mcn_draw:
             try:
