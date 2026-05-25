@@ -443,51 +443,36 @@ def _chainage_diem(x, y, ux, uy, x0, y0):
 
 def _xay_dung_ho_so_lop(df_hk_v, df_layers, lop_dat, ext_m=50.0):
     """
-    Dựng hồ sơ cao độ đáy lớp đất dọc tuyến:
-    - Nối thẳng giữa 2 hố cùng có lớp.
-    - Thấu kính: hố có lớp → trung điểm 2 hố (hố kia không có lớp).
-    - Kéo dài 50m tại hố đầu/cuối tuyến.
+    Dựng profile đáy lớp dọc tuyến:
+    - Mỗi hố khoan đóng góp một điểm (chainage, cao độ đáy lớp).
+    - Nội suy tuyến tính giữa các hố.
+    - Kéo dài thêm ext_m về hai phía.
     """
     pt_c, pt_z = [], []
-    for idx in range(len(df_hk_v) - 1):
-        hk1, hk2 = df_hk_v.iloc[idx], df_hk_v.iloc[idx + 1]
-        sub1 = df_layers[(df_layers['Key_HK'] == hk1['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
-        sub2 = df_layers[(df_layers['Key_HK'] == hk2['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
-        c1, c2 = hk1['Chainage'], hk2['Chainage']
-        z1_bot = hk1['Z_Mieng'] - sub1['Den_Chieu_Sau_Lop'].iloc[0] if not sub1.empty else None
-        z2_bot = hk2['Z_Mieng'] - sub2['Den_Chieu_Sau_Lop'].iloc[0] if not sub2.empty else None
-
-        if z1_bot is not None and z2_bot is not None:
-            pt_c.extend([c1, c2])
-            pt_z.extend([z1_bot, z2_bot])
-        elif z1_bot is not None:
-            mid_c = (c1 + c2) / 2
-            pt_c.extend([c1, mid_c])
-            pt_z.extend([z1_bot, z1_bot])
-        elif z2_bot is not None:
-            mid_c = (c1 + c2) / 2
-            pt_c.extend([mid_c, c2])
-            pt_z.extend([z2_bot, z2_bot])
-
+    for _, hk in df_hk_v.iterrows():
+        sub = df_layers[(df_layers['Key_HK'] == hk['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
+        if sub.empty:
+            continue
+        # Lấy độ sâu đáy lớn nhất của lớp này tại hố khoan
+        max_bottom = sub['Den_Chieu_Sau_Lop'].max()
+        z_bot = hk['Z_Mieng'] - max_bottom
+        pt_c.append(hk['Chainage'])
+        pt_z.append(z_bot)
+    
     if len(pt_c) < 2:
         return None, None
-
-    # Gộp điểm trùng chainage, giữ thứ tự dọc tuyến
-    df_prof = pd.DataFrame({'c': pt_c, 'z': pt_z}).groupby('c', as_index=False).mean().sort_values('c')
-    c_arr, z_arr = df_prof['c'].values, df_prof['z'].values
-
-    hk_dau, hk_cuoi = df_hk_v.iloc[0], df_hk_v.iloc[-1]
-    sub_d = df_layers[(df_layers['Key_HK'] == hk_dau['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
-    sub_c = df_layers[(df_layers['Key_HK'] == hk_cuoi['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
-    if not sub_d.empty:
-        z_d = hk_dau['Z_Mieng'] - sub_d['Den_Chieu_Sau_Lop'].iloc[0]
-        c_arr = np.insert(c_arr, 0, hk_dau['Chainage'] - ext_m)
-        z_arr = np.insert(z_arr, 0, z_d)
-    if not sub_c.empty:
-        z_c = hk_cuoi['Z_Mieng'] - sub_c['Den_Chieu_Sau_Lop'].iloc[0]
-        c_arr = np.append(c_arr, hk_cuoi['Chainage'] + ext_m)
-        z_arr = np.append(z_arr, z_c)
-
+    
+    # Sắp xếp theo chainage
+    idx = np.argsort(pt_c)
+    c_arr = np.array(pt_c)[idx]
+    z_arr = np.array(pt_z)[idx]
+    
+    # Kéo dài hai đầu
+    c_arr = np.insert(c_arr, 0, c_arr[0] - ext_m)
+    z_arr = np.insert(z_arr, 0, z_arr[0])
+    c_arr = np.append(c_arr, c_arr[-1] + ext_m)
+    z_arr = np.append(z_arr, z_arr[-1])
+    
     return c_arr, z_arr
 
 def _mask_bien_xy_dia_hinh(matrix_x, matrix_y):
@@ -561,23 +546,56 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
     df_hk_clean['Key_HK'] = df_hk_clean['Ho_Khoan'].apply(_lam_sach_ten_hk)
     df_layers_clean['Key_HK'] = df_layers_clean['Ho_Khoan'].apply(_lam_sach_ten_hk)
 
-    # Debug: in ra các key để kiểm tra
+    # Debug (có thể tắt sau)
     st.write("🔍 Key hố khoan từ sheet tọa độ:", df_hk_clean['Key_HK'].unique())
     st.write("🔍 Key hố khoan từ sheet lớp đất:", df_layers_clean['Key_HK'].unique())
     chung = set(df_hk_clean['Key_HK']) & set(df_layers_clean['Key_HK'])
     if not chung:
-        st.error("❌ Tên hố khoan giữa sheet tọa độ và sheet lớp đất không khớp! Hãy đặt tên sheet trùng với cột tên hố khoan.")
+        st.error("❌ Tên hố khoan không khớp!")
         return fig
 
-    # Tạo chainage dọc tuyến
+    # Tạo chainage dọc tuyến từ lưới địa hình
     chainage_rows, ux, uy, x0, y0 = _tinh_tuyen_dia_hinh(matrix_x, matrix_y)
     df_hk_clean['Chainage'] = df_hk_clean.apply(
         lambda r: _chainage_diem(r['X_VN2000'], r['Y_VN2000'], ux, uy, x0, y0), axis=1
     )
     df_hk_v = df_hk_clean.sort_values('Chainage').reset_index(drop=True)
 
-    # ... phần còn lại giữ nguyên (vẽ trụ, mặt lớp, v.v.)
-    # ...
-    # (Giữ nguyên logic vẽ mặt phẳng, khối như code cũ, chỉ thay đổi phần trên)
-    # ...
+    # Danh sách lớp theo thứ tự nông → sâu
+    danh_sach_lop = _thu_tu_lop_dat(df_layers_clean)
+    st.write("📋 Các lớp đất (từ trên xuống):", danh_sach_lop)
+
+    # Màu sắc cho các lớp
+    mau_sac = ['#d73027', '#f46d43', '#fdae61', '#fee090', '#e0f3f8', '#abd9e9', '#74add1', '#4575b4', '#313695', '#a6d96a']
+
+    for idx, lop in enumerate(danh_sach_lop):
+        c_arr, z_arr = _xay_dung_ho_so_lop(df_hk_v, df_layers_clean, lop, ext_m=50.0)
+        if c_arr is None:
+            st.warning(f"Không đủ điểm cho lớp {lop}, bỏ qua.")
+            continue
+
+        # Tạo lưới mặt phẳng đáy lớp
+        grid_z = _dag_luoi_mat_lop(chainage_rows, c_arr, z_arr, matrix_x.shape)
+        mask_xy = _mask_bien_xy_dia_hinh(matrix_x, matrix_y)
+        grid_z[~mask_xy] = np.nan
+        # Cắt không cho mặt lớp vượt quá bề mặt địa hình
+        grid_z = _cat_lop_duoi_dia_hinh(grid_z, matrix_z, eps=0.05)
+        grid_z_scaled = grid_z * he_so_z
+
+        if np.all(np.isnan(grid_z)):
+            continue
+
+        if hien_mat_phang_lop:
+            fig.add_trace(go.Surface(
+                x=matrix_x, y=matrix_y, z=grid_z_scaled,
+                colorscale=[[0, mau_sac[idx % len(mau_sac)]], [1, mau_sac[idx % len(mau_sac)]]],
+                opacity=0.65, showscale=False,
+                name=f"Đáy lớp {lop}",
+                hovertemplate=f"Lớp {lop}<br>X: %{{x:.1f}}<br>Y: %{{y:.1f}}<br>Z đáy: %{{z:.2f}}<extra></extra>"
+            ))
+
+        # Nếu muốn vẽ khối (thể tích) thì cần xử lý thêm, tạm thời bỏ qua
+        if hien_khoi_lop:
+            pass
+
     return fig
