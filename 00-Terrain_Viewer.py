@@ -352,7 +352,7 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
             if sheet.lower() in skip_sheets or 'spt' in sheet.lower():
                 continue
             # Đọc sheet, dòng đầu là tiêu đề
-            df_layer_raw = pd.read_excel(uploaded_file, sheet_name=sheet, header=0)
+            df_layer_raw = pd.read_excel(uploaded_file, sheet_name=sheet, header=0, engine='openpyxl', dtype=str)
             if df_layer_raw.empty:
                 continue
             # Chuẩn hóa tên cột
@@ -399,8 +399,10 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
                     'Den_Chieu_Sau_Lop': den_sau,
                     'Ten_Lop': ten_lop
                 })
-
+        st.write(f"Hố {ten_hk}: Z_mieng={z_mieng}, cao_day={cao_day}, den_sau={den_sau}")
         df_layers = pd.DataFrame(list_layers)
+        st.write("=== DỮ LIỆU LỚP ĐẤT (5 dòng đầu) ===")
+        st.write(df_layers[df_layers['Ten_Lop'] == '5'].head(10))
         if df_layers.empty:
             st.warning("Không có dữ liệu lớp đất nào được đọc.")
             return df_hk, df_layers, None
