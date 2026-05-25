@@ -515,10 +515,11 @@ def _dag_luoi_mat_lop(chainage_rows, c_arr, z_arr, shape):
     return grid_z
 
 def _cat_lop_duoi_dia_hinh(grid_z, matrix_z, eps=0.05):
-    """Ép mặt lớp nằm dưới (hoặc sát) bề mặt địa hình tại cùng (X,Y)."""
     out = grid_z.copy()
     valid = ~np.isnan(out) & ~np.isnan(matrix_z)
-    out[valid] = np.minimum(out[valid], matrix_z[valid] - eps)
+    # Chỉ cắt nếu lớp nằm TRÊN bề mặt (cao độ đáy > cao độ địa hình)
+    mask_cat = valid & (out > matrix_z)
+    out[mask_cat] = matrix_z[mask_cat] - eps
     return out
 
 def _tao_mat_phang_lop_3d(matrix_x, matrix_y, matrix_z, chainage_rows, c_arr, z_arr,
