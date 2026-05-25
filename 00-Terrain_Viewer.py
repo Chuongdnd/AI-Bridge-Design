@@ -420,7 +420,6 @@ def _xay_dung_ho_so_lop(df_hk_v, df_layers, lop_dat, ext_m=50.0):
     if len(pt_c) == 0:
         return None, None
     
-    # Sắp xếp theo chainage
     idx = np.argsort(pt_c)
     c_arr = np.array(pt_c)[idx]
     z_arr = np.array(pt_z)[idx]
@@ -430,7 +429,6 @@ def _xay_dung_ho_so_lop(df_hk_v, df_layers, lop_dat, ext_m=50.0):
         c0 = c_arr[0]
         z0 = z_arr[0]
         all_c = df_hk_v['Chainage'].values
-        # Tìm hố bên trái và phải gần nhất
         left = None
         right = None
         for c in all_c:
@@ -440,24 +438,12 @@ def _xay_dung_ho_so_lop(df_hk_v, df_layers, lop_dat, ext_m=50.0):
             elif c > c0:
                 if right is None or c < right:
                     right = c
-        
-        # Xác định biên trái
-        if left is not None:
-            left_bound = (c0 + left) / 2
-        else:
-            left_bound = c0 - 25.0   # kéo dài 25m nếu là hố biên trái
-        
-        # Xác định biên phải
-        if right is not None:
-            right_bound = (c0 + right) / 2
-        else:
-            right_bound = c0 + 25.0   # kéo dài 25m nếu là hố biên phải
-        
-        # Tạo 3 điểm: trái, hố, phải (cùng cao độ)
+        left_bound = (c0 + left) / 2 if left is not None else c0 - 25.0
+        right_bound = (c0 + right) / 2 if right is not None else c0 + 25.0
         c_arr = np.array([left_bound, c0, right_bound])
         z_arr = np.array([z0, z0, z0])
     else:
-        # Có >=2 hố: nội suy tuyến tính và kéo dài ext_m
+        # Có >=2 hố
         c_arr = np.insert(c_arr, 0, c_arr[0] - ext_m)
         z_arr = np.insert(z_arr, 0, z_arr[0])
         c_arr = np.append(c_arr, c_arr[-1] + ext_m)
@@ -540,17 +526,23 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
         if c_arr is None:
             continue
 
+        # Tạo lưới mặt phẳng đáy lớp
         grid_z = _dag_luoi_mat_lop(chainage_rows, c_arr, z_arr, matrix_x.shape)
         mask_xy = _mask_bien_xy_dia_hinh(matrix_x, matrix_y)
         grid_z[~mask_xy] = np.nan
 
-        # Không cắt ép xuống địa hình (bỏ _cat_lop_duoi_dia_hinh)
-        # grid_z = _cat_lop_duoi_dia_hinh(grid_z, matrix_z)
+        # === CẮT THEO VÙNG ẢNH HƯỞNG CỦA LỚP (CHỈ HIỂN THỊ TRONG KHOẢNG [min_c, max_c]) ===
+        if len(c_arr) >= 2:
+            min_c = c_arr[0]
+            max_c = c_arr[-1]
+            mask_trong_vung = (chainage_rows >= min_c) & (chainage_rows <= max_c)
+            grid_z[~mask_trong_vung, :] = np.nan
 
-        chainage_min = df_hk_v['Chainage'].min()
-        chainage_max = df_hk_v['Chainage'].max()
-        mask_chainage = (chainage_rows >= chainage_min - 10) & (chainage_rows <= chainage_max + 10)
-        grid_z[~mask_chainage, :] = np.nan
+        # Tùy chọn: cắt thêm ±10m quanh hố khoan (nếu muốn giới hạn chặt hơn)
+        chainage_min_hk = df_hk_v['Chainage'].min()
+        chainage_max_hk = df_hk_v['Chainage'].max()
+        mask_gan_hk = (chainage_rows >= chainage_min_hk - 10) & (chainage_rows <= chainage_max_hk + 10)
+        grid_z[~mask_gan_hk, :] = np.nan
 
         grid_z_scaled = grid_z * he_so_z
         if np.all(np.isnan(grid_z)):
@@ -564,5 +556,5 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
                 name=f"Đáy lớp {lop}",
                 hovertemplate=f"Lớp {lop}<br>X: %{{x:.1f}}<br>Y: %{{y:.1f}}<br>Z đáy: %{{z:.2f}}<extra></extra>"
             ))
-
+            
     return fig
