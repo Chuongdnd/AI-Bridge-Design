@@ -271,23 +271,46 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
         excel_file = pd.ExcelFile(uploaded_file)
         sheet_names = excel_file.sheet_names
         
-        # 1. Tìm sheet tọa độ (không phân biệt hoa thường, chấp nhận dấu)
+        # 1. Tìm sheet tọa độ (không phân biệt hoa thường, bỏ dấu cách, gạch dưới)
         sheet_toado = [s for s in sheet_names if 'toado' in s.lower().replace('_','').replace(' ','')]
         if not sheet_toado:
             st.error("Không tìm thấy sheet tọa độ hố khoan. Hãy đặt tên sheet chứa 'Toado'.")
             return None, None, None
-        df_hk_raw = pd.read_excel(uploaded_file, sheet_name=sheet_toado[0])
-        # Chuẩn hóa tên cột: bỏ khoảng trắng thừa, viết hoa
-        df_hk_raw.columns = [' '.join(str(c).split()).upper() for c in df_hk_raw.columns]
         
-        # Tìm cột chứa từ khóa cần thiết
-        col_name = next((c for c in df_hk_raw.columns if any(k in c for k in ['HỐ KHOAN','HO KHOAN','TÊN','CỌC','HK'])), None)
-        col_x = next((c for c in df_hk_raw.columns if 'X' in c and ('VN' in c or '2000' in c or 'X=' in c or c.strip()=='X')), None)
-        col_y = next((c for c in df_hk_raw.columns if 'Y' in c and ('VN' in c or '2000' in c or 'Y=' in c or c.strip()=='Y')), None)
-        col_z = next((c for c in df_hk_raw.columns if any(k in c for k in ['Z_MIENG','CAO ĐỘ','CAO DO','Z_M','ZM'])), None)
+        df_hk_raw = pd.read_excel(uploaded_file, sheet_name=sheet_toado[0])
+        # Chuẩn hóa tên cột: bỏ khoảng trắng thừa, viết hoa, bỏ dấu ngoặc
+        original_columns = list(df_hk_raw.columns)
+        df_hk_raw.columns = [re.sub(r'[\(\)\[\]]', '', ' '.join(str(c).split())).upper() for c in original_columns]
+        
+        # In ra tất cả các cột để debug
+        st.write("📋 Các cột trong sheet tọa độ:", list(df_hk_raw.columns))
+        
+        # Từ khóa tìm kiếm mở rộng cho từng loại cột
+        keywords_name = ['HỐ KHOAN','HO KHOAN','TÊN HỐ KHOAN','TEN HO KHOAN','TÊN CỌC','TEN COC','CỌC','COC','HK','NAME','TÊN','TEN','HỐ','HO']
+        keywords_x = ['X_VN2000','X VN2000','X=','X =','X_VN','X VN','X_TOA_DO','X TOA DO','TOẠ ĐỘ X','TOA DO X','X_M','X M','X']
+        keywords_y = ['Y_VN2000','Y VN2000','Y=','Y =','Y_VN','Y VN','Y_TOA_DO','Y TOA DO','TOẠ ĐỘ Y','TOA DO Y','Y_M','Y M','Y']
+        keywords_z = ['Z_MIENG','Z MIỆNG','Z_M','Z M','CAO ĐỘ MIỆNG','CAO DO MIENG','CAO ĐỘ','CAO DO','Z','ELEVATION','ĐỘ CAO','DO CAO']
+        
+        def find_column(cols, keywords):
+            for col in cols:
+                col_clean = col.strip().upper()
+                # Kiểm tra chính xác hoặc chứa từ khóa
+                for kw in keywords:
+                    if col_clean == kw or kw in col_clean:
+                        return col
+            return None
+        
+        col_name = find_column(df_hk_raw.columns, keywords_name)
+        col_x = find_column(df_hk_raw.columns, keywords_x)
+        col_y = find_column(df_hk_raw.columns, keywords_y)
+        col_z = find_column(df_hk_raw.columns, keywords_z)
         
         if col_name is None or col_x is None or col_y is None:
-            st.error("Thiếu cột Tên hố khoan / X / Y trong sheet tọa độ.")
+            missing = []
+            if col_name is None: missing.append("Tên hố khoan")
+            if col_x is None: missing.append("X")
+            if col_y is None: missing.append("Y")
+            st.error(f"❌ Thiếu cột: {', '.join(missing)}. Vui lòng đảm bảo file Excel có các cột này. Các cột hiện có: {list(df_hk_raw.columns)}")
             return None, None, None
         
         df_hk = pd.DataFrame({
@@ -313,17 +336,21 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
             df_layer_raw.columns = [' '.join(str(c).split()).upper() for c in df_layer_raw.columns]
             
             # Tìm cột tên lớp, độ sâu từ, độ sâu đến
-            col_lop = next((c for c in df_layer_raw.columns if any(k in c for k in ['TÊN LỚP','LỚP','ĐẤT','LOAI'])), df_layer_raw.columns[0])
-            col_tu = next((c for c in df_layer_raw.columns if any(k in c for k in ['TỪ','CHIỀU SÂU','DEPTH','FROM'])), None)
-            col_den = next((c for c in df_layer_raw.columns if any(k in c for k in ['ĐẾN','DEN','TO'])), None)
+            col_lop = find_column(df_layer_raw.columns, ['TÊN LỚP','LỚP','ĐẤT','LOAI','MÔ TẢ','DESCRIPTION','TEN LOP'])
+            col_tu = find_column(df_layer_raw.columns, ['TỪ','CHIỀU SÂU TỪ','DEPTH FROM','FROM','TOP','ĐỘ SÂU TỪ'])
+            col_den = find_column(df_layer_raw.columns, ['ĐẾN','CHIỀU SÂU ĐẾN','DEPTH TO','TO','BOTTOM','ĐỘ SÂU ĐẾN'])
+            
+            # Nếu không tìm thấy rõ ràng, thử lấy cột thứ 1,2,3
+            if col_lop is None:
+                col_lop = df_layer_raw.columns[0]
+            if col_tu is None and len(df_layer_raw.columns) > 1:
+                col_tu = df_layer_raw.columns[1]
+            if col_den is None and len(df_layer_raw.columns) > 2:
+                col_den = df_layer_raw.columns[2]
             
             if col_tu is None or col_den is None:
-                # Nếu không rõ, thử lấy cột thứ 2 và 3
-                if len(df_layer_raw.columns) >= 3:
-                    col_tu = df_layer_raw.columns[1]
-                    col_den = df_layer_raw.columns[2]
-                else:
-                    continue
+                st.warning(f"Sheet '{sheet}' không đủ cột độ sâu, bỏ qua.")
+                continue
             
             ten_hk_sheet = sheet.strip().upper()  # dùng tên sheet làm tên hố khoan
             

@@ -308,28 +308,24 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     st.markdown("---")
                     st.subheader("📊 Tích hợp Bản mô phỏng Địa chất Công trình chuyên sâu")
                     file_excel_dc = st.file_uploader("Tải lên file Excel số liệu địa chất trọn gói ba sheet:", type=['xlsx'])
-                    
+
                     df_hk, df_layers, df_spt = None, None, None
                     hien_mat_lop, hien_khoi_lop, do_trong_dh = True, False, 1.0
+
                     if file_excel_dc is not None:
-                        df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
+                        with st.spinner("🔍 Đang phân tích dữ liệu địa chất..."):
+                            df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
                         if df_hk is not None and not df_hk.empty:
                             st.success(f"🎉 Hệ thống định vị thành công {len(df_hk)} hố khảo sát!")
                             col_dc1, col_dc2, col_dc3 = st.columns(3)
                             with col_dc1:
-                                hien_mat_lop = st.checkbox(
-                                    "🪨 Hiển thị mặt phẳng lớp đất (bám biên địa hình)", value=True
-                                )
+                                hien_mat_lop = st.checkbox("🪨 Hiển thị mặt phẳng lớp đất", value=True)
                             with col_dc2:
-                                hien_khoi_lop = st.checkbox(
-                                    "📦 Hiển thị khối lớp đất (nền → sâu)", value=False
-                                )
+                                hien_khoi_lop = st.checkbox("📦 Hiển thị khối lớp đất", value=False)
                             with col_dc3:
-                                do_trong_dh = st.slider(
-                                    "Độ trong suốt địa hình:", 0.35, 1.0, 0.72, step=0.05
-                                )
+                                do_trong_dh = st.slider("Độ trong suốt địa hình:", 0.35, 1.0, 0.72, step=0.05)
                         else:
-                            st.warning("⚠️ Dữ liệu địa chất không hợp lệ hoặc không đọc được. Tiếp tục chỉ hiển thị địa hình.")
+                            st.warning("⚠️ Dữ liệu địa chất không hợp lệ hoặc không tìm thấy cột tọa độ. Mô hình sẽ chỉ hiển thị địa hình.")
 
                     # Tạo mô hình địa hình 3D từ dữ liệu NTD
                     fig_3d, mx, my, mz = TV.ve_dia_hinh_3d(
