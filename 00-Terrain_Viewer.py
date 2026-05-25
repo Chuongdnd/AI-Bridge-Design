@@ -171,71 +171,65 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         target_pct = np.linspace(0.0, 1.0, num_samples)
         matrix_x, matrix_y, matrix_z = [], [], []
         
-        # Xác định các cọc có TARGET hợp lệ (ít nhất 2 điểm TARGETL/R)
+        # Xác định cọc có TARGET đủ 2 điểm
         target_lts = []
         for lt in unique_lts:
             df_sub = df_clean[df_clean['Lý trình'] == lt]
-            target_count = df_sub[df_sub['Tag_Gốc'].str.contains('TARGET', na=False)].shape[0]
-            if target_count >= 2:
+            if df_sub['Tag_Gốc'].str.contains('TARGET', na=False).sum() >= 2:
                 target_lts.append(lt)
         
         if not target_lts:
             st.error("Không có cọc TARGET hợp lệ")
             return None, None, None, None
         
-        # Cảnh báo các cọc thiếu TARGET
-        missing = set(unique_lts) - set(target_lts)
-        if missing:
-            st.warning(f"Các cọc thiếu TARGET (sẽ được copy từ lân cận): {sorted(missing)}")
-        
         for lt in unique_lts:
             df_sub = df_clean[df_clean['Lý trình'] == lt].sort_values('Offset')
-            df_targets = df_sub[df_sub['Tag_Gốc'].str.contains('TARGET', na=False)]
-            
-            if len(df_targets) >= 2:
-                # Có TARGET, dùng trực tiếp
-                obs_offsets = df_targets['Offset'].values
-                obs_x_real = df_targets['X_Real'].values
-                obs_y_real = df_targets['Y_Real'].values
-                obs_zs = df_targets['Z'].values
+            df_target = df_sub[df_sub['Tag_Gốc'].str.contains('TARGET', na=False)]
+            if len(df_target) >= 2:
+                obs_offsets = df_target['Offset'].values
+                obs_x_real = df_target['X_Real'].values
+                obs_y_real = df_target['Y_Real'].values
+                obs_zs = df_target['Z'].values
             else:
-                # Tìm cọc TARGET gần nhất về phía trái hoặc phải
-                nearest_lt = None
+                # Tìm cọc TARGET gần nhất
+                near_lt = None
                 left = [t for t in target_lts if t < lt]
                 if left:
-                    nearest_lt = max(left)
+                    near_lt = max(left)
                 else:
                     right = [t for t in target_lts if t > lt]
                     if right:
-                        nearest_lt = min(right)
-                if nearest_lt is None:
+                        near_lt = min(right)
+                if near_lt is None:
                     continue
-                # Lấy mặt cắt từ cọc gần nhất và dịch chuyển
-                df_nearest = df_clean[df_clean['Lý trình'] == nearest_lt].sort_values('Offset')
-                df_nearest_targets = df_nearest[df_nearest['Tag_Gốc'].str.contains('TARGET', na=False)]
-                if len(df_nearest_targets) < 2:
+                df_near = df_clean[df_clean['Lý trình'] == near_lt].sort_values('Offset')
+                df_near_target = df_near[df_near['Tag_Gốc'].str.contains('TARGET', na=False)]
+                if len(df_near_target) < 2:
                     continue
-                delta_lt = lt - nearest_lt
-                goc = df_nearest['Góc_Tuyến'].iloc[0]
+                delta = lt - near_lt
+                goc = df_near['Góc_Tuyến'].iloc[0]
                 ux = np.cos(goc)
                 uy = np.sin(goc)
-                obs_offsets = df_nearest_targets['Offset'].values
-                obs_x_real = df_nearest_targets['X_Real'].values + delta_lt * ux
-                obs_y_real = df_nearest_targets['Y_Real'].values + delta_lt * uy
-                obs_zs = df_nearest_targets['Z'].values
+                obs_offsets = df_near_target['Offset'].values
+                obs_x_real = df_near_target['X_Real'].values + delta * ux
+                obs_y_real = df_near_target['Y_Real'].values + delta * uy
+                obs_zs = df_near_target['Z'].values
             
-            # Sắp xếp theo Offset
+            # Sắp xếp theo offset
             idx = np.argsort(obs_offsets)
             obs_offsets = obs_offsets[idx]
             obs_x_real = obs_x_real[idx]
             obs_y_real = obs_y_real[idx]
             obs_zs = obs_zs[idx]
-            # Nội suy
-            pct = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0] + 1e-6)
-            x_line = np.interp(target_pct, pct, obs_x_real)
-            y_line = np.interp(target_pct, pct, obs_y_real)
-            z_line = np.interp(target_pct, pct, obs_zs)
-            
+            if obs_offsets[-1] - obs_offsets[0] < 1e-6:
+                x_line = np.full(num_samples, obs_x_real[0])
+                y_line = np.full(num_samples, obs_y_real[0])
+                z_line = np.full(num_samples, obs_zs[0])
+            else:
+                pct = (obs_offsets - obs_offsets[0]) / (obs_offsets[-1] - obs_offsets[0])
+                x_line = np.interp(target_pct, pct, obs_x_real)
+                y_line = np.interp(target_pct, pct, obs_y_real)
+                z_line = np.interp(target_pct, pct, obs_zs)
             matrix_x.append(x_line)
             matrix_y.append(y_line)
             matrix_z.append(z_line)
@@ -243,16 +237,27 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         matrix_x = np.array(matrix_x)
         matrix_y = np.array(matrix_y)
         matrix_z = np.array(matrix_z)
-
-        # Làm mịn
+        
+        # ----- XỬ LÝ NAN BẰNG NỘI SUY TUYẾN TÍNH DỌC THEO TỪNG CỘT -----
+        # Sử dụng pandas interpolate cho từng cột (theo hàng dọc)
+        df_z = pd.DataFrame(matrix_z)
+        df_z = df_z.interpolate(method='linear', axis=0, limit_direction='both')
+        matrix_z = df_z.values
+        
+        # Làm mịn (rolling mean) nhưng tránh tạo NaN mới
         if do_min > 1:
             mz_pd = pd.DataFrame(matrix_z)
             mz_pd = mz_pd.rolling(window=do_min, min_periods=1, center=True).mean()
             matrix_z = mz_pd.T.rolling(window=do_min, min_periods=1, center=True).mean().T.values
-
+            # Lần nữa, nếu phát sinh NaN do rolling ở biên thì nội suy tiếp
+            if np.isnan(matrix_z).any():
+                df_z2 = pd.DataFrame(matrix_z)
+                df_z2 = df_z2.interpolate(method='linear', axis=0, limit_direction='both')
+                matrix_z = df_z2.values
+        
         z_scaled = matrix_z * he_so_z
         fig = go.Figure()
-
+        
         if che_do in ["Bề mặt mịn", "Lưới tam giác"]:
             show_wireframe = (che_do == "Lưới tam giác")
             fig.add_trace(go.Surface(
@@ -273,7 +278,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                 contours_z=dict(show=True, usecolormap=False, color="rgb(0,0,0)", width=2, project=dict(z=True)),
                 hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z Thực: %{customdata:.2f} m<extra></extra>"
             ))
-
+        
         # Đường tim tuyến
         df_tim_all = df_clean[df_clean['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
         if not df_tim_all.empty:
@@ -286,7 +291,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                 textfont=dict(family="Arial, sans-serif", size=11, color="lightblue"),
                 name='Đường tim tuyến dọc sông'
             ))
-
+        
         fig.update_layout(
             title=dict(text="🏔️ MÔ HÌNH ĐỊA HÌNH KHÔNG GIAN 3D BÁM SÁT TOÀN TUYẾN NTD", font=dict(size=16, color='#007acc')),
             height=850,
@@ -303,7 +308,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         return fig, matrix_x, matrix_y, matrix_z
     except Exception as e:
         st.error(f"Lỗi phân tích đồ họa không gian: {e}")
-        return None, None, None, None
+        return None, None, None, None 
 
 # ============================================================================
 # XỬ LÝ ĐỊA CHẤT
