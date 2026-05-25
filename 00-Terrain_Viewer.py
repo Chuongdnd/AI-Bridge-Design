@@ -292,18 +292,16 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
 # =========================================================================
 
 def doc_excel_dia_chat_3_sheet(uploaded_file):
-    """
-    Đọc file Excel địa chất với cấu trúc:
-    - Sheet tọa độ: HO_KHOAN, X, Y, Z (cao độ miệng)
-    - Các sheet chi tiết hố khoan: TEN_LOP, CAO_DO_DINH_LOP, CAO_DO_DAY_LOP, MO_TA
-    - Trong đó CAO_DO_DINH_LOP và CAO_DO_DAY_LOP là cao độ tuyệt đối (đã có sẵn)
-    """
     try:
         excel_file = pd.ExcelFile(uploaded_file)
         sheet_names = excel_file.sheet_names
 
-        # 1. Tìm sheet tọa độ
-        sheet_toado = next((s for s in sheet_names if 'toado' in s.lower().replace('_', '').replace(' ', '')), None)
+        # Tìm sheet tọa độ
+        sheet_toado = None
+        for s in sheet_names:
+            if 'toado' in s.lower().replace('_', '').replace(' ', ''):
+                sheet_toado = s
+                break
         if not sheet_toado:
             st.error("Không tìm thấy sheet tọa độ")
             return None, None, None
@@ -311,15 +309,17 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
         df_hk_raw = pd.read_excel(uploaded_file, sheet_name=sheet_toado, header=0)
         df_hk_raw.columns = [str(c).strip().upper().replace(' ', '_') for c in df_hk_raw.columns]
 
-        # Tìm cột
-        col_name = next((c for c in df_hk_raw.columns if 'HO_KHOAN' in c or 'HỐ_KHOAN' in c), None)
-        col_x = next((c for c in df_hk_raw.columns if c == 'X' or 'X_VN2000' in c), None)
-        col_y = next((c for c in df_hk_raw.columns if c == 'Y' or 'Y_VN2000' in c), None)
-        col_z = next((c for c in df_hk_raw.columns if c == 'Z' or 'Z_MIENG' in c or 'CAO_DO_MIENG' in c), None)
+        def find_col(cols, candidates):
+            for col in cols:
+                for cand in candidates:
+                    if cand in col:
+                        return col
+            return None
 
-        if not (col_name and col_x and col_y):
-            st.error("Thiếu cột tên hố, X hoặc Y")
-            return None, None, None
+        col_name = find_col(df_hk_raw.columns, ['HO_KHOAN', 'HỐ_KHOAN'])
+        col_x = find_col(df_hk_raw.columns, ['X', 'X_VN2000'])
+        col_y = find_col(df_hk_raw.columns, ['Y', 'Y_VN2000'])
+        col_z = find_col(df_hk_raw.columns, ['Z', 'Z_MIENG'])
 
         df_hk = pd.DataFrame({
             'Ho_Khoan': df_hk_raw[col_name].astype(str).str.strip().str.upper(),
@@ -328,66 +328,50 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
             'Z_Mieng': pd.to_numeric(df_hk_raw[col_z], errors='coerce') if col_z else 0.0
         }).dropna(subset=['X_VN2000', 'Y_VN2000']).reset_index(drop=True)
 
-        # 2. Đọc các sheet lớp đất
+        # Đọc các sheet lớp đất (cao độ đã cho sẵn)
         list_layers = []
         for sheet in sheet_names:
-            if sheet.lower() in [sheet_toado.lower()] or 'spt' in sheet.lower():
+            if sheet.lower() == sheet_toado.lower() or 'spt' in sheet.lower():
                 continue
-            df_layer = pd.read_excel(uploaded_file, sheet_name=sheet, header=0)
-            if df_layer.empty:
+            df = pd.read_excel(uploaded_file, sheet_name=sheet, header=0)
+            if df.empty:
                 continue
-            df_layer.columns = [str(c).strip().upper().replace(' ', '_') for c in df_layer.columns]
+            df.columns = [str(c).strip().upper().replace(' ', '_') for c in df.columns]
 
-            col_ten = next((c for c in df_layer.columns if 'TEN_LOP' in c or 'TÊN_LỚP' in c), None)
-            col_dinh = next((c for c in df_layer.columns if 'CAO_DO_DINH' in c), None)
-            col_day = next((c for c in df_layer.columns if 'CAO_DO_DAY' in c), None)
-
-            if not (col_ten and col_dinh and col_day):
-                st.warning(f"Sheet {sheet} thiếu cột, bỏ qua")
+            col_ten = find_col(df.columns, ['TEN_LOP', 'TÊN_LỚP'])
+            col_day = find_col(df.columns, ['CAO_DO_DAY_LOP', 'CAO_DO_DAY', 'DAY_LOP'])
+            if not (col_ten and col_day):
+                st.warning(f"Sheet {sheet} thiếu cột tên lớp hoặc cao độ đáy, bỏ qua")
                 continue
 
             ten_hk = sheet.strip().upper()
-            z_mieng = df_hk.loc[df_hk['Ho_Khoan'] == ten_hk, 'Z_Mieng'].values
-            if len(z_mieng) == 0:
-                st.warning(f"Không có cao độ miệng cho hố {ten_hk}")
-                continue
-            z_mieng = z_mieng[0]
-
-            for _, row in df_layer.iterrows():
+            for _, row in df.iterrows():
                 ten_lop = str(row[col_ten]).strip().upper()
                 if not ten_lop or ten_lop == 'NAN':
                     continue
                 try:
-                    cao_dinh = float(row[col_dinh])   # cao độ tuyệt đối đỉnh lớp
-                    cao_day = float(row[col_day])     # cao độ tuyệt đối đáy lớp
+                    cao_do_day = float(row[col_day])
                 except:
                     continue
                 list_layers.append({
                     'Ho_Khoan': ten_hk,
-                    'Cao_Do_Dinh': cao_dinh,
-                    'Cao_Do_Day': cao_day,
-                    'Ten_Lop': ten_lop
+                    'Ten_Lop': ten_lop,
+                    'Cao_Do_Day': cao_do_day   # cao độ tuyệt đối đáy lớp
                 })
 
         df_layers = pd.DataFrame(list_layers)
 
         # Debug
-        st.write("### Dữ liệu lớp 5 (độ sâu)")
+        st.write("### 🔍 Dữ liệu lớp 5 (cao độ đáy)")
         df5 = df_layers[df_layers['Ten_Lop'] == '5']
         if not df5.empty:
-            st.dataframe(df5[['Ho_Khoan', 'Tu_Chieu_Sau_Lop', 'Den_Chieu_Sau_Lop']])
-        else:
-            st.warning("Không có lớp 5")
-        # Debug
-            st.write("### Cao độ đáy các lớp")
-            st.dataframe(df_layers[df_layers['Ten_Lop'] == '5'][['Ho_Khoan', 'Cao_Do_Day']])
-            return df_hk, df_layers, df_spt
-       
-        # 3. Đọc SPT
+            st.dataframe(df5)
+
+        # Đọc SPT (nếu có)
         df_spt = None
-        sheet_spt = next((s for s in sheet_names if 'spt' in s.lower()), None)
+        sheet_spt = [s for s in sheet_names if 'spt' in s.lower()]
         if sheet_spt:
-            df_spt = pd.read_excel(uploaded_file, sheet_name=sheet_spt, header=0)
+            df_spt = pd.read_excel(uploaded_file, sheet_name=sheet_spt[0], header=0)
             df_spt.columns = [str(c).strip().upper().replace(' ', '_') for c in df_spt.columns]
 
         return df_hk, df_layers, df_spt
@@ -433,27 +417,33 @@ def _chainage_diem(x, y, ux, uy, x0, y0):
     return (x - x0) * ux + (y - y0) * uy
 
 def _xay_dung_ho_so_lop(df_hk_v, df_layers, lop_dat, ext_m=50.0):
-    """Xây dựng profile đáy lớp từ cao độ đáy có sẵn."""
+    """
+    Dựng profile đáy lớp dọc tuyến dùng cao độ tuyệt đối.
+    df_layers chứa cột 'Cao_Do_Day'.
+    """
     pt_c, pt_z = [], []
     for _, hk in df_hk_v.iterrows():
-        sub = df_layers[(df_layers['Key_HK'] == hk['Key_HK']) & (df_layers['Ten_Lop'] == lop_dat)]
+        sub = df_layers[(df_layers['Ho_Khoan'] == hk['Ho_Khoan']) & (df_layers['Ten_Lop'] == lop_dat)]
         if sub.empty:
             continue
-        # Lấy cao độ đáy lớn nhất (nếu nhiều khoảng) hoặc đơn trị
-        cao_day_max = sub['Cao_Do_Day'].max()
+        # Lấy cao độ đáy lớp (lớp có thể có nhiều phân đoạn, lấy giá trị đầu tiên hoặc trung bình)
+        cao_day = sub['Cao_Do_Day'].iloc[0]
         pt_c.append(hk['Chainage'])
-        pt_z.append(cao_day_max)   # Trực tiếp là cao độ đáy
+        pt_z.append(cao_day)   # trực tiếp là cao độ tuyệt đối
     
     if len(pt_c) < 2:
         return None, None
+    
     idx = np.argsort(pt_c)
     c_arr = np.array(pt_c)[idx]
     z_arr = np.array(pt_z)[idx]
-    # Kéo dài
+    
+    # Kéo dài 50m
     c_arr = np.insert(c_arr, 0, c_arr[0] - ext_m)
     z_arr = np.insert(z_arr, 0, z_arr[0])
     c_arr = np.append(c_arr, c_arr[-1] + ext_m)
     z_arr = np.append(z_arr, z_arr[-1])
+    
     return c_arr, z_arr
 
 def _mask_bien_xy_dia_hinh(matrix_x, matrix_y):
