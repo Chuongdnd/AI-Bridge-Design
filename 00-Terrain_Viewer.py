@@ -291,91 +291,94 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
 # ⚙️ PHÂN HỆ XỬ LÝ ĐỊA CHẤT NÂNG CAO - LÀM SẠCH VÀ CHUẨN HÓA 100%
 # =========================================================================
 
-def doc_excel_dia_chat_3_sheet(uploaded_file):
-    try:
-        excel_file = pd.ExcelFile(uploaded_file)
-        sheet_names = excel_file.sheet_names
+def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix_y, matrix_z, he_so_z=1.0,
+                                 hien_mat_phang_lop=True, hien_khoi_lop=False, do_trong_dia_hinh=0.72):
+    if fig is None or df_hk is None or df_hk.empty or df_layers is None or df_layers.empty:
+        st.warning("Không đủ dữ liệu địa chất để vẽ.")
+        return fig
+    if matrix_x is None or matrix_y is None or matrix_z is None:
+        st.warning("Chưa có lưới địa hình (matrix_x, matrix_y, matrix_z).")
+        return fig
 
-        # 1. Sheet tọa độ
-        sheet_toado = [s for s in sheet_names if 'toado' in s.lower().replace('_','')][0]
-        df_hk = pd.read_excel(uploaded_file, sheet_name=sheet_toado, header=0)
-        df_hk.columns = [c.strip().upper() for c in df_hk.columns]
-        # Chuẩn hóa tên cột
-        rename_dict = {}
-        for col in df_hk.columns:
-            if 'HO_KHOAN' in col: rename_dict[col] = 'Ho_Khoan'
-            if 'X' in col: rename_dict[col] = 'X_VN2000'
-            if 'Y' in col: rename_dict[col] = 'Y_VN2000'
-            if 'Z' in col: rename_dict[col] = 'Z_Mieng'
-        df_hk.rename(columns=rename_dict, inplace=True)
-        df_hk['Ho_Khoan'] = df_hk['Ho_Khoan'].astype(str).str.strip().str.upper()
-        df_hk['X_VN2000'] = pd.to_numeric(df_hk['X_VN2000'], errors='coerce')
-        df_hk['Y_VN2000'] = pd.to_numeric(df_hk['Y_VN2000'], errors='coerce')
-        df_hk['Z_Mieng'] = pd.to_numeric(df_hk['Z_Mieng'], errors='coerce')
-        df_hk.dropna(subset=['X_VN2000', 'Y_VN2000'], inplace=True)
-        
-        st.write("📌 Tọa độ hố khoan (sau khi đọc):")
-        st.dataframe(df_hk)
+    # --- Kiểm tra dữ liệu đầu vào ---
+    st.subheader("🔍 Kiểm tra dữ liệu địa chất từ Excel")
+    st.write("**Các hố khoan:**", df_hk[['Ho_Khoan', 'Z_Mieng']].to_dict('records'))
+    st.write("**Các lớp đất (chỉ lớp 5):**")
+    df5 = df_layers[df_layers['Ten_Lop'] == '5']
+    if not df5.empty:
+        st.dataframe(df5[['Ho_Khoan', 'Ten_Lop', 'Cao_Do_Day']])
+    else:
+        st.warning("Không có lớp 5 trong dữ liệu!")
 
-        # 2. Đọc các sheet lớp đất
-        list_layers = []
-        for sheet in sheet_names:
-            if sheet.lower() == sheet_toado.lower() or 'spt' in sheet.lower():
-                continue
-            df = pd.read_excel(uploaded_file, sheet_name=sheet, header=0)
-            if df.empty:
-                continue
-            df.columns = [c.strip().upper() for c in df.columns]
-            
-            # Tìm cột tên lớp và cao độ đáy
-            col_ten = None
-            col_day = None
-            for col in df.columns:
-                if 'TEN_LOP' in col or 'TÊN_LỚP' in col:
-                    col_ten = col
-                if 'CAO_DO_DAY' in col:
-                    col_day = col
-            if col_ten is None or col_day is None:
-                st.warning(f"Sheet {sheet}: không tìm thấy cột cần thiết. Các cột: {list(df.columns)}")
-                continue
-            
-            ten_hk = sheet.strip().upper()
-            for _, row in df.iterrows():
-                ten_lop = str(row[col_ten]).strip().upper()
-                if not ten_lop or ten_lop == 'NAN':
-                    continue
-                try:
-                    cao_day = float(row[col_day])
-                except:
-                    continue
-                list_layers.append({
-                    'Ho_Khoan': ten_hk,
-                    'Ten_Lop': ten_lop,
-                    'Cao_Do_Day': cao_day
-                })
+    # Chuẩn hóa tên hố khoan
+    df_hk_clean = df_hk.copy()
+    df_layers_clean = df_layers.copy()
+    df_hk_clean['Key_HK'] = df_hk_clean['Ho_Khoan'].apply(_lam_sach_ten_hk)
+    df_layers_clean['Key_HK'] = df_layers_clean['Ho_Khoan'].apply(_lam_sach_ten_hk)
+
+    # Tạo chainage dọc tuyến từ lưới địa hình
+    chainage_rows, ux, uy, x0, y0 = _tinh_tuyen_dia_hinh(matrix_x, matrix_y)
+    df_hk_clean['Chainage'] = df_hk_clean.apply(
+        lambda r: _chainage_diem(r['X_VN2000'], r['Y_VN2000'], ux, uy, x0, y0), axis=1
+    )
+    df_hk_v = df_hk_clean.sort_values('Chainage').reset_index(drop=True)
+
+    st.write("**Chainage các hố khoan:**", df_hk_v[['Ho_Khoan', 'Chainage']].to_dict('records'))
+
+    # Danh sách lớp theo thứ tự từ trên xuống
+    danh_sach_lop = _thu_tu_lop_dat(df_layers_clean)
+    st.write("**Các lớp đất (từ nông đến sâu):**", danh_sach_lop)
+
+    # Màu sắc
+    mau_sac = ['#d73027', '#f46d43', '#fdae61', '#fee090', '#e0f3f8', '#abd9e9', '#74add1', '#4575b4', '#313695', '#a6d96a']
+
+    for idx, lop in enumerate(danh_sach_lop):
+        # Lấy profile đáy lớp (cao độ tuyệt đối)
+        c_arr, z_arr = _xay_dung_ho_so_lop(df_hk_v, df_layers_clean, lop, ext_m=50.0)
+        if c_arr is None:
+            st.warning(f"Lớp {lop}: không đủ điểm, bỏ qua.")
+            continue
         
-        df_layers = pd.DataFrame(list_layers)
+        # Debug lớp 5: in ra c_arr và z_arr
+        if lop == '5':
+            st.write(f"**Profile lớp {lop} (chainage, cao độ đáy):**")
+            st.write(list(zip(c_arr, z_arr)))
+
+        # Tạo lưới mặt phẳng đáy lớp (nội suy dọc tuyến, trải ngang)
+        grid_z = _dag_luoi_mat_lop(chainage_rows, c_arr, z_arr, matrix_x.shape)
+        # Mask theo biên địa hình (giữ trong phạm vi mặt cắt)
+        mask_xy = _mask_bien_xy_dia_hinh(matrix_x, matrix_y)
+        grid_z[~mask_xy] = np.nan
         
-        st.write("### 🔍 Dữ liệu lớp 5 (cao độ đáy từ Excel)")
-        df5 = df_layers[df_layers['Ten_Lop'] == '5']
-        if not df5.empty:
-            st.dataframe(df5[['Ho_Khoan', 'Ten_Lop', 'Cao_Do_Day']])
-        else:
-            st.warning("Không tìm thấy lớp 5!")
+        # TẠM THỜI BỎ QUA HÀM CẮT ĐỊA HÌNH ĐỂ KIỂM TRA CAO ĐỘ GỐC
+        # grid_z = _cat_lop_duoi_dia_hinh(grid_z, matrix_z, eps=0.05)
         
-        # 3. SPT
-        df_spt = None
-        sheet_spt = [s for s in sheet_names if 'spt' in s.lower()]
-        if sheet_spt:
-            df_spt = pd.read_excel(uploaded_file, sheet_name=sheet_spt[0], header=0)
-            df_spt.columns = [c.strip().upper() for c in df_spt.columns]
-        
-        return df_hk, df_layers, df_spt
-    except Exception as e:
-        st.error(f"Lỗi: {e}")
-        import traceback
-        st.code(traceback.format_exc())
-        return None, None, None
+        # Cắt theo chainage chỉ trong phạm vi hố khoan ±10m (nếu muốn)
+        chainage_min = df_hk_v['Chainage'].min()
+        chainage_max = df_hk_v['Chainage'].max()
+        mask_chainage = (chainage_rows >= chainage_min - 10) & (chainage_rows <= chainage_max + 10)
+        grid_z[~mask_chainage, :] = np.nan
+
+        grid_z_scaled = grid_z * he_so_z
+
+        if np.all(np.isnan(grid_z)):
+            st.warning(f"Lớp {lop}: không có ô nào hợp lệ sau khi lọc, bỏ qua.")
+            continue
+
+        if hien_mat_phang_lop:
+            fig.add_trace(go.Surface(
+                x=matrix_x, y=matrix_y, z=grid_z_scaled,
+                colorscale=[[0, mau_sac[idx % len(mau_sac)]], [1, mau_sac[idx % len(mau_sac)]]],
+                opacity=0.65, showscale=False,
+                name=f"Đáy lớp {lop}",
+                hovertemplate=f"Lớp {lop}<br>X: %{{x:.1f}}<br>Y: %{{y:.1f}}<br>Z đáy: %{{z:.2f}}<extra></extra>"
+            ))
+
+        if hien_khoi_lop:
+            # Tạm thời chưa hỗ trợ khối
+            pass
+
+    return fig
 
 def _lam_sach_ten_hk(text):
     """
