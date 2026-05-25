@@ -355,9 +355,9 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
             ten_hk_sheet = hk_values[0]  # ví dụ: 'CVVVD-T4'
             
             # --- Tìm cột tên lớp, độ sâu từ, độ sâu đến ---
-            col_lop = find_column(df_layer_raw.columns, ['TÊN LỚP','LỚP','ĐẤT','LOAI','MÔ TẢ','DESCRIPTION','TEN LOP'])
-            col_tu = find_column(df_layer_raw.columns, ['TỪ','CHIỀU SÂU TỪ','DEPTH FROM','FROM','TOP','ĐỘ SÂU TỪ'])
-            col_den = find_column(df_layer_raw.columns, ['ĐẾN','CHIỀU SÂU ĐẾN','DEPTH TO','TO','BOTTOM','ĐỘ SÂU ĐẾN'])
+            col_lop = find_column(df_layer_raw.columns, ['TÊN LỚP','LỚP','ĐẤT','LOAI','MÔ TẢ','DESCRIPTION','TEN LOP','TEN_LOP'])
+            col_tu = find_column(df_layer_raw.columns, ['TỪ','CHIỀU SÂU TỪ','DEPTH FROM','FROM','TOP','ĐỘ SÂU TỪ', 'TU_CHIEU_SAU'])
+            col_den = find_column(df_layer_raw.columns, ['ĐẾN','CHIỀU SÂU ĐẾN','DEPTH TO','TO','BOTTOM','ĐỘ SÂU ĐẾN', 'DEN_CHIEU_SAU'])
             
             # Fallback nếu không tìm thấy
             if col_lop is None:
