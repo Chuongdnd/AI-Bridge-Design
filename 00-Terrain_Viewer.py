@@ -292,128 +292,87 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
 # =========================================================================
 
 def doc_excel_dia_chat_3_sheet(uploaded_file):
-    """
-    Đọc file Excel địa chất, ưu tiên đọc giá trị thực (kể cả ô công thức) bằng openpyxl.
-    """
     try:
-        from openpyxl import load_workbook
+        excel_file = pd.ExcelFile(uploaded_file)
+        sheet_names = excel_file.sheet_names
+
+        # 1. Sheet tọa độ
+        sheet_toado = [s for s in sheet_names if 'toado' in s.lower().replace('_','')][0]
+        df_hk = pd.read_excel(uploaded_file, sheet_name=sheet_toado, header=0)
+        df_hk.columns = [c.strip().upper() for c in df_hk.columns]
+        # Chuẩn hóa tên cột
+        rename_dict = {}
+        for col in df_hk.columns:
+            if 'HO_KHOAN' in col: rename_dict[col] = 'Ho_Khoan'
+            if 'X' in col: rename_dict[col] = 'X_VN2000'
+            if 'Y' in col: rename_dict[col] = 'Y_VN2000'
+            if 'Z' in col: rename_dict[col] = 'Z_Mieng'
+        df_hk.rename(columns=rename_dict, inplace=True)
+        df_hk['Ho_Khoan'] = df_hk['Ho_Khoan'].astype(str).str.strip().str.upper()
+        df_hk['X_VN2000'] = pd.to_numeric(df_hk['X_VN2000'], errors='coerce')
+        df_hk['Y_VN2000'] = pd.to_numeric(df_hk['Y_VN2000'], errors='coerce')
+        df_hk['Z_Mieng'] = pd.to_numeric(df_hk['Z_Mieng'], errors='coerce')
+        df_hk.dropna(subset=['X_VN2000', 'Y_VN2000'], inplace=True)
         
-        # Mở workbook với data_only=True để lấy giá trị đã tính
-        wb = load_workbook(uploaded_file, data_only=True)
-        sheet_names = wb.sheetnames
-
-        # 1. Tìm và đọc sheet tọa độ
-        sheet_toado = None
-        for s in sheet_names:
-            if 'toado' in s.lower().replace('_', '').replace(' ', ''):
-                sheet_toado = s
-                break
-        if not sheet_toado:
-            st.error("Không tìm thấy sheet tọa độ (chứa 'Toado')")
-            return None, None, None
-
-        ws = wb[sheet_toado]
-        # Lấy header từ dòng 1
-        headers = [cell.value for cell in ws[1]]
-        # Đọc dữ liệu từ dòng 2
-        data = []
-        for row in ws.iter_rows(min_row=2, values_only=True):
-            if any(cell is not None for cell in row):
-                data.append(row)
-        df_hk_raw = pd.DataFrame(data, columns=headers)
-        df_hk_raw.columns = [str(c).strip().upper().replace(' ', '_') for c in df_hk_raw.columns]
-
-        def find_col(cols, candidates):
-            for col in cols:
-                for cand in candidates:
-                    if cand in col:
-                        return col
-            return None
-
-        col_name = find_col(df_hk_raw.columns, ['HO_KHOAN', 'HỐ_KHOAN'])
-        col_x = find_col(df_hk_raw.columns, ['X', 'X_VN2000'])
-        col_y = find_col(df_hk_raw.columns, ['Y', 'Y_VN2000'])
-        col_z = find_col(df_hk_raw.columns, ['Z', 'Z_MIENG'])
-
-        if not (col_name and col_x and col_y):
-            st.error(f"Thiếu cột tên hố, X hoặc Y. Các cột: {list(df_hk_raw.columns)}")
-            return None, None, None
-
-        df_hk = pd.DataFrame({
-            'Ho_Khoan': df_hk_raw[col_name].astype(str).str.strip().str.upper(),
-            'X_VN2000': pd.to_numeric(df_hk_raw[col_x], errors='coerce'),
-            'Y_VN2000': pd.to_numeric(df_hk_raw[col_y], errors='coerce'),
-            'Z_Mieng': pd.to_numeric(df_hk_raw[col_z], errors='coerce') if col_z else 0.0
-        }).dropna(subset=['X_VN2000', 'Y_VN2000']).reset_index(drop=True)
-
-        st.write("📌 Tọa độ các hố khoan:")
+        st.write("📌 Tọa độ hố khoan (sau khi đọc):")
         st.dataframe(df_hk)
 
-        # 2. Đọc các sheet lớp đất (dùng openpyxl)
+        # 2. Đọc các sheet lớp đất
         list_layers = []
-        for sheet_name in sheet_names:
-            if sheet_name.lower() == sheet_toado.lower() or 'spt' in sheet_name.lower():
+        for sheet in sheet_names:
+            if sheet.lower() == sheet_toado.lower() or 'spt' in sheet.lower():
                 continue
-            ws = wb[sheet_name]
-            # Lấy header
-            headers = [cell.value for cell in ws[1]]
-            if not headers:
+            df = pd.read_excel(uploaded_file, sheet_name=sheet, header=0)
+            if df.empty:
                 continue
-            # Đọc dữ liệu
-            data_rows = []
-            for row in ws.iter_rows(min_row=2, values_only=True):
-                if any(cell is not None for cell in row):
-                    data_rows.append(row)
-            if not data_rows:
+            df.columns = [c.strip().upper() for c in df.columns]
+            
+            # Tìm cột tên lớp và cao độ đáy
+            col_ten = None
+            col_day = None
+            for col in df.columns:
+                if 'TEN_LOP' in col or 'TÊN_LỚP' in col:
+                    col_ten = col
+                if 'CAO_DO_DAY' in col:
+                    col_day = col
+            if col_ten is None or col_day is None:
+                st.warning(f"Sheet {sheet}: không tìm thấy cột cần thiết. Các cột: {list(df.columns)}")
                 continue
-            df = pd.DataFrame(data_rows, columns=headers)
-            df.columns = [str(c).strip().upper().replace(' ', '_') for c in df.columns]
-
-            col_ten = find_col(df.columns, ['TEN_LOP', 'TÊN_LỚP'])
-            col_day = find_col(df.columns, ['CAO_DO_DAY_LOP', 'CAO_DO_DAY', 'DAY_LOP'])
-            if not (col_ten and col_day):
-                st.warning(f"Sheet {sheet_name} thiếu cột tên lớp hoặc cao độ đáy, bỏ qua")
-                continue
-
-            ten_hk = sheet_name.strip().upper()
+            
+            ten_hk = sheet.strip().upper()
             for _, row in df.iterrows():
                 ten_lop = str(row[col_ten]).strip().upper()
                 if not ten_lop or ten_lop == 'NAN':
                     continue
-                # Lấy giá trị cao độ đáy (đã được tính từ openpyxl)
                 try:
-                    cao_do_day = float(row[col_day]) if row[col_day] is not None else np.nan
+                    cao_day = float(row[col_day])
                 except:
-                    cao_do_day = np.nan
-                if np.isnan(cao_do_day):
                     continue
                 list_layers.append({
                     'Ho_Khoan': ten_hk,
                     'Ten_Lop': ten_lop,
-                    'Cao_Do_Day': cao_do_day
+                    'Cao_Do_Day': cao_day
                 })
-
+        
         df_layers = pd.DataFrame(list_layers)
-
-        # Debug: in rõ giá trị cao độ đáy lớp 5
+        
         st.write("### 🔍 Dữ liệu lớp 5 (cao độ đáy từ Excel)")
         df5 = df_layers[df_layers['Ten_Lop'] == '5']
         if not df5.empty:
             st.dataframe(df5[['Ho_Khoan', 'Ten_Lop', 'Cao_Do_Day']])
         else:
-            st.warning("Không tìm thấy lớp 5 nào!")
-
-        # 3. Đọc SPT (nếu có) - vẫn dùng pandas cho đơn giản
+            st.warning("Không tìm thấy lớp 5!")
+        
+        # 3. SPT
         df_spt = None
         sheet_spt = [s for s in sheet_names if 'spt' in s.lower()]
         if sheet_spt:
             df_spt = pd.read_excel(uploaded_file, sheet_name=sheet_spt[0], header=0)
-            df_spt.columns = [str(c).strip().upper().replace(' ', '_') for c in df_spt.columns]
-
+            df_spt.columns = [c.strip().upper() for c in df_spt.columns]
+        
         return df_hk, df_layers, df_spt
-
     except Exception as e:
-        st.error(f"Lỗi đọc file Excel: {e}")
+        st.error(f"Lỗi: {e}")
         import traceback
         st.code(traceback.format_exc())
         return None, None, None
