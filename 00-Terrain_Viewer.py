@@ -110,7 +110,7 @@ def convert_to_vn2000(df_ntd, df_coord):
         df_ntd_clean['Cọc'] = df_ntd_clean['Cọc'].astype(str).str.strip().str.upper()
         df_coord_clean['Cọc_Excel'] = df_coord_clean['Cọc_Excel'].astype(str).str.strip().str.upper()
         
-        # ĐỒNG BỘ ĐẢO TRỤC ĐỒ HỌA: X_Toán = Y_Excel (6 số), Y_Toán = X_Excel (7 số)
+        # ĐỒNG BỘ ĐẢO TRỤC ĐỒ HỌA CHUẨN: X_Toán = Y_Excel (6 số), Y_Toán = X_Excel (7 số)
         map_x = dict(zip(df_coord_clean['Cọc_Excel'], df_coord_clean['Y_VN2000'])) 
         map_y = dict(zip(df_coord_clean['Cọc_Excel'], df_coord_clean['X_VN2000'])) 
         
@@ -156,7 +156,7 @@ def convert_to_vn2000(df_ntd, df_coord):
 
 def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
     """
-    🏔️ MÔ HÌNH ĐỊA HÌNH BỀ MẶT LÒNG SÔNG NGUYÊN BẢN
+    🏔️ MÔ HÌNH ĐỊA HÌNH BỀ MẶT LÒNG SÔNG NGUYÊN BẢN CỦA CHƯƠNG
     """
     if df is None or df.empty: 
         return None
@@ -250,7 +250,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         return None, None, None
 
 # =========================================================================
-# ⚙️ PHÂN HỆ XỬ LÝ ĐỊA CHẤT NÂNG CAO - SỬA LỖI ĐỒNG BỘ HOÁN ĐỔI TRỤC TỌA ĐỘ
+# ⚙️ PHÂN HỆ XỬ LÝ ĐỊA CHẤT NÂNG CAO - ĐỒNG BỘ TOÀN DIỆN VÀ FIX LỆCH TRỤC
 # =========================================================================
 
 def doc_excel_dia_chat_3_sheet(uploaded_file):
@@ -333,9 +333,9 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
 def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix_y, he_so_z=1.0):
     """
     🏗️ HÀM TÍCH HỢP ĐỊA CHẤT 3D CHUẨN XÁC LOGIC KHÔNG GIAN:
-    - SỬA LỖI ĐỒNG BỘ TRỤC: X đồ họa = Y_Excel (6 số), Y đồ họa = X_Excel (7 số).
-    - Tạo mặt phẳng 3D mở rộng tự do, vuốt nối liên tục theo cao độ hố khoan thực tế.
-    - Vẽ biểu đồ số búa SPT độc lập (lines + markers + text) bên cạnh từng cọc hố khoan.
+    - SỬA LỖI ĐỒNG BỘ TRỤC PHẲNG: X đồ họa = Y_Excel (6 số), Y đồ họa = X_Excel (7 số).
+    - ĐỒNG BỘ SCALE THEO CHIỀU ĐỨNG: Nhân hằng số he_so_z vào toàn bộ các phần tử cao độ địa chất.
+    - Tạo thảm màng phân lớp mở rộng tự do, không bị giới hạn cắt xén bởi biên đa giác địa hình.
     """
     if fig is None or df_hk is None or df_hk.empty or df_layers is None or df_layers.empty:
         return fig
@@ -345,7 +345,7 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
         'TK4': '#DEB887', '5': '#D2B48C', 'CL': '#4682B4', 'C': '#D2B48C'
     }
     
-    # Tạo lưới mịn nội suy phẳng rộng mở bao quanh ranh giới địa hình sông
+    # Tạo lưới mịn nền phẳng mở rộng biên ra ngoài ranh giới lòng sông để hứng hố khoan ngoài rìa
     min_x, max_x = float(matrix_x.min()), float(matrix_x.max())
     min_y, max_y = float(matrix_y.min()), float(matrix_y.max())
     gx, gy = np.meshgrid(
@@ -363,14 +363,13 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
     
     list_hk_valid = []
     
-    # 🎯 LUỒNG A: CẮM TRỤ ĐỨNG HỐ KHOAN VÀ ĐỒ THỊ SPT (ĐÃ SỬA HOÁN ĐỔI TRỤC)
+    # 🎯 LUỒNG A: CẮM TRỤ ĐỨNG HỐ KHOAN VÀ ĐỒ THỊ SPT (ĐÃ ĐỒNG BỘ TOÀN DIỆN TRỤC VÀ SCALE)
     for _, hk in df_hk_clean.iterrows():
         try:
             ten_hk_goc = str(hk['Ho_Khoan']).strip()
             key_hk = hk['Key_HK']
             
-            # ✨ ĐỒNG BỘ LOGIC TUYỆT ĐỐI VỚI ĐỊA HÌNH SÔNG NTD:
-            # X_Đồ họa = Y_Excel (Dải số 6 chữ số), Y_Đồ họa = X_Excel (Dải số 7 chữ số)
+            # ✨ ĐỒNG BỘ ĐẢO TRỤC: X_Đồ họa = Y_Excel (6 số Đông), Y_Đồ họa = X_Excel (7 số Bắc)
             x_hk = float(hk['Y_VN2000'])
             y_hk = float(hk['X_VN2000'])
             z_mieng = float(hk['Z_Mieng'])
@@ -380,8 +379,9 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
             
             df_sub_layers = df_layers_clean[df_layers_clean['Key_HK'] == key_hk].sort_values('Tu_Chieu_Sau_Lop')
             
-            # Vẽ các dốt phân tầng hình trụ đứng đại diện cho hố khoan
+            # Vẽ các đốt hình trụ đứng phân chia các lớp đất của hố khoan
             for _, lop in df_sub_layers.iterrows():
+                # ✨ ĐỒNG BỘ TỶ LỆ SCALE: Áp dụng he_so_z vào cao độ trần và nền của lớp đất
                 z_top = (z_mieng - float(lop['Tu_Chieu_Sau_Lop'])) * he_so_z
                 z_bot = (z_mieng - float(lop['Den_Chieu_Sau_Lop'])) * he_so_z
                 
@@ -396,7 +396,7 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
                     hoverinfo="text", text=f"Hố: {ten_hk_goc}<br>Lớp: {t_lop}<br>Sâu: {lop['Tu_Chieu_Sau_Lop']}m - {lop['Den_Chieu_Sau_Lop']}m"
                 ))
                 
-            # Thể hiện đồ thị số búa SPT độc lập (lines + markers + text) bên thân hố
+            # Thể hiện biểu đồ dích dắc số búa SPT dạt xiên cạnh hố đứng
             if df_spt is not None:
                 col_spt = [c for c in df_spt.columns if lam_sach_ten(c) in key_hk or key_hk in lam_sach_ten(c)]
                 if col_spt and 'Độ sâu thí nghiệm (m)' in df_spt.columns:
@@ -409,8 +409,10 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
                             nums = [float(n.replace(',', '.')) for n in re.findall(r'[\d,\.]+', txt_sau)]
                             if nums:
                                 d_spt = nums[0]
-                                spt_x.append(x_hk + 15.0 + n_val * 0.8) # Tịnh tiến dạt sang trục X đồ họa mới (Y_Excel)
+                                # Đẩy biểu đồ nghiêng tịnh tiến theo phương X đồ họa mới (Y_Excel)
+                                spt_x.append(x_hk + 15.0 + n_val * 0.8) 
                                 spt_y.append(y_hk)
+                                # ✨ ĐỒNG BỘ TỶ LỆ SCALE CHIỀU Z CHO SPT:
                                 spt_z.append((z_mieng - d_spt) * he_so_z)
                                 spt_txt.append(f"N={n_val:.0f}")
                         except: continue
@@ -423,7 +425,7 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
                         ))
         except: continue
 
-    # 🎯 LUỒNG B: NỘI SUY DỆT TẤM THẢM MẶT PHẲNG 3D TỰ DO (Đã sửa hoán đổi trục)
+    # 🎯 LUỒNG B: NỘI SUY DỆT TẤM THẢM MẶT PHẲNG ĐỊA CHẤT 3D MỞ RỘNG TỰ DO
     df_hk_v = pd.DataFrame(list_hk_valid)
     if len(df_hk_v) >= 2 and not df_layers_clean.empty:
         df_hk_v['sort_key'] = df_hk_v['x'] + df_hk_v['y']
@@ -444,15 +446,16 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
             
             if len(pt_x) < 2: continue
             
-            # Thực hiện toán học nội suy lưới mịn phẳng tự do chuẩn hệ tọa độ
+            # Tính toán lưới cao độ nền phẳng từ dữ liệu tọa độ chuẩn
             grid_z = griddata((pt_x, pt_y), pt_z_bot, (gx, gy), method='nearest')
+            # ✨ ĐỒNG BỘ TỶ LỆ SCALE CHIỀU Z CHO MẶT PHẲNG NỘI SUY ĐỊA CHẤT:
             grid_z_scaled = grid_z * he_so_z
             
             m_color = '#808080'
             for k_mau, v_mau in mau_quy_uoc.items():
                 if k_mau in lop_dat_str: m_color = v_mau; break
             
-            # Thêm lớp màng thảm 3D liên tục, tự do hiển thị trọn vẹn dưới đáy sa bàn sông
+            # Đẩy thảm địa chất màu mịn lên mô hình không gian phối hợp cùng lòng sông
             fig.add_trace(go.Surface(
                 x=gx, y=gy, z=grid_z_scaled, customdata=grid_z,
                 colorscale=[[0, m_color], [1, m_color]], showscale=False, opacity=0.55,
