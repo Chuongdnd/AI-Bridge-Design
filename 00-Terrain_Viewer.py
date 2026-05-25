@@ -171,16 +171,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         target_pct = np.linspace(0.0, 1.0, num_samples)
         matrix_x, matrix_y, matrix_z = [], [], []
         
-        # Debug: in ra giá trị Z của các cọc có TARGET
-        st.write("### Debug: Cao độ Z tại các cọc TARGET")
-        for lt in unique_lts:
-            df_sub = df_clean[df_clean['Lý trình'] == lt]
-            df_tar = df_sub[df_sub['Tag_Gốc'].str.contains('TARGET', na=False)]
-            if len(df_tar) >= 2:
-                z_vals = df_tar['Z'].values
-                st.write(f"LT {lt}: Z_target = {z_vals} (trung bình {np.mean(z_vals):.2f})")
-        
-        # Xác định cọc có TARGET đủ 2 điểm
+        # Xác định cọc có TARGET hợp lệ (≥ 2 điểm)
         target_lts = []
         for lt in unique_lts:
             df_sub = df_clean[df_clean['Lý trình'] == lt]
@@ -200,7 +191,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                 obs_y_real = df_target['Y_Real'].values
                 obs_zs = df_target['Z'].values
             else:
-                # Tìm cọc TARGET gần nhất về lý trình
+                # Tìm cọc TARGET gần nhất
                 near_lt = None
                 left = [t for t in target_lts if t < lt]
                 if left:
@@ -222,7 +213,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                 obs_offsets = df_near_target['Offset'].values
                 obs_x_real = df_near_target['X_Real'].values + delta * ux
                 obs_y_real = df_near_target['Y_Real'].values + delta * uy
-                obs_zs = df_near_target['Z'].values  # Z giữ nguyên (không dịch chuyển)
+                obs_zs = df_near_target['Z'].values
             
             # Sắp xếp theo offset
             idx = np.argsort(obs_offsets)
@@ -239,7 +230,6 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
                 x_line = np.interp(target_pct, pct, obs_x_real)
                 y_line = np.interp(target_pct, pct, obs_y_real)
                 z_line = np.interp(target_pct, pct, obs_zs)
-            
             matrix_x.append(x_line)
             matrix_y.append(y_line)
             matrix_z.append(z_line)
@@ -248,37 +238,33 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         matrix_y = np.array(matrix_y)
         matrix_z = np.array(matrix_z)
         
-        # Kiểm tra nếu có giá trị âm bất thường
-        st.write(f"Min Z trước khi xử lý: {np.nanmin(matrix_z):.2f}, Max: {np.nanmax(matrix_z):.2f}")
-        
-        # --- Nội suy NaN dọc theo cột ---
+        # Nội suy toàn bộ NaN dọc theo từng cột (theo chiều dọc lý trình)
         df_z = pd.DataFrame(matrix_z)
         df_z = df_z.interpolate(method='linear', axis=0, limit_direction='both')
         matrix_z = df_z.values
         
-        # Làm mịn (rolling mean) - giữ nguyên giá trị biên
+        # Làm mịn (rolling mean)
         if do_min > 1:
             mz_pd = pd.DataFrame(matrix_z)
             mz_pd = mz_pd.rolling(window=do_min, min_periods=1, center=True).mean()
             matrix_z = mz_pd.T.rolling(window=do_min, min_periods=1, center=True).mean().T.values
-            # Nếu phát sinh NaN, lại nội suy
+            # Nếu phát sinh NaN, nội suy lại
             if np.isnan(matrix_z).any():
                 df_z2 = pd.DataFrame(matrix_z)
                 df_z2 = df_z2.interpolate(method='linear', axis=0, limit_direction='both')
                 matrix_z = df_z2.values
         
-        st.write(f"Min Z sau khi xử lý: {np.nanmin(matrix_z):.2f}, Max: {np.nanmax(matrix_z):.2f}")
-        
         z_scaled = matrix_z * he_so_z
         fig = go.Figure()
         
+        # Dùng hovertemplate với %{z:.2f} thay vì customdata
         if che_do in ["Bề mặt mịn", "Lưới tam giác"]:
             show_wireframe = (che_do == "Lưới tam giác")
             fig.add_trace(go.Surface(
-                x=matrix_x, y=matrix_y, z=z_scaled, customdata=matrix_z,
+                x=matrix_x, y=matrix_y, z=z_scaled,
                 colorscale='Earth', opacity=0.95,
                 colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
-                hovertemplate="X Thực: %{x:.1f} m<br>Y Thực: %{y:.1f} m<br>Z Thực: %{customdata:.2f} m<extra></extra>",
+                hovertemplate="X: %{x:.1f} m<br>Y: %{y:.1f} m<br>Z: %{z:.2f} m<extra></extra>",
                 contours=dict(
                     x=dict(show=show_wireframe, color="rgba(0,0,0,0.2)", width=1),
                     y=dict(show=show_wireframe, color="rgba(0,0,0,0.2)", width=1)
@@ -286,11 +272,11 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
             ))
         elif che_do == "Đường đồng mức":
             fig.add_trace(go.Surface(
-                x=matrix_x, y=matrix_y, z=z_scaled, customdata=matrix_z,
+                x=matrix_x, y=matrix_y, z=z_scaled,
                 colorscale='Viridis', opacity=0.95,
                 colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
                 contours_z=dict(show=True, usecolormap=False, color="rgb(0,0,0)", width=2, project=dict(z=True)),
-                hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z Thực: %{customdata:.2f} m<extra></extra>"
+                hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z: %{z:.2f} m<extra></extra>"
             ))
         
         # Đường tim tuyến
