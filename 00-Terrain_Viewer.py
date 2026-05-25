@@ -606,7 +606,13 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
         lambda r: _chainage_diem(r['X_VN2000'], r['Y_VN2000'], ux, uy, x0, y0), axis=1
     )
     df_hk_v = df_hk_clean.sort_values('Chainage').reset_index(drop=True)
+    chainage_min = df_hk_v['Chainage'].min()
+    chainage_max = df_hk_v['Chainage'].max()
+    chainage_allow_min = chainage_min - 10.0
+    chainage_allow_max = chainage_max + 10.0
 
+    # Tạo mặt nạ dọc tuyến: chỉ giữ các hàng có chainage trong khoảng cho phép
+    mask_chainage = (chainage_rows >= chainage_allow_min) & (chainage_rows <= chainage_allow_max)
     # Danh sách lớp theo thứ tự nông → sâu
     danh_sach_lop = _thu_tu_lop_dat(df_layers_clean)
     st.write("📋 Các lớp đất (từ trên xuống):", danh_sach_lop)
@@ -626,6 +632,7 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
         grid_z[~mask_xy] = np.nan
         # Cắt không cho mặt lớp vượt quá bề mặt địa hình
         grid_z = _cat_lop_duoi_dia_hinh(grid_z, matrix_z, eps=0.05)
+        grid_z[~mask_chainage[:, None]] = np.nan
         grid_z_scaled = grid_z * he_so_z
 
         if np.all(np.isnan(grid_z)):
