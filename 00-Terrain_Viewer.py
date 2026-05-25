@@ -151,6 +151,38 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         df_clean = df.sort_values(['Lý trình', 'Offset']).copy()
         unique_lts = sorted(df_clean['Lý trình'].unique())
         
+         lt_min = unique_lts[0]
+        lt_max = unique_lts[-1]
+        lt_left = lt_min - 50.0
+        lt_right = lt_max + 50.0
+
+        # Lấy mặt cắt tại đầu và cuối tuyến
+        df_first = df_clean[df_clean['Lý trình'] == lt_min].sort_values('Offset')
+        df_last = df_clean[df_clean['Lý trình'] == lt_max].sort_values('Offset')
+
+        def create_extended_section(df_template, new_lt, delta_lt):
+            """Tạo mặt cắt mới bằng cách dịch chuyển toàn bộ điểm theo hướng tuyến"""
+            goc = df_template['Góc_Tuyến'].iloc[0]  # góc radian của tim tuyến tại cọc gốc
+            ux = np.cos(goc)
+            uy = np.sin(goc)
+            new_df = df_template.copy()
+            new_df['Lý trình'] = new_lt
+            new_df['X_Real'] = new_df['X_Real'] + delta_lt * ux
+            new_df['Y_Real'] = new_df['Y_Real'] + delta_lt * uy
+            # Thay đổi tên cọc để phân biệt
+            new_df['Cọc'] = new_df['Cọc'] + f"_ext{new_lt:.0f}"
+            return new_df
+
+        # Tạo mặt cắt trái và phải
+        df_left = create_extended_section(df_first, lt_left, lt_left - lt_min)
+        df_right = create_extended_section(df_last, lt_right, lt_right - lt_max)
+
+        # Ghép tất cả và sắp xếp theo lý trình
+        df_clean = pd.concat([df_left, df_clean, df_right], ignore_index=True)
+        df_clean = df_clean.sort_values(['Lý trình', 'Offset']).reset_index(drop=True)
+        unique_lts = sorted(df_clean['Lý trình'].unique())
+        # -----------------------------------
+
         # Đồng bộ 40 mắt đan trên mỗi mặt cắt ngang line
         num_samples = 40  
         target_pct = np.linspace(0.0, 1.0, num_samples)
