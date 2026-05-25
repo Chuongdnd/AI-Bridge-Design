@@ -293,146 +293,127 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
 
 def doc_excel_dia_chat_3_sheet(uploaded_file):
     """
-    Đọc file Excel địa chất gồm 3 phần:
-    - Sheet tọa độ hố khoan (tên chứa 'Toado' hoặc 'TỌA ĐỘ')
-    - Các sheet chi tiết lớp đất (mỗi sheet tên là mã hố khoan)
-    - Sheet SPT (tên chứa 'SPT')
+    Đọc file Excel địa chất mới (cấu trúc: sheet tọa độ + các sheet lớp đất có cột
+    TEN_LOP, CAO_DO_DINH_LOP, CAO_DO_DAY_LOP, MO_TA).
     Trả về df_hk, df_layers, df_spt
     """
     try:
         excel_file = pd.ExcelFile(uploaded_file)
         sheet_names = excel_file.sheet_names
-        
-        # 1. Tìm sheet tọa độ (không phân biệt hoa thường, bỏ dấu cách, gạch dưới)
-        sheet_toado = [s for s in sheet_names if 'toado' in s.lower().replace('_','').replace(' ','')]
+
+        # 1. Tìm sheet tọa độ (chứa 'toado' hoặc 'Toado')
+        sheet_toado = [s for s in sheet_names if 'toado' in s.lower().replace('_', '').replace(' ', '')]
         if not sheet_toado:
             st.error("Không tìm thấy sheet tọa độ hố khoan. Hãy đặt tên sheet chứa 'Toado'.")
             return None, None, None
-        
-        df_hk_raw = pd.read_excel(uploaded_file, sheet_name=sheet_toado[0])
-        # Chuẩn hóa tên cột: bỏ khoảng trắng thừa, viết hoa, bỏ dấu ngoặc
-        original_columns = list(df_hk_raw.columns)
-        df_hk_raw.columns = [re.sub(r'[\(\)\[\]]', '', ' '.join(str(c).split())).upper() for c in original_columns]
-        
-        # In ra tất cả các cột để debug
-        st.write("📋 Các cột trong sheet tọa độ:", list(df_hk_raw.columns))
-        
-        # Từ khóa tìm kiếm mở rộng cho từng loại cột
-        keywords_name = ['HỐ KHOAN','HO KHOAN','TÊN HỐ KHOAN','TEN HO KHOAN','TÊN CỌC','TEN COC','CỌC','COC','HK','NAME','TÊN','TEN','HỐ','HO']
-        keywords_x = ['X_VN2000','X VN2000','X=','X =','X_VN','X VN','X_TOA_DO','X TOA DO','TOẠ ĐỘ X','TOA DO X','X_M','X M','X']
-        keywords_y = ['Y_VN2000','Y VN2000','Y=','Y =','Y_VN','Y VN','Y_TOA_DO','Y TOA DO','TOẠ ĐỘ Y','TOA DO Y','Y_M','Y M','Y']
-        keywords_z = ['Z_MIENG','Z MIỆNG','Z_M','Z M','CAO ĐỘ MIỆNG','CAO DO MIENG','CAO ĐỘ','CAO DO','Z','ELEVATION','ĐỘ CAO','DO CAO']
-        
+
+        # Đọc sheet tọa độ (dòng đầu là tiêu đề)
+        df_hk_raw = pd.read_excel(uploaded_file, sheet_name=sheet_toado[0], header=0)
+        # Chuẩn hóa tên cột: bỏ khoảng trắng thừa, viết hoa, thay khoảng trắng bằng '_'
+        df_hk_raw.columns = ['_'.join(str(c).split()).upper() for c in df_hk_raw.columns]
+
+        # Tìm cột tên hố khoan, X, Y, Z
         def find_column(cols, keywords):
             for col in cols:
                 col_clean = col.strip().upper()
-                # Kiểm tra chính xác hoặc chứa từ khóa
                 for kw in keywords:
                     if col_clean == kw or kw in col_clean:
                         return col
             return None
-        
-        col_name = find_column(df_hk_raw.columns, keywords_name)
-        col_x = find_column(df_hk_raw.columns, keywords_x)
-        col_y = find_column(df_hk_raw.columns, keywords_y)
-        col_z = find_column(df_hk_raw.columns, keywords_z)
-        
+
+        col_name = find_column(df_hk_raw.columns, ['HO_KHOAN', 'HỐ_KHOAN', 'TÊN_HỐ', 'TEN_HO'])
+        col_x = find_column(df_hk_raw.columns, ['X', 'X_VN2000', 'TOA_DO_X'])
+        col_y = find_column(df_hk_raw.columns, ['Y', 'Y_VN2000', 'TOA_DO_Y'])
+        col_z = find_column(df_hk_raw.columns, ['Z', 'Z_MIENG', 'CAO_DO_MIENG'])
+
         if col_name is None or col_x is None or col_y is None:
             missing = []
             if col_name is None: missing.append("Tên hố khoan")
             if col_x is None: missing.append("X")
             if col_y is None: missing.append("Y")
-            st.error(f"❌ Thiếu cột: {', '.join(missing)}. Vui lòng đảm bảo file Excel có các cột này. Các cột hiện có: {list(df_hk_raw.columns)}")
+            st.error(f"Thiếu cột: {', '.join(missing)}. Các cột hiện có: {list(df_hk_raw.columns)}")
             return None, None, None
-        
+
         df_hk = pd.DataFrame({
             'Ho_Khoan': df_hk_raw[col_name].astype(str).str.strip().str.upper(),
             'X_VN2000': pd.to_numeric(df_hk_raw[col_x], errors='coerce'),
             'Y_VN2000': pd.to_numeric(df_hk_raw[col_y], errors='coerce'),
             'Z_Mieng': pd.to_numeric(df_hk_raw[col_z], errors='coerce') if col_z else 0.0
         }).dropna(subset=['X_VN2000', 'Y_VN2000']).reset_index(drop=True)
-        
+
         if df_hk.empty:
-            st.error("Không có dữ liệu hố khoan hợp lệ (X,Y bị thiếu).")
+            st.error("Không có dữ liệu hố khoan hợp lệ.")
             return None, None, None
-            
-                # 2. Đọc chi tiết lớp đất từ các sheet không phải tọa độ và không phải SPT
+
+        # 2. Đọc các sheet lớp đất (tên sheet trùng với mã hố khoan, ví dụ CVVVD-T4)
         list_layers = []
         skip_sheets = [s.lower() for s in sheet_toado]
         for sheet in sheet_names:
             if sheet.lower() in skip_sheets or 'spt' in sheet.lower():
                 continue
-            df_layer_raw = pd.read_excel(uploaded_file, sheet_name=sheet)
+            # Đọc sheet, dòng đầu là tiêu đề
+            df_layer_raw = pd.read_excel(uploaded_file, sheet_name=sheet, header=0)
             if df_layer_raw.empty:
                 continue
-            # Chuẩn hóa tên cột: bỏ khoảng trắng thừa, viết hoa
+            # Chuẩn hóa tên cột
             df_layer_raw.columns = ['_'.join(str(c).split()).upper() for c in df_layer_raw.columns]
-            
-            # --- Tìm cột tên hố khoan trong sheet (ưu tiên 'HO_KHOAN', 'HỐ KHOAN', ...) ---
-            col_hk_name = None
-            for col in df_layer_raw.columns:
-                col_clean = col.strip().upper()
-                if 'HO_KHOAN' in col_clean or 'HỐ KHOAN' in col_clean or 'TÊN HỐ' in col_clean or 'TEN HO' in col_clean:
-                    col_hk_name = col
-                    break
-            # Nếu không tìm thấy cột tên hố, thử lấy cột đầu tiên (có thể chứa tên hố lặp lại)
-            if col_hk_name is None:
-                col_hk_name = df_layer_raw.columns[0]
-            
-            # Lấy giá trị tên hố khoan duy nhất từ cột đó (bỏ qua NA)
-            hk_values = df_layer_raw[col_hk_name].dropna().astype(str).str.strip().str.upper().unique()
-            if len(hk_values) == 0:
-                st.warning(f"Sheet '{sheet}' không tìm thấy tên hố khoan, bỏ qua.")
+
+            # Tìm cột TEN_LOP, CAO_DO_DINH_LOP, CAO_DO_DAY_LOP
+            col_ten = find_column(df_layer_raw.columns, ['TEN_LOP', 'TÊN_LỚP', 'LOP'])
+            col_dinh = find_column(df_layer_raw.columns, ['CAO_DO_DINH_LOP', 'CAO_DO_ĐỈNH', 'DINH_LOP'])
+            col_day = find_column(df_layer_raw.columns, ['CAO_DO_DAY_LOP', 'CAO_DO_ĐÁY', 'DAY_LOP'])
+
+            if col_ten is None or col_dinh is None or col_day is None:
+                st.warning(f"Sheet '{sheet}' thiếu cột TEN_LOP/CAO_DO_DINH_LOP/CAO_DO_DAY_LOP, bỏ qua.")
                 continue
-            ten_hk_sheet = hk_values[0]  # ví dụ: 'CVVVD-T4'
-            
-            # --- Tìm cột tên lớp, độ sâu từ, độ sâu đến ---
-            col_lop = find_column(df_layer_raw.columns, ['TÊN LỚP','LỚP','ĐẤT','LOAI','MÔ TẢ','DESCRIPTION','TEN LOP','TEN_LOP'])
-            col_tu = find_column(df_layer_raw.columns, ['TỪ','CHIỀU SÂU TỪ','DEPTH FROM','FROM','TOP','ĐỘ SÂU TỪ', 'TU_CHIEU_SAU'])
-            col_den = find_column(df_layer_raw.columns, ['ĐẾN','CHIỀU SÂU ĐẾN','DEPTH TO','TO','BOTTOM','ĐỘ SÂU ĐẾN', 'DEN_CHIEU_SAU'])
-            
-            # Fallback nếu không tìm thấy
-            if col_lop is None:
-                col_lop = df_layer_raw.columns[0]
-            if col_tu is None and len(df_layer_raw.columns) > 1:
-                col_tu = df_layer_raw.columns[1]
-            if col_den is None and len(df_layer_raw.columns) > 2:
-                col_den = df_layer_raw.columns[2]
-            
-            if col_tu is None or col_den is None:
-                st.warning(f"Sheet '{sheet}' không đủ cột độ sâu, bỏ qua.")
+
+            # Tên hố khoan lấy từ tên sheet
+            ten_hk = sheet.strip().upper()
+            # Tìm cao độ miệng hố tương ứng
+            z_mieng = df_hk[df_hk['Ho_Khoan'] == ten_hk]['Z_Mieng'].values
+            if len(z_mieng) == 0:
+                st.warning(f"Không tìm thấy cao độ miệng cho hố {ten_hk}, bỏ qua.")
                 continue
-            
-            # --- Duyệt từng dòng để lấy lớp đất ---
+            z_mieng = z_mieng[0]
+
+            # Duyệt từng dòng
             for _, r in df_layer_raw.iterrows():
-                # Kiểm tra tên hố khoan trong dòng (nếu khác với ten_hk_sheet thì bỏ qua)
-                hk_cell = str(r[col_hk_name]).strip().upper() if col_hk_name in r else ten_hk_sheet
-                if hk_cell != ten_hk_sheet:
+                ten_lop = str(r[col_ten]).strip().upper()
+                if not ten_lop or ten_lop == 'NAN':
                     continue
                 try:
-                    tu_v = float(str(r[col_tu]).replace(',', '.'))
-                    den_v = float(str(r[col_den]).replace(',', '.'))
-                    if pd.isna(tu_v) or pd.isna(den_v):
-                        continue
-                    list_layers.append({
-                        'Ho_Khoan': ten_hk_sheet,
-                        'Tu_Chieu_Sau_Lop': tu_v,
-                        'Den_Chieu_Sau_Lop': den_v,
-                        'Ten_Lop': str(r[col_lop]).strip().upper()
-                    })
+                    cao_dinh = float(r[col_dinh])
+                    cao_day = float(r[col_day])
                 except:
                     continue
-        
+                # Tính độ sâu từ đỉnh và đến đáy (so với mặt đất)
+                tu_sau = z_mieng - cao_dinh
+                den_sau = z_mieng - cao_day
+                # Đảm bảo độ sâu dương (có thể âm nếu lớp nổi trên mặt đất - hiếm)
+                if tu_sau < 0: tu_sau = 0.0
+                if den_sau < tu_sau:  # Nếu đáy nông hơn đỉnh thì đổi
+                    tu_sau, den_sau = den_sau, tu_sau
+                list_layers.append({
+                    'Ho_Khoan': ten_hk,
+                    'Tu_Chieu_Sau_Lop': tu_sau,
+                    'Den_Chieu_Sau_Lop': den_sau,
+                    'Ten_Lop': ten_lop
+                })
+
         df_layers = pd.DataFrame(list_layers)
-        
-        # 3. Đọc SPT
+        if df_layers.empty:
+            st.warning("Không có dữ liệu lớp đất nào được đọc.")
+            return df_hk, df_layers, None
+
+        # 3. Đọc SPT (nếu có)
         df_spt = None
         sheet_spt = [s for s in sheet_names if 'spt' in s.lower()]
         if sheet_spt:
-            df_spt = pd.read_excel(uploaded_file, sheet_name=sheet_spt[0])
-            df_spt.columns = [' '.join(str(c).split()) for c in df_spt.columns]
-        
+            df_spt = pd.read_excel(uploaded_file, sheet_name=sheet_spt[0], header=0)
+            df_spt.columns = ['_'.join(str(c).split()).upper() for c in df_spt.columns]
+
         return df_hk, df_layers, df_spt
+
     except Exception as e:
         st.error(f"Lỗi đọc dữ liệu địa chất: {e}")
         return None, None, None
