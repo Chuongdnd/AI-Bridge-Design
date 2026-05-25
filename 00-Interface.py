@@ -310,10 +310,24 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     file_excel_dc = st.file_uploader("Tải lên file Excel số liệu địa chất trọn gói ba sheet:", type=['xlsx'])
                     
                     df_hk, df_layers, df_spt = None, None, None
+                    hien_mat_lop, hien_khoi_lop, do_trong_dh = True, False, 1.0
                     if file_excel_dc is not None:
                         df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
                         if df_hk is not None and not df_hk.empty:
                             st.success(f"🎉 Hệ thống định vị thành công {len(df_hk)} hố khảo sát!")
+                            col_dc1, col_dc2, col_dc3 = st.columns(3)
+                            with col_dc1:
+                                hien_mat_lop = st.checkbox(
+                                    "🪨 Hiển thị mặt phẳng lớp đất (bám biên địa hình)", value=True
+                                )
+                            with col_dc2:
+                                hien_khoi_lop = st.checkbox(
+                                    "📦 Hiển thị khối lớp đất (nền → sâu)", value=False
+                                )
+                            with col_dc3:
+                                do_trong_dh = st.slider(
+                                    "Độ trong suốt địa hình:", 0.35, 1.0, 0.72, step=0.05
+                                )
 
                     fig_3d, mx, my, mz = TV.ve_dia_hinh_3d(
                         df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view
@@ -321,7 +335,9 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
 
                     if fig_3d is not None and df_hk is not None and not df_hk.empty:
                         fig_3d = TV.dap_them_ket_cau_dia_chat_3d(
-                            fig_3d, df_hk, df_layers, df_spt, mx, my, mz, he_so_z=he_so_z
+                            fig_3d, df_hk, df_layers, df_spt, mx, my, mz, he_so_z=he_so_z,
+                            hien_mat_phang_lop=hien_mat_lop, hien_khoi_lop=hien_khoi_lop,
+                            do_trong_dia_hinh=do_trong_dh if (hien_mat_lop or hien_khoi_lop) else 1.0
                         )
 
                     # Hiển thị sa bàn đồ họa tích hợp ra màn hình chính
