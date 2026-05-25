@@ -293,26 +293,27 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
 
 def doc_excel_dia_chat_3_sheet(uploaded_file):
     """
-    Đọc file Excel địa chất mới (cấu trúc: sheet tọa độ + các sheet lớp đất có cột
+    Đọc file Excel địa chất (cấu trúc: sheet tọa độ + các sheet lớp đất có cột
     TEN_LOP, CAO_DO_DINH_LOP, CAO_DO_DAY_LOP, MO_TA).
+    Xử lý đúng các ô công thức (data_only=True) và tính toán độ sâu chính xác.
     Trả về df_hk, df_layers, df_spt
     """
     try:
+        from openpyxl import load_workbook
+
         excel_file = pd.ExcelFile(uploaded_file)
         sheet_names = excel_file.sheet_names
 
-        # 1. Tìm sheet tọa độ (chứa 'toado' hoặc 'Toado')
+        # 1. Tìm sheet tọa độ
         sheet_toado = [s for s in sheet_names if 'toado' in s.lower().replace('_', '').replace(' ', '')]
         if not sheet_toado:
             st.error("Không tìm thấy sheet tọa độ hố khoan. Hãy đặt tên sheet chứa 'Toado'.")
             return None, None, None
 
-        # Đọc sheet tọa độ (dòng đầu là tiêu đề)
+        # Đọc sheet tọa độ bằng pandas (header=0)
         df_hk_raw = pd.read_excel(uploaded_file, sheet_name=sheet_toado[0], header=0)
-        # Chuẩn hóa tên cột: bỏ khoảng trắng thừa, viết hoa, thay khoảng trắng bằng '_'
         df_hk_raw.columns = ['_'.join(str(c).split()).upper() for c in df_hk_raw.columns]
 
-        # Tìm cột tên hố khoan, X, Y, Z
         def find_column(cols, keywords):
             for col in cols:
                 col_clean = col.strip().upper()
@@ -345,20 +346,25 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
             st.error("Không có dữ liệu hố khoan hợp lệ.")
             return None, None, None
 
-        # 2. Đọc các sheet lớp đất (tên sheet trùng với mã hố khoan, ví dụ CVVVD-T4)
+        # 2. Đọc các sheet lớp đất bằng openpyxl với data_only=True
+        wb = load_workbook(uploaded_file, data_only=True)
         list_layers = []
         skip_sheets = [s.lower() for s in sheet_toado]
+
         for sheet in sheet_names:
             if sheet.lower() in skip_sheets or 'spt' in sheet.lower():
                 continue
-            # Đọc sheet, dòng đầu là tiêu đề
-            df_layer_raw = pd.read_excel(uploaded_file, sheet_name=sheet, header=0, engine='openpyxl', dtype=str)
-            if df_layer_raw.empty:
+            ws = wb[sheet]
+            rows = list(ws.iter_rows(values_only=True))
+            if not rows:
                 continue
-            # Chuẩn hóa tên cột
-            df_layer_raw.columns = ['_'.join(str(c).split()).upper() for c in df_layer_raw.columns]
+            header = [str(cell).strip().upper() if cell is not None else '' for cell in rows[0]]
+            header = ['_'.join(h.split()) for h in header]
+            data = rows[1:]
+            if not data:
+                continue
+            df_layer_raw = pd.DataFrame(data, columns=header)
 
-            # Tìm cột TEN_LOP, CAO_DO_DINH_LOP, CAO_DO_DAY_LOP
             col_ten = find_column(df_layer_raw.columns, ['TEN_LOP', 'TÊN_LỚP', 'LOP'])
             col_dinh = find_column(df_layer_raw.columns, ['CAO_DO_DINH_LOP', 'CAO_DO_ĐỈNH', 'DINH_LOP'])
             col_day = find_column(df_layer_raw.columns, ['CAO_DO_DAY_LOP', 'CAO_DO_ĐÁY', 'DAY_LOP'])
@@ -367,31 +373,36 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
                 st.warning(f"Sheet '{sheet}' thiếu cột TEN_LOP/CAO_DO_DINH_LOP/CAO_DO_DAY_LOP, bỏ qua.")
                 continue
 
-            # Tên hố khoan lấy từ tên sheet
             ten_hk = sheet.strip().upper()
-            # Tìm cao độ miệng hố tương ứng
             z_mieng = df_hk[df_hk['Ho_Khoan'] == ten_hk]['Z_Mieng'].values
             if len(z_mieng) == 0:
                 st.warning(f"Không tìm thấy cao độ miệng cho hố {ten_hk}, bỏ qua.")
                 continue
             z_mieng = z_mieng[0]
 
-            # Duyệt từng dòng
             for _, r in df_layer_raw.iterrows():
                 ten_lop = str(r[col_ten]).strip().upper()
-                if not ten_lop or ten_lop == 'NAN':
+                if not ten_lop or ten_lop in ['NAN', 'NONE']:
                     continue
                 try:
-                    cao_dinh = float(r[col_dinh])
-                    cao_day = float(r[col_day])
+                    dinh_val = r[col_dinh]
+                    day_val = r[col_day]
+                    if dinh_val is None or day_val is None:
+                        continue
+                    if isinstance(dinh_val, str):
+                        dinh_val = dinh_val.replace('=', '').strip()
+                    if isinstance(day_val, str):
+                        day_val = day_val.replace('=', '').strip()
+                    cao_dinh = float(dinh_val)
+                    cao_day = float(day_val)
                 except:
                     continue
-                # Tính độ sâu từ đỉnh và đến đáy (so với mặt đất)
+
                 tu_sau = z_mieng - cao_dinh
                 den_sau = z_mieng - cao_day
-                # Đảm bảo độ sâu dương (có thể âm nếu lớp nổi trên mặt đất - hiếm)
-                if tu_sau < 0: tu_sau = 0.0
-                if den_sau < tu_sau:  # Nếu đáy nông hơn đỉnh thì đổi
+                if tu_sau < 0:
+                    tu_sau = 0.0
+                if den_sau < tu_sau:
                     tu_sau, den_sau = den_sau, tu_sau
                 list_layers.append({
                     'Ho_Khoan': ten_hk,
@@ -399,10 +410,17 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
                     'Den_Chieu_Sau_Lop': den_sau,
                     'Ten_Lop': ten_lop
                 })
-        st.write(f"Hố {ten_hk}: Z_mieng={z_mieng}, cao_day={cao_day}, den_sau={den_sau}")
+
         df_layers = pd.DataFrame(list_layers)
-        st.write("=== DỮ LIỆU LỚP ĐẤT (5 dòng đầu) ===")
-        st.write(df_layers[df_layers['Ten_Lop'] == '5'].head(10))
+
+        # Debug: hiển thị lớp 5 để kiểm tra
+        st.write("=== DỮ LIỆU LỚP 5 ===")
+        df_layers_5 = df_layers[df_layers['Ten_Lop'] == '5']
+        if not df_layers_5.empty:
+            st.write(df_layers_5[['Ho_Khoan', 'Ten_Lop', 'Tu_Chieu_Sau_Lop', 'Den_Chieu_Sau_Lop']])
+        else:
+            st.warning("Không có lớp 5 nào được đọc.")
+
         if df_layers.empty:
             st.warning("Không có dữ liệu lớp đất nào được đọc.")
             return df_hk, df_layers, None
@@ -418,6 +436,8 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
 
     except Exception as e:
         st.error(f"Lỗi đọc dữ liệu địa chất: {e}")
+        import traceback
+        st.code(traceback.format_exc())
         return None, None, None
 
 def _lam_sach_ten_hk(text):
