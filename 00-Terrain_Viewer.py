@@ -151,7 +151,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         df_clean = df.sort_values(['Lý trình', 'Offset']).copy()
         unique_lts = sorted(df_clean['Lý trình'].unique())
         
-         lt_min = unique_lts[0]
+        lt_min = unique_lts[0]
         lt_max = unique_lts[-1]
         lt_left = lt_min - 50.0
         lt_right = lt_max + 50.0
