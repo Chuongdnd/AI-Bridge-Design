@@ -632,7 +632,7 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
         grid_z[~mask_xy] = np.nan
         # Cắt không cho mặt lớp vượt quá bề mặt địa hình
         grid_z = _cat_lop_duoi_dia_hinh(grid_z, matrix_z, eps=0.05)
-        grid_z[~mask_chainage[:, None]] = np.nan
+        grid_z[~mask_chainage, :] = np.nan
         grid_z_scaled = grid_z * he_so_z
 
         if np.all(np.isnan(grid_z)):
