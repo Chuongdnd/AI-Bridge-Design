@@ -498,23 +498,37 @@ def _tao_mat_phang_lop_3d(matrix_x, matrix_y, matrix_z, chainage_rows, c_arr, z_
     return grid_z, grid_z * he_so_z
 
 def _thu_tu_lop_dat(df_layers):
-    """Sắp xếp lớp từ nông → sâu dựa trên độ sâu đỉnh trung bình."""
-    # Chuẩn hóa tên cột: tìm cột chứa tên lớp (không phân biệt hoa/thường, có thể có space)
+    """
+    Sắp xếp các lớp đất từ nông → sâu dựa trên cao độ đáy trung bình.
+    Lớp có cao độ đáy lớn hơn (ít âm hơn) sẽ ở trên.
+    """
+    # Tìm cột tên lớp
     col_ten = None
     for col in df_layers.columns:
         col_clean = col.strip().upper()
-        if 'TEN LOP' in col_clean or 'TÊN LỚP' in col_clean or 'TEN_LOP' in col_clean or 'TENLOP' in col_clean:
+        if 'TEN_LOP' in col_clean or 'TÊN_LỚP' in col_clean:
             col_ten = col
             break
     if col_ten is None:
-        st.error("Không tìm thấy cột tên lớp (TEN_LOP) trong dữ liệu địa tầng.")
+        st.error("Không tìm thấy cột tên lớp (TEN_LOP).")
         return []
     
-    # Tính độ sâu đỉnh trung bình cho mỗi lớp
-    depth = df_layers.groupby(col_ten)['Tu_Chieu_Sau_Lop'].mean()
-    # Sắp xếp theo depth tăng dần (từ nông xuống sâu)
-    danh_sach = depth.sort_values().index.tolist()
-    return danh_sach
+    # Tìm cột cao độ đáy (ưu tiên 'Cao_Do_Day' hoặc 'CAO_DO_DAY')
+    col_day = None
+    for col in df_layers.columns:
+        col_clean = col.strip().upper()
+        if 'CAO_DO_DAY' in col_clean:
+            col_day = col
+            break
+    if col_day is None:
+        st.error("Không tìm thấy cột cao độ đáy (CAO_DO_DAY).")
+        return []
+    
+    # Tính cao độ đáy trung bình cho từng lớp
+    depth_mean = df_layers.groupby(col_ten)[col_day].mean()
+    # Sắp xếp giảm dần (lớp có đáy cao hơn ở trên)
+    sorted_layers = depth_mean.sort_values(ascending=False).index.tolist()
+    return sorted_layers
 
 def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix_y, matrix_z, he_so_z=1.0,
                                  hien_mat_phang_lop=True, hien_khoi_lop=False, do_trong_dia_hinh=0.72):
