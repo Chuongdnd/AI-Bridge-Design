@@ -334,7 +334,7 @@ def doc_excel_dia_chat_3_sheet(uploaded_file):
             if df_layer_raw.empty:
                 continue
             # Chuẩn hóa tên cột: bỏ khoảng trắng thừa, viết hoa
-            df_layer_raw.columns = [' '.join(str(c).split()).upper() for c in df_layer_raw.columns]
+            df_layer_raw.columns = ['_'.join(str(c).split()).upper() for c in df_layer_raw.columns]
             
             # --- Tìm cột tên hố khoan trong sheet (ưu tiên 'HO_KHOAN', 'HỐ KHOAN', ...) ---
             col_hk_name = None
@@ -527,9 +527,23 @@ def _tao_mat_phang_lop_3d(matrix_x, matrix_y, matrix_z, chainage_rows, c_arr, z_
     return grid_z, grid_z * he_so_z
 
 def _thu_tu_lop_dat(df_layers):
-    """Sắp lớp từ nông → sâu theo độ sâu đỉnh trung bình."""
-    depth = df_layers.groupby('Ten_Lop')['Tu_Chieu_Sau_Lop'].mean()
-    return [str(k).strip().upper() for k in depth.sort_values().index]
+    """Sắp xếp lớp từ nông → sâu dựa trên độ sâu đỉnh trung bình."""
+    # Chuẩn hóa tên cột: tìm cột chứa tên lớp (không phân biệt hoa/thường, có thể có space)
+    col_ten = None
+    for col in df_layers.columns:
+        col_clean = col.strip().upper()
+        if 'TEN LOP' in col_clean or 'TÊN LỚP' in col_clean or 'TEN_LOP' in col_clean or 'TENLOP' in col_clean:
+            col_ten = col
+            break
+    if col_ten is None:
+        st.error("Không tìm thấy cột tên lớp (TEN_LOP) trong dữ liệu địa tầng.")
+        return []
+    
+    # Tính độ sâu đỉnh trung bình cho mỗi lớp
+    depth = df_layers.groupby(col_ten)['Tu_Chieu_Sau_Lop'].mean()
+    # Sắp xếp theo depth tăng dần (từ nông xuống sâu)
+    danh_sach = depth.sort_values().index.tolist()
+    return danh_sach
 
 def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix_y, matrix_z, he_so_z=1.0,
                                  hien_mat_phang_lop=True, hien_khoi_lop=False, do_trong_dia_hinh=0.72):
