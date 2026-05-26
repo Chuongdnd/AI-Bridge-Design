@@ -6,6 +6,7 @@ import importlib
 import google.generativeai as genai
 import fitz
 from streamlit_option_menu import option_menu
+import plotly.graph_objects as go
 
 # --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
@@ -280,8 +281,8 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                 tab_dia_hinh_3d, tab_trac_doc, tab_tru_3d, tab_mcn_draw = st.tabs([
                     "🏔️ Mô hình Địa hình 3D",
                     "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
-                    "📐 Bản vẽ Mặt cắt ngang điển hình",
-                    "🏗️ Mô hình Trụ cầu 3D Test"
+                    "🏗️ Mô hình Trụ cầu 3D",
+                    "📐 Bản vẽ Mặt cắt ngang điển hình"
                 ])
                 
                 with tab_dia_hinh_3d:
@@ -336,25 +337,60 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                                 do_trong_dia_hinh=do_trong_dh if (hien_mat_lop or hien_khoi_lop) else 1.0
                             )
                         st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
-                # Trong 00-Interface.py, sau phần địa hình hoặc trong một tab riêng
+                
+                with tab_trac_doc:
+                    st.info("📌 Bản vẽ trắc dọc toàn cầu sẽ được cập nhật sau.")
+                    # Bạn có thể thêm code vẽ trắc dọc tại đây
+                
                 with tab_tru_3d:
                     st.subheader("🏗️ Cấu hình Kích thước Hình học Trụ cầu Tham số hóa")
-                    c1, c2, c3 = st.columns(3)
+                    # Nhập thông số theo đúng tên biến của hàm create_pier
+                    c1, c2 = st.columns(2)
                     with c1:
-                        l_be = st.number_input("Chiều dài bệ móng L_bê (m):", value=6.0, step=0.5, key="l_be_data")
-                        b_be = st.number_input("Chiều rộng bệ móng B_bê (m):", value=4.0, step=0.5, key="b_be_data")
-                        h_be = st.number_input("Chiều cao bệ móng H_bê (m):", value=1.5, step=0.1, key="h_be_data")
+                        H = st.number_input("Chiều cao thân trụ (m)", value=5.0, step=0.5, key="h_than")
+                        W = st.number_input("Chiều rộng thân trụ - dọc cầu (m)", value=1.5, step=0.1, key="w_than")
+                        L = st.number_input("Chiều dài thân trụ - ngang cầu (m)", value=3.0, step=0.1, key="l_than")
+                        top_H = st.number_input("Chiều cao đỉnh trụ (m)", value=0.5, step=0.1, key="top_h")
+                        top_W = st.number_input("Chiều rộng đỉnh trụ (m)", value=2.0, step=0.1, key="top_w")
                     with c2:
-                        l_than = st.number_input("Chiều dài thân cột L_thân (m):", value=3.0, step=0.5, key="l_than_data")
-                        b_than = st.number_input("Chiều rộng thân cột B_thân (m):", value=1.5, step=0.5, key="b_than_data")
-                        h_than = st.number_input("Chiều cao thân cột H_thân (m):", value=6.0, step=0.5, key="h_than_data")
-                    with c3:
-                        l_mu = st.number_input("Chiều dài xà mũ L_mũ (m):", value=10.0, step=0.5, key="l_mu_data")
-                        b_mu = st.number_input("Chiều rộng xà mũ B_mũ (m):", value=2.2, step=0.5, key="b_mu_data")
-                        h_mu = st.number_input("Chiều cao xà mũ H_mũ (m):", value=1.4, step=0.1, key="h_mu_data")
-                        
-                    # Gọi hàm vẽ 3D từ module 06-Tru_Cau đã kết nối
-                    fig_tru = TC.ve_tru_cau_3d(l_be, b_be, h_be, l_than, b_than, h_than, l_mu, b_mu, h_mu)
-                    st.plotly_chart(fig_tru, use_container_width=True)
+                        base_H = st.number_input("Chiều cao bệ trụ (m)", value=1.0, step=0.1, key="base_h")
+                        base_W = st.number_input("Chiều rộng bệ trụ (m)", value=2.5, step=0.1, key="base_w")
+                        base_L = st.number_input("Chiều dài bệ trụ (m)", value=4.0, step=0.1, key="base_l")
+                    
+                    if st.button("🚀 Tạo mô hình trụ 3D", use_container_width=True):
+                        with st.spinner("Đang tạo mô hình trụ từ trimesh..."):
+                            pier = TC.create_pier(H, W, L, top_W, top_H, base_W, base_H, base_L)
+                            vertices, faces = TC.trimesh_to_plotly_mesh(pier)
+                            fig_pier = go.Figure(data=[go.Mesh3d(
+                                x=vertices[:,0], y=vertices[:,1], z=vertices[:,2],
+                                i=faces[:,0], j=faces[:,1], k=faces[:,2],
+                                color='lightgray', opacity=0.9, flatshading=True,
+                                lighting=dict(ambient=0.5, diffuse=0.8, specular=0.5)
+                            )])
+                            fig_pier.update_layout(
+                                scene=dict(
+                                    xaxis_title="X (m)", yaxis_title="Y (m)", zaxis_title="Z (m)",
+                                    aspectmode='data'
+                                ),
+                                margin=dict(l=0, r=0, b=0, t=0),
+                                height=600,
+                                title="Mô hình trụ cầu 3D (trimesh)"
+                            )
+                            st.plotly_chart(fig_pier, use_container_width=True)
+                
+                with tab_mcn_draw:
+                    try:
+                        mcn_input_draw = {
+                            'bc_cau': float(st.session_state.design_data.get('bc', 12.0)),
+                            'w_lc': 0.5
+                        }
+                        fig_mn = PLOT.ve_mat_cat_ngang(mcn_input_draw)
+                        if fig_mn is not None:
+                            st.plotly_chart(fig_mn, use_container_width=True, config={'scrollZoom': True})
+                            st.subheader("📋 Cấu tạo chi tiết các lớp mặt cắt")
+                            res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
+                            st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
+                    except Exception as e:
+                        st.error(f"Lỗi bản vẽ mặt cắt ngang: {e}")
     else:
         st.info("⏳ Vui lòng tải lên cả file .NTD và bảng tọa độ để hiển thị mô hình 3D và bản vẽ.")
