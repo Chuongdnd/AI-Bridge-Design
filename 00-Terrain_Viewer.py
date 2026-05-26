@@ -613,8 +613,7 @@ import uuid
 
 def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"):
     """
-    Xuất lưới địa hình (matrix_x, matrix_y, matrix_z) ra file IFC dạng IfcTriangulatedFaceSet.
-    Cần thư viện ifcopenshell. Cài đặt: pip install ifcopenshell
+    Xuất lưới địa hình ra IFC với đơn vị mét, hướng mặt đúng, sử dụng IfcShell.
     """
     try:
         import ifcopenshell
@@ -622,17 +621,17 @@ def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"
     except ImportError:
         st.error("Thiếu thư viện ifcopenshell. Hãy cài đặt: pip install ifcopenshell")
         return False
-    
+
     if matrix_x is None or matrix_y is None or matrix_z is None:
-        st.error("Chưa có dữ liệu địa hình để xuất.")
+        st.error("Chưa có dữ liệu địa hình.")
         return False
-    
+
     rows, cols = matrix_x.shape
     vertices = []
     idx_map = {}
     triangles = []
-    
-    # Thu thập tất cả các điểm (x,y,z) không NaN
+
+    # Thu thập các điểm không NaN
     for i in range(rows):
         for j in range(cols):
             x = matrix_x[i, j]
@@ -644,64 +643,95 @@ def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"
             if key not in idx_map:
                 idx_map[key] = len(vertices)
                 vertices.append([float(x), float(y), float(z)])
-    
-    # Tạo các mặt tam giác từ mỗi ô lưới (2 tam giác / ô)
+
+    # Tạo các mặt tam giác (đảm bảo hướng lên trên)
     for i in range(rows - 1):
         for j in range(cols - 1):
-            p00 = (matrix_x[i,j], matrix_y[i,j], matrix_z[i,j])
-            p10 = (matrix_x[i+1,j], matrix_y[i+1,j], matrix_z[i+1,j])
-            p01 = (matrix_x[i,j+1], matrix_y[i,j+1], matrix_z[i,j+1])
-            p11 = (matrix_x[i+1,j+1], matrix_y[i+1,j+1], matrix_z[i+1,j+1])
+            p00 = (matrix_x[i, j], matrix_y[i, j], matrix_z[i, j])
+            p10 = (matrix_x[i+1, j], matrix_y[i+1, j], matrix_z[i+1, j])
+            p01 = (matrix_x[i, j+1], matrix_y[i, j+1], matrix_z[i, j+1])
+            p11 = (matrix_x[i+1, j+1], matrix_y[i+1, j+1], matrix_z[i+1, j+1])
             if any(np.isnan(v) for v in p00 + p10 + p01 + p11):
                 continue
+
+            # Lấy chỉ số (1‑based)
             i1 = idx_map[p00] + 1
             i2 = idx_map[p10] + 1
             i3 = idx_map[p01] + 1
             i4 = idx_map[p11] + 1
-            triangles.append([i1, i2, i3])
-            triangles.append([i2, i4, i3])
-    
-    # Tạo file IFC (schema IFC4)
-    ifc_file = ifcopenshell.file(schema="IFC4")
-    
-    # Tạo IfcProject
-    project = ifc_file.create_entity("IfcProject", 
-                                     GlobalId=guid.compress(uuid.uuid4().hex), 
-                                     Name=name + " Project")
-    
-    # Tạo IfcGeometricRepresentationContext
-    context = ifc_file.create_entity("IfcGeometricRepresentationContext", 
-                                     ContextType="Model", 
-                                     CoordinateSpaceDimension=3)
-    
-    # Tạo danh sách điểm
-    point_list = ifc_file.create_entity("IfcCartesianPointList3D", CoordList=vertices)
-    
-    # Tạo mặt tam giác
-    tfs = ifc_file.create_entity("IfcTriangulatedFaceSet", 
-                                 Coordinates=point_list, 
-                                 CoordIndex=triangles, 
-                                 Closed=False)
-    
-    # Tạo biểu diễn hình học
-    shape_rep = ifc_file.create_entity("IfcShapeRepresentation", 
-                                       ContextOfItems=context, 
-                                       RepresentationType="Tessellation", 
-                                       Items=[tfs])
-    
-    # Tạo IfcSite
-    site = ifc_file.create_entity("IfcSite", 
-                                  GlobalId=guid.compress(uuid.uuid4().hex), 
-                                  Name=name)
-    site.Representation = ifc_file.create_entity("IfcProductDefinitionShape", 
-                                                 Representations=[shape_rep])
-    
-    # Sử dụng IfcRelAggregates để gán Site vào Project (IFC4)
-    ifc_file.create_entity("IfcRelAggregates",
+
+            # Mặc định là tam giác [i1,i2,i3] và [i2,i4,i3]
+            # Tính hướng: lấy pháp vector của tam giác thứ nhất, nếu z < 0 thì đảo thứ tự
+            p1 = np.array(p00)
+            p2 = np.array(p10)
+            p3 = np.array(p01)
+            normal = np.cross(p2 - p1, p3 - p1)
+            if normal[2] < 0:   # mặt hướng xuống -> đảo
+                triangles.append([i1, i3, i2])
+            else:
+                triangles.append([i1, i2, i3])
+
+            # Tam giác thứ hai [p10, p11, p01]
+            p1 = np.array(p10)
+            p2 = np.array(p11)
+            p3 = np.array(p01)
+            normal = np.cross(p2 - p1, p3 - p1)
+            if normal[2] < 0:
+                triangles.append([i2, i3, i4])
+            else:
+                triangles.append([i2, i4, i3])
+
+    # Tạo file IFC
+    f = ifcopenshell.file(schema="IFC4")
+
+    # Đơn vị: mét
+    unit_length = f.create_entity("IfcSIUnit", UnitType="LENGTHUNIT", Name="METRE")
+    unit_area = f.create_entity("IfcSIUnit", UnitType="AREAUNIT", Name="SQUARE_METRE")
+    unit_volume = f.create_entity("IfcSIUnit", UnitType="VOLUMEUNIT", Name="CUBIC_METRE")
+    f.create_entity("IfcUnitAssignment", Units=[unit_length, unit_area, unit_volume])
+
+    # Project
+    project = f.create_entity("IfcProject",
+                              GlobalId=guid.compress(uuid.uuid4().hex),
+                              Name=name)
+
+    # Bối cảnh hình học
+    context = f.create_entity("IfcGeometricRepresentationContext",
+                              ContextType="Model",
+                              CoordinateSpaceDimension=3,
+                              WorldCoordinateSystem=f.create_entity("IfcAxis2Placement3D"))
+
+    # Danh sách điểm
+    point_list = f.create_entity("IfcCartesianPointList3D", CoordList=vertices)
+
+    # Mặt tam giác
+    tfs = f.create_entity("IfcTriangulatedFaceSet",
+                          Coordinates=point_list,
+                          CoordIndex=triangles,
+                          Closed=False)
+
+    # Bọc thành Shell (quan trọng để Revit nhận dạng)
+    face_set = f.create_entity("IfcFaceSet", Faces=[tfs])   # IfcFaceSet chứa các mặt
+    shell = f.create_entity("IfcShell", CfsFaces=[face_set])  # Nếu IFC4 có thể dùng IfcConnectedFaceSet
+
+    # Tạo biểu diễn hình học (dùng IfcShapeRepresentation với RepresentationType = "Tessellation")
+    shape_rep = f.create_entity("IfcShapeRepresentation",
+                                ContextOfItems=context,
+                                RepresentationType="Tessellation",
+                                Items=[shell])
+
+    # Tạo IfcSite và gán representation
+    site = f.create_entity("IfcSite",
                            GlobalId=guid.compress(uuid.uuid4().hex),
-                           RelatingObject=project,
-                           RelatedObjects=[site])
-    
-    # Lưu file
-    ifc_file.write(filepath)
+                           Name=name)
+    site.Representation = f.create_entity("IfcProductDefinitionShape",
+                                          Representations=[shape_rep])
+
+    # Gắn site vào project qua IfcRelAggregates
+    f.create_entity("IfcRelAggregates",
+                    GlobalId=guid.compress(uuid.uuid4().hex),
+                    RelatingObject=project,
+                    RelatedObjects=[site])
+
+    f.write(filepath)
     return True
