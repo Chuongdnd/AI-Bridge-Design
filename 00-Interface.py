@@ -280,7 +280,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                 tab_dia_hinh_3d, tab_trac_doc, tab_tru_3d, tab_mcn_draw = st.tabs([
                     "🏔️ Mô hình Địa hình 3D",
                     "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
-                    "📐 Bản vẽ Mặt cắt ngang điển hình"
+                    "📐 Bản vẽ Mặt cắt ngang điển hình",
                     "🏗️ Mô hình Trụ cầu 3D Test"
                 ])
                 
