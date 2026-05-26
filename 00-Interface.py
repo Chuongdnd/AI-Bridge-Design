@@ -7,12 +7,14 @@ import google.generativeai as genai
 import fitz
 from streamlit_option_menu import option_menu
 
-# --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
+# --- THIẾT LẬP TRANG CHUẨN KỸ THUẬT TOÀN MÀN HÌNH ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
 # Khởi tạo bộ nhớ hội thoại chatbot
 if 'messages' not in st.session_state:
     st.session_state.messages = []
+# --- THIẾT LẬP TRANG CHUẨN KỸ THUẬT TOÀN MÀN HÌNH ---
+st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
 # --- CẤU HÌNH AI GEMINI ASSISTANT ---
 try:
@@ -57,11 +59,9 @@ try:
     GRD = importlib.import_module("05-Main_Girder")
     PLOT = importlib.import_module("00-Drawing_Utils")
     TV = importlib.import_module("00-Terrain_Viewer")
-    TC = importlib.import_module("04-Pier-test")
     importlib.reload(PLOT)
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
-    st.stop()
 
 if 'design_data' not in st.session_state:
     st.session_state.design_data = {
@@ -80,7 +80,7 @@ if 'current_tab' not in st.session_state:
     st.session_state.current_tab = "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"
 
 # =========================================================================
-# ⚙️ HỘP THOẠI KHAI BÁO SỐ LIỆU
+# ⚙️ ĐỊNH NGHĨA HỘP THOẠI KHAI BÁO SỐ LIỆU ĐỘC LẬP (OPTIONS WINDOW STYLE)
 # =========================================================================
 @st.dialog("⚙️ HỘP THOẠI KHAI BÁO THÔNG SỐ TUYẾN & THỦY VĂN", width="large")
 def show_options_dialog():
@@ -174,11 +174,11 @@ def show_options_dialog():
                 st.session_state.design_data = res
                 st.session_state.chatbot_context = f"Vtk={res['vtk']}km/h, LoaiDam={res['ai_result']['loai_dam']}, L_nhip={res['ai_result']['chieu_dai']}m, L_cau={res['geo_logic']['L_cau']:.2f}m"
                 
-                st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
+                st.session_state.current_tab = "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"
                 st.rerun()
 
 # =========================================================================
-# BỌC VÙNG ĐIỀU KHIỂN VÀO KHUNG HTML GHIM CỨNG
+# 🏗️ BỌC VÙNG ĐIỀU KHIỂN VÀO KHUNG HTML MANG ID ĐỂ GHIM CỨNG (FREEZE PANEL)
 # =========================================================================
 st.markdown('<div id="custom-ribbon-container">', unsafe_allow_html=True)
 
@@ -205,7 +205,7 @@ selected_ribbon = option_menu(
 st.session_state.current_tab = selected_ribbon
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 10px; border-color: #007acc;'>", unsafe_allow_html=True)
 
-# Hàng nút bấm và thông số hiện hành
+# Bố trí hàng nút bấm Options và Dòng thông báo số liệu hiện hành nằm ngay trong khối đóng băng
 if selected_ribbon == "BẢN VẼ KỸ THUẬT":
     ctrl_col1, ctrl_col2 = st.columns([1, 4])
     with ctrl_col1:
@@ -218,9 +218,9 @@ if selected_ribbon == "BẢN VẼ KỸ THUẬT":
             geo_p = st.session_state.design_data['geo_logic']
             st.markdown(f"<div style='padding-top: 5px; font-size:13px;'>📊 <b>Thông số hiện hành:</b> Chiều dài L = <b>{geo_p['L_cau']:.2f}m</b> | Kết cấu nhịp: <b>{ai_p['tong_so_nhip']} nhịp x {ai_p['chieu_dai']}m (Dầm {ai_p['loai_dam'].upper()})</b> | Chiều cao H = <b>{ai_p['chieu_cao']}m</b></div>", unsafe_allow_html=True)
 
-st.markdown('</div>', unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True) # ĐÓNG KHUNG CONTAINER GHIM CỨNG
 
-# --- THANH SIDEBAR TRÁI ---
+# --- THANH SIDEBAR TRÁI (Đã khôi phục hoàn toàn nút thu phóng góc trên) ---
 with st.sidebar:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     logo_path = os.path.join(current_dir, "Images", "UTH.jpg")
@@ -250,7 +250,7 @@ with st.sidebar:
             st.error(f"Lỗi AI: {e}")
 
 # =========================================================================
-# VÙNG HIỂN THỊ CHÍNH
+# VÙNG KHÔNG GIAN ĐỒ HỌA BẢN VẼ TRẮC DỌC & MẶT CẮT NGANG
 # =========================================================================
 if selected_ribbon == "THUYẾT MINH":
     st.title("🏗️ Hệ thống Tự động hóa Thiết kế và Tối ưu hóa Kết cấu Cầu")
@@ -263,28 +263,32 @@ if selected_ribbon == "THUYẾT MINH":
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
     
     st.markdown("##### 📥 Nạp Cơ sở dữ liệu Khảo sát Địa hình Thực địa")
+    # Tích hợp đồng thời 2 ô upload file cạnh nhau cho gọn gàng
     file_khao_sat = st.file_uploader("📂 1. Kéo và thả file .NTD trắc dọc trắc ngang tại đây", type=["ntd"])
     file_toa_do = st.file_uploader("📍 2. Kéo và thả bảng tọa độ tim thực tế (.CSV hoặc .XLSX) tại đây", type=["csv", "xlsx"])
     st.markdown("---")
     
+    # 2. Kiểm tra trạng thái: Chỉ kích hoạt xử lý VN-2000 khi người dùng nạp ĐẦY ĐỦ cả 2 file
     if file_khao_sat is not None and file_toa_do is not None:
         df_ntd = TV.parse_ntd_file(file_khao_sat)
         df_coord = TV.parse_coordinate_file(file_toa_do)
         
         if df_coord is not None and not df_ntd.empty:
+            # Thuật toán đồng bộ tuần tự các điểm tim tương ứng giữa NTD và Excel
             df_geology = TV.convert_to_vn2000(df_ntd, df_coord)
             
             if not df_geology.empty:
                 st.success(f"⚡ Hệ thống đã đồng bộ thành công {len(df_geology)} điểm mia không gian theo tọa độ tim thực tế VN-2000!")
                 
-                tab_dia_hinh_3d, tab_trac_doc, tab_tru_3d, tab_mcn_draw = st.tabs([
+                # Nhóm 4 Tab con hiển thị khi CÓ ĐẦY ĐỦ dữ liệu khảo sát và tọa độ thực
+                tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
                     "🏔️ Mô hình Địa hình 3D",
                     "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
                     "📐 Bản vẽ Mặt cắt ngang điển hình"
-                    "🏗️ Mô hình Trụ cầu 3D Test"
                 ])
                 
                 with tab_dia_hinh_3d:
+                    # 🛠️ KHU VỰC ĐIỀU KHIỂN ĐỒ HỌA OPTION ĐỒNG BỘ NÂNG CAO
                     col_opt1, col_opt2, col_opt3 = st.columns(3)
                     with col_opt1:
                         che_do_view = st.selectbox(
@@ -300,6 +304,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                             value=3
                         )
 
+                    # 📊 CỔNG PHÂN HỆ NẠP FILE EXCEL ĐỊA CHẤT 3 SHEET CỦA CHƯƠNG
                     st.markdown("---")
                     st.subheader("📊 Tích hợp Bản mô phỏng Địa chất Công trình chuyên sâu")
                     file_excel_dc = st.file_uploader("Tải lên file Excel số liệu địa chất trọn gói ba sheet:", type=['xlsx'])
@@ -322,6 +327,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                         else:
                             st.warning("⚠️ Dữ liệu địa chất không hợp lệ hoặc không tìm thấy cột tọa độ. Mô hình sẽ chỉ hiển thị địa hình.")
 
+                    # Tạo mô hình địa hình 3D từ dữ liệu NTD
                     fig_3d, mx, my, mz = TV.ve_dia_hinh_3d(
                         df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view
                     )
@@ -329,32 +335,29 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     if fig_3d is None:
                         st.error("❌ Không thể tạo mô hình 3D từ dữ liệu khảo sát. Hãy kiểm tra lại file NTD và bảng tọa độ.")
                     else:
+                        # Nếu có dữ liệu địa chất, phủ các lớp lên mô hình
                         if df_hk is not None and not df_hk.empty:
                             fig_3d = TV.dap_them_ket_cau_dia_chat_3d(
                                 fig_3d, df_hk, df_layers, df_spt, mx, my, mz, he_so_z=he_so_z,
                                 hien_mat_phang_lop=hien_mat_lop, hien_khoi_lop=hien_khoi_lop,
                                 do_trong_dia_hinh=do_trong_dh if (hien_mat_lop or hien_khoi_lop) else 1.0
                             )
-                        st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
-                # Trong 00-Interface.py, sau phần địa hình hoặc trong một tab riêng
-                with tab_tru_3d:
-                    st.subheader("🏗️ Cấu hình Kích thước Hình học Trụ cầu Tham số hóa")
-                    c1, c2, c3 = st.columns(3)
-                    with c1:
-                        l_be = st.number_input("Chiều dài bệ móng L_bê (m):", value=6.0, step=0.5, key="l_be_data")
-                        b_be = st.number_input("Chiều rộng bệ móng B_bê (m):", value=4.0, step=0.5, key="b_be_data")
-                        h_be = st.number_input("Chiều cao bệ móng H_bê (m):", value=1.5, step=0.1, key="h_be_data")
-                    with c2:
-                        l_than = st.number_input("Chiều dài thân cột L_thân (m):", value=3.0, step=0.5, key="l_than_data")
-                        b_than = st.number_input("Chiều rộng thân cột B_thân (m):", value=1.5, step=0.5, key="b_than_data")
-                        h_than = st.number_input("Chiều cao thân cột H_thân (m):", value=6.0, step=0.5, key="h_than_data")
-                    with c3:
-                        l_mu = st.number_input("Chiều dài xà mũ L_mũ (m):", value=10.0, step=0.5, key="l_mu_data")
-                        b_mu = st.number_input("Chiều rộng xà mũ B_mũ (m):", value=2.2, step=0.5, key="b_mu_data")
-                        h_mu = st.number_input("Chiều cao xà mũ H_mũ (m):", value=1.4, step=0.1, key="h_mu_data")
                         
-                    # Gọi hàm vẽ 3D từ module 06-Tru_Cau đã kết nối
-                    fig_tru = TC.ve_tru_cau_3d_tham_so(l_be, b_be, h_be, l_than, b_than, h_than, l_mu, b_mu, h_mu)
-                    st.plotly_chart(fig_tru, use_container_width=True)
-    else:
-        st.info("⏳ Vui lòng tải lên cả file .NTD và bảng tọa độ để hiển thị mô hình 3D và bản vẽ.")
+                        # Hiển thị mô hình cuối cùng
+                        st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
+                
+        with tab_mcn_draw:
+            try:
+                mcn_input_draw = {
+                    'bc_cau': float(st.session_state.design_data.get('bc', 12.0)),
+                    'w_lc': 0.5
+                }
+                fig_mn = PLOT.ve_mat_cat_ngang(mcn_input_draw)
+                if fig_mn is not None:
+                    st.plotly_chart(fig_mn, use_container_width=True, config={'scrollZoom': True})
+                    
+                    st.subheader("📋 Cấu tạo chi tiết các lớp mặt cắt")
+                    res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
+                    st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
+            except Exception as e:
+                st.error(f"Lỗi bản vẽ mặt cắt ngang: {e}")
