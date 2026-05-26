@@ -1,48 +1,79 @@
-# bridge_components.py
-import cadquery as cq
-import numpy as np
+import streamlit as st
 import plotly.graph_objects as go
-from stl import mesh
 
-def create_pier(H, W, L, top_W, top_H, base_W, base_H, base_L):
+def tao_khoi_hop_3d(x_center, y_center, z_bottom, length_x, width_y, height_z, color, name):
     """
-    Tạo mô hình trụ cầu với các thông số:
-    - H: chiều cao thân trụ
-    - W: chiều rộng thân trụ (theo phương ngang cầu)
-    - L: chiều dài thân trụ (theo phương dọc cầu)
-    - top_W: chiều rộng đỉnh trụ (phần mũ)
-    - top_H: chiều cao mũ trụ
-    - base_W: chiều rộng bệ trụ
-    - base_H: chiều cao bệ trụ
-    - base_L: chiều dài bệ trụ
-    Trả về CadQuery object
+    Hàm hỗ trợ tạo khối hộp 3D đặc (Solid Box) dựa trên tâm và kích thước
     """
-    # Thân trụ hình hộp chữ nhật
-    pier_body = cq.Workplane("XY").box(L, W, H)
-    # Mũ trụ (phần trên)
-    pier_top = cq.Workplane("XY").box(L, top_W, top_H).translate((0, 0, H/2 + top_H/2))
-    # Bệ trụ (phần dưới)
-    pier_base = cq.Workplane("XY").box(base_L, base_W, base_H).translate((0, 0, -base_H/2))
-    # Kết hợp
-    pier = pier_body.union(pier_top).union(pier_base)
-    return pier
+    dx, dy = length_x / 2, width_y / 2
+    # Tọa độ 8 đỉnh của khối hộp
+    x = [x_center-dx, x_center+dx, x_center+dx, x_center-dx, x_center-dx, x_center+dx, x_center+dx, x_center-dx]
+    y = [y_center-dy, y_center-dy, y_center+dy, y_center+dy, y_center-dy, y_center-dy, y_center+dy, y_center+dy]
+    z = [z_bottom, z_bottom, z_bottom, z_bottom, z_bottom+height_z, z_bottom+height_z, z_bottom+height_z, z_bottom+height_z]
+    
+    # Quy tắc nối 12 mặt tam giác (Faces) để tạo thành khối khép kín
+    i = [7, 0, 0, 0, 4, 4, 6, 6, 4, 0, 3, 2]
+    j = [3, 4, 1, 2, 5, 6, 5, 2, 0, 1, 6, 3]
+    k = [0, 7, 2, 3, 6, 7, 1, 1, 5, 5, 7, 6]
+    
+    return go.Mesh3d(
+        x=x, y=y, z=z, i=i, j=j, k=k, 
+        color=color, opacity=0.9, name=name, 
+        flatshading=True, hoverinfo="name"
+    )
 
-def cadquery_to_plotly_mesh(cq_obj):
-    """
-    Chuyển đổi CadQuery object sang Plotly Mesh3d (vertices, faces)
-    """
-    # Xuất tạm thời sang STL
-    stl_file = "temp.stl"
-    cq.exporters.export(cq_obj, stl_file)
-    # Đọc STL
-    data = mesh.Mesh.from_file(stl_file)
-    vertices = data.vectors.reshape(-1, 3)
-    # Tạo faces: mỗi tam giác có 3 đỉnh, indices theo thứ tự
-    n_faces = len(data.vectors)
-    faces = []
-    for i in range(n_faces):
-        base_idx = i * 3
-        faces.append([base_idx, base_idx+1, base_idx+2])
-    faces = np.array(faces)
-    # Lọc bỏ các đỉnh trùng lặp? Plotly yêu cầu faces là chỉ số, không cần lọc.
-    return vertices, faces
+def ve_tru_cau_3d():
+    st.markdown("### 🏗️ KHỞI TẠO MÔ HÌNH TRỤ CẦU 3D ĐỘC LẬP")
+    
+    # 1. KHU VỰC NGƯỜI DÙNG KHAI BÁO BIẾN KÍCH THƯỚC
+    col1, col2, col3 = st.columns(3)
+    with col1:
+        st.write("**1. Bệ trụ (Móng)**")
+        l_be = st.number_input("Chiều dài bệ (X):", value=6.0, step=0.5)
+        b_be = st.number_input("Chiều rộng bệ (Y):", value=4.0, step=0.5)
+        h_be = st.number_input("Chiều cao bệ (Z):", value=1.5, step=0.1)
+        
+    with col2:
+        st.write("**2. Thân trụ (Cột)**")
+        l_than = st.number_input("Chiều dài thân (X):", value=3.0, step=0.5)
+        b_than = st.number_input("Chiều rộng thân (Y):", value=1.5, step=0.5)
+        h_than = st.number_input("Chiều cao thân (Z):", value=5.0, step=0.5)
+        
+    with col3:
+        st.write("**3. Xà mũ trụ (Đỉnh)**")
+        l_mu = st.number_input("Chiều dài xà mũ (X):", value=8.0, step=0.5)
+        b_mu = st.number_input("Chiều rộng xà mũ (Y):", value=2.0, step=0.5)
+        h_mu = st.number_input("Chiều cao xà mũ (Z):", value=1.2, step=0.1)
+
+    # 2. TOÁN HỌC XẾP CHỒNG CÁC KHỐI THEO TRỤC Z
+    fig = go.Figure()
+    
+    # Vẽ Bệ trụ (Nằm sát đất, Z bắt đầu từ 0)
+    khoi_be = tao_khoi_hop_3d(0, 0, 0, l_be, b_be, h_be, color='#808080', name="Bệ trụ")
+    fig.add_trace(khoi_be)
+    
+    # Vẽ Thân trụ (Nằm đè lên Bệ trụ, Z bắt đầu từ h_be)
+    khoi_than = tao_khoi_hop_3d(0, 0, h_be, l_than, b_than, h_than, color='#A9A9A9', name="Thân trụ")
+    fig.add_trace(khoi_than)
+    
+    # Vẽ Xà mũ (Nằm đè lên Thân trụ, Z bắt đầu từ h_be + h_than)
+    khoi_mu = tao_khoi_hop_3d(0, 0, h_be + h_than, l_mu, b_mu, h_mu, color='#696969', name="Xà mũ")
+    fig.add_trace(khoi_mu)
+
+    # 3. CẤU HÌNH GIAO DIỆN HIỂN THỊ
+    fig.update_layout(
+        scene=dict(
+            xaxis_title="Phương ngang cầu (X)",
+            yaxis_title="Phương dọc cầu (Y)",
+            zaxis_title="Cao độ (Z)",
+            aspectmode='data' # Ép tỷ lệ 1:1:1 để trụ không bị méo
+        ),
+        margin=dict(l=0, r=0, b=0, t=30),
+        height=600
+    )
+    
+    st.plotly_chart(fig, use_container_width=True)
+
+# Để test độc lập, bạn chỉ cần gọi hàm này ra:
+if __name__ == "__main__":
+    ve_tru_cau_3d()

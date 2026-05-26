@@ -57,7 +57,7 @@ try:
     GRD = importlib.import_module("05-Main_Girder")
     PLOT = importlib.import_module("00-Drawing_Utils")
     TV = importlib.import_module("00-Terrain_Viewer")
-    PP = importlib.import_module("04-Pier-test")
+    TC = importlib.import_module("04-Pier-test")
     importlib.reload(PLOT)
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
@@ -277,10 +277,11 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
             if not df_geology.empty:
                 st.success(f"⚡ Hệ thống đã đồng bộ thành công {len(df_geology)} điểm mia không gian theo tọa độ tim thực tế VN-2000!")
                 
-                tab_dia_hinh_3d, tab_trac_doc, tab_mcn_draw = st.tabs([
+                tab_dia_hinh_3d, tab_trac_doc, tab_tru_3d, tab_mcn_draw = st.tabs([
                     "🏔️ Mô hình Địa hình 3D",
                     "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
                     "📐 Bản vẽ Mặt cắt ngang điển hình"
+                    "🏗️ Mô hình Trụ cầu 3D Test"
                 ])
                 
                 with tab_dia_hinh_3d:
@@ -336,42 +337,24 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                             )
                         st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
                 # Trong 00-Interface.py, sau phần địa hình hoặc trong một tab riêng
-                with st.expander("🏗️ Tạo mô hình trụ cầu 3D (CadQuery)", expanded=False):
-                    st.markdown("### Nhập kích thước trụ")
-                    col1, col2 = st.columns(2)
-                    with col1:
-                        H = st.number_input("Chiều cao thân trụ (m)", value=5.0, step=0.5)
-                        W = st.number_input("Chiều rộng thân trụ (dọc cầu) (m)", value=1.5, step=0.1)
-                        L = st.number_input("Chiều dài thân trụ (ngang cầu) (m)", value=3.0, step=0.1)
-                        top_W = st.number_input("Chiều rộng đỉnh trụ (m)", value=2.0, step=0.1)
-                        top_H = st.number_input("Chiều cao đỉnh trụ (m)", value=0.5, step=0.1)
-                    with col2:
-                        base_W = st.number_input("Chiều rộng bệ trụ (m)", value=2.5, step=0.1)
-                        base_H = st.number_input("Chiều cao bệ trụ (m)", value=1.0, step=0.1)
-                        base_L = st.number_input("Chiều dài bệ trụ (m)", value=4.0, step=0.1)
-                    
-                    if st.button("🚀 Tạo mô hình trụ 3D", use_container_width=True):
-                        with st.spinner("Đang tạo mô hình từ CadQuery..."):
-                            try:
-                                pier = PP.create_pier(H, W, L, top_W, top_H, base_W, base_H, base_L)
-                                vertices, faces = PP.cadquery_to_plotly_mesh(pier)
-                                fig_pier = go.Figure(data=[go.Mesh3d(
-                                    x=vertices[:,0], y=vertices[:,1], z=vertices[:,2],
-                                    i=faces[:,0], j=faces[:,1], k=faces[:,2],
-                                    color='lightgray', opacity=0.9, flatshading=True,
-                                    lighting=dict(ambient=0.5, diffuse=0.8, specular=0.5)
-                                )])
-                                fig_pier.update_layout(
-                                    scene=dict(
-                                        xaxis_title="X (m)", yaxis_title="Y (m)", zaxis_title="Z (m)",
-                                        aspectmode='data'
-                                    ),
-                                    margin=dict(l=0, r=0, b=0, t=0),
-                                    height=500,
-                                    title="Mô hình trụ 3D"
-                                )
-                                st.plotly_chart(fig_pier, use_container_width=True)
-                            except Exception as e:
-                                st.error(f"Lỗi tạo mô hình: {e}")
+                with tab_tru_3d:
+                    st.subheader("🏗️ Cấu hình Kích thước Hình học Trụ cầu Tham số hóa")
+                    c1, c2, c3 = st.columns(3)
+                    with c1:
+                        l_be = st.number_input("Chiều dài bệ móng L_bê (m):", value=6.0, step=0.5, key="l_be_data")
+                        b_be = st.number_input("Chiều rộng bệ móng B_bê (m):", value=4.0, step=0.5, key="b_be_data")
+                        h_be = st.number_input("Chiều cao bệ móng H_bê (m):", value=1.5, step=0.1, key="h_be_data")
+                    with c2:
+                        l_than = st.number_input("Chiều dài thân cột L_thân (m):", value=3.0, step=0.5, key="l_than_data")
+                        b_than = st.number_input("Chiều rộng thân cột B_thân (m):", value=1.5, step=0.5, key="b_than_data")
+                        h_than = st.number_input("Chiều cao thân cột H_thân (m):", value=6.0, step=0.5, key="h_than_data")
+                    with c3:
+                        l_mu = st.number_input("Chiều dài xà mũ L_mũ (m):", value=10.0, step=0.5, key="l_mu_data")
+                        b_mu = st.number_input("Chiều rộng xà mũ B_mũ (m):", value=2.2, step=0.5, key="b_mu_data")
+                        h_mu = st.number_input("Chiều cao xà mũ H_mũ (m):", value=1.4, step=0.1, key="h_mu_data")
+                        
+                    # Gọi hàm vẽ 3D từ module 06-Tru_Cau đã kết nối
+                    fig_tru = TC.ve_tru_cau_3d_tham_so(l_be, b_be, h_be, l_than, b_than, h_than, l_mu, b_mu, h_mu)
+                    st.plotly_chart(fig_tru, use_container_width=True)
     else:
         st.info("⏳ Vui lòng tải lên cả file .NTD và bảng tọa độ để hiển thị mô hình 3D và bản vẽ.")
