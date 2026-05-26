@@ -354,7 +354,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                         h_mu = st.number_input("Chiều cao xà mũ H_mũ (m):", value=1.4, step=0.1, key="h_mu_data")
                         
                     # Gọi hàm vẽ 3D từ module 06-Tru_Cau đã kết nối
-                    fig_tru = TC.ve_tru_cau_3d_tham_so(l_be, b_be, h_be, l_than, b_than, h_than, l_mu, b_mu, h_mu)
+                    fig_tru = TC.ve_tru_cau_3d(l_be, b_be, h_be, l_than, b_than, h_than, l_mu, b_mu, h_mu)
                     st.plotly_chart(fig_tru, use_container_width=True)
     else:
         st.info("⏳ Vui lòng tải lên cả file .NTD và bảng tọa độ để hiển thị mô hình 3D và bản vẽ.")
