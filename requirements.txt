@@ -10,3 +10,4 @@ pymupdf
 plotly
 streamlit-option-menu
 trimesh
+ifcopenshell
