@@ -609,3 +609,93 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
             ))
             
     return fig
+import uuid
+
+def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"):
+    """
+    Xuất lưới địa hình (matrix_x, matrix_y, matrix_z) ra file IFC dạng IfcTriangulatedFaceSet.
+    Cần thư viện ifcopenshell. Cài đặt: pip install ifcopenshell
+    """
+    try:
+        import ifcopenshell
+    except ImportError:
+        st.error("Thiếu thư viện ifcopenshell. Hãy cài đặt: pip install ifcopenshell")
+        return False
+    
+    if matrix_x is None or matrix_y is None or matrix_z is None:
+        st.error("Chưa có dữ liệu địa hình để xuất.")
+        return False
+    
+    rows, cols = matrix_x.shape
+    vertices = []
+    idx_map = {}
+    triangles = []
+    
+    # Thu thập tất cả các điểm (x,y,z) không NaN
+    for i in range(rows):
+        for j in range(cols):
+            x = matrix_x[i, j]
+            y = matrix_y[i, j]
+            z = matrix_z[i, j]
+            if np.isnan(x) or np.isnan(y) or np.isnan(z):
+                continue
+            key = (x, y, z)
+            if key not in idx_map:
+                idx_map[key] = len(vertices)
+                vertices.append([float(x), float(y), float(z)])
+    
+    # Tạo các mặt tam giác từ mỗi ô lưới (2 tam giác / ô)
+    for i in range(rows - 1):
+        for j in range(cols - 1):
+            # Lấy 4 điểm của ô
+            p00 = (matrix_x[i,j], matrix_y[i,j], matrix_z[i,j])
+            p10 = (matrix_x[i+1,j], matrix_y[i+1,j], matrix_z[i+1,j])
+            p01 = (matrix_x[i,j+1], matrix_y[i,j+1], matrix_z[i,j+1])
+            p11 = (matrix_x[i+1,j+1], matrix_y[i+1,j+1], matrix_z[i+1,j+1])
+            # Bỏ qua nếu bất kỳ điểm nào NaN
+            if any(np.isnan(v) for v in p00 + p10 + p01 + p11):
+                continue
+            # Lấy chỉ số (chuyển sang IFC: bắt đầu từ 1)
+            i1 = idx_map[p00] + 1
+            i2 = idx_map[p10] + 1
+            i3 = idx_map[p01] + 1
+            i4 = idx_map[p11] + 1
+            # Tam giác 1: p00-p10-p01
+            triangles.append([i1, i2, i3])
+            # Tam giác 2: p10-p11-p01
+            triangles.append([i2, i4, i3])
+    
+    # Tạo file IFC (schema IFC4)
+    ifc_file = ifcopenshell.file(schema="IFC4")
+    project = ifc_file.create_entity("IfcProject", 
+                                     GlobalId=ifcopenshell.guid.compress(uuid.uuid4().hex), 
+                                     Name="TerrainExport")
+    # Thiết lập bối cảnh hình học
+    context = ifc_file.create_entity("IfcGeometricRepresentationContext", 
+                                     ContextType="Model", 
+                                     CoordinateSpaceDimension=3)
+    
+    # Tạo danh sách điểm
+    point_list = ifc_file.create_entity("IfcCartesianPointList3D", CoordList=vertices)
+    # Tạo mặt tam giác
+    tfs = ifc_file.create_entity("IfcTriangulatedFaceSet", 
+                                 Coordinates=point_list, 
+                                 CoordIndex=triangles, 
+                                 Closed=False)
+    # Tạo biểu diễn hình học
+    shape_rep = ifc_file.create_entity("IfcShapeRepresentation", 
+                                       ContextOfItems=context, 
+                                       RepresentationType="Tessellation", 
+                                       Items=[tfs])
+    # Tạo đối tượng IfcSite (địa hình thường là Site)
+    site = ifc_file.create_entity("IfcSite", 
+                                  GlobalId=ifcopenshell.guid.compress(uuid.uuid4().hex), 
+                                  Name=name)
+    site.Representation = ifc_file.create_entity("IfcProductDefinitionShape", 
+                                                 Representations=[shape_rep])
+    # Gắn Site vào Project
+    ifc_file[1].Decomposition = [site]
+    
+    # Lưu file
+    ifc_file.write(filepath)
+    return True

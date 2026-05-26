@@ -337,7 +337,20 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                                 do_trong_dia_hinh=do_trong_dh if (hien_mat_lop or hien_khoi_lop) else 1.0
                             )
                         st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
-                
+                                # Sau khi vẽ xong mô hình
+                if fig_3d is not None:
+                    col_exp1, col_exp2 = st.columns([1, 3])
+                    with col_exp1:
+                        if st.button("📤 Xuất địa hình ra IFC", key="export_ifc_terrain"):
+                            with st.spinner("Đang xuất file IFC..."):
+                                ifc_path = "terrain_output.ifc"
+                                success = TV.export_terrain_to_ifc(mx, my, mz, ifc_path, name="DiaHinh_KhaoSat")
+                                if success:
+                                    with open(ifc_path, "rb") as f:
+                                        st.download_button("⬇️ Tải file IFC", f, file_name="terrain.ifc", mime="application/octet-stream")
+                                    st.success("Xuất IFC thành công!")
+                                else:
+                                    st.error("Xuất IFC thất bại. Kiểm tra lại cài đặt ifcopenshell.")
                 with tab_trac_doc:
                     st.info("📌 Bản vẽ trắc dọc toàn cầu sẽ được cập nhật sau.")
                     # Bạn có thể thêm code vẽ trắc dọc tại đây
