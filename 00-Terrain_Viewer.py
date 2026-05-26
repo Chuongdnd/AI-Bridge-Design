@@ -613,13 +613,14 @@ import uuid
 
 def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"):
     """
-    Xuất lưới địa hình ra IFC với đơn vị mét, hướng mặt đúng, sử dụng IfcShell.
+    Xuất lưới địa hình ra IFC (IfcTriangulatedFaceSet) với đơn vị mét,
+    hướng mặt hướng lên trên, tương thích Revit.
     """
     try:
         import ifcopenshell
         from ifcopenshell import guid
     except ImportError:
-        st.error("Thiếu thư viện ifcopenshell. Hãy cài đặt: pip install ifcopenshell")
+        st.error("Thiếu thư viện ifcopenshell. Hãy cài: pip install ifcopenshell")
         return False
 
     if matrix_x is None or matrix_y is None or matrix_z is None:
@@ -644,34 +645,32 @@ def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"
                 idx_map[key] = len(vertices)
                 vertices.append([float(x), float(y), float(z)])
 
-    # Tạo các mặt tam giác (đảm bảo hướng lên trên)
+    # Tạo tam giác với hướng mặt hướng lên
     for i in range(rows - 1):
         for j in range(cols - 1):
-            p00 = (matrix_x[i, j], matrix_y[i, j], matrix_z[i, j])
-            p10 = (matrix_x[i+1, j], matrix_y[i+1, j], matrix_z[i+1, j])
-            p01 = (matrix_x[i, j+1], matrix_y[i, j+1], matrix_z[i, j+1])
-            p11 = (matrix_x[i+1, j+1], matrix_y[i+1, j+1], matrix_z[i+1, j+1])
+            p00 = (matrix_x[i,j], matrix_y[i,j], matrix_z[i,j])
+            p10 = (matrix_x[i+1,j], matrix_y[i+1,j], matrix_z[i+1,j])
+            p01 = (matrix_x[i,j+1], matrix_y[i,j+1], matrix_z[i,j+1])
+            p11 = (matrix_x[i+1,j+1], matrix_y[i+1,j+1], matrix_z[i+1,j+1])
             if any(np.isnan(v) for v in p00 + p10 + p01 + p11):
                 continue
 
-            # Lấy chỉ số (1‑based)
             i1 = idx_map[p00] + 1
             i2 = idx_map[p10] + 1
             i3 = idx_map[p01] + 1
             i4 = idx_map[p11] + 1
 
-            # Mặc định là tam giác [i1,i2,i3] và [i2,i4,i3]
-            # Tính hướng: lấy pháp vector của tam giác thứ nhất, nếu z < 0 thì đảo thứ tự
+            # Tam giác 1
             p1 = np.array(p00)
             p2 = np.array(p10)
             p3 = np.array(p01)
             normal = np.cross(p2 - p1, p3 - p1)
-            if normal[2] < 0:   # mặt hướng xuống -> đảo
+            if normal[2] < 0:
                 triangles.append([i1, i3, i2])
             else:
                 triangles.append([i1, i2, i3])
 
-            # Tam giác thứ hai [p10, p11, p01]
+            # Tam giác 2
             p1 = np.array(p10)
             p2 = np.array(p11)
             p3 = np.array(p01)
@@ -684,53 +683,45 @@ def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"
     # Tạo file IFC
     f = ifcopenshell.file(schema="IFC4")
 
-    # Đơn vị: mét
-    unit_length = f.create_entity("IfcSIUnit", UnitType="LENGTHUNIT", Name="METRE")
+    # Đơn vị
+    unit_len = f.create_entity("IfcSIUnit", UnitType="LENGTHUNIT", Name="METRE")
     unit_area = f.create_entity("IfcSIUnit", UnitType="AREAUNIT", Name="SQUARE_METRE")
-    unit_volume = f.create_entity("IfcSIUnit", UnitType="VOLUMEUNIT", Name="CUBIC_METRE")
-    f.create_entity("IfcUnitAssignment", Units=[unit_length, unit_area, unit_volume])
+    unit_vol = f.create_entity("IfcSIUnit", UnitType="VOLUMEUNIT", Name="CUBIC_METRE")
+    f.create_entity("IfcUnitAssignment", Units=[unit_len, unit_area, unit_vol])
 
     # Project
-    project = f.create_entity("IfcProject",
-                              GlobalId=guid.compress(uuid.uuid4().hex),
-                              Name=name)
+    proj = f.create_entity("IfcProject", GlobalId=guid.compress(uuid.uuid4().hex), Name=name)
 
     # Bối cảnh hình học
-    context = f.create_entity("IfcGeometricRepresentationContext",
-                              ContextType="Model",
-                              CoordinateSpaceDimension=3,
-                              WorldCoordinateSystem=f.create_entity("IfcAxis2Placement3D"))
+    ctx = f.create_entity("IfcGeometricRepresentationContext",
+                          ContextType="Model",
+                          CoordinateSpaceDimension=3,
+                          WorldCoordinateSystem=f.create_entity("IfcAxis2Placement3D"))
 
     # Danh sách điểm
-    point_list = f.create_entity("IfcCartesianPointList3D", CoordList=vertices)
+    points = f.create_entity("IfcCartesianPointList3D", CoordList=vertices)
 
     # Mặt tam giác
     tfs = f.create_entity("IfcTriangulatedFaceSet",
-                          Coordinates=point_list,
+                          Coordinates=points,
                           CoordIndex=triangles,
                           Closed=False)
 
-    # Bọc thành Shell (quan trọng để Revit nhận dạng)
-    face_set = f.create_entity("IfcFaceSet", Faces=[tfs])   # IfcFaceSet chứa các mặt
-    shell = f.create_entity("IfcShell", CfsFaces=[face_set])  # Nếu IFC4 có thể dùng IfcConnectedFaceSet
-
-    # Tạo biểu diễn hình học (dùng IfcShapeRepresentation với RepresentationType = "Tessellation")
+    # Biểu diễn hình học
     shape_rep = f.create_entity("IfcShapeRepresentation",
-                                ContextOfItems=context,
+                                ContextOfItems=ctx,
                                 RepresentationType="Tessellation",
-                                Items=[shell])
+                                Items=[tfs])
 
-    # Tạo IfcSite và gán representation
-    site = f.create_entity("IfcSite",
-                           GlobalId=guid.compress(uuid.uuid4().hex),
-                           Name=name)
+    # Site
+    site = f.create_entity("IfcSite", GlobalId=guid.compress(uuid.uuid4().hex), Name=name)
     site.Representation = f.create_entity("IfcProductDefinitionShape",
                                           Representations=[shape_rep])
 
-    # Gắn site vào project qua IfcRelAggregates
+    # Quan hệ aggregation
     f.create_entity("IfcRelAggregates",
                     GlobalId=guid.compress(uuid.uuid4().hex),
-                    RelatingObject=project,
+                    RelatingObject=proj,
                     RelatedObjects=[site])
 
     f.write(filepath)
