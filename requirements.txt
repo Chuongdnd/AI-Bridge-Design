@@ -9,5 +9,12 @@ google-generativeai>=0.8.0
 pymupdf
 plotly
 streamlit-option-menu
-cadquery
-ocp
+cadquery==2.5.0
+cadquery-ocp==7.7.2
+numpy==1.26.4
+ezdxf
+multimethod
+nlop
+typish
+casadi
+path
