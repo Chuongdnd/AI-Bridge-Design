@@ -107,7 +107,7 @@ def show_options_dialog():
         st.markdown("**Số liệu cao độ hình học / Thủy văn (m)**")
         h_tn_tb = st.number_input("Cao độ tự nhiên trung bình:", value=st.session_state.design_data.get('h_tn_tb', 2.15), format="%.3f")
         if loai_c == "Vượt sông":
-            x_tim_clearance = st.number_input("📍 Lý trình tim tĩnh không (m)", value=0.0, step=1.0, format="%.2f")
+            x_tim_clearance = st.number_input("📍 Lý trình tim tĩnh không (m)", value=0.0, step=1.0, format="%.2f", key="x_tim_clearance")
             h1 = st.number_input("Cao độ MNCN (H1%):", value=st.session_state.design_data.get('MNCN', 3.50), format="%.3f")
             h5 = st.number_input("Cao độ MNTT (H5%):", value=st.session_state.design_data.get('MNTT', 2.00), format="%.3f")
             h10 = st.number_input("Cao độ MNTC (H10%):", value=st.session_state.design_data.get('MNTC', 1.50), format="%.3f")

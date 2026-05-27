@@ -74,7 +74,7 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0, x_tim_clearance=0.0):
     y_dinh_tuyet_doi = h_dam + 2.0 
     y_dinh = y_dinh_tuyet_doi - y_base_goc
 
-    # --- Tính toán trong hệ tương đối (tim cầu tại 0) ---
+    # Tính trong hệ tương đối (tim cầu tại 0)
     T = R * i_val
     x_t1_rel = -T
     x_t2_rel = T
@@ -84,8 +84,7 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0, x_tim_clearance=0.0):
     l_nhip_du_kien = res.get('ai_result', {}).get('chieu_dai', 33.0)
     l_cau_min = l_nhip_du_kien + 10.0
 
-    # Tìm vị trí mố (tương đối) dựa trên địa hình trung bình (tạm thời)
-    # Lưu ý: nên thay bằng dữ liệu địa hình thực tế, nhưng vì chưa có ở đây, tạm dùng h_tn_tb
+    # Tìm vị trí mố (tương đối) dựa trên địa hình trung bình
     h_tn_tb_tuong_doi = h_tn_tb - y_base_goc
     x_scan_rel = np.linspace(-500, 500, 2000)
     y_scan_rel = []
@@ -113,13 +112,13 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0, x_tim_clearance=0.0):
     x_mo_phai = x_tim_clearance + (x_tim_clearance - x_mo_trai)
     l_cau_final = x_mo_phai - x_mo_trai
     
-    # y_mo: cao độ mố (tương đối) – vẫn lấy theo địa hình trung bình (có thể cập nhật sau)
-    y_mo = h_tn_tb_tuong_doi  # hoặc y_scan_rel[idx_mo] tương ứng
+    # y_mo: cao độ mố (tương đối) – lấy theo địa hình trung bình
+    y_mo = h_tn_tb_tuong_doi
 
     return {
         "x_t1": x_t1,
         "x_t2": x_t2,
-        "y_t": y_t_rel,          # y_t vẫn là cao độ tương đối
+        "y_t": y_t_rel,
         "y_dinh": y_dinh,
         "R": R,
         "i_val": i_val,
@@ -129,5 +128,5 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0, x_tim_clearance=0.0):
         "L_cau": l_cau_final,
         "h_tn_tb": h_tn_tb,
         "y_base_goc": y_base_goc,
-        "x_tim_clearance": x_tim_clearance   # lưu lại để dùng
+        "x_tim_clearance": x_tim_clearance
     }
