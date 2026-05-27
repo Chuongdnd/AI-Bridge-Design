@@ -171,12 +171,15 @@ def show_options_dialog():
                 xlsx_path = os.path.join(os.path.dirname(__file__), "Girder.xlsx")
                 models = GRD.train_bridge_ai_system(xlsx_path)
                 if models:
+                    L_cau = res['geo_logic'].get('L_cau', None)  # Lấy L_cau từ geo_logic, nếu không có thì None
                     res['ai_result'] = GRD.predict_main_span(
-                        res['B'], goc_giao, res['bc'],
-                        "Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông",
-                        models,
-                        L_cau_tong=res['geo_logic']['L_cau'],
-                        method='auto'   # Bạn có thể thay 'auto' bằng biến method nếu đã thêm radio button
+                        b_tk=res['B'],
+                        goc=goc_giao,
+                        b_cau=res['bc'],
+                        env=("Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông"),
+                        models=models,
+                        L_cau_tong=L_cau,
+                        method='auto'
                     )
                 
                 st.session_state.design_data = res
