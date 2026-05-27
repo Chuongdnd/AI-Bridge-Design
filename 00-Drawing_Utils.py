@@ -17,143 +17,172 @@ def ve_ky_hieu_muc_nuoc_plotly(fig, x_pos, y_val, label, color):
 
 def ve_trac_doc_cau(res, df_tim_line=None):
     """
-    Vẽ trắc dọc dọc theo tim tuyến địa hình thực tế.
-    df_tim_line: DataFrame có các cột 'Lý trình' (m) và 'Z' (cao độ thực tế)
+    Vẽ trắc dọc tỷ lệ 1:1 dọc theo tim tuyến địa hình thực tế.
+    df_tim_line: DataFrame có cột 'Lý trình' (m) và 'Z' (cao độ thực tế)
     """
+    import plotly.graph_objects as go
+    import numpy as np
+    import streamlit as st
+
     geo = res.get('geo_logic')
     if not geo:
+        st.warning("Không có dữ liệu hình học trắc dọc (geo_logic).")
         return None
-    
+
+    # Kiểm tra các trường cần thiết
+    required_keys = ['y_dinh', 'x_t1', 'x_t2', 'y_t', 'R', 'i_val', 'x_mo_trai', 'x_mo_phai', 'y_mo', 'L_cau', 'y_base_goc']
+    for key in required_keys:
+        if key not in geo:
+            st.error(f"Thiếu trường '{key}' trong geo_logic. Hãy chạy lại OPTIONS.")
+            return None
+
     if df_tim_line is None or df_tim_line.empty:
         st.warning("Không có dữ liệu tim tuyến, không thể vẽ trắc dọc.")
         return None
-    
-    # Sắp xếp theo lý trình tăng dần
+
+    # Sắp xếp và chuẩn bị dữ liệu
     df_tim = df_tim_line.sort_values('Lý trình').copy()
     x_chain = df_tim['Lý trình'].values
     z_tim = df_tim['Z'].values
-    
-    # Xác định phạm vi vẽ dựa trên vị trí mố (từ geo)
-    x_mo_trai = geo['x_mo_trai']
-    x_mo_phai = geo['x_mo_phai']
-    margin = 50  # mở rộng thêm 50m mỗi bên
-    x_start = x_mo_trai - margin
-    x_end = x_mo_phai + margin
-    
-    # Cắt dữ liệu trong phạm vi
-    mask = (x_chain >= x_start) & (x_chain <= x_end)
-    x_chain_view = x_chain[mask]
-    z_tim_view = z_tim[mask]
-    
+
+    # Xác định phạm vi vẽ (toàn tuyến)
+    x_start = x_chain.min()
+    x_end = x_chain.max()
+    # Thêm margin nhẹ cho đẹp
+    margin = 20
+    x_min = x_start - margin
+    x_max = x_end + margin
+
+    # Tạo figure
     fig = go.Figure()
-    
-    # Vẽ đường địa hình tự nhiên (tim tuyến)
+
+    # 1. Vẽ đường địa hình tự nhiên (toàn tuyến)
     fig.add_trace(go.Scatter(
-        x=x_chain_view, y=z_tim_view,
-        mode='lines', name='Địa hình tự nhiên (tim tuyến)',
+        x=x_chain, y=z_tim,
+        mode='lines',
+        name='Địa hình tự nhiên (tim tuyến)',
         line=dict(color='#27ae60', width=2)
     ))
-    
-    # --- Đường đỏ thiết kế ---
-    # Lấy các thông số từ geo
-    y_dinh = geo['y_dinh']          # cao độ đỉnh đường cong
-    x_t1 = geo['x_t1']
-    x_t2 = geo['x_t2']
-    y_t = geo['y_t']
-    R = geo['R']
-    i_val = geo['i_val']
-    
-    # Tạo mảng x từ mố trái đến mố phải
-    x_smooth = np.linspace(x_mo_trai, x_mo_phai, 500)
-    y_red = []
-    for x in x_smooth:
-        if x < x_t1:
-            y = y_t - i_val * (x_t1 - x)
-        elif x > x_t2:
-            y = y_t - i_val * (x - x_t2)
-        else:
-            y = y_dinh - (x**2) / (2 * R)
-        y_red.append(y)
-    
-    fig.add_trace(go.Scatter(
-        x=x_smooth, y=y_red,
-        mode='lines', name='Đường đỏ thiết kế',
-        line=dict(color='#e74c3c', width=3)
-    ))
-    
-    # Đáy dầm (giả sử chiều cao dầm không đổi)
-    h_dam = res.get('ai_result', {}).get('chieu_cao', 1.65)
-    h_ban = 0.18
-    h_tong = h_ban + h_dam
-    y_bottom = [y - h_tong for y in y_red]
-    fig.add_trace(go.Scatter(
-        x=x_smooth, y=y_bottom,
-        mode='lines', name='Đáy dầm thiết kế',
-        line=dict(color='darkblue', width=2, dash='dashdot')
-    ))
-    
-    # Vẽ mố (đường thẳng đứng)
-    y_mo = geo['y_mo']   # cao độ mố (tương đối)
-    fig.add_trace(go.Scatter(
-        x=[x_mo_trai, x_mo_trai], y=[min(z_tim_view), y_mo],
-        mode='lines', name='Mố trái', line=dict(color='brown', width=3, dash='dash')
-    ))
-    fig.add_trace(go.Scatter(
-        x=[x_mo_phai, x_mo_phai], y=[min(z_tim_view), y_mo],
-        mode='lines', name='Mố phải', line=dict(color='brown', width=3, dash='dash')
-    ))
-    
-    # Khung tĩnh không (hình chữ nhật tại vị trí tim cầu)
-    B = res.get('B', 0)
-    H_tk = res.get('H', 0)
-    if B > 0 and H_tk > 0:
-        # Tìm vị trí tim cầu (x=0) trong dải x_smooth
-        idx_tim = np.argmin(np.abs(x_smooth))
-        x_tim = x_smooth[idx_tim]
-        y_tim = y_red[idx_tim]  # cao độ mặt cầu tại tim
-        fig.add_shape(type="rect",
-                      x0=x_tim - B/2, x1=x_tim + B/2,
-                      y0=y_tim - H_tk, y1=y_tim,
-                      line=dict(color="magenta", width=2),
-                      fillcolor="rgba(255,0,255,0.1)")
-        fig.add_annotation(x=x_tim, y=y_tim - H_tk/2,
-                           text=f"TĨNH KHÔNG<br>B={B}m, H={H_tk}m",
-                           showarrow=False, font=dict(color="magenta", size=9))
-    
-    # Mực nước hoặc mặt đường bị vượt
+
+    # 2. Đường đỏ thiết kế (chỉ trong phạm vi từ mố trái đến mố phải)
+    x_mo_trai = geo['x_mo_trai']
+    x_mo_phai = geo['x_mo_phai']
+    # Lọc để vẽ đường đỏ trong khoảng mố, nhưng mở rộng ra một chút để thấy rõ
+    x_design_start = max(x_min, x_mo_trai - 50)
+    x_design_end = min(x_max, x_mo_phai + 50)
+    if x_design_start < x_design_end:
+        x_smooth = np.linspace(x_design_start, x_design_end, 500)
+        y_red = []
+        y_dinh = geo['y_dinh']
+        x_t1 = geo['x_t1']
+        x_t2 = geo['x_t2']
+        y_t = geo['y_t']
+        R = geo['R']
+        i_val = geo['i_val']
+        for x in x_smooth:
+            if x < x_t1:
+                y = y_t - i_val * (x_t1 - x)
+            elif x > x_t2:
+                y = y_t - i_val * (x - x_t2)
+            else:
+                y = y_dinh - (x**2) / (2 * R)
+            y_red.append(y)
+        fig.add_trace(go.Scatter(
+            x=x_smooth, y=y_red,
+            mode='lines',
+            name='Đường đỏ thiết kế',
+            line=dict(color='#e74c3c', width=3)
+        ))
+
+        # 3. Đáy dầm thiết kế
+        h_dam = res.get('ai_result', {}).get('chieu_cao', 1.65)
+        h_ban = 0.18
+        h_tong = h_ban + h_dam
+        y_bottom = [y - h_tong for y in y_red]
+        fig.add_trace(go.Scatter(
+            x=x_smooth, y=y_bottom,
+            mode='lines',
+            name='Đáy dầm thiết kế',
+            line=dict(color='darkblue', width=2, dash='dashdot')
+        ))
+
+        # 4. Mố cầu
+        y_mo = geo['y_mo']
+        fig.add_trace(go.Scatter(
+            x=[x_mo_trai, x_mo_trai],
+            y=[min(z_tim) - 2, y_mo],
+            mode='lines',
+            name='Mố trái',
+            line=dict(color='brown', width=3, dash='dash')
+        ))
+        fig.add_trace(go.Scatter(
+            x=[x_mo_phai, x_mo_phai],
+            y=[min(z_tim) - 2, y_mo],
+            mode='lines',
+            name='Mố phải',
+            line=dict(color='brown', width=3, dash='dash')
+        ))
+
+        # 5. Khung tĩnh không
+        B = res.get('B', 0)
+        H_tk = res.get('H', 0)
+        if B > 0 and H_tk > 0:
+            # Tìm vị trí tim cầu (x=0) trong đoạn x_smooth
+            idx_tim = np.argmin(np.abs(x_smooth))
+            x_tim = x_smooth[idx_tim]
+            y_tim = y_red[idx_tim]  # cao độ mặt cầu tại tim
+            fig.add_shape(type="rect",
+                          x0=x_tim - B/2, x1=x_tim + B/2,
+                          y0=y_tim - H_tk, y1=y_tim,
+                          line=dict(color="magenta", width=2),
+                          fillcolor="rgba(255,0,255,0.1)")
+            fig.add_annotation(x=x_tim, y=y_tim - H_tk/2,
+                               text=f"TĨNH KHÔNG<br>B={B}m, H={H_tk}m",
+                               showarrow=False, font=dict(color="magenta", size=9))
+
+    # 6. Mực nước / mặt đường bị vượt
     label_res = res.get('label', "")
     is_duong_bo = "vượt đường bộ" in label_res.lower()
-    y_base_goc = geo.get('y_base_goc', 0)
+    y_base_goc = geo['y_base_goc']
     if is_duong_bo:
+        # Đường bị vượt (cao độ = 0 trong hệ tương đối)
         fig.add_trace(go.Scatter(
-            x=[x_start, x_end], y=[0, 0],
-            mode='lines', name='Mặt đường bị vượt', line=dict(color='#7f8c8d', width=2)
+            x=[x_min, x_max], y=[0, 0],
+            mode='lines',
+            name='Mặt đường bị vượt',
+            line=dict(color='#7f8c8d', width=2, dash='dash')
         ))
     else:
+        # Mực nước
         h1 = res.get('MNCN', 0) - y_base_goc
         h5 = res.get('MNTT', 0) - y_base_goc
         h10 = res.get('MNTC', 0) - y_base_goc
         h98 = res.get('MNTN', 0) - y_base_goc
-        # Gọi hàm vẽ ký hiệu mực nước (đã có trong file)
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_trai + 10, h1, "MNCN H1%", "red")
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_trai + 30, h5, "MNTT H5%", "blue")
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_phai - 30, h10, "MNTC H10%", "green")
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_phai - 10, h98, "MNTN H98%", "orange")
-    
-    # Đường gióng T1, T2
-    fig.add_shape(type="line", x0=x_t1, y0=min(z_tim_view)-5, x1=x_t1, y1=y_t,
-                  line=dict(color="#95a5a6", width=1.5, dash="dot"))
-    fig.add_annotation(x=x_t1, y=y_t-3, text=f"T1<br>{x_t1:.1f}m", showarrow=False, font=dict(size=9))
-    fig.add_shape(type="line", x0=x_t2, y0=min(z_tim_view)-5, x1=x_t2, y1=y_t,
-                  line=dict(color="#95a5a6", width=1.5, dash="dot"))
-    fig.add_annotation(x=x_t2, y=y_t-3, text=f"T2<br>{x_t2:.1f}m", showarrow=False, font=dict(size=9))
-    
-    # Layout
+        # Dùng hàm ve_ky_hieu_muc_nuoc_plotly đã có
+        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_trai + 20, h1, "MNCN H1%", "red")
+        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_trai + 40, h5, "MNTT H5%", "blue")
+        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_phai - 40, h10, "MNTC H10%", "green")
+        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_phai - 20, h98, "MNTN H98%", "orange")
+
+    # 7. Đường gióng T1, T2
+    if 'x_t1' in geo and 'x_t2' in geo:
+        fig.add_shape(type="line", x0=geo['x_t1'], y0=min(z_tim)-5, x1=geo['x_t1'], y1=geo['y_t'],
+                      line=dict(color="#95a5a6", width=1.5, dash="dot"))
+        fig.add_annotation(x=geo['x_t1'], y=geo['y_t']-3, text=f"T1<br>{geo['x_t1']:.1f}m", showarrow=False, font=dict(size=9))
+        fig.add_shape(type="line", x0=geo['x_t2'], y0=min(z_tim)-5, x1=geo['x_t2'], y1=geo['y_t'],
+                      line=dict(color="#95a5a6", width=1.5, dash="dot"))
+        fig.add_annotation(x=geo['x_t2'], y=geo['y_t']-3, text=f"T2<br>{geo['x_t2']:.1f}m", showarrow=False, font=dict(size=9))
+
+    # Layout với tỷ lệ 1:1 (scaleratio=1)
     fig.update_layout(
         title=dict(text=f"TRẮC DỌC THEO TIM TUYẾN (L_cầu = {geo['L_cau']:.2f}m)", x=0.5),
         xaxis=dict(title="Lý trình (m)", showgrid=True),
-        yaxis=dict(title="Cao độ (m)", showgrid=True, zeroline=True),
-        height=550, template="plotly_white", dragmode='pan', hovermode="x unified"
+        yaxis=dict(title="Cao độ (m)", showgrid=True, zeroline=True, scaleanchor="x", scaleratio=1),
+        height=600,
+        width=1000,  # Đặt chiều rộng cố định hoặc dùng container
+        template="plotly_white",
+        dragmode='pan',
+        hovermode="x unified"
     )
     return fig
     
