@@ -11,3 +11,4 @@ plotly
 streamlit-option-menu
 trimesh
 ifcopenshell
+tk
