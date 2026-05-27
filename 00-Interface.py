@@ -352,8 +352,19 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                                 else:
                                     st.error("Xuất IFC thất bại. Kiểm tra lại cài đặt ifcopenshell.")
                 with tab_trac_doc:
-                    st.info("📌 Bản vẽ trắc dọc toàn cầu sẽ được cập nhật sau.")
-                    # Bạn có thể thêm code vẽ trắc dọc tại đây
+                    # Lấy dữ liệu thiết kế hiện tại
+                    design = st.session_state.design_data
+                    if 'geo_logic' in design and design['geo_logic']:
+                        try:
+                            fig_trac_doc = PLOT.ve_trac_doc_cau(design)
+                            if fig_trac_doc:
+                                st.plotly_chart(fig_trac_doc, use_container_width=True, config={'displayModeBar': True})
+                            else:
+                                st.info("Không thể tạo bản vẽ trắc dọc. Vui lòng kiểm tra lại số liệu đầu vào.")
+                        except Exception as e:
+                            st.error(f"Lỗi khi vẽ trắc dọc: {e}")
+                    else:
+                        st.warning("⚠️ Chưa có dữ liệu hình học trắc dọc. Vui lòng vào **OPTIONS** để khai báo thông số và chạy dự báo AI.")
                 
                 with tab_tru_3d:
                     st.subheader("🏗️ Cấu hình Kích thước Hình học Trụ cầu Tham số hóa")
