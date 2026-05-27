@@ -277,7 +277,8 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
             
             if not df_geology.empty:
                 st.success(f"⚡ Hệ thống đã đồng bộ thành công {len(df_geology)} điểm mia không gian theo tọa độ tim thực tế VN-2000!")
-                
+                st.session_state.df_geology = df_geology 
+
                 tab_dia_hinh_3d, tab_trac_doc, tab_tru_3d, tab_mcn_draw = st.tabs([
                     "🏔️ Mô hình Địa hình 3D",
                     "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
@@ -354,19 +355,21 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                 with tab_trac_doc:
                     design = st.session_state.design_data
                     tim_line = None
-                    if 'df_geology' in st.session_state and st.session_state.df_geology is not None:
-                        tim_line = st.session_state.df_geology[st.session_state.df_geology['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')[['Lý trình', 'Z']].copy()
-                    if 'geo_logic' in design and design['geo_logic']:
+                    if 'df_geology' in st.session_state:
+                        df_geo = st.session_state.df_geology
+                        # Lấy các điểm tim tuyến (offset=0)
+                        tim_line = df_geo[df_geo['Offset'] == 0][['Lý trình', 'Z']].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
+                    if tim_line is not None and not tim_line.empty and 'geo_logic' in design:
                         try:
-                            fig_td = PLOT.ve_trac_doc_cau(design, df_tim_line=tim_line)
+                            fig_td = PLOT.ve_trac_doc_cau(design, tim_line)
                             if fig_td:
                                 st.plotly_chart(fig_td, use_container_width=True)
                             else:
-                                st.info("Không thể tạo bản vẽ trắc dọc. Vui lòng kiểm tra số liệu.")
+                                st.info("Không thể tạo bản vẽ trắc dọc.")
                         except Exception as e:
                             st.error(f"Lỗi khi vẽ trắc dọc: {e}")
                     else:
-                        st.warning("⚠️ Chưa có dữ liệu hình học trắc dọc. Vui lòng vào **OPTIONS** để khai báo thông số và chạy dự báo AI.")
+                        st.warning("⚠️ Chưa có dữ liệu tim tuyến hoặc chưa chạy OPTIONS. Vui lòng tải file khảo sát và cập nhật số liệu.")
                 
                 with tab_tru_3d:
                     st.subheader("🏗️ Cấu hình Kích thước Hình học Trụ cầu Tham số hóa")
