@@ -57,67 +57,77 @@ def tra_cuu_yeu_to_hinh_hoc(loai, cap_duong, dia_hinh="1"):
             }
         except: return {"status": "error", "message": "Vtk Đô thị không hợp lệ"}
     return {"status": "error", "message": "Loại đường không xác định"}
-def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0):
-    """Tính toán hình học trắc dọc - Đã dời gốc tọa độ (0,0) về TIM TĨNH KHÔNG"""
+def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0, x_tim_clearance=0.0):
+    """
+    Tính toán hình học trắc dọc với tim tĩnh không tại lý trình x_tim_clearance (m).
+    Trả về các giá trị trong hệ tọa độ thực tế (lý trình).
+    """
     R = res.get('R_hinh_hoc', 5000)
     i_val = res.get('i_max_hinh_hoc', 4.0) / 100
     
-    # 1. Xác định mốc cao độ gốc Y=0 dựa trên loại cầu
     label_res = res.get('label', "")
     is_duong_bo = "vượt đường bộ" in label_res.lower()
     h1 = res.get('MNCN', 0)
     h5 = res.get('MNTT', 0)
     y_base_goc = h1 if is_duong_bo else h5
 
-    # Đưa cao độ đỉnh đường đỏ tuyệt đối về hệ tọa độ tương đối
     y_dinh_tuyet_doi = h_dam + 2.0 
     y_dinh = y_dinh_tuyet_doi - y_base_goc
 
-    # 2. Ép tim cầu về X = 0 (Đối xứng hoàn hảo)
-    x_dinh = 0  
+    # --- Tính toán trong hệ tương đối (tim cầu tại 0) ---
     T = R * i_val
-    x_t1, x_t2 = -T, T
-    y_t = y_dinh - (T**2) / (2 * R)
+    x_t1_rel = -T
+    x_t2_rel = T
+    y_t_rel = y_dinh - (T**2) / (2 * R)
 
-    # Chiều dài cầu tối thiểu
-    l_nhip_du_kien = res.get('ai_result', {}).get('chieu_dai', 33.0) 
-    l_cau_min = l_nhip_du_kien + 10.0 
+    # Ước lượng chiều dài cầu tối thiểu
+    l_nhip_du_kien = res.get('ai_result', {}).get('chieu_dai', 33.0)
+    l_cau_min = l_nhip_du_kien + 10.0
 
-    # 3. Quét địa hình tương đối tìm mố (Quét từ -500 đến 500 thay vì 0 đến 1000)
-    x_scan = np.linspace(-500, 500, 2000)
-    y_scan = []
-    for xi in x_scan:
-        if xi < x_t1: yi = y_t - i_val * (x_t1 - xi)
-        elif xi > x_t2: yi = y_t - i_val * (xi - x_t2)
-        else: yi = y_dinh - xi**2 / (2 * R)
-        y_scan.append(yi)
-    y_scan = np.array(y_scan)
-
-    # 4. Tìm mố trái đối xứng (Quét nửa âm bên trái xi < 0)
+    # Tìm vị trí mố (tương đối) dựa trên địa hình trung bình (tạm thời)
+    # Lưu ý: nên thay bằng dữ liệu địa hình thực tế, nhưng vì chưa có ở đây, tạm dùng h_tn_tb
     h_tn_tb_tuong_doi = h_tn_tb - y_base_goc
-    delta_y = y_scan - h_tn_tb_tuong_doi
-    
-    # Chỉ tìm trong khoảng x_scan < 0 (tương ứng 1000 phần tử đầu tiên)
+    x_scan_rel = np.linspace(-500, 500, 2000)
+    y_scan_rel = []
+    for xi in x_scan_rel:
+        if xi < x_t1_rel:
+            yi = y_t_rel - i_val * (x_t1_rel - xi)
+        elif xi > x_t2_rel:
+            yi = y_t_rel - i_val * (xi - x_t2_rel)
+        else:
+            yi = y_dinh - xi**2 / (2 * R)
+        y_scan_rel.append(yi)
+    y_scan_rel = np.array(y_scan_rel)
+    delta_y = y_scan_rel - h_tn_tb_tuong_doi
     idx_mo = np.argmin(np.abs(delta_y[:1000] - h_dap_yc))
-    x_mo_trai_tinh_toan = x_scan[idx_mo]
+    x_mo_trai_rel = x_scan_rel[idx_mo]
+    # Khống chế chiều dài tối thiểu
+    x_mo_trai_rel = min(x_mo_trai_rel, -l_cau_min/2)
     
-    # Khống chế chiều dài tối thiểu đối xứng
-    x_mo_trai_min = - (l_cau_min / 2)
-    x_mo_trai = min(x_mo_trai_tinh_toan, x_mo_trai_min)
+    # Chuyển sang hệ tọa độ thực tế bằng cách cộng với x_tim_clearance
+    offset = x_tim_clearance
+    x_t1 = x_t1_rel + offset
+    x_t2 = x_t2_rel + offset
+    x_mo_trai = x_mo_trai_rel + offset
+    # Giả sử cầu đối xứng qua tim tĩnh không
+    x_mo_phai = x_tim_clearance + (x_tim_clearance - x_mo_trai)
+    l_cau_final = x_mo_phai - x_mo_trai
     
-    l_cau_final = abs(x_mo_trai) * 2
+    # y_mo: cao độ mố (tương đối) – vẫn lấy theo địa hình trung bình (có thể cập nhật sau)
+    y_mo = h_tn_tb_tuong_doi  # hoặc y_scan_rel[idx_mo] tương ứng
 
     return {
-        "x_t1": x_t1, 
-        "x_t2": x_t2, 
-        "y_t": y_t, 
-        "y_dinh": y_dinh, 
-        "R": R, 
+        "x_t1": x_t1,
+        "x_t2": x_t2,
+        "y_t": y_t_rel,          # y_t vẫn là cao độ tương đối
+        "y_dinh": y_dinh,
+        "R": R,
         "i_val": i_val,
         "x_mo_trai": x_mo_trai,
-        "x_mo_phai": abs(x_mo_trai),
-        "y_mo": y_scan[idx_mo] if x_mo_trai == x_mo_trai_tinh_toan else y_scan[np.argmin(np.abs(x_scan - x_mo_trai))],
+        "x_mo_phai": x_mo_phai,
+        "y_mo": y_mo,
         "L_cau": l_cau_final,
         "h_tn_tb": h_tn_tb,
-        "y_base_goc": y_base_goc # Lưu lại mốc dời trục để đồng bộ các phần tử thủy văn
+        "y_base_goc": y_base_goc,
+        "x_tim_clearance": x_tim_clearance   # lưu lại để dùng
     }
