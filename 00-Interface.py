@@ -352,15 +352,17 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                                 else:
                                     st.error("Xuất IFC thất bại. Kiểm tra lại cài đặt ifcopenshell.")
                 with tab_trac_doc:
-                    # Lấy dữ liệu thiết kế hiện tại
                     design = st.session_state.design_data
+                    tim_line = None
+                    if 'df_geology' in st.session_state and st.session_state.df_geology is not None:
+                        tim_line = st.session_state.df_geology[st.session_state.df_geology['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')[['Lý trình', 'Z']].copy()
                     if 'geo_logic' in design and design['geo_logic']:
                         try:
-                            fig_trac_doc = PLOT.ve_trac_doc_cau(design)
-                            if fig_trac_doc:
-                                st.plotly_chart(fig_trac_doc, use_container_width=True, config={'displayModeBar': True})
+                            fig_td = PLOT.ve_trac_doc_cau(design, df_tim_line=tim_line)
+                            if fig_td:
+                                st.plotly_chart(fig_td, use_container_width=True)
                             else:
-                                st.info("Không thể tạo bản vẽ trắc dọc. Vui lòng kiểm tra lại số liệu đầu vào.")
+                                st.info("Không thể tạo bản vẽ trắc dọc. Vui lòng kiểm tra số liệu.")
                         except Exception as e:
                             st.error(f"Lỗi khi vẽ trắc dọc: {e}")
                     else:
