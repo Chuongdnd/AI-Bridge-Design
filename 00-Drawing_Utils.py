@@ -1,8 +1,6 @@
-from turtle import st
-
 import numpy as np
 import plotly.graph_objects as go
-
+import streamlit as st
 def ve_ky_hieu_muc_nuoc_plotly(fig, x_pos, y_val, label, color):
     """Vẽ ký hiệu mực nước tương tác bằng nét vẽ của Plotly"""
     fig.add_trace(go.Scatter(
