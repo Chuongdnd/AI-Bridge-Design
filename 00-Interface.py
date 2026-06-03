@@ -52,13 +52,16 @@ if 'bridge_library' not in st.session_state:
 
 # --- KẾT NỐI HỆ THỐNG MODULES THÀNH PHẦN ---
 try:
-    TK = importlib.import_module("01-Tinh_khong")
+    TK   = importlib.import_module("01-Tinh_khong")
     YTHH = importlib.import_module("02-Yeuto_Hinhhoc")
-    MCN = importlib.import_module("03-MatCatNgang")
-    GRD = importlib.import_module("05-Main_Girder")
+    MCN  = importlib.import_module("03-MatCatNgang")
+    GRD  = importlib.import_module("05-Main_Girder")    # Legacy girder (dùng cho bản vẽ)
+    KCN  = importlib.import_module("06-AI_KetCauNhip")  # AI Kết cấu nhịp v2
+    MOT  = importlib.import_module("07-AI_MoTru")       # AI Mố – Trụ v2
+    MONG = importlib.import_module("08-AI_Mong")        # Móng (rule-based)
     PLOT = importlib.import_module("00-Drawing_Utils")
-    TV = importlib.import_module("00-Terrain_Viewer")
-    TC = importlib.import_module("04-Pier-test")
+    TV   = importlib.import_module("00-Terrain_Viewer")
+    TC   = importlib.import_module("04-Pier-test")
     importlib.reload(PLOT)
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
@@ -69,9 +72,12 @@ if 'design_data' not in st.session_state:
         'day_dam': 0.0, 'khau_do_ngang': 0.0, 'bc': 12.0, 'loai_duong': "Do thi",
         'B': 20.0, 'H': 4.75, 'loai_doi_tuong_vuot': "Vượt sông", 'goc_giao': 90.0,
         'MNCN': 3.5, 'MNTT': 2.0, 'MNTC': 1.5, 'MNTN': 0.5, 'h_tn_tb': 0.0,
-        'vtk': 60, 'i_max_hinh_hoc': 4.0, 'R_hinh_hoc': 5000,
+        'cap_song': 'VI', 'vtk': 60, 'i_max_hinh_hoc': 4.0, 'R_hinh_hoc': 5000,
         'geo_logic': {'L_cau': 120.0, 'x_mo_trai': -60.0, 'x_mo_phai': 60.0, 'y_mo': 1.5, 'h_tn_tb': 2.15, 'y_base_goc': 2.0},
-        'ai_result': {'loai_dam': 'Super-T', 'tong_so_nhip': 3, 'chieu_dai': 40.0, 'chieu_cao': 1.75, 'so_luong_dam': 5, 'khoang_cach_dam': 2.2, 'ghi_chu': 'Phương án tối ưu từ AI.'}
+        'ai_result': {'loai_dam': 'Super-T', 'tong_so_nhip': 3, 'chieu_dai': 40.0, 'chieu_cao': 1.75, 'so_luong_dam': 5, 'khoang_cach_dam': 2.2, 'ghi_chu': 'Phương án tối ưu từ AI.'},
+        'kcn_result': None,
+        'tru_result': None,
+        'mong_result': None,
     }
 
 if 'chatbot_context' not in st.session_state:
@@ -147,45 +153,114 @@ def show_options_dialog():
     st.markdown("---")
     
     if st.button("💾 OK - Áp dụng cấu hình và Chạy dự báo AI", use_container_width=True, type="primary"):
-        with st.spinner("⚡ Đang cập nhật dữ liệu..."):
+        with st.spinner("⚡ Đang chạy toàn bộ AI pipeline..."):
+            # ── Bước 1: Tĩnh không ───────────────────────────────────────────
             res = TK.tra_cuu_tinh_khong_bridge(
-                loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None, cap_num=cap_s if loai_c=="Vượt sông" else None,
-                loai_hinh=loai_h if loai_c=="Vượt sông" else None, loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
-                cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None, h1=h1, h5=h5, h10=h10, h98=h98, h_tn_tb=h_tn_tb
+                loai_cau=loai_c, mien=mien if loai_c=="Vượt sông" else None,
+                cap_num=cap_s if loai_c=="Vượt sông" else None,
+                loai_hinh=loai_h if loai_c=="Vượt sông" else None,
+                loai_duong_vuot=loai_duong_v if loai_c=="Vượt đường bộ" else None,
+                cap_oto=b_khai_bao if loai_c=="Vượt đường bộ" else None,
+                h1=h1, h5=h5, h10=h10, h98=h98, h_tn_tb=h_tn_tb
             )
             alpha_rad = np.radians(goc_giao)
             res['B'] = round(res.get('B', 0) / np.sin(alpha_rad), 2) if goc_giao < 90 else res.get('B', 0)
             res['goc_giao'] = goc_giao
             res['h_tn_tb'] = h_tn_tb
             res['MNCN'], res['MNTT'], res['MNTC'], res['MNTN'] = h1, h5, h10, h98
+            res['cap_song'] = cap_s if loai_c == "Vượt sông" else ""
+            res['loai_doi_tuong_vuot'] = loai_c
 
             if res_geo.get("status") == "success":
+                # ── Bước 2: Hình học ─────────────────────────────────────────
                 res['R_hinh_hoc'] = r_final_calc
-                res['geo_logic'] = YTHH.tinh_toan_geo_logic(res, h_tn_tb if loai_c == "Vượt sông" else h1, res.get('day_dam', 0.0), x_tim_clearance=x_tim_clearance)
+                res['geo_logic']  = YTHH.tinh_toan_geo_logic(
+                    res, h_tn_tb if loai_c == "Vượt sông" else h1,
+                    res.get('day_dam', 0.0), x_tim_clearance=x_tim_clearance
+                )
                 imax_raw = res_geo.get('imax', '0')
                 res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
-                res['bc'] = b_cau
+                res['bc']         = b_cau
                 res['loai_duong'] = l_hinhhoc
-                res['vtk'] = res_geo.get("v_thiet_ke", 60)
+                res['vtk']        = res_geo.get("v_thiet_ke", 60)
 
+                L_cau    = res['geo_logic'].get('L_cau', None)
+                moi_tr   = "Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông"
                 xlsx_path = os.path.join(os.path.dirname(__file__), "Girder.xlsx")
-                models = GRD.train_bridge_ai_system(xlsx_path)
-                if models:
-                    L_cau = res['geo_logic'].get('L_cau', None)  # Lấy L_cau từ geo_logic, nếu không có thì None
+                csv_path  = os.path.join(os.path.dirname(__file__), "Phan loai Tru.csv")
+
+                # ── Bước 3 (legacy): Dầm — dùng cho bản vẽ kỹ thuật ─────────
+                grd_models = GRD.train_bridge_ai_system(xlsx_path)
+                if grd_models:
                     res['ai_result'] = GRD.predict_main_span(
-                        b_tk=res['B'],
-                        goc=goc_giao,
-                        b_cau=res['bc'],
-                        env=("Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông"),
-                        models=models,
-                        L_cau_tong=L_cau,
-                        method='auto'
+                        b_tk=res['B'], goc=goc_giao, b_cau=res['bc'],
+                        env=moi_tr, models=grd_models,
+                        L_cau_tong=L_cau, method='auto'
                     )
-                
+
+                # ── Bước 4: AI Kết cấu nhịp (v2, đầy đủ đặc trưng) ──────────
+                kcn_models = KCN.train_kcn_ai(xlsx_path)
+                if kcn_models:
+                    res['kcn_result'] = KCN.predict_kcn(
+                        B_tk=res['B'], H_tk=res.get('H', 3.5),
+                        goc=goc_giao, B_cau=res['bc'],
+                        moi_truong=moi_tr, L_cau_tong=L_cau,
+                        models=kcn_models, method='auto'
+                    )
+                else:
+                    res['kcn_result'] = None
+
+                # ── Bước 5: AI Mố – Trụ ──────────────────────────────────────
+                pier_models = MOT.train_pier_ai(csv_path)
+                loai_dam_cho_tru = (
+                    res['kcn_result']['loai_dam'] if res.get('kcn_result')
+                    else res.get('ai_result', {}).get('loai_dam', 'Super-T')
+                )
+                H_dam_est = (
+                    res['kcn_result']['chieu_cao_dam'] if res.get('kcn_result')
+                    else res.get('ai_result', {}).get('chieu_cao', 1.75)
+                )
+                # Ước tính chiều cao trụ từ cao độ
+                H_tru_est, cao_day_dam, cao_mat_cau = MOT.estimate_pier_height(
+                    MNCN=h1, H_tinh_khong=res.get('H', 3.5),
+                    H_dam=H_dam_est, MNTN=h98
+                )
+                res['H_tru_est']  = H_tru_est
+                res['cao_day_dam'] = cao_day_dam
+                res['cao_mat_cau'] = cao_mat_cau
+
+                is_urban  = 1 if loai_c == "Vượt đường bộ" else 0
+                is_river  = 1 if loai_c == "Vượt sông"    else 0
+                res['tru_result'] = MOT.predict_pier(
+                    vtk=res['vtk'], B_cau=res['bc'],
+                    H_tru=H_tru_est, is_urban=is_urban,
+                    is_river=is_river, cap_song=res['cap_song'],
+                    loai_dam=loai_dam_cho_tru, models=pier_models
+                )
+
+                # ── Bước 6: Móng cầu (rule-based) ────────────────────────────
+                loai_tru_str = (
+                    res['tru_result']['loai_tru'] if res.get('tru_result')
+                    else 'Khung 2 cột'
+                )
+                res['mong_result'] = MONG.predict_foundation(
+                    H_tru=H_tru_est, loai_tru=loai_tru_str,
+                    is_river=is_river, cap_song=res['cap_song'],
+                    B_cau=res['bc'], vtk=res['vtk'],
+                    L_nhip=res.get('kcn_result', {}).get('chieu_dai') if res.get('kcn_result') else None
+                )
+
                 st.session_state.design_data = res
-                st.session_state.chatbot_context = f"Vtk={res['vtk']}km/h, LoaiDam={res['ai_result']['loai_dam']}, L_nhip={res['ai_result']['chieu_dai']}m, L_cau={res['geo_logic']['L_cau']:.2f}m"
-                
-                st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
+                kcn = res.get('kcn_result') or res.get('ai_result', {})
+                st.session_state.chatbot_context = (
+                    f"Vtk={res['vtk']}km/h | "
+                    f"LoaiDam={kcn.get('loai_dam','?')} | "
+                    f"L_nhip={kcn.get('chieu_dai','?')}m | "
+                    f"L_cau={res['geo_logic']['L_cau']:.1f}m | "
+                    f"LoaiTru={res.get('tru_result',{}).get('loai_tru','?')} | "
+                    f"LoaiMong={res.get('mong_result',{}).get('loai_mong','?')}"
+                )
+                st.session_state.current_tab = "THUYẾT MINH"
                 st.rerun()
 
 # =========================================================================
@@ -264,12 +339,188 @@ with st.sidebar:
 # VÙNG HIỂN THỊ CHÍNH
 # =========================================================================
 if selected_ribbon == "THUYẾT MINH":
-    st.title("🏗️ Hệ thống Tự động hóa Thiết kế và Tối ưu hóa Kết cấu Cầu")
-    st.write("---")
-    st.markdown("""
-    ### Ứng dụng tích toán kỹ thuật thông minh UTH
-    * Bấm chọn tab **BẢN VẼ KỸ THUẬT** để vào không gian thiết kế chính.
-    """)
+    d = st.session_state.design_data
+    kcn  = d.get('kcn_result')
+    tru  = d.get('tru_result')
+    mong = d.get('mong_result')
+
+    # Nếu chưa chạy AI, hiển thị hướng dẫn
+    if kcn is None and tru is None:
+        st.title("🏗️ Hệ thống Tự động hóa Thiết kế và Tối ưu hóa Kết cấu Cầu")
+        st.info("👆 Nhấn **BẢN VẼ KỸ THUẬT** → **⚙️ OPTIONS** → điền thông số và nhấn **OK** để chạy toàn bộ AI pipeline.")
+        st.markdown("""
+**Luồng tính toán:**
+1. 📐 **Tĩnh không** — tra cứu theo cấp sông / loại đường bị vượt (TCVN 8818)
+2. 📏 **Hình học trắc dọc** — độ dốc, bán kính đường cong (TCVN 4054 / 5729 / 13592)
+3. 🛣️ **Mặt cắt ngang** — bề rộng, số làn, lề bộ hành
+4. 🤖 **AI Kết cấu nhịp** — loại dầm, nhịp, chiều cao dầm, bố trí dầm ngang
+5. 🤖 **AI Trụ cầu** — phân loại trụ theo Vtk, B_cầu, H_trụ, môi trường
+6. 📋 **Móng cầu** — gợi ý loại cọc, đường kính, chiều dài theo TCVN 10304
+        """)
+        st.stop()
+
+    st.title("📄 Thuyết minh Tính toán Thiết kế Cầu")
+    st.caption(f"Xuất bởi Hệ thống AI UTH — {pd.Timestamp.now().strftime('%d/%m/%Y %H:%M')}")
+    st.markdown("---")
+
+    # ── I. THÔNG SỐ ĐẦU VÀO ──────────────────────────────────────────────
+    with st.expander("**I. THÔNG SỐ ĐẦU VÀO CÔNG TRÌNH**", expanded=True):
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.markdown("**Loại công trình**")
+            st.write(f"Đối tượng vượt : **{d.get('loai_doi_tuong_vuot','—')}**")
+            st.write(f"Loại đường     : {d.get('loai_duong','—')}")
+            st.write(f"Vtk            : **{d.get('vtk',0)} km/h**")
+            st.write(f"Góc giao chéo  : {d.get('goc_giao',90)}°")
+            if d.get('cap_song'):
+                st.write(f"Cấp sông ĐTNĐ  : Cấp {d['cap_song']}")
+        with c2:
+            st.markdown("**Cao độ thủy văn (m)**")
+            st.write(f"MNCN (H1%)  : {d.get('MNCN',0):.3f} m")
+            st.write(f"MNTT (H5%)  : {d.get('MNTT',0):.3f} m")
+            st.write(f"MNTC (H10%) : {d.get('MNTC',0):.3f} m")
+            st.write(f"MNTN (H98%) : {d.get('MNTN',0):.3f} m")
+            st.write(f"CĐTN trung bình: {d.get('h_tn_tb',0):.3f} m")
+        with c3:
+            st.markdown("**Bề rộng mặt cắt**")
+            st.write(f"Tĩnh không B : **{d.get('B',0):.2f} m**")
+            st.write(f"Tĩnh không H : **{d.get('H',0):.2f} m**")
+            st.write(f"Bề rộng Bc   : {d.get('bc',0):.1f} m")
+            geo = d.get('geo_logic', {})
+            st.write(f"Chiều dài cầu: **{geo.get('L_cau',0):.1f} m**")
+
+    # ── II. KẾT CẤU NHỊP (AI) ────────────────────────────────────────────
+    with st.expander("**II. KẾT CẤU NHỊP — Dầm chính (AI v2)**", expanded=True):
+        if kcn:
+            kc1, kc2 = st.columns([3, 2])
+            with kc1:
+                st.markdown(f"### Loại dầm: **{kcn['loai_dam'].upper()}**")
+                st.markdown(f"Sơ đồ nhịp: **{kcn['tong_so_nhip']} nhịp × {kcn['chieu_dai']} m**")
+                st.table(pd.DataFrame({
+                    "Thông số": [
+                        "Chiều dài nhịp",
+                        "Chiều cao dầm",
+                        "Tỉ lệ L/H",
+                        "Số lượng dầm / MCN",
+                        "Khoảng cách tim dầm",
+                        "Phần hẫng (overhang)",
+                        "Tổng số nhịp",
+                    ],
+                    "Giá trị": [
+                        f"{kcn['chieu_dai']} m",
+                        f"{kcn['chieu_cao_dam']} m",
+                        f"{kcn['ti_le_L_H']} (tối ưu 17–22)",
+                        f"{kcn['so_luong_dam']} dầm",
+                        f"{kcn['khoang_cach_dam']} m",
+                        f"{kcn['overhang']} m",
+                        f"{kcn['tong_so_nhip']} nhịp",
+                    ],
+                }))
+            with kc2:
+                conf = kcn.get('do_tin_cay', 0)
+                color = "#27ae60" if conf >= 70 else ("#f39c12" if conf >= 50 else "#e74c3c")
+                st.markdown(f"""
+<div style='background:{color};padding:16px;border-radius:8px;text-align:center'>
+<span style='color:white;font-size:36px;font-weight:bold'>{conf:.0f}%</span><br>
+<span style='color:white'>Độ tin cậy AI</span>
+</div>
+                """, unsafe_allow_html=True)
+                st.caption(f"Phương pháp: {kcn.get('phuong_phap','AUTO')}")
+                st.info(kcn.get('ghi_chu', ''))
+        else:
+            st.warning("Chưa có kết quả AI kết cấu nhịp.")
+
+    # ── III. TRỤ CẦU (AI) ────────────────────────────────────────────────
+    with st.expander("**III. TRỤ CẦU — Phân loại & kích thước (AI v2)**", expanded=True):
+        if tru:
+            tc1, tc2 = st.columns([3, 2])
+            with tc1:
+                st.markdown(f"### Loại trụ: **{tru['loai_tru']}**")
+                H_tru = d.get('H_tru_est', 0)
+                cao_dd = d.get('cao_day_dam', 0)
+                cao_mc = d.get('cao_mat_cau', 0)
+                st.table(pd.DataFrame({
+                    "Thông số": [
+                        "Chiều cao trụ (ước tính)",
+                        "Cao độ đáy dầm (ước tính)",
+                        "Cao độ mặt cầu (ước tính)",
+                        "Số trụ giữa",
+                    ],
+                    "Giá trị": [
+                        f"{H_tru:.2f} m",
+                        f"{cao_dd:.3f} m",
+                        f"{cao_mc:.3f} m",
+                        f"{max(0, kcn['tong_so_nhip'] - 1) if kcn else '—'} trụ",
+                    ],
+                }))
+                if tru.get('xep_hang'):
+                    st.markdown("**Top phương án dự báo:**")
+                    for r in tru['xep_hang']:
+                        bar = "█" * int(r['xac_suat'] / 5)
+                        st.text(f"  {r['loai']:25s} {bar}  {r['xac_suat']:.0f}%")
+            with tc2:
+                conf_tru = tru.get('do_tin_cay', 0)
+                color_tru = "#27ae60" if conf_tru >= 70 else ("#f39c12" if conf_tru >= 50 else "#e74c3c")
+                if conf_tru > 0:
+                    st.markdown(f"""
+<div style='background:{color_tru};padding:16px;border-radius:8px;text-align:center'>
+<span style='color:white;font-size:36px;font-weight:bold'>{conf_tru:.0f}%</span><br>
+<span style='color:white'>Độ tin cậy AI</span>
+</div>
+                    """, unsafe_allow_html=True)
+                else:
+                    st.markdown("""
+<div style='background:#95a5a6;padding:16px;border-radius:8px;text-align:center'>
+<span style='color:white;font-size:18px'>Quy tắc kinh nghiệm</span>
+</div>
+                    """, unsafe_allow_html=True)
+                st.caption(tru.get('ghi_chu', ''))
+        else:
+            st.warning("Chưa có kết quả AI trụ cầu.")
+
+    # ── IV. MÓNG CẦU ─────────────────────────────────────────────────────
+    with st.expander("**IV. MÓNG CẦU — Gợi ý loại cọc (TCVN 10304)**", expanded=True):
+        if mong:
+            mc1, mc2 = st.columns(2)
+            with mc1:
+                st.markdown(f"### Loại móng: **{mong['loai_mong']}**")
+                st.table(pd.DataFrame({
+                    "Thông số": [
+                        "Đường kính cọc",
+                        "Chiều dài cọc",
+                        "Số cọc / bệ",
+                        "Kích thước bệ cọc",
+                        "Thi công",
+                    ],
+                    "Giá trị": [
+                        mong["D_coc_chon_txt"],
+                        f"{mong['L_coc_tu']} – {mong['L_coc_den']} m",
+                        f"{mong['So_coc_tu']} – {mong['So_coc_den']} cọc",
+                        mong["kich_thuoc_be_goi_y"],
+                        mong["phuong_phap_thi_cong"],
+                    ],
+                }))
+            with mc2:
+                st.markdown("**Khuyến nghị kỹ thuật:**")
+                for kn in mong.get("khuyen_nghi", []):
+                    st.warning(kn)
+                st.caption(mong.get("ghi_chu_mong", ""))
+        else:
+            st.warning("Chưa có kết quả gợi ý móng.")
+
+    # ── V. MẶT CẮT NGANG ────────────────────────────────────────────────
+    with st.expander("**V. MẶT CẮT NGANG CẦU**", expanded=False):
+        try:
+            res_mcn = MCN.thiet_ke_mcn_cau_web({
+                "loai": d.get('loai_duong', 'Do thi'),
+                "vtk":  d.get('vtk', 60)
+            })
+            st.code(res_mcn.get('mo_phong', 'Chưa có sơ đồ.'), language="text")
+        except Exception as ex:
+            st.error(f"Lỗi mặt cắt ngang: {ex}")
+
+    st.markdown("---")
+    st.caption("Kết quả mang tính tham khảo sơ bộ. Cần kiểm tra và điều chỉnh theo tiêu chuẩn TCVN hiện hành.")
 
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
     
