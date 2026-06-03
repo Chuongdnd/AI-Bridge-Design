@@ -59,6 +59,7 @@ try:
     KCN  = importlib.import_module("06-AI_KetCauNhip")  # AI Kết cấu nhịp v2
     MOT  = importlib.import_module("07-AI_MoTru")       # AI Mố – Trụ v2
     MONG = importlib.import_module("08-AI_Mong")        # Móng (rule-based)
+    EXP  = importlib.import_module("09-Export_CAD_IFC") # Export DXF / IFC
     PLOT = importlib.import_module("00-Drawing_Utils")
     TV   = importlib.import_module("00-Terrain_Viewer")
     TC   = importlib.import_module("04-Pier-test")
@@ -618,7 +619,6 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     tim_line = None
                     if 'df_geology' in st.session_state:
                         df_geo = st.session_state.df_geology
-                        # Lấy các điểm tim tuyến (offset=0)
                         tim_line = df_geo[df_geo['Offset'] == 0][['Lý trình', 'Z']].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
                     if tim_line is not None and not tim_line.empty and 'geo_logic' in design:
                         try:
@@ -631,6 +631,41 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                             st.error(f"Lỗi khi vẽ trắc dọc: {e}")
                     else:
                         st.warning("⚠️ Chưa có dữ liệu tim tuyến hoặc chưa chạy OPTIONS. Vui lòng tải file khảo sát và cập nhật số liệu.")
+
+                    # ── Export DXF ──────────────────────────────────────────
+                    st.markdown("---")
+                    st.markdown("##### 📤 Xuất bản vẽ kỹ thuật")
+                    exp_cols = st.columns(3)
+                    with exp_cols[0]:
+                        if st.button("⬇️ DXF Trắc dọc", use_container_width=True):
+                            try:
+                                dxf_bytes = EXP.export_trac_doc_dxf(st.session_state.design_data)
+                                st.download_button("💾 Tải file DXF", dxf_bytes,
+                                                   file_name="trac_doc_cau.dxf",
+                                                   mime="application/octet-stream",
+                                                   key="dl_trac_doc")
+                            except Exception as ex:
+                                st.error(f"Lỗi xuất DXF: {ex}")
+                    with exp_cols[1]:
+                        if st.button("⬇️ DXF Mặt cắt ngang", use_container_width=True):
+                            try:
+                                dxf_bytes = EXP.export_mcn_dxf(st.session_state.design_data)
+                                st.download_button("💾 Tải file DXF", dxf_bytes,
+                                                   file_name="mat_cat_ngang.dxf",
+                                                   mime="application/octet-stream",
+                                                   key="dl_mcn")
+                            except Exception as ex:
+                                st.error(f"Lỗi xuất DXF: {ex}")
+                    with exp_cols[2]:
+                        if st.button("⬇️ IFC Kết cấu toàn cầu", use_container_width=True):
+                            try:
+                                ifc_bytes = EXP.export_bridge_ifc(st.session_state.design_data)
+                                st.download_button("💾 Tải file IFC", ifc_bytes,
+                                                   file_name="bridge_structural.ifc",
+                                                   mime="application/octet-stream",
+                                                   key="dl_bridge_ifc")
+                            except Exception as ex:
+                                st.error(f"Lỗi xuất IFC: {ex}")
                 
                 with tab_tru_3d:
                     st.subheader("🏗️ Cấu hình Kích thước Hình học Trụ cầu Tham số hóa")
@@ -647,7 +682,31 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                         base_W = st.number_input("Chiều rộng bệ trụ (m)", value=2.5, step=0.1, key="base_w")
                         base_L = st.number_input("Chiều dài bệ trụ (m)", value=4.0, step=0.1, key="base_l")
                     
-                    if st.button("🚀 Tạo mô hình trụ 3D", use_container_width=True):
+                    btn_cols = st.columns([2, 1, 1])
+                    with btn_cols[0]:
+                        run_3d = st.button("🚀 Tạo mô hình trụ 3D", use_container_width=True)
+                    with btn_cols[1]:
+                        if st.button("⬇️ DXF bản vẽ trụ", use_container_width=True):
+                            try:
+                                dxf_bytes = EXP.export_tru_dxf(st.session_state.design_data)
+                                st.download_button("💾 Tải DXF", dxf_bytes,
+                                                   file_name="ban_ve_tru.dxf",
+                                                   mime="application/octet-stream",
+                                                   key="dl_tru_dxf")
+                            except Exception as ex:
+                                st.error(f"Lỗi: {ex}")
+                    with btn_cols[2]:
+                        if st.button("⬇️ IFC model trụ", use_container_width=True):
+                            try:
+                                ifc_bytes = EXP.export_pier_ifc(st.session_state.design_data)
+                                st.download_button("💾 Tải IFC", ifc_bytes,
+                                                   file_name="pier_model.ifc",
+                                                   mime="application/octet-stream",
+                                                   key="dl_pier_ifc")
+                            except Exception as ex:
+                                st.error(f"Lỗi: {ex}")
+
+                    if run_3d:
                         with st.spinner("Đang tạo mô hình trụ từ trimesh..."):
                             pier = TC.create_pier(H, W, L, top_W, top_H, base_W, base_H, base_L)
                             vertices, faces = TC.trimesh_to_plotly_mesh(pier)
