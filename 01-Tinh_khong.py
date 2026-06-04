@@ -33,8 +33,9 @@ _HINH_LABEL  = {"1":"Kênh đào","2":"Sông tự nhiên"}
 _MIEN_LABEL  = {"1":"Miền Bắc","2":"Miền Nam"}
 
 
-def tra_cuu_tinh_khong_bridge(mien, cap_num, loai_hinh,
-                               h1=0.0, h5=0.0, h10=0.0, h98=0.0, h_tn_tb=0.0):
+def tra_cuu_tinh_khong_bridge(mien=None, cap_num=None, loai_hinh=None,
+                               h1=0.0, h5=0.0, h10=0.0, h98=0.0, h_tn_tb=0.0,
+                               **_):
     """
     Tra cứu tĩnh không đường thủy nội địa cho cầu vượt sông/kênh.
 
