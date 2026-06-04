@@ -11,6 +11,28 @@ import plotly.graph_objects as go
 # --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
+# ── Ẩn toolbar GitHub / Deploy / MainMenu ────────────────────────────────────
+st.markdown("""
+<style>
+[data-testid="stToolbar"]      { display: none !important; }
+[data-testid="stDecoration"]   { display: none !important; }
+[data-testid="stStatusWidget"] { display: none !important; }
+.stDeployButton                { display: none !important; }
+#MainMenu                      { display: none !important; }
+footer                         { display: none !important; }
+/* Sidebar style — properties panel */
+[data-testid="stSidebar"] > div:first-child {
+    background: #1a1a2e;
+    padding-top: 0.5rem;
+}
+[data-testid="stSidebar"] .stMarkdown p,
+[data-testid="stSidebar"] .stMarkdown h3 { color: #ecf0f1 !important; }
+[data-testid="stSidebar"] label          { color: #bdc3c7 !important; }
+[data-testid="stSidebar"] .stMetricLabel { color: #bdc3c7 !important; }
+[data-testid="stSidebar"] .stMetricValue { color: #ecf0f1 !important; font-size: 1.05rem !important; }
+</style>
+""", unsafe_allow_html=True)
+
 # Khởi tạo bộ nhớ hội thoại chatbot
 if 'messages' not in st.session_state:
     st.session_state.messages = []
@@ -309,35 +331,117 @@ selected_ribbon = option_menu(
 st.session_state.current_tab = selected_ribbon
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 10px; border-color: #007acc;'>", unsafe_allow_html=True)
 
-# Hàng nút bấm và thông số hiện hành
-if selected_ribbon == "BẢN VẼ KỸ THUẬT":
-    ctrl_col1, ctrl_col2 = st.columns([1, 4])
-    with ctrl_col1:
-        if st.button("⚙️ OPTIONS - KHAI BÁO SỐ LIỆU", use_container_width=True, type="secondary"):
-            show_options_dialog()
-            
-    with ctrl_col2:
-        if 'ai_result' in st.session_state.design_data:
-            ai_p = st.session_state.design_data['ai_result']
-            geo_p = st.session_state.design_data['geo_logic']
-            st.markdown(f"<div style='padding-top: 5px; font-size:13px;'>📊 <b>Thông số hiện hành:</b> Chiều dài L = <b>{geo_p['L_cau']:.2f}m</b> | Kết cấu nhịp: <b>{ai_p['tong_so_nhip']} nhịp x {ai_p['chieu_dai']}m (Dầm {ai_p['loai_dam'].upper()})</b> | Chiều cao H = <b>{ai_p['chieu_cao']}m</b></div>", unsafe_allow_html=True)
+# Hàng thông tin hiện hành (không còn OPTIONS button — đã chuyển sang sidebar)
+if st.session_state.design_data.get('kcn_result') or st.session_state.design_data.get('ai_result', {}).get('loai_dam'):
+    _ai_p  = st.session_state.design_data.get('kcn_result') or st.session_state.design_data.get('ai_result', {})
+    _geo_p = st.session_state.design_data.get('geo_logic', {})
+    st.markdown(
+        f"<div style='padding-top:4px; font-size:12px; color:#bdc3c7;'>"
+        f"📊 L_cầu=<b style='color:#f39c12'>{_geo_p.get('L_cau',0):.1f}m</b> &nbsp;|&nbsp; "
+        f"{_ai_p.get('tong_so_nhip','?')}×{_ai_p.get('chieu_dai','?')}m "
+        f"<b style='color:#f39c12'>{_ai_p.get('loai_dam','').upper()}</b> &nbsp;|&nbsp; "
+        f"MNCN={st.session_state.design_data.get('MNCN',0):.3f}m &nbsp;|&nbsp; "
+        f"Tĩnh không B={st.session_state.design_data.get('B',0):.1f}m × H={st.session_state.design_data.get('H',0):.2f}m"
+        f"</div>",
+        unsafe_allow_html=True
+    )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- THANH SIDEBAR TRÁI ---
+# --- THANH SIDEBAR TRÁI — Properties Panel (CAD-like) ---
 with st.sidebar:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     logo_path = os.path.join(current_dir, "Images", "UTH.jpg")
     if os.path.exists(logo_path):
-        st.image(logo_path, width=280)
-    
-    st.write("👤 **SVTH:** Chương DND")
-    st.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
-    st.caption("🎓 *Đề tài:* Tích hợp AI và BIM tự động hóa thiết kế cầu đường bộ")
-    
+        st.image(logo_path, width=260)
+
+    st.markdown(
+        "<div style='text-align:center; color:#bdc3c7; font-size:12px; margin-top:-8px;'>"
+        "SVTH: <b>Chương DND</b> &nbsp;|&nbsp; GVHD: <b>TS. Nguyễn Văn Hiển</b><br>"
+        "<i>AI + BIM — Tự động hóa Thiết kế Cầu Đường bộ</i></div>",
+        unsafe_allow_html=True
+    )
+
     st.markdown("---")
-    st.subheader("🤖 Bridge AI Assistant")
-    chat_container = st.container(height=220, border=True)
+
+    # ── Nút OPTIONS — luôn hiển thị ──────────────────────────────────────
+    if st.button("⚙️  KHAI BÁO SỐ LIỆU ĐẦU VÀO",
+                 use_container_width=True, type="primary", key="sb_options"):
+        show_options_dialog()
+
+    # ── Properties Panel ─────────────────────────────────────────────────
+    _d  = st.session_state.design_data
+    _kn = _d.get('kcn_result') or _d.get('ai_result', {})
+    _tr = _d.get('tru_result', {})
+    _mg = _d.get('mong_result', {})
+    _ge = _d.get('geo_logic', {})
+
+    has_result = bool(_d.get('kcn_result') or _d.get('ai_result', {}).get('loai_dam'))
+
+    if has_result:
+        st.markdown(
+            "<p style='color:#f39c12; font-weight:bold; margin-bottom:4px;'>"
+            "📋 THÔNG SỐ HIỆN HÀNH</p>",
+            unsafe_allow_html=True
+        )
+
+        with st.expander("🌊 Thủy văn & Tĩnh không", expanded=False):
+            c1, c2 = st.columns(2)
+            c1.metric("MNCN", f"{_d.get('MNCN',0):.3f}m")
+            c2.metric("MNTT", f"{_d.get('MNTT',0):.3f}m")
+            c1.metric("MNTN", f"{_d.get('MNTN',0):.3f}m")
+            c2.metric("Cấp sông", f"Cấp {_d.get('cap_song','?')}")
+            c1.metric("B tĩnh không", f"{_d.get('B',0):.1f}m")
+            c2.metric("H tĩnh không", f"{_d.get('H',0):.2f}m")
+
+        with st.expander("📐 Hình học tuyến", expanded=False):
+            c1, c2 = st.columns(2)
+            c1.metric("L_cầu", f"{_ge.get('L_cau',0):.1f}m")
+            c2.metric("B_cầu", f"{_d.get('bc',0):.1f}m")
+            c1.metric("Vtk", f"{_d.get('vtk',0)} km/h")
+            c2.metric("Loại đường", _d.get('loai_duong','—'))
+            c1.metric("CĐTN TB", f"{_d.get('h_tn_tb',0):.3f}m")
+            c2.metric("Đáy dầm", f"{_d.get('cao_day_dam',0):.3f}m")
+
+        with st.expander("🏗️ Kết cấu nhịp", expanded=True):
+            st.markdown(f"**{_kn.get('loai_dam','—').upper()}**")
+            c1, c2 = st.columns(2)
+            c1.metric("Số nhịp", _kn.get('tong_so_nhip','—'))
+            c2.metric("L_nhịp", f"{_kn.get('chieu_dai','—')}m")
+            c1.metric("H_dầm", f"{_kn.get('chieu_cao_dam') or _kn.get('chieu_cao','—')}m")
+            c2.metric("Số dầm", _kn.get('so_luong_dam','—'))
+            st.metric("t_bản", f"{_d.get('t_ban_mm',200)} mm")
+
+        if _tr:
+            with st.expander("🏛️ Trụ & Móng", expanded=False):
+                st.markdown(f"**{_tr.get('loai_tru','—')}**")
+                c1, c2 = st.columns(2)
+                c1.metric("H_trụ", f"{_d.get('H_tru_est',0):.1f}m")
+                c2.metric("Tin cậy", f"{_tr.get('do_tin_cay',0):.0f}%")
+                if _mg:
+                    st.markdown(f"**{_mg.get('loai_mong','—')}**")
+                    c1.metric("Đường kính", _mg.get('D_coc_chon_txt','—'))
+                    c2.metric("L_cọc", f"{_mg.get('L_coc_tu','—')}m")
+
+        # Địa hình đã nạp
+        if 'df_tim_line' in st.session_state and st.session_state.df_tim_line is not None:
+            st.success("🗺️ Địa hình khảo sát: đã nạp")
+        else:
+            st.info("🗺️ Địa hình: chưa nạp (→ BẢN VẼ KỸ THUẬT)")
+
+    else:
+        st.markdown(
+            "<div style='color:#95a5a6; font-size:12px; text-align:center; padding:10px;'>"
+            "Nhấn <b>KHAI BÁO SỐ LIỆU</b> bên trên<br>để nhập thông số và chạy AI.</div>",
+            unsafe_allow_html=True
+        )
+
+    st.markdown("---")
+
+    # ── Chatbot ──────────────────────────────────────────────────────────
+    st.markdown("<p style='color:#f39c12; font-weight:bold;'>🤖 Bridge AI Assistant</p>",
+                unsafe_allow_html=True)
+    chat_container = st.container(height=200, border=True)
     with chat_container:
         for msg in st.session_state.messages:
             st.chat_message(msg["role"]).write(msg["content"])
@@ -346,7 +450,9 @@ with st.sidebar:
         st.session_state.messages.append({"role": "user", "content": prompt})
         try:
             design_info = st.session_state.chatbot_context
-            system_msg = f"Bạn là chuyên gia thiết kế cầu UTH. Tri thức: {st.session_state.bridge_library}. Dữ liệu: {design_info}"
+            system_msg = (f"Bạn là chuyên gia thiết kế cầu UTH. "
+                          f"Tri thức: {st.session_state.bridge_library}. "
+                          f"Dữ liệu: {design_info}")
             response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
             st.session_state.messages.append({"role": "assistant", "content": response.text})
             st.rerun()
@@ -585,26 +691,32 @@ elif selected_ribbon == "BẢN VẼ KẾT CẤU":
             f"L_cầu: **{d.get('geo_logic',{}).get('L_cau',0):.1f}m**"
         )
 
+        # Lấy địa hình đã nạp (nếu có)
+        _df_tim = st.session_state.get('df_tim_line', None)
+        _has_terrain = (_df_tim is not None and not _df_tim.empty)
+
         tab_nhip, tab_mcn, tab_tru, tab_3d = st.tabs([
-            "📏 Sơ đồ nhịp",
+            "📏 Sơ đồ nhịp" + (" 🗺️" if _has_terrain else ""),
             "📐 Mặt cắt ngang",
             "🏛️ Trụ cầu",
-            "🧱 Mô hình 3D",
+            "🧱 Mô hình 3D" + (" 🗺️" if _has_terrain else ""),
         ])
 
         with tab_nhip:
-            st.markdown("##### Sơ đồ bố trí nhịp — mặt phẳng dọc cầu")
+            if _has_terrain:
+                st.success("🗺️ Đang hiển thị kèm đường địa hình thực đo theo tim tuyến")
+            else:
+                st.info("💡 Nạp file khảo sát tại **BẢN VẼ KỸ THUẬT** để hiển thị địa hình thực đo")
             try:
-                fig_nhip = BVK.ve_so_do_nhip_2d(d)
+                fig_nhip = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim)
                 st.plotly_chart(fig_nhip, use_container_width=True,
                                 config={"scrollZoom": True, "displayModeBar": True})
-                # Chú thích
                 geo = d.get('geo_logic', {})
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Chiều dài cầu", f"{geo.get('L_cau',0):.1f} m")
                 c2.metric("Số nhịp", kcn['tong_so_nhip'])
                 c3.metric("L nhịp", f"{kcn['chieu_dai']} m")
-                c4.metric("H đáy dầm", f"{d.get('cao_day_dam',0):.3f} m")
+                c4.metric("Đáy dầm", f"{d.get('cao_day_dam',0):.3f} m")
             except Exception as e:
                 st.error(f"Lỗi vẽ sơ đồ nhịp: {e}")
 
@@ -623,7 +735,7 @@ elif selected_ribbon == "BẢN VẼ KẾT CẤU":
                 st.error(f"Lỗi vẽ MCN: {e}")
 
         with tab_tru:
-            st.markdown("##### Mặt đứng trụ cầu điển hình (nhìn dọc cầu)")
+            st.markdown("##### Mặt đứng trụ cầu — đặt ngoài tĩnh không")
             try:
                 fig_tru = BVK.ve_mat_dung_tru_2d(d)
                 st.plotly_chart(fig_tru, use_container_width=True,
@@ -638,14 +750,19 @@ elif selected_ribbon == "BẢN VẼ KẾT CẤU":
                 st.error(f"Lỗi vẽ trụ: {e}")
 
         with tab_3d:
-            st.markdown("##### Mô hình 3D kết cấu cầu (tương tác: xoay / zoom)")
+            if _has_terrain:
+                st.success("🗺️ Mô hình 3D kết hợp kết cấu cầu + địa hình thực đo")
+            else:
+                st.markdown("##### Mô hình 3D kết cấu cầu (tương tác: xoay / zoom)")
             try:
-                fig_3d = BVK.ve_cau_3d(d)
+                fig_3d = BVK.ve_cau_3d(d, df_tim_line=_df_tim)
                 st.plotly_chart(fig_3d, use_container_width=True,
                                 config={"scrollZoom": True, "displayModeBar": True})
                 st.caption(
-                    "Mô hình 3D tham khảo — tỉ lệ kích thước theo kết quả AI. "
-                    "Kéo chuột để xoay, lăn bánh xe để zoom, Shift+kéo để di chuyển."
+                    "Kéo chuột để xoay • Lăn bánh xe để zoom • Shift+kéo để pan. "
+                    + ("Địa hình thực đo được overlay theo tim tuyến khảo sát."
+                       if _has_terrain else
+                       "Địa hình sơ bộ (mặt nước MNCN). Nạp file khảo sát để có địa hình thực đo.")
                 )
             except Exception as e:
                 st.error(f"Lỗi vẽ 3D: {e}")
@@ -747,6 +864,8 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     if 'df_geology' in st.session_state:
                         df_geo = st.session_state.df_geology
                         tim_line = df_geo[df_geo['Offset'] == 0][['Lý trình', 'Z']].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
+                        # Lưu tim tuyến vào session_state để các tab khác dùng
+                        st.session_state.df_tim_line = tim_line
                     if tim_line is not None and not tim_line.empty and 'geo_logic' in design:
                         try:
                             fig_td = PLOT.ve_trac_doc_cau(design, tim_line)
