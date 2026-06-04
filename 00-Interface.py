@@ -679,9 +679,11 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
         )
 
         # ── Sub-tabs ────────────────────────────────────────────────────
-        tab_3d, tab_nhip, tab_mcn, tab_tru, tab_dia_chat, tab_tru3d, tab_export = st.tabs([
-            "🌐 3D Tổng hợp"   + (" 🗺️" if has_terr else " (sơ đồ)"),
-            "📏 Sơ đồ nhịp"   + (" 🗺️" if has_terr else ""),
+        tab_3d, tab_btc, tab_mcn_vt, tab_nhip, tab_mcn, tab_tru, tab_dia_chat, tab_tru3d, tab_export = st.tabs([
+            "🌐 3D Tổng hợp"        + (" 🗺️" if has_terr else " (sơ đồ)"),
+            "📋 Bố trí chung",
+            "✂️ MCN Mố/Trụ",
+            "📏 Sơ đồ nhịp"         + (" 🗺️" if has_terr else ""),
             "📐 MCN điển hình",
             "🏛️ Trụ cầu 2D",
             "🪨 Địa chất",
@@ -719,15 +721,22 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     _pct_ok = 100*(min(_lt_max2,_xmo_p)-max(_lt_min2,_xmo_t))/max(1,_xmo_p-_xmo_t)
                     st.success(f"✅ Cầu khớp địa hình ({_pct_ok:.0f}% chiều dài cầu nằm trong phạm vi địa hình)")
 
-                col_o1, col_o2, col_o3 = st.columns(3)
+                col_o1, col_o2, col_o3, col_o4 = st.columns(4)
                 with col_o1:
-                    che_do_view = st.selectbox("🎨 Chế độ địa hình:",
+                    che_do_view = st.selectbox("🎨 Địa hình:",
                         ["Bề mặt mịn","Đường đồng mức","Lưới tam giác"], key="cd3d")
                 with col_o2:
                     he_so_z = st.slider("📐 Phóng đại Z:", 0.05, 3.00, 0.50, 0.05, key="hsz3d")
                 with col_o3:
                     do_min_view = st.select_slider("✨ Mịn hoá:",
                         options=[1,3,5,7], value=3, key="dm3d")
+                with col_o4:
+                    render_mode_3d = st.selectbox(
+                        "🖥️ Chế độ hiển thị:",
+                        ["Shaded", "Realistic", "X-Ray", "Wireframe"],
+                        key="rm3d",
+                        help="Shaded: mặc định • Realistic: đổ bóng cao • X-Ray: xuyên thấu • Wireframe: khung lưới"
+                    )
                 try:
                     _fig_t, mx, my, mz = TV.ve_dia_hinh_3d(
                         _df_geo, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view
@@ -736,8 +745,8 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                         _n_before = len(_fig_t.data)
                         _err_overlay = None
                         try:
-                            # Gọi hàm tổng hợp đầy đủ (Digital Twin)
                             BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
+                            BVK.apply_render_mode(_fig_t, render_mode_3d)
                         except Exception as _oe:
                             _err_overlay = str(_oe)
                         _n_after = len(_fig_t.data)
@@ -764,14 +773,87 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
             else:
                 st.info("📌 Nạp file địa hình ở trên để xem kết cấu tích hợp địa hình thực đo. "
                         "Hiện đang hiển thị mô hình sơ đồ cầu.")
+                _rm_no_terr = st.selectbox(
+                    "🖥️ Chế độ hiển thị:", ["Shaded","Realistic","X-Ray","Wireframe"],
+                    key="rm3d_noterr"
+                )
                 try:
                     fig_3d = BVK.ve_cau_3d(d, df_tim_line=None)
+                    BVK.apply_render_mode(fig_3d, _rm_no_terr)
                     st.plotly_chart(fig_3d, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
                 except Exception as _e:
                     st.error(f"Lỗi vẽ 3D: {_e}")
 
-        # ── TAB 2: Sơ đồ nhịp ──────────────────────────────────────────
+        # ── TAB 2: Bố trí chung ────────────────────────────────────────
+        with tab_btc:
+            st.markdown("##### Bố trí chung — Bình đồ + Trắc dọc + MCN điển hình")
+            try:
+                _btc1, _btc2 = st.columns([3, 2])
+                with _btc1:
+                    st.markdown("**Bình đồ cầu** (nhìn từ trên)")
+                    fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim)
+                    st.plotly_chart(fig_bd, use_container_width=True,
+                                    config={"scrollZoom": True, "displayModeBar": True})
+                with _btc2:
+                    st.markdown("**MCN điển hình**")
+                    fig_mcn_btc = BVK.ve_mat_cat_ngang_2d(d)
+                    st.plotly_chart(fig_mcn_btc, use_container_width=True,
+                                    config={"scrollZoom": True, "displayModeBar": True})
+                st.markdown("**Trắc dọc cầu**")
+                fig_td_btc = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim)
+                st.plotly_chart(fig_td_btc, use_container_width=True,
+                                config={"scrollZoom": True, "displayModeBar": True})
+            except Exception as _e:
+                st.error(f"Lỗi tab Bố trí chung: {_e}")
+
+        # ── TAB 3: MCN tại vị trí mố / trụ ───────────────────────────
+        with tab_mcn_vt:
+            st.markdown("##### Mặt cắt ngang tại từng vị trí Mố – Trụ")
+            _kcn_vt = d.get("kcn_result") or d.get("ai_result", {})
+            _n_nhip_vt = int(_kcn_vt.get("tong_so_nhip", 3))
+            _n_tru_vt  = max(0, _n_nhip_vt - 1)
+            _vi_tri_options = ["mo_trai"] + [f"tru_{i+1}" for i in range(_n_tru_vt)] + ["mo_phai"]
+            _vi_tri_labels  = (
+                ["Mố trái"] +
+                [f"Trụ T{i+1}" for i in range(_n_tru_vt)] +
+                ["Mố phải"]
+            )
+            _sel_col1, _sel_col2 = st.columns([2, 3])
+            with _sel_col1:
+                _vt_idx = st.radio(
+                    "Chọn vị trí:",
+                    options=range(len(_vi_tri_options)),
+                    format_func=lambda i: _vi_tri_labels[i],
+                    horizontal=False, key="mcn_vt_radio"
+                )
+            _selected_vt = _vi_tri_options[_vt_idx]
+            with _sel_col2:
+                _geo_vt = d.get("geo_logic", {})
+                _piers_vt = BVK.calc_pier_positions(
+                    float(_geo_vt.get("x_mo_trai", -60)),
+                    float(_geo_vt.get("x_mo_phai",  60)),
+                    _n_nhip_vt,
+                    float(_geo_vt.get("x_tim_clearance", 0)),
+                    float(d.get("B", 20))
+                )
+                _pos_map = {
+                    "mo_trai": float(_geo_vt.get("x_mo_trai", -60)),
+                    "mo_phai": float(_geo_vt.get("x_mo_phai",  60)),
+                    **{f"tru_{i+1}": _piers_vt[i] for i in range(len(_piers_vt))}
+                }
+                _x_cut_show = _pos_map.get(_selected_vt, 0)
+                st.metric("Lý trình vị trí cắt", f"{_x_cut_show:.2f} m")
+                st.metric("Cao độ đáy dầm", f"{d.get('cao_day_dam', 0):.3f} m")
+                st.metric("H trụ ước tính", f"{d.get('H_tru_est', 0):.2f} m")
+            try:
+                fig_mcn_vt = BVK.ve_mcn_vi_tri(d, vi_tri=_selected_vt, df_geology=_df_geo)
+                st.plotly_chart(fig_mcn_vt, use_container_width=True,
+                                config={"scrollZoom": True, "displayModeBar": True})
+            except Exception as _e:
+                st.error(f"Lỗi vẽ MCN vị trí: {_e}")
+
+        # ── TAB 4: Sơ đồ nhịp ──────────────────────────────────────────
         with tab_nhip:
             if has_terr:
                 st.success("🗺️ Hiển thị đường địa hình thực đo theo tim tuyến")

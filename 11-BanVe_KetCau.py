@@ -156,6 +156,8 @@ def _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk):
 
     return sorted(piers)
 
+# Public alias
+calc_pier_positions = _calc_pier_positions
 
 # ===========================================================================
 # 1. SƠ ĐỒ BỐ TRÍ NHỊP (2D) — Trụ đặt NGOÀI tĩnh không
@@ -1109,15 +1111,17 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # =========================================================
         # LỚP 1 — THỦY VĂN & TĨNH KHÔNG
         # =========================================================
-        yw = bc * 2.5
+        # Mực nước chỉ hiển thị cục bộ tại vị trí khung tĩnh không
+        yw_local = B_tk * 1.2          # độ rộng ngang (vuông góc tim)
+        xL_water = x_tim - B_tk / 2   # giới hạn dọc = chiều rộng TK
+        xR_water = x_tim + B_tk / 2
         for z_w, lbl, clr, op in [
-            (MNCN * hz, f"MNCN = {MNCN:.3f}m", "#2980b9", 0.35),
-            (MNTT * hz, f"MNTT = {MNTT:.3f}m", "#3498db", 0.22),
-            (MNTN * hz, f"MNTN = {MNTN:.3f}m", "#1abc9c", 0.18),
+            (MNCN * hz, f"MNCN = {MNCN:.3f}m", "#2980b9", 0.50),
+            (MNTT * hz, f"MNTT = {MNTT:.3f}m", "#3498db", 0.35),
+            (MNTN * hz, f"MNTN = {MNTN:.3f}m", "#1abc9c", 0.25),
         ]:
-            # Mặt phẳng nước — là thin slab để có volume nhỏ
-            fig.add_trace(_abox(x0-5, x_end+5, -yw, yw,
-                                z_w - 0.03*hz, z_w, clr, op, lbl))
+            fig.add_trace(_abox(xL_water, xR_water, -yw_local, yw_local,
+                                z_w - 0.05 * hz, z_w, clr, op, lbl))
 
         # Khung tĩnh không B×H (dây đỏ)
         xL_tk = x_tim - B_tk/2; xR_tk = x_tim + B_tk/2
@@ -1281,3 +1285,352 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
     except Exception as exc:
         import traceback
         print(f"[add_all_to_terrain_fig] Lỗi: {exc}\n{traceback.format_exc()}")
+
+
+# ===========================================================================
+# 7. BÌNH ĐỒ CẦU (MẶT BẰNG — nhìn từ trên xuống)
+# ===========================================================================
+def ve_binh_do_2d(d, df_tim_line=None):
+    """Bình đồ cầu: mặt bằng nhìn từ trên, bao gồm dầm, mố, trụ, TK."""
+    kcn  = d.get("kcn_result") or d.get("ai_result", {})
+    geo  = d.get("geo_logic", {})
+    L_cau  = float(geo.get("L_cau", 120))
+    bc     = float(d.get("bc", 12.0))
+    B_tk   = float(d.get("B", 20.0))
+    n_nhip = int(kcn.get("tong_so_nhip", 3))
+    x0     = float(geo.get("x_mo_trai", -L_cau / 2))
+    x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
+    x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
+    piers  = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
+    cap_W  = max(2.0, bc * 0.18 + 1.0)
+    mo_W   = 3.5
+
+    fig = go.Figure()
+
+    # Lớp đất / sông nền
+    _lt_col = _z_col = None
+    if df_tim_line is not None and not df_tim_line.empty:
+        _lt_col = next((c for c in df_tim_line.columns if 'ý trình' in c or c.lower()=='ly_trinh'), None)
+        _z_col  = next((c for c in df_tim_line.columns if c.upper()=='Z'), None)
+
+    # Vùng sông (tĩnh không)
+    fig.add_shape(type="rect",
+        x0=x_tim - B_tk / 2, x1=x_tim + B_tk / 2,
+        y0=-B_tk * 0.7, y1=B_tk * 0.7,
+        fillcolor="rgba(52,152,219,0.18)", line=dict(color="#2980b9", width=1.5, dash="dot"))
+    fig.add_annotation(x=x_tim, y=0,
+        text=f"Sông/Kênh<br>B={B_tk:.1f}m", showarrow=False,
+        font=dict(size=9, color="#2980b9"), bgcolor="rgba(255,255,255,0.7)")
+
+    # Mặt cầu (fill nhạt)
+    fig.add_trace(go.Scatter(
+        x=[x0, x_end, x_end, x0, x0],
+        y=[-bc/2, -bc/2, bc/2, bc/2, -bc/2],
+        fill="toself", fillcolor="rgba(213,216,220,0.55)",
+        line=dict(color="#2c3e50", width=2),
+        name="Mặt cầu", mode="lines",
+        hovertemplate=f"Mặt cầu B={bc:.1f}m<extra></extra>"
+    ))
+
+    # Lan can (đường đậm 2 bên)
+    for sy in [-1, 1]:
+        fig.add_shape(type="line",
+            x0=x0, y0=sy * bc/2, x1=x_end, y1=sy * bc/2,
+            line=dict(color="#2c3e50", width=3))
+
+    # Tim cầu (dashdot)
+    fig.add_shape(type="line",
+        x0=x0 - 8, y0=0, x1=x_end + 8, y1=0,
+        line=dict(color="#e74c3c", width=1, dash="dashdot"))
+
+    # Mố
+    for xm, lbl in [(x0, "Mố trái"), (x_end, "Mố phải")]:
+        sign = 1 if xm == x0 else -1
+        fig.add_trace(go.Scatter(
+            x=[xm, xm + sign * mo_W, xm + sign * mo_W, xm, xm],
+            y=[-bc/2 - 0.6, -bc/2 - 0.6, bc/2 + 0.6, bc/2 + 0.6, -bc/2 - 0.6],
+            fill="toself", fillcolor="rgba(192,160,107,0.65)",
+            line=dict(color="#7d6608", width=2),
+            name=lbl, mode="lines",
+        ))
+        # Tường cánh
+        for sy in [-1, 1]:
+            yw_end = sy * (bc/2 + 0.6 + mo_W * 0.8)
+            fig.add_trace(go.Scatter(
+                x=[xm + sign * 0.3, xm + sign * mo_W * 1.6],
+                y=[sy * (bc/2 + 0.6), yw_end],
+                mode="lines", line=dict(color="#7d6608", width=1.5),
+                showlegend=False
+            ))
+
+    # Trụ
+    tru_L_half = 0.8
+    for i, xt in enumerate(piers):
+        fig.add_trace(go.Scatter(
+            x=[xt - tru_L_half, xt + tru_L_half, xt + tru_L_half,
+               xt - tru_L_half, xt - tru_L_half],
+            y=[-cap_W, -cap_W, cap_W, cap_W, -cap_W],
+            fill="toself", fillcolor="rgba(133,146,158,0.75)",
+            line=dict(color="#566573", width=1.5),
+            name=f"Trụ T{i+1}", mode="lines",
+        ))
+        fig.add_annotation(x=xt, y=0, text=f"T{i+1}",
+            showarrow=False, font=dict(size=8, color="white"),
+            bgcolor="rgba(86,101,115,0.85)")
+
+    # Khung tĩnh không (mặt bằng)
+    fig.add_shape(type="rect",
+        x0=x_tim - B_tk/2, x1=x_tim + B_tk/2,
+        y0=-B_tk/2 - 0.3, y1=B_tk/2 + 0.3,
+        line=dict(color="#e74c3c", width=2.5, dash="dash"),
+        fillcolor="rgba(231,76,60,0.04)")
+
+    # Dimensions
+    _dim_h(fig, bc/2 + 2.5, x0, x_end, f"L_cầu = {L_cau:.1f} m", dy=0)
+    if piers:
+        _dim_h(fig, -bc/2 - 2.5, piers[0], piers[-1] if len(piers) > 1 else x_end,
+               f"Khoảng TT = {(piers[-1] if len(piers)>1 else x_end) - piers[0]:.1f} m", dy=0)
+    _dim_v(fig, x_end + mo_W + 1.5, -bc/2, bc/2, f"B_c = {bc:.1f} m", dx=0.5)
+    _dim_v(fig, x_tim + B_tk/2 + 1.2, -B_tk/2, B_tk/2, f"B_tk = {B_tk:.1f} m",
+           color="#e74c3c", dx=0.5)
+
+    fig.update_layout(
+        title=dict(
+            text=f"BÌNH ĐỒ CẦU — {n_nhip} nhịp | L={L_cau:.1f}m | B_c={bc:.1f}m",
+            x=0.5, font=dict(size=12)
+        ),
+        xaxis=dict(title="Lý trình (m)", showgrid=True, gridcolor="#ecf0f1",
+                   scaleanchor="y", scaleratio=1),
+        yaxis=dict(title="Ngang (m)", showgrid=True, gridcolor="#ecf0f1"),
+        height=420, template="plotly_white",
+        legend=dict(orientation="h", y=-0.22, font=dict(size=9)),
+        margin=dict(l=60, r=40, t=60, b=90),
+        hovermode="closest",
+    )
+    return fig
+
+
+# ===========================================================================
+# 8. MẶT CẮT NGANG TẠI VỊ TRÍ MỐ / TRỤ
+# ===========================================================================
+def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None):
+    """
+    MCN cắt vuông góc tim cầu tại vị trí mố hoặc trụ cụ thể.
+    vi_tri: 'mo_trai' | 'mo_phai' | 'tru_1' | 'tru_2' | ...
+    df_geology: DataFrame với cột Lý trình, Offset, Z (từ file .NTD)
+    """
+    kcn   = d.get("kcn_result") or d.get("ai_result", {})
+    geo   = d.get("geo_logic", {})
+    tru_r = d.get("tru_result", {}) or {}
+    mong  = d.get("mong_result", {}) or {}
+
+    bc     = float(d.get("bc", 12.0))
+    B_tk   = float(d.get("B", 20.0))
+    H_tk   = float(d.get("H", 3.0))
+    H_tru  = float(d.get("H_tru_est", 5.0))
+    cao_dd = float(d.get("cao_day_dam", H_tru + 5.0))
+    H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+    t_ban  = float(d.get("t_ban_mm", 200)) / 1000.0
+    n_nhip = int(kcn.get("tong_so_nhip", 3))
+    MNCN   = float(d.get("MNCN", 3.5))
+    MNTT   = float(d.get("MNTT", 2.0))
+    MNTN   = float(d.get("MNTN", 0.5))
+    h_tn   = float(d.get("h_tn_tb", 2.0))
+    L_cau  = float(geo.get("L_cau", 120))
+    x0     = float(geo.get("x_mo_trai", -L_cau / 2))
+    x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
+    x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
+    piers  = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
+    cap_W  = max(2.0, bc * 0.18 + 1.0)
+    be_W   = cap_W + 0.8
+
+    if vi_tri == 'mo_trai':
+        x_cut = x0;   title_vt = "MỐ TRÁI"
+    elif vi_tri == 'mo_phai':
+        x_cut = x_end; title_vt = "MỐ PHẢI"
+    else:
+        idx = int(vi_tri.replace('tru_', '')) - 1
+        x_cut = piers[idx] if idx < len(piers) else x_tim
+        title_vt = f"TRỤ T{idx + 1}"
+
+    is_mo = vi_tri.startswith('mo')
+    fig = go.Figure()
+
+    # ── Địa hình cắt ngang ──────────────────────────────────────────────
+    y_terr = z_terr = None
+    if df_geology is not None and not df_geology.empty:
+        need = {'Lý trình', 'Offset', 'Z'}
+        if need <= set(df_geology.columns):
+            df_cut = df_geology[abs(df_geology['Lý trình'] - x_cut) <= 5.0].copy()
+            if not df_cut.empty:
+                df_cut = df_cut.sort_values('Offset')
+                y_terr = df_cut['Offset'].values.astype(float)
+                z_terr = df_cut['Z'].values.astype(float)
+
+    if y_terr is None:
+        spread = max(bc * 2.5, B_tk + 5)
+        y_terr = np.array([-spread, -bc, bc, spread])
+        z_terr = np.array([h_tn, h_tn, h_tn, h_tn])
+
+    z_min = float(z_terr.min()) - 3.0
+
+    # Fill đất
+    fig.add_trace(go.Scatter(
+        x=np.concatenate([y_terr, y_terr[::-1]]),
+        y=np.concatenate([z_terr, np.full_like(z_terr, z_min)]),
+        fill="toself", fillcolor=_C["dat"],
+        line=dict(color="#6d4c41", width=2),
+        name="Địa hình", mode="lines"
+    ))
+
+    # ── Mực nước (chỉ ở trụ và tại tim) ────────────────────────────────
+    y_nw_range = [y_terr[0], y_terr[-1]]
+    if not is_mo:
+        for z_w, lbl, clr in [
+            (MNCN, f"MNCN={MNCN:.3f}m", "#c0392b"),
+            (MNTT, f"MNTT={MNTT:.3f}m", "#2980b9"),
+            (MNTN, f"MNTN={MNTN:.3f}m", "#1abc9c"),
+        ]:
+            fig.add_trace(go.Scatter(
+                x=y_nw_range, y=[z_w, z_w], mode="lines+text",
+                line=dict(color=clr, width=1.5, dash="dot"),
+                text=[lbl, ""], textposition="top left",
+                textfont=dict(size=8, color=clr), name=lbl,
+            ))
+        # Fill vùng nước
+        fig.add_trace(go.Scatter(
+            x=[y_nw_range[0], y_nw_range[1], y_nw_range[1], y_nw_range[0]],
+            y=[MNTN, MNTN, MNCN, MNCN],
+            fill="toself", fillcolor=_C["nuoc"],
+            line=dict(color="rgba(0,0,0,0)"),
+            mode="lines", showlegend=False, hoverinfo="skip"
+        ))
+
+    # ── Kết cấu ─────────────────────────────────────────────────────────
+    z_deck = cao_dd + H_dam + t_ban
+
+    if is_mo:
+        mo_dep = 3.5
+        _poly(fig, [-bc/2 - 0.5, bc/2 + 0.5, bc/2 + 0.5, -bc/2 - 0.5],
+              [h_tn, h_tn, z_deck, z_deck],
+              _C["moc"], _C["be_dk"], "Thân mố")
+        for sy in [-1, 1]:
+            xw0 = sy * (bc/2 + 0.5)
+            xw1 = sy * (bc/2 + 0.5 + mo_dep)
+            _poly(fig, [xw0, xw1, xw1, xw0],
+                  [z_min, z_min, h_tn, h_tn],
+                  "rgba(192,160,107,0.35)", _C["be_dk"],
+                  "Tường cánh" if sy == -1 else "", showlegend=(sy == -1))
+    else:
+        # Bệ cọc
+        cap_H  = 0.80; be_H = 1.50
+        z_capb = cao_dd - cap_H
+        z_shb  = z_capb - H_tru
+        z_beb  = z_shb - be_H
+
+        _poly(fig, [-be_W, be_W, be_W, -be_W],
+              [z_beb, z_beb, z_shb, z_shb],
+              _C["be"], _C["be_dk"], "Bệ cọc")
+
+        # Thân cột
+        loai_t = str(tru_r.get("loai_tru", "Thân cột 2 trụ"))
+        n_cot  = 3 if "3" in loai_t else (2 if "cột" in loai_t.lower() else 1)
+        W_cot  = min(1.0, bc * 0.06 + 0.4)
+        col_offs = np.linspace(-cap_W * 0.6, cap_W * 0.6, n_cot)
+        for ic, off_c in enumerate(col_offs):
+            _poly(fig, [off_c - W_cot/2, off_c + W_cot/2,
+                        off_c + W_cot/2, off_c - W_cot/2],
+                  [z_shb, z_shb, z_capb, z_capb],
+                  _C["btong"], _C["btong_dk"],
+                  "Thân cột" if ic == 0 else "", showlegend=(ic == 0))
+
+        # Xà mũ
+        _poly(fig, [-cap_W, cap_W, cap_W, -cap_W],
+              [z_capb, z_capb, cao_dd, cao_dd],
+              _C["btong"], _C["dam_dk"], "Xà mũ")
+
+        # Cọc
+        D_coc = float(mong.get("D_coc_mm", 600)) / 1000.0 if mong else 0.6
+        L_coc = float(mong.get("L_coc_tu", 35)) if mong else 35
+        n_coc = 3 if be_W >= 2.5 else 2
+        for i_coc, xc in enumerate(np.linspace(-be_W * 0.7, be_W * 0.7, n_coc)):
+            fig.add_trace(go.Scatter(
+                x=[xc, xc], y=[z_beb, z_beb - L_coc],
+                mode="lines",
+                line=dict(color=_C["be_dk"], width=max(3, int(D_coc * 6))),
+                name=f"Cọc Ø{int(D_coc*1000)}mm" if i_coc == 0 else "",
+                showlegend=(i_coc == 0)
+            ))
+
+        # Dimensions trụ
+        _dim_v(fig, cap_W + 0.6, z_shb, z_capb, f"H_trụ={H_tru:.1f}m", dx=0.2)
+        _dim_h(fig, z_beb - 0.5, -be_W, be_W, f"B_bệ={be_W*2:.1f}m", dy=0)
+
+    # Bản mặt cầu
+    _poly(fig, [-bc/2, bc/2, bc/2, -bc/2],
+          [cao_dd + H_dam, cao_dd + H_dam, z_deck, z_deck],
+          _C["ban"], _C["btong_dk"], "Bản mặt cầu")
+
+    # Lan can (ký hiệu)
+    for sy in [-1, 1]:
+        _poly(fig,
+              [sy * bc/2 - sy*0.3, sy * bc/2, sy * bc/2, sy * bc/2 - sy*0.3],
+              [z_deck, z_deck, z_deck + 1.1, z_deck + 1.1],
+              _C["lan_can"], "#2c3e50",
+              "Lan can" if sy == -1 else "", showlegend=(sy == -1))
+
+    # Dimensions chung
+    _dim_h(fig, z_deck + 1.5, -bc/2, bc/2, f"B_cầu = {bc:.1f} m", dy=0)
+    if not is_mo:
+        _dim_h(fig, z_deck + 2.2, -cap_W, cap_W, f"B_xà mũ = {cap_W*2:.1f} m",
+               color="#8e44ad", dy=0)
+
+    fig.update_layout(
+        title=dict(
+            text=f"MẶT CẮT NGANG — {title_vt} | Lý trình ≈ {x_cut:.1f} m",
+            x=0.5, font=dict(size=12)
+        ),
+        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1"),
+        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1",
+                   scaleanchor="x", scaleratio=1),
+        height=540, template="plotly_white",
+        legend=dict(orientation="h", y=-0.20, font=dict(size=9)),
+        margin=dict(l=65, r=40, t=60, b=100),
+    )
+    return fig
+
+
+# ===========================================================================
+# 9. CHẾ ĐỘ HIỂN THỊ 3D (tương tự Revit: Shaded / Wireframe / X-Ray / Realistic)
+# ===========================================================================
+def apply_render_mode(fig, mode="Shaded"):
+    """
+    Áp dụng chế độ hiển thị lên figure 3D sau khi đã tạo.
+    mode: 'Shaded' | 'Wireframe' | 'X-Ray' | 'Realistic'
+    """
+    for trace in fig.data:
+        if isinstance(trace, go.Mesh3d):
+            if mode == "Wireframe":
+                trace.opacity = 0.0
+                # Bật hiển thị wireframe overlay qua intensity
+                trace.flatshading = False
+            elif mode == "X-Ray":
+                trace.opacity = min(float(trace.opacity or 0.5), 0.18)
+                trace.flatshading = False
+            elif mode == "Realistic":
+                trace.flatshading = False
+                trace.lighting = dict(
+                    ambient=0.35, diffuse=0.90, specular=0.70,
+                    roughness=0.25, fresnel=0.50
+                )
+                trace.lightposition = dict(x=200, y=200, z=500)
+            else:  # Shaded (mặc định)
+                trace.flatshading = True
+                trace.lighting = dict(ambient=0.65, diffuse=0.85, specular=0.2)
+
+    if mode == "Wireframe":
+        # Thêm contour lines cho tất cả Mesh3d
+        for trace in fig.data:
+            if isinstance(trace, go.Mesh3d):
+                trace.contour = go.mesh3d.Contour(show=True, color="#2c3e50", width=2)
+    return fig
