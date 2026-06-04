@@ -14,25 +14,13 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # ── Ẩn toolbar GitHub / Deploy / MainMenu ────────────────────────────────────
 st.markdown("""
 <style>
-/* Ẩn các nút GitHub/Share/Deploy ở góc phải toolbar — GIỮ nút sidebar toggle */
+/* Ẩn các nút GitHub/Share/Deploy ở góc phải — GIỮ nút toggle sidebar */
 [data-testid="stToolbarActions"]  { display: none !important; }
 [data-testid="stDecoration"]      { display: none !important; }
 [data-testid="stStatusWidget"]    { display: none !important; }
 .stDeployButton                   { display: none !important; }
 #MainMenu                         { display: none !important; }
 footer                            { display: none !important; }
-/* ĐẢM BẢO nút mở/thu sidebar vẫn hiện */
-[data-testid="stSidebarCollapseButton"],
-[data-testid="collapsedControl"]  { display: flex   !important; visibility: visible !important; }
-/* Sidebar — dark theme properties panel */
-[data-testid="stSidebar"] > div:first-child {
-    background: #1a1a2e; padding-top: 0.4rem;
-}
-[data-testid="stSidebar"] .stMarkdown p,
-[data-testid="stSidebar"] .stMarkdown h3   { color: #ecf0f1 !important; }
-[data-testid="stSidebar"] label            { color: #bdc3c7 !important; }
-[data-testid="stSidebar"] .stMetricLabel   { color: #bdc3c7 !important; }
-[data-testid="stSidebar"] .stMetricValue   { color: #ecf0f1 !important; font-size:1.0rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -337,117 +325,42 @@ selected_ribbon = option_menu(
 st.session_state.current_tab = selected_ribbon
 st.markdown("<hr style='margin-top: 0px; margin-bottom: 10px; border-color: #007acc;'>", unsafe_allow_html=True)
 
-# Hàng thông tin hiện hành (không còn OPTIONS button — đã chuyển sang sidebar)
-if st.session_state.design_data.get('kcn_result') or st.session_state.design_data.get('ai_result', {}).get('loai_dam'):
-    _ai_p  = st.session_state.design_data.get('kcn_result') or st.session_state.design_data.get('ai_result', {})
-    _geo_p = st.session_state.design_data.get('geo_logic', {})
-    st.markdown(
-        f"<div style='padding-top:4px; font-size:12px; color:#bdc3c7;'>"
-        f"📊 L_cầu=<b style='color:#f39c12'>{_geo_p.get('L_cau',0):.1f}m</b> &nbsp;|&nbsp; "
-        f"{_ai_p.get('tong_so_nhip','?')}×{_ai_p.get('chieu_dai','?')}m "
-        f"<b style='color:#f39c12'>{_ai_p.get('loai_dam','').upper()}</b> &nbsp;|&nbsp; "
-        f"MNCN={st.session_state.design_data.get('MNCN',0):.3f}m &nbsp;|&nbsp; "
-        f"Tĩnh không B={st.session_state.design_data.get('B',0):.1f}m × H={st.session_state.design_data.get('H',0):.2f}m"
-        f"</div>",
-        unsafe_allow_html=True
-    )
+# Hàng nút bấm OPTIONS + thông số hiện hành
+ctrl_col1, ctrl_col2 = st.columns([1, 4])
+with ctrl_col1:
+    if st.button("⚙️ OPTIONS - KHAI BÁO SỐ LIỆU", use_container_width=True, type="secondary"):
+        show_options_dialog()
+with ctrl_col2:
+    if st.session_state.design_data.get('kcn_result') or st.session_state.design_data.get('ai_result', {}).get('loai_dam'):
+        _ai_p  = st.session_state.design_data.get('kcn_result') or st.session_state.design_data.get('ai_result', {})
+        _geo_p = st.session_state.design_data.get('geo_logic', {})
+        st.markdown(
+            f"<div style='padding-top:5px; font-size:13px;'>"
+            f"📊 <b>Thông số hiện hành:</b> "
+            f"L = <b>{_geo_p.get('L_cau',0):.2f}m</b> | "
+            f"Kết cấu nhịp: <b>{_ai_p.get('tong_so_nhip','?')} nhịp × {_ai_p.get('chieu_dai','?')}m "
+            f"(Dầm {_ai_p.get('loai_dam','').upper()})</b> | "
+            f"H = <b>{_ai_p.get('chieu_cao_dam') or _ai_p.get('chieu_cao','—')}m</b>"
+            f"</div>",
+            unsafe_allow_html=True
+        )
 
 st.markdown('</div>', unsafe_allow_html=True)
 
-# --- THANH SIDEBAR TRÁI — Properties Panel (CAD-like) ---
+# --- THANH SIDEBAR TRÁI (giữ nguyên như ban đầu) ---
 with st.sidebar:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     logo_path = os.path.join(current_dir, "Images", "UTH.jpg")
     if os.path.exists(logo_path):
-        st.image(logo_path, width=260)
+        st.image(logo_path, width=280)
 
-    st.markdown(
-        "<div style='text-align:center; color:#bdc3c7; font-size:12px; margin-top:-8px;'>"
-        "SVTH: <b>Chương DND</b> &nbsp;|&nbsp; GVHD: <b>TS. Nguyễn Văn Hiển</b><br>"
-        "<i>AI + BIM — Tự động hóa Thiết kế Cầu Đường bộ</i></div>",
-        unsafe_allow_html=True
-    )
+    st.write("👤 **SVTH:** Chương DND")
+    st.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
+    st.caption("🎓 *Đề tài:* Tích hợp AI và BIM tự động hóa thiết kế cầu đường bộ")
 
     st.markdown("---")
-
-    # ── Nút OPTIONS — luôn hiển thị ──────────────────────────────────────
-    if st.button("⚙️  KHAI BÁO SỐ LIỆU ĐẦU VÀO",
-                 use_container_width=True, type="primary", key="sb_options"):
-        show_options_dialog()
-
-    # ── Properties Panel ─────────────────────────────────────────────────
-    _d  = st.session_state.design_data
-    _kn = _d.get('kcn_result') or _d.get('ai_result', {})
-    _tr = _d.get('tru_result', {})
-    _mg = _d.get('mong_result', {})
-    _ge = _d.get('geo_logic', {})
-
-    has_result = bool(_d.get('kcn_result') or _d.get('ai_result', {}).get('loai_dam'))
-
-    if has_result:
-        st.markdown(
-            "<p style='color:#f39c12; font-weight:bold; margin-bottom:4px;'>"
-            "📋 THÔNG SỐ HIỆN HÀNH</p>",
-            unsafe_allow_html=True
-        )
-
-        with st.expander("🌊 Thủy văn & Tĩnh không", expanded=False):
-            c1, c2 = st.columns(2)
-            c1.metric("MNCN", f"{_d.get('MNCN',0):.3f}m")
-            c2.metric("MNTT", f"{_d.get('MNTT',0):.3f}m")
-            c1.metric("MNTN", f"{_d.get('MNTN',0):.3f}m")
-            c2.metric("Cấp sông", f"Cấp {_d.get('cap_song','?')}")
-            c1.metric("B tĩnh không", f"{_d.get('B',0):.1f}m")
-            c2.metric("H tĩnh không", f"{_d.get('H',0):.2f}m")
-
-        with st.expander("📐 Hình học tuyến", expanded=False):
-            c1, c2 = st.columns(2)
-            c1.metric("L_cầu", f"{_ge.get('L_cau',0):.1f}m")
-            c2.metric("B_cầu", f"{_d.get('bc',0):.1f}m")
-            c1.metric("Vtk", f"{_d.get('vtk',0)} km/h")
-            c2.metric("Loại đường", _d.get('loai_duong','—'))
-            c1.metric("CĐTN TB", f"{_d.get('h_tn_tb',0):.3f}m")
-            c2.metric("Đáy dầm", f"{_d.get('cao_day_dam',0):.3f}m")
-
-        with st.expander("🏗️ Kết cấu nhịp", expanded=True):
-            st.markdown(f"**{_kn.get('loai_dam','—').upper()}**")
-            c1, c2 = st.columns(2)
-            c1.metric("Số nhịp", _kn.get('tong_so_nhip','—'))
-            c2.metric("L_nhịp", f"{_kn.get('chieu_dai','—')}m")
-            c1.metric("H_dầm", f"{_kn.get('chieu_cao_dam') or _kn.get('chieu_cao','—')}m")
-            c2.metric("Số dầm", _kn.get('so_luong_dam','—'))
-            st.metric("t_bản", f"{_d.get('t_ban_mm',200)} mm")
-
-        if _tr:
-            with st.expander("🏛️ Trụ & Móng", expanded=False):
-                st.markdown(f"**{_tr.get('loai_tru','—')}**")
-                c1, c2 = st.columns(2)
-                c1.metric("H_trụ", f"{_d.get('H_tru_est',0):.1f}m")
-                c2.metric("Tin cậy", f"{_tr.get('do_tin_cay',0):.0f}%")
-                if _mg:
-                    st.markdown(f"**{_mg.get('loai_mong','—')}**")
-                    c1.metric("Đường kính", _mg.get('D_coc_chon_txt','—'))
-                    c2.metric("L_cọc", f"{_mg.get('L_coc_tu','—')}m")
-
-        # Địa hình đã nạp
-        if 'df_tim_line' in st.session_state and st.session_state.df_tim_line is not None:
-            st.success("🗺️ Địa hình khảo sát: đã nạp")
-        else:
-            st.info("🗺️ Địa hình: chưa nạp (→ BẢN VẼ KỸ THUẬT)")
-
-    else:
-        st.markdown(
-            "<div style='color:#95a5a6; font-size:12px; text-align:center; padding:10px;'>"
-            "Nhấn <b>KHAI BÁO SỐ LIỆU</b> bên trên<br>để nhập thông số và chạy AI.</div>",
-            unsafe_allow_html=True
-        )
-
-    st.markdown("---")
-
-    # ── Chatbot ──────────────────────────────────────────────────────────
-    st.markdown("<p style='color:#f39c12; font-weight:bold;'>🤖 Bridge AI Assistant</p>",
-                unsafe_allow_html=True)
-    chat_container = st.container(height=200, border=True)
+    st.subheader("🤖 Bridge AI Assistant")
+    chat_container = st.container(height=220, border=True)
     with chat_container:
         for msg in st.session_state.messages:
             st.chat_message(msg["role"]).write(msg["content"])
@@ -456,9 +369,7 @@ with st.sidebar:
         st.session_state.messages.append({"role": "user", "content": prompt})
         try:
             design_info = st.session_state.chatbot_context
-            system_msg = (f"Bạn là chuyên gia thiết kế cầu UTH. "
-                          f"Tri thức: {st.session_state.bridge_library}. "
-                          f"Dữ liệu: {design_info}")
+            system_msg = f"Bạn là chuyên gia thiết kế cầu UTH. Tri thức: {st.session_state.bridge_library}. Dữ liệu: {design_info}"
             response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
             st.session_state.messages.append({"role": "assistant", "content": response.text})
             st.rerun()
