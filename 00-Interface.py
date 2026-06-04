@@ -64,6 +64,7 @@ try:
     TV   = importlib.import_module("00-Terrain_Viewer")
     TC   = importlib.import_module("04-Pier-test")
     LPC  = importlib.import_module("10-LopPhu_MatCau")  # Lớp phủ mặt cầu
+    BVK  = importlib.import_module("11-BanVe_KetCau")   # Bản vẽ kết cấu 2D/3D
     importlib.reload(PLOT)
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
@@ -89,7 +90,7 @@ if 'chatbot_context' not in st.session_state:
     st.session_state.chatbot_context = "Chưa tiến hành chạy dự báo tính toán."
 
 if 'current_tab' not in st.session_state:
-    st.session_state.current_tab = "BẢN VẼ KỸ THUẬT TƯƠNG TÁC"
+    st.session_state.current_tab = "THUYẾT MINH"
 
 # =========================================================================
 # ⚙️ HỘP THOẠI KHAI BÁO SỐ LIỆU
@@ -277,7 +278,7 @@ def show_options_dialog():
                     f"LoaiTru={res.get('tru_result',{}).get('loai_tru','?')} | "
                     f"LoaiMong={res.get('mong_result',{}).get('loai_mong','?')}"
                 )
-                st.session_state.current_tab = "THUYẾT MINH"
+                st.session_state.current_tab = "BẢN VẼ KẾT CẤU"
                 st.rerun()
 
 # =========================================================================
@@ -285,19 +286,19 @@ def show_options_dialog():
 # =========================================================================
 st.markdown('<div id="custom-ribbon-container">', unsafe_allow_html=True)
 
-ribbon_options = ["THUYẾT MINH", "BẢN VẼ KỸ THUẬT"]
-default_idx = ribbon_options.index(st.session_state.current_tab) if st.session_state.current_tab in ribbon_options else 1
+ribbon_options = ["THUYẾT MINH", "BẢN VẼ KẾT CẤU", "BẢN VẼ KỸ THUẬT"]
+default_idx = ribbon_options.index(st.session_state.current_tab) if st.session_state.current_tab in ribbon_options else 0
 
 selected_ribbon = option_menu(
-    menu_title=None, 
+    menu_title=None,
     options=ribbon_options,
-    icons=["house", "layout-text-window-reverse"], 
-    menu_icon="cast", 
+    icons=["house", "rulers", "layout-text-window-reverse"],
+    menu_icon="cast",
     default_index=default_idx,
     orientation="horizontal",
     styles={
         "container": {"padding": "0!important", "background-color": "#1e1e1e", "border-radius": "0px"},
-        "icon": {"color": "#f39c12", "font-size": "14px"}, 
+        "icon": {"color": "#f39c12", "font-size": "14px"},
         "nav-link": {
             "font-size": "13px", "text-align": "center", "margin": "0px", "color": "white",
             "font-weight": "bold", "border-radius": "0px", "--hover-color": "#333333"
@@ -564,6 +565,90 @@ if selected_ribbon == "THUYẾT MINH":
 
     st.markdown("---")
     st.caption("Kết quả mang tính tham khảo sơ bộ. Cần kiểm tra và điều chỉnh theo tiêu chuẩn TCVN hiện hành.")
+
+# =========================================================================
+# TAB BẢN VẼ KẾT CẤU — 2D & 3D từ kết quả tính toán
+# =========================================================================
+elif selected_ribbon == "BẢN VẼ KẾT CẤU":
+    d = st.session_state.design_data
+    kcn  = d.get('kcn_result') or d.get('ai_result')
+    tru  = d.get('tru_result')
+
+    if kcn is None:
+        st.info("⚙️ Chưa có kết quả tính toán. Vào **⚙️ OPTIONS** nhập số liệu và chạy AI trước.")
+    else:
+        st.title("📐 Bản vẽ Kết cấu Cầu (từ kết quả AI)")
+        st.caption(
+            f"Sơ đồ nhịp: **{kcn['tong_so_nhip']} × {kcn['chieu_dai']}m** ({kcn['loai_dam']}) | "
+            f"Trụ: **{tru.get('loai_tru','—') if tru else '—'}** | "
+            f"H_trụ: **{d.get('H_tru_est',0):.1f}m** | "
+            f"L_cầu: **{d.get('geo_logic',{}).get('L_cau',0):.1f}m**"
+        )
+
+        tab_nhip, tab_mcn, tab_tru, tab_3d = st.tabs([
+            "📏 Sơ đồ nhịp",
+            "📐 Mặt cắt ngang",
+            "🏛️ Trụ cầu",
+            "🧱 Mô hình 3D",
+        ])
+
+        with tab_nhip:
+            st.markdown("##### Sơ đồ bố trí nhịp — mặt phẳng dọc cầu")
+            try:
+                fig_nhip = BVK.ve_so_do_nhip_2d(d)
+                st.plotly_chart(fig_nhip, use_container_width=True,
+                                config={"scrollZoom": True, "displayModeBar": True})
+                # Chú thích
+                geo = d.get('geo_logic', {})
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Chiều dài cầu", f"{geo.get('L_cau',0):.1f} m")
+                c2.metric("Số nhịp", kcn['tong_so_nhip'])
+                c3.metric("L nhịp", f"{kcn['chieu_dai']} m")
+                c4.metric("H đáy dầm", f"{d.get('cao_day_dam',0):.3f} m")
+            except Exception as e:
+                st.error(f"Lỗi vẽ sơ đồ nhịp: {e}")
+
+        with tab_mcn:
+            st.markdown("##### Mặt cắt ngang điển hình — đầy đủ cấu tạo")
+            try:
+                fig_mcn = BVK.ve_mat_cat_ngang_2d(d)
+                st.plotly_chart(fig_mcn, use_container_width=True,
+                                config={"scrollZoom": True, "displayModeBar": True})
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Bề rộng cầu", f"{d.get('bc',12):.1f} m")
+                c2.metric("Số dầm", kcn.get('so_luong_dam', '—'))
+                c3.metric("Khoảng cách tim", f"{kcn.get('khoang_cach_dam',2):.2f} m")
+                c4.metric("Chiều dày bản", f"{d.get('t_ban_mm',200)} mm")
+            except Exception as e:
+                st.error(f"Lỗi vẽ MCN: {e}")
+
+        with tab_tru:
+            st.markdown("##### Mặt đứng trụ cầu điển hình (nhìn dọc cầu)")
+            try:
+                fig_tru = BVK.ve_mat_dung_tru_2d(d)
+                st.plotly_chart(fig_tru, use_container_width=True,
+                                config={"scrollZoom": True, "displayModeBar": True})
+                mong = d.get('mong_result', {})
+                c1, c2, c3, c4 = st.columns(4)
+                c1.metric("Chiều cao trụ", f"{d.get('H_tru_est',0):.1f} m")
+                c2.metric("Loại trụ", tru.get('loai_tru', '—') if tru else '—')
+                c3.metric("Loại móng", mong.get('loai_mong', '—') if mong else '—')
+                c4.metric("Đường kính cọc", mong.get('D_coc_chon_txt', '—') if mong else '—')
+            except Exception as e:
+                st.error(f"Lỗi vẽ trụ: {e}")
+
+        with tab_3d:
+            st.markdown("##### Mô hình 3D kết cấu cầu (tương tác: xoay / zoom)")
+            try:
+                fig_3d = BVK.ve_cau_3d(d)
+                st.plotly_chart(fig_3d, use_container_width=True,
+                                config={"scrollZoom": True, "displayModeBar": True})
+                st.caption(
+                    "Mô hình 3D tham khảo — tỉ lệ kích thước theo kết quả AI. "
+                    "Kéo chuột để xoay, lăn bánh xe để zoom, Shift+kéo để di chuyển."
+                )
+            except Exception as e:
+                st.error(f"Lỗi vẽ 3D: {e}")
 
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
     
