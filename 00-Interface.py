@@ -14,22 +14,25 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # ── Ẩn toolbar GitHub / Deploy / MainMenu ────────────────────────────────────
 st.markdown("""
 <style>
-[data-testid="stToolbar"]      { display: none !important; }
-[data-testid="stDecoration"]   { display: none !important; }
-[data-testid="stStatusWidget"] { display: none !important; }
-.stDeployButton                { display: none !important; }
-#MainMenu                      { display: none !important; }
-footer                         { display: none !important; }
-/* Sidebar style — properties panel */
+/* Ẩn các nút GitHub/Share/Deploy ở góc phải toolbar — GIỮ nút sidebar toggle */
+[data-testid="stToolbarActions"]  { display: none !important; }
+[data-testid="stDecoration"]      { display: none !important; }
+[data-testid="stStatusWidget"]    { display: none !important; }
+.stDeployButton                   { display: none !important; }
+#MainMenu                         { display: none !important; }
+footer                            { display: none !important; }
+/* ĐẢM BẢO nút mở/thu sidebar vẫn hiện */
+[data-testid="stSidebarCollapseButton"],
+[data-testid="collapsedControl"]  { display: flex   !important; visibility: visible !important; }
+/* Sidebar — dark theme properties panel */
 [data-testid="stSidebar"] > div:first-child {
-    background: #1a1a2e;
-    padding-top: 0.5rem;
+    background: #1a1a2e; padding-top: 0.4rem;
 }
 [data-testid="stSidebar"] .stMarkdown p,
-[data-testid="stSidebar"] .stMarkdown h3 { color: #ecf0f1 !important; }
-[data-testid="stSidebar"] label          { color: #bdc3c7 !important; }
-[data-testid="stSidebar"] .stMetricLabel { color: #bdc3c7 !important; }
-[data-testid="stSidebar"] .stMetricValue { color: #ecf0f1 !important; font-size: 1.05rem !important; }
+[data-testid="stSidebar"] .stMarkdown h3   { color: #ecf0f1 !important; }
+[data-testid="stSidebar"] label            { color: #bdc3c7 !important; }
+[data-testid="stSidebar"] .stMetricLabel   { color: #bdc3c7 !important; }
+[data-testid="stSidebar"] .stMetricValue   { color: #ecf0f1 !important; font-size:1.0rem !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -300,7 +303,7 @@ def show_options_dialog():
                     f"LoaiTru={res.get('tru_result',{}).get('loai_tru','?')} | "
                     f"LoaiMong={res.get('mong_result',{}).get('loai_mong','?')}"
                 )
-                st.session_state.current_tab = "BẢN VẼ KẾT CẤU"
+                st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
                 st.rerun()
 
 # =========================================================================
@@ -308,13 +311,16 @@ def show_options_dialog():
 # =========================================================================
 st.markdown('<div id="custom-ribbon-container">', unsafe_allow_html=True)
 
-ribbon_options = ["THUYẾT MINH", "BẢN VẼ KẾT CẤU", "BẢN VẼ KỸ THUẬT"]
-default_idx = ribbon_options.index(st.session_state.current_tab) if st.session_state.current_tab in ribbon_options else 0
+ribbon_options = ["THUYẾT MINH", "BẢN VẼ KỸ THUẬT"]
+# Map old tab names về mới
+if st.session_state.current_tab == "BẢN VẼ KẾT CẤU":
+    st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
+default_idx = ribbon_options.index(st.session_state.current_tab) if st.session_state.current_tab in ribbon_options else 1
 
 selected_ribbon = option_menu(
     menu_title=None,
     options=ribbon_options,
-    icons=["house", "rulers", "layout-text-window-reverse"],
+    icons=["house", "rulers"],
     menu_icon="cast",
     default_index=default_idx,
     orientation="horizontal",
@@ -672,54 +678,127 @@ if selected_ribbon == "THUYẾT MINH":
     st.markdown("---")
     st.caption("Kết quả mang tính tham khảo sơ bộ. Cần kiểm tra và điều chỉnh theo tiêu chuẩn TCVN hiện hành.")
 
-# =========================================================================
-# TAB BẢN VẼ KẾT CẤU — 2D & 3D từ kết quả tính toán
-# =========================================================================
-elif selected_ribbon == "BẢN VẼ KẾT CẤU":
-    d = st.session_state.design_data
-    kcn  = d.get('kcn_result') or d.get('ai_result')
-    tru  = d.get('tru_result')
+elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
+    d   = st.session_state.design_data
+    kcn = d.get("kcn_result") or d.get("ai_result")
+    tru = d.get("tru_result")
+    has_ai = kcn is not None
 
-    if kcn is None:
-        st.info("⚙️ Chưa có kết quả tính toán. Vào **⚙️ OPTIONS** nhập số liệu và chạy AI trước.")
+    # ── Khai báo địa hình (luôn hiển thị) ──────────────────────────────
+    with st.expander(
+        "📥 Khai báo dữ liệu địa hình (file .NTD + bảng tọa độ VN-2000)",
+        expanded=(not has_ai or "df_geology" not in st.session_state),
+    ):
+        st.caption("Nạp file khảo sát để bản vẽ kết cấu tích hợp địa hình thực đo.")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            file_khao_sat = st.file_uploader(
+                "📂 File .NTD (trắc dọc – trắc ngang)", type=["ntd"], key="ntd_up"
+            )
+        with _c2:
+            file_toa_do = st.file_uploader(
+                "📍 Tọa độ tim tuyến (.CSV / .XLSX)", type=["csv","xlsx"], key="coord_up"
+            )
+        if file_khao_sat and file_toa_do:
+            with st.spinner("⚡ Đang đồng bộ tọa độ VN-2000..."):
+                df_ntd   = TV.parse_ntd_file(file_khao_sat)
+                df_coord = TV.parse_coordinate_file(file_toa_do)
+            if df_coord is not None and not df_ntd.empty:
+                _dg = TV.convert_to_vn2000(df_ntd, df_coord)
+                if not _dg.empty:
+                    st.session_state.df_geology = _dg
+                    _tl = (_dg[_dg["Offset"] == 0][["Lý trình","Z"]]
+                           .drop_duplicates("Lý trình").sort_values("Lý trình"))
+                    st.session_state.df_tim_line = _tl
+                    st.success(f"✅ Đã đồng bộ {len(_dg)} điểm địa hình theo VN-2000!")
+
+    st.markdown("---")
+
+    if not has_ai:
+        st.info("⚙️ Nhấn **KHAI BÁO SỐ LIỆU** trong thanh bên trái để nhập thông số và chạy AI.")
     else:
-        st.title("📐 Bản vẽ Kết cấu Cầu (từ kết quả AI)")
+        _df_geo  = st.session_state.get("df_geology", None)
+        _df_tim  = st.session_state.get("df_tim_line", None)
+        has_terr = _df_geo is not None and not _df_geo.empty
+
+        # Thông tin brief
+        _geo_d = d.get("geo_logic", {})
         st.caption(
-            f"Sơ đồ nhịp: **{kcn['tong_so_nhip']} × {kcn['chieu_dai']}m** ({kcn['loai_dam']}) | "
-            f"Trụ: **{tru.get('loai_tru','—') if tru else '—'}** | "
-            f"H_trụ: **{d.get('H_tru_est',0):.1f}m** | "
-            f"L_cầu: **{d.get('geo_logic',{}).get('L_cau',0):.1f}m**"
+            f"📊 L_cầu=**{_geo_d.get('L_cau',0):.1f}m** | "
+            f"{kcn.get('tong_so_nhip','?')}×{kcn.get('chieu_dai','?')}m "
+            f"**{kcn.get('loai_dam','').upper()}** | "
+            f"B_tk={d.get('B',0):.1f}m × H_tk={d.get('H',0):.2f}m | "
+            + ("🗺️ Địa hình: đã nạp" if has_terr else "🗺️ Địa hình: chưa nạp (tải ở trên)")
         )
 
-        # Lấy địa hình đã nạp (nếu có)
-        _df_tim = st.session_state.get('df_tim_line', None)
-        _has_terrain = (_df_tim is not None and not _df_tim.empty)
-
-        tab_nhip, tab_mcn, tab_tru, tab_3d = st.tabs([
-            "📏 Sơ đồ nhịp" + (" 🗺️" if _has_terrain else ""),
-            "📐 Mặt cắt ngang",
-            "🏛️ Trụ cầu",
-            "🧱 Mô hình 3D" + (" 🗺️" if _has_terrain else ""),
+        # ── Sub-tabs ────────────────────────────────────────────────────
+        tab_3d, tab_nhip, tab_mcn, tab_tru, tab_dia_chat, tab_tru3d, tab_export = st.tabs([
+            "🌐 3D Tổng hợp"   + (" 🗺️" if has_terr else " (sơ đồ)"),
+            "📏 Sơ đồ nhịp"   + (" 🗺️" if has_terr else ""),
+            "📐 MCN điển hình",
+            "🏛️ Trụ cầu 2D",
+            "🪨 Địa chất",
+            "🏗️ Trụ 3D tham số",
+            "📤 Xuất bản vẽ",
         ])
 
-        with tab_nhip:
-            if _has_terrain:
-                st.success("🗺️ Đang hiển thị kèm đường địa hình thực đo theo tim tuyến")
+        # ── TAB 1: 3D Tổng hợp ─────────────────────────────────────────
+        with tab_3d:
+            if has_terr:
+                st.success("🗺️ Kết cấu cầu được overlay lên mô hình địa hình thực đo VN-2000")
+                col_o1, col_o2, col_o3 = st.columns(3)
+                with col_o1:
+                    che_do_view = st.selectbox("🎨 Chế độ địa hình:",
+                        ["Bề mặt mịn","Đường đồng mức","Lưới tam giác"], key="cd3d")
+                with col_o2:
+                    he_so_z = st.slider("📐 Phóng đại Z:", 0.05, 3.00, 0.50, 0.05, key="hsz3d")
+                with col_o3:
+                    do_min_view = st.select_slider("✨ Mịn hoá:",
+                        options=[1,3,5,7], value=3, key="dm3d")
+                try:
+                    _fig_t, mx, my, mz = TV.ve_dia_hinh_3d(
+                        _df_geo, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view
+                    )
+                    if _fig_t:
+                        BVK.add_bridge_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
+                        st.plotly_chart(_fig_t, use_container_width=True,
+                                        config={"displayModeBar": True})
+                        st.caption("Cầu (màu xám/nâu) được đặt đúng trên địa hình VN-2000. "
+                                   "Kéo chuột xoay • Scroll zoom • Shift+drag pan.")
+                    else:
+                        st.error("Không tạo được mô hình địa hình.")
+                except Exception as _e:
+                    st.error(f"Lỗi 3D tổng hợp: {_e}")
             else:
-                st.info("💡 Nạp file khảo sát tại **BẢN VẼ KỸ THUẬT** để hiển thị địa hình thực đo")
+                st.info("📌 Nạp file địa hình ở trên để xem kết cấu tích hợp địa hình thực đo. "
+                        "Hiện đang hiển thị mô hình sơ đồ cầu.")
+                try:
+                    fig_3d = BVK.ve_cau_3d(d, df_tim_line=None)
+                    st.plotly_chart(fig_3d, use_container_width=True,
+                                    config={"scrollZoom": True, "displayModeBar": True})
+                except Exception as _e:
+                    st.error(f"Lỗi vẽ 3D: {_e}")
+
+        # ── TAB 2: Sơ đồ nhịp ──────────────────────────────────────────
+        with tab_nhip:
+            if has_terr:
+                st.success("🗺️ Hiển thị đường địa hình thực đo theo tim tuyến")
+            else:
+                st.info("💡 Nạp file địa hình để hiển thị đường địa hình thực đo phía dưới cầu")
             try:
                 fig_nhip = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim)
                 st.plotly_chart(fig_nhip, use_container_width=True,
                                 config={"scrollZoom": True, "displayModeBar": True})
-                geo = d.get('geo_logic', {})
+                _g = d.get("geo_logic", {})
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Chiều dài cầu", f"{geo.get('L_cau',0):.1f} m")
-                c2.metric("Số nhịp", kcn['tong_so_nhip'])
-                c3.metric("L nhịp", f"{kcn['chieu_dai']} m")
-                c4.metric("Đáy dầm", f"{d.get('cao_day_dam',0):.3f} m")
-            except Exception as e:
-                st.error(f"Lỗi vẽ sơ đồ nhịp: {e}")
+                c1.metric("Chiều dài cầu", f"{_g.get('L_cau',0):.1f} m")
+                c2.metric("Số nhịp", kcn["tong_so_nhip"])
+                c3.metric("L nhịp điển hình", f"{kcn['chieu_dai']} m")
+                c4.metric("Cao độ đáy dầm", f"{d.get('cao_day_dam',0):.3f} m")
+            except Exception as _e:
+                st.error(f"Lỗi vẽ sơ đồ nhịp: {_e}")
 
+        # ── TAB 3: MCN ────────────────────────────────────────────────
         with tab_mcn:
             st.markdown("##### Mặt cắt ngang điển hình — đầy đủ cấu tạo")
             try:
@@ -728,264 +807,171 @@ elif selected_ribbon == "BẢN VẼ KẾT CẤU":
                                 config={"scrollZoom": True, "displayModeBar": True})
                 c1, c2, c3, c4 = st.columns(4)
                 c1.metric("Bề rộng cầu", f"{d.get('bc',12):.1f} m")
-                c2.metric("Số dầm", kcn.get('so_luong_dam', '—'))
+                c2.metric("Số dầm", kcn.get("so_luong_dam","—"))
                 c3.metric("Khoảng cách tim", f"{kcn.get('khoang_cach_dam',2):.2f} m")
                 c4.metric("Chiều dày bản", f"{d.get('t_ban_mm',200)} mm")
-            except Exception as e:
-                st.error(f"Lỗi vẽ MCN: {e}")
+            except Exception as _e:
+                st.error(f"Lỗi vẽ MCN: {_e}")
 
+        # ── TAB 4: Trụ cầu 2D ─────────────────────────────────────────
         with tab_tru:
             st.markdown("##### Mặt đứng trụ cầu — đặt ngoài tĩnh không")
             try:
                 fig_tru = BVK.ve_mat_dung_tru_2d(d)
                 st.plotly_chart(fig_tru, use_container_width=True,
                                 config={"scrollZoom": True, "displayModeBar": True})
-                mong = d.get('mong_result', {})
+                _mg = d.get("mong_result", {})
                 c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Chiều cao trụ", f"{d.get('H_tru_est',0):.1f} m")
-                c2.metric("Loại trụ", tru.get('loai_tru', '—') if tru else '—')
-                c3.metric("Loại móng", mong.get('loai_mong', '—') if mong else '—')
-                c4.metric("Đường kính cọc", mong.get('D_coc_chon_txt', '—') if mong else '—')
-            except Exception as e:
-                st.error(f"Lỗi vẽ trụ: {e}")
+                c1.metric("H trụ", f"{d.get('H_tru_est',0):.1f} m")
+                c2.metric("Loại trụ", tru.get("loai_tru","—") if tru else "—")
+                c3.metric("Loại móng", _mg.get("loai_mong","—") if _mg else "—")
+                c4.metric("Ø cọc", _mg.get("D_coc_chon_txt","—") if _mg else "—")
+            except Exception as _e:
+                st.error(f"Lỗi vẽ trụ: {_e}")
 
-        with tab_3d:
-            if _has_terrain:
-                st.success("🗺️ Mô hình 3D kết hợp kết cấu cầu + địa hình thực đo")
+        # ── TAB 5: Địa chất & Địa hình chi tiết ───────────────────────
+        with tab_dia_chat:
+            if not has_terr:
+                st.info("Nạp file địa hình ở trên để xem mô hình địa chất.")
             else:
-                st.markdown("##### Mô hình 3D kết cấu cầu (tương tác: xoay / zoom)")
-            try:
-                fig_3d = BVK.ve_cau_3d(d, df_tim_line=_df_tim)
-                st.plotly_chart(fig_3d, use_container_width=True,
-                                config={"scrollZoom": True, "displayModeBar": True})
-                st.caption(
-                    "Kéo chuột để xoay • Lăn bánh xe để zoom • Shift+kéo để pan. "
-                    + ("Địa hình thực đo được overlay theo tim tuyến khảo sát."
-                       if _has_terrain else
-                       "Địa hình sơ bộ (mặt nước MNCN). Nạp file khảo sát để có địa hình thực đo.")
-                )
-            except Exception as e:
-                st.error(f"Lỗi vẽ 3D: {e}")
-
-elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
-    
-    st.markdown("##### 📥 Nạp Cơ sở dữ liệu Khảo sát Địa hình Thực địa")
-    file_khao_sat = st.file_uploader("📂 1. Kéo và thả file .NTD trắc dọc trắc ngang tại đây", type=["ntd"])
-    file_toa_do = st.file_uploader("📍 2. Kéo và thả bảng tọa độ tim thực tế (.CSV hoặc .XLSX) tại đây", type=["csv", "xlsx"])
-    st.markdown("---")
-    
-    if file_khao_sat is not None and file_toa_do is not None:
-        df_ntd = TV.parse_ntd_file(file_khao_sat)
-        df_coord = TV.parse_coordinate_file(file_toa_do)
-        
-        if df_coord is not None and not df_ntd.empty:
-            df_geology = TV.convert_to_vn2000(df_ntd, df_coord)
-            
-            if not df_geology.empty:
-                st.success(f"⚡ Hệ thống đã đồng bộ thành công {len(df_geology)} điểm mia không gian theo tọa độ tim thực tế VN-2000!")
-                st.session_state.df_geology = df_geology 
-
-                tab_dia_hinh_3d, tab_trac_doc, tab_tru_3d, tab_mcn_draw = st.tabs([
-                    "🏔️ Mô hình Địa hình 3D",
-                    "📊 Bản vẽ Trắc dọc toàn cầu (Full View)", 
-                    "🏗️ Mô hình Trụ cầu 3D",
-                    "📐 Bản vẽ Mặt cắt ngang điển hình"
-                ])
-                
-                with tab_dia_hinh_3d:
-                    col_opt1, col_opt2, col_opt3 = st.columns(3)
-                    with col_opt1:
-                        che_do_view = st.selectbox(
-                            "🎨 Chế độ hiển thị địa hình:", 
-                            ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"]
-                        )
-                    with col_opt2:
-                        he_so_z = st.slider("📐 Phóng đại trục đứng (Nhìn rõ lòng sông):", 0.05, 3.00, 0.50, step=0.05)
-                    with col_opt3:
-                        do_min_view = st.select_slider(
-                            "✨ Bộ lọc mịn khử gồ ghề (Rolling Smooth):", 
-                            options=[1, 3, 5, 7], 
-                            value=3
-                        )
+                try:
+                    st.subheader("📊 Mô hình Địa hình 3D chi tiết")
+                    col_d1, col_d2, col_d3 = st.columns(3)
+                    with col_d1:
+                        _che = st.selectbox("Chế độ:", ["Bề mặt mịn","Đường đồng mức","Lưới tam giác"], key="dccd")
+                    with col_d2:
+                        _hz  = st.slider("Phóng đại Z:", 0.05, 3.0, 0.5, 0.05, key="dchz")
+                    with col_d3:
+                        _dm  = st.select_slider("Mịn hoá:", [1,3,5,7], 3, key="dcdm")
+                    _ftmp, _, _, _ = TV.ve_dia_hinh_3d(_df_geo, he_so_z=_hz, che_do=_che, do_min=_dm)
 
                     st.markdown("---")
-                    st.subheader("📊 Tích hợp Bản mô phỏng Địa chất Công trình chuyên sâu")
-                    file_excel_dc = st.file_uploader("Tải lên file Excel số liệu địa chất trọn gói ba sheet:", type=['xlsx'])
-
+                    st.subheader("📊 Tích hợp Địa chất Công trình")
+                    file_excel_dc = st.file_uploader("Tải file Excel địa chất (3 sheet):", type=["xlsx"], key="dc_ex")
                     df_hk, df_layers, df_spt = None, None, None
                     hien_mat_lop, hien_khoi_lop, do_trong_dh = True, False, 1.0
-
-                    if file_excel_dc is not None:
-                        with st.spinner("🔍 Đang phân tích dữ liệu địa chất..."):
+                    if file_excel_dc:
+                        with st.spinner("Đang phân tích địa chất..."):
                             df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
                         if df_hk is not None and not df_hk.empty:
-                            st.success(f"🎉 Hệ thống định vị thành công {len(df_hk)} hố khảo sát!")
-                            col_dc1, col_dc2, col_dc3 = st.columns(3)
-                            with col_dc1:
-                                hien_mat_lop = st.checkbox("🪨 Hiển thị mặt phẳng lớp đất", value=True)
-                            with col_dc2:
-                                hien_khoi_lop = st.checkbox("📦 Hiển thị khối lớp đất", value=False)
-                            with col_dc3:
-                                do_trong_dh = st.slider("Độ trong suốt địa hình:", 0.35, 1.0, 0.72, step=0.05)
-                        else:
-                            st.warning("⚠️ Dữ liệu địa chất không hợp lệ hoặc không tìm thấy cột tọa độ. Mô hình sẽ chỉ hiển thị địa hình.")
-
-                    fig_3d, mx, my, mz = TV.ve_dia_hinh_3d(
-                        df_geology, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view
-                    )
-
-                    if fig_3d is None:
-                        st.error("❌ Không thể tạo mô hình 3D từ dữ liệu khảo sát. Hãy kiểm tra lại file NTD và bảng tọa độ.")
-                    else:
+                            st.success(f"✅ Định vị {len(df_hk)} hố khảo sát!")
+                            cdc1, cdc2, cdc3 = st.columns(3)
+                            with cdc1:
+                                hien_mat_lop = st.checkbox("Mặt phẳng lớp đất", True)
+                            with cdc2:
+                                hien_khoi_lop = st.checkbox("Khối lớp đất", False)
+                            with cdc3:
+                                do_trong_dh = st.slider("Độ trong suốt:", 0.35, 1.0, 0.72, 0.05)
+                    if _ftmp:
                         if df_hk is not None and not df_hk.empty:
-                            fig_3d = TV.dap_them_ket_cau_dia_chat_3d(
-                                fig_3d, df_hk, df_layers, df_spt, mx, my, mz, he_so_z=he_so_z,
-                                hien_mat_phang_lop=hien_mat_lop, hien_khoi_lop=hien_khoi_lop,
+                            _ftmp = TV.dap_them_ket_cau_dia_chat_3d(
+                                _ftmp, df_hk, df_layers, df_spt,
+                                _, _, _,
+                                he_so_z=_hz,
+                                hien_mat_phang_lop=hien_mat_lop,
+                                hien_khoi_lop=hien_khoi_lop,
                                 do_trong_dia_hinh=do_trong_dh if (hien_mat_lop or hien_khoi_lop) else 1.0
                             )
-                        st.plotly_chart(fig_3d, use_container_width=True, config={'renderWorldCopies': False, 'displayModeBar': True})
-                                # Sau khi vẽ xong mô hình
-                if fig_3d is not None:
-                    col_exp1, col_exp2 = st.columns([1, 3])
-                    with col_exp1:
-                        if st.button("📤 Xuất địa hình ra IFC", key="export_ifc_terrain"):
-                            with st.spinner("Đang xuất file IFC..."):
-                                ifc_path = "terrain_output.ifc"
-                                success = TV.export_terrain_to_ifc(mx, my, mz, ifc_path, name="DiaHinh_KhaoSat")
-                                if success:
-                                    with open(ifc_path, "rb") as f:
-                                        st.download_button("⬇️ Tải file IFC", f, file_name="terrain.ifc", mime="application/octet-stream")
-                                    st.success("Xuất IFC thành công!")
-                                else:
-                                    st.error("Xuất IFC thất bại. Kiểm tra lại cài đặt ifcopenshell.")
-                with tab_trac_doc:
-                    design = st.session_state.design_data
-                    tim_line = None
-                    if 'df_geology' in st.session_state:
-                        df_geo = st.session_state.df_geology
-                        tim_line = df_geo[df_geo['Offset'] == 0][['Lý trình', 'Z']].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
-                        # Lưu tim tuyến vào session_state để các tab khác dùng
-                        st.session_state.df_tim_line = tim_line
-                    if tim_line is not None and not tim_line.empty and 'geo_logic' in design:
-                        try:
-                            fig_td = PLOT.ve_trac_doc_cau(design, tim_line)
-                            if fig_td:
-                                st.plotly_chart(fig_td, use_container_width=True)
-                            else:
-                                st.info("Không thể tạo bản vẽ trắc dọc.")
-                        except Exception as e:
-                            st.error(f"Lỗi khi vẽ trắc dọc: {e}")
-                    else:
-                        st.warning("⚠️ Chưa có dữ liệu tim tuyến hoặc chưa chạy OPTIONS. Vui lòng tải file khảo sát và cập nhật số liệu.")
+                        st.plotly_chart(_ftmp, use_container_width=True,
+                                        config={"displayModeBar": True})
+                except Exception as _e:
+                    st.error(f"Lỗi địa chất: {_e}")
 
-                    # ── Export DXF ──────────────────────────────────────────
-                    st.markdown("---")
-                    st.markdown("##### 📤 Xuất bản vẽ kỹ thuật")
-                    exp_cols = st.columns(3)
-                    with exp_cols[0]:
-                        if st.button("⬇️ DXF Trắc dọc", use_container_width=True):
-                            try:
-                                dxf_bytes = EXP.export_trac_doc_dxf(st.session_state.design_data)
-                                st.download_button("💾 Tải file DXF", dxf_bytes,
-                                                   file_name="trac_doc_cau.dxf",
-                                                   mime="application/octet-stream",
-                                                   key="dl_trac_doc")
-                            except Exception as ex:
-                                st.error(f"Lỗi xuất DXF: {ex}")
-                    with exp_cols[1]:
-                        if st.button("⬇️ DXF Mặt cắt ngang", use_container_width=True):
-                            try:
-                                dxf_bytes = EXP.export_mcn_dxf(st.session_state.design_data)
-                                st.download_button("💾 Tải file DXF", dxf_bytes,
-                                                   file_name="mat_cat_ngang.dxf",
-                                                   mime="application/octet-stream",
-                                                   key="dl_mcn")
-                            except Exception as ex:
-                                st.error(f"Lỗi xuất DXF: {ex}")
-                    with exp_cols[2]:
-                        if st.button("⬇️ IFC Kết cấu toàn cầu", use_container_width=True):
-                            try:
-                                ifc_bytes = EXP.export_bridge_ifc(st.session_state.design_data)
-                                st.download_button("💾 Tải file IFC", ifc_bytes,
-                                                   file_name="bridge_structural.ifc",
-                                                   mime="application/octet-stream",
-                                                   key="dl_bridge_ifc")
-                            except Exception as ex:
-                                st.error(f"Lỗi xuất IFC: {ex}")
-                
-                with tab_tru_3d:
-                    st.subheader("🏗️ Cấu hình Kích thước Hình học Trụ cầu Tham số hóa")
-                    # Nhập thông số theo đúng tên biến của hàm create_pier
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        H = st.number_input("Chiều cao thân trụ (m)", value=5.0, step=0.5, key="h_than")
-                        W = st.number_input("Chiều rộng thân trụ - dọc cầu (m)", value=1.5, step=0.1, key="w_than")
-                        L = st.number_input("Chiều dài thân trụ - ngang cầu (m)", value=3.0, step=0.1, key="l_than")
-                        top_H = st.number_input("Chiều cao đỉnh trụ (m)", value=0.5, step=0.1, key="top_h")
-                        top_W = st.number_input("Chiều rộng đỉnh trụ (m)", value=2.0, step=0.1, key="top_w")
-                    with c2:
-                        base_H = st.number_input("Chiều cao bệ trụ (m)", value=1.0, step=0.1, key="base_h")
-                        base_W = st.number_input("Chiều rộng bệ trụ (m)", value=2.5, step=0.1, key="base_w")
-                        base_L = st.number_input("Chiều dài bệ trụ (m)", value=4.0, step=0.1, key="base_l")
-                    
-                    btn_cols = st.columns([2, 1, 1])
-                    with btn_cols[0]:
-                        run_3d = st.button("🚀 Tạo mô hình trụ 3D", use_container_width=True)
-                    with btn_cols[1]:
-                        if st.button("⬇️ DXF bản vẽ trụ", use_container_width=True):
-                            try:
-                                dxf_bytes = EXP.export_tru_dxf(st.session_state.design_data)
-                                st.download_button("💾 Tải DXF", dxf_bytes,
-                                                   file_name="ban_ve_tru.dxf",
-                                                   mime="application/octet-stream",
-                                                   key="dl_tru_dxf")
-                            except Exception as ex:
-                                st.error(f"Lỗi: {ex}")
-                    with btn_cols[2]:
-                        if st.button("⬇️ IFC model trụ", use_container_width=True):
-                            try:
-                                ifc_bytes = EXP.export_pier_ifc(st.session_state.design_data)
-                                st.download_button("💾 Tải IFC", ifc_bytes,
-                                                   file_name="pier_model.ifc",
-                                                   mime="application/octet-stream",
-                                                   key="dl_pier_ifc")
-                            except Exception as ex:
-                                st.error(f"Lỗi: {ex}")
-
-                    if run_3d:
-                        with st.spinner("Đang tạo mô hình trụ từ trimesh..."):
-                            pier = TC.create_pier(H, W, L, top_W, top_H, base_W, base_H, base_L)
-                            vertices, faces = TC.trimesh_to_plotly_mesh(pier)
-                            fig_pier = go.Figure(data=[go.Mesh3d(
-                                x=vertices[:,0], y=vertices[:,1], z=vertices[:,2],
-                                i=faces[:,0], j=faces[:,1], k=faces[:,2],
-                                color='lightgray', opacity=0.9, flatshading=True,
-                                lighting=dict(ambient=0.5, diffuse=0.8, specular=0.5)
-                            )])
-                            fig_pier.update_layout(
-                                scene=dict(
-                                    xaxis_title="X (m)", yaxis_title="Y (m)", zaxis_title="Z (m)",
-                                    aspectmode='data'
-                                ),
-                                margin=dict(l=0, r=0, b=0, t=0),
-                                height=600,
-                                title="Mô hình trụ cầu 3D (trimesh)"
-                            )
-                            st.plotly_chart(fig_pier, use_container_width=True)
-                
-                with tab_mcn_draw:
+        # ── TAB 6: Trụ 3D tham số ─────────────────────────────────────
+        with tab_tru3d:
+            st.subheader("🏗️ Mô hình Trụ cầu 3D Tham số hóa")
+            c1, c2 = st.columns(2)
+            with c1:
+                H   = st.number_input("H thân trụ (m)",   value=5.0,  step=0.5, key="ht3")
+                W   = st.number_input("W thân (dọc) (m)", value=1.5,  step=0.1, key="wt3")
+                L   = st.number_input("L thân (ngang)(m)",value=3.0,  step=0.1, key="lt3")
+                top_H = st.number_input("H đỉnh trụ (m)", value=0.5,  step=0.1, key="tph3")
+                top_W = st.number_input("W đỉnh trụ (m)", value=2.0,  step=0.1, key="tpw3")
+            with c2:
+                base_H = st.number_input("H bệ trụ (m)",  value=1.0,  step=0.1, key="bh3")
+                base_W = st.number_input("W bệ trụ (m)",  value=2.5,  step=0.1, key="bw3")
+                base_L = st.number_input("L bệ trụ (m)",  value=4.0,  step=0.1, key="bl3")
+            btn_cols = st.columns([2,1,1])
+            with btn_cols[0]:
+                run_3d = st.button("🚀 Tạo mô hình 3D", use_container_width=True, key="run3d")
+            with btn_cols[1]:
+                if st.button("⬇️ DXF trụ", use_container_width=True, key="dxf_tru3"):
                     try:
-                        mcn_input_draw = {
-                            'bc_cau': float(st.session_state.design_data.get('bc', 12.0)),
-                            'w_lc': 0.5
-                        }
-                        fig_mn = PLOT.ve_mat_cat_ngang(mcn_input_draw)
-                        if fig_mn is not None:
-                            st.plotly_chart(fig_mn, use_container_width=True, config={'scrollZoom': True})
-                            st.subheader("📋 Cấu tạo chi tiết các lớp mặt cắt")
-                            res_mcn_show = MCN.thiet_ke_mcn_cau_web({"loai": st.session_state.design_data.get('loai_duong', 'Do thi'), "vtk": st.session_state.design_data.get('vtk', 60)})
-                            st.code(res_mcn_show.get('mo_phong', 'Chưa có sơ đồ cấu tạo.'), language="text")
-                    except Exception as e:
-                        st.error(f"Lỗi bản vẽ mặt cắt ngang: {e}")
-    else:
-        st.info("⏳ Vui lòng tải lên cả file .NTD và bảng tọa độ để hiển thị mô hình 3D và bản vẽ.")
+                        _b = EXP.export_tru_dxf(d)
+                        st.download_button("💾 DXF", _b, "ban_ve_tru.dxf",
+                                           mime="application/octet-stream", key="dl_tru3")
+                    except Exception as _ex:
+                        st.error(str(_ex))
+            with btn_cols[2]:
+                if st.button("⬇️ IFC trụ", use_container_width=True, key="ifc_tru3"):
+                    try:
+                        _b = EXP.export_pier_ifc(d)
+                        st.download_button("💾 IFC", _b, "pier.ifc",
+                                           mime="application/octet-stream", key="dl_ptru3")
+                    except Exception as _ex:
+                        st.error(str(_ex))
+            if run_3d:
+                with st.spinner("Đang tạo mô hình..."):
+                    pier = TC.create_pier(H, W, L, top_W, top_H, base_W, base_H, base_L)
+                    verts, faces = TC.trimesh_to_plotly_mesh(pier)
+                    fig_pier = go.Figure(data=[go.Mesh3d(
+                        x=verts[:,0], y=verts[:,1], z=verts[:,2],
+                        i=faces[:,0], j=faces[:,1], k=faces[:,2],
+                        color="lightgray", opacity=0.9, flatshading=True,
+                        lighting=dict(ambient=0.5, diffuse=0.8, specular=0.5)
+                    )])
+                    fig_pier.update_layout(
+                        scene=dict(xaxis_title="X (m)", yaxis_title="Y (m)", zaxis_title="Z (m)",
+                                   aspectmode="data"),
+                        height=600, margin=dict(l=0,r=0,b=0,t=30),
+                        title="Mô hình trụ 3D (trimesh)"
+                    )
+                    st.plotly_chart(fig_pier, use_container_width=True)
+
+        # ── TAB 7: Xuất bản vẽ ─────────────────────────────────────────
+        with tab_export:
+            st.subheader("📤 Xuất bản vẽ kỹ thuật")
+            exp_cols = st.columns(3)
+            with exp_cols[0]:
+                if st.button("⬇️ DXF Trắc dọc", use_container_width=True, key="xdxftd"):
+                    try:
+                        _b = EXP.export_trac_doc_dxf(d)
+                        st.download_button("💾 DXF", _b, "trac_doc.dxf",
+                                           mime="application/octet-stream", key="dl_td2")
+                    except Exception as _ex:
+                        st.error(f"Lỗi: {_ex}")
+            with exp_cols[1]:
+                if st.button("⬇️ DXF Mặt cắt ngang", use_container_width=True, key="xdxfmcn"):
+                    try:
+                        _b = EXP.export_mcn_dxf(d)
+                        st.download_button("💾 DXF", _b, "mat_cat_ngang.dxf",
+                                           mime="application/octet-stream", key="dl_mcn2")
+                    except Exception as _ex:
+                        st.error(f"Lỗi: {_ex}")
+            with exp_cols[2]:
+                if st.button("⬇️ IFC kết cấu cầu", use_container_width=True, key="xifcbr"):
+                    try:
+                        _b = EXP.export_bridge_ifc(d)
+                        st.download_button("💾 IFC", _b, "bridge.ifc",
+                                           mime="application/octet-stream", key="dl_brifc2")
+                    except Exception as _ex:
+                        st.error(f"Lỗi: {_ex}")
+            if has_terr:
+                st.markdown("---")
+                if st.button("📤 Xuất địa hình IFC", key="xifcter"):
+                    with st.spinner("Đang xuất..."):
+                        try:
+                            _fig_ex, mx, my, mz = TV.ve_dia_hinh_3d(
+                                _df_geo, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3)
+                            ifc_path = "terrain_output.ifc"
+                            ok = TV.export_terrain_to_ifc(mx, my, mz, ifc_path, "DiaHinh_KhaoSat")
+                            if ok:
+                                with open(ifc_path, "rb") as _fh:
+                                    st.download_button("⬇️ Tải IFC địa hình", _fh,
+                                                       "terrain.ifc", mime="application/octet-stream",
+                                                       key="dl_terrifc2")
+                                st.success("Xuất IFC địa hình thành công!")
+                            else:
+                                st.error("Xuất thất bại.")
+                        except Exception as _ex:
+                            st.error(f"Lỗi: {_ex}")

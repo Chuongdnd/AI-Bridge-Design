@@ -695,3 +695,120 @@ def ve_cau_3d(d, df_tim_line=None):
         paper_bgcolor="white",
     )
     return fig
+
+
+# ===========================================================================
+# 5. OVERLAY KẾT CẤU CẦU LÊN HÌNH ĐỊA HÌNH 3D THỰC ĐO
+# ===========================================================================
+def add_bridge_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
+    """
+    Thêm trace kết cấu cầu (trụ, dầm, mố) vào hình địa hình 3D thực đo.
+    Sử dụng tim tuyến (Offset=0) từ df_geology để lấy tọa độ VN-2000 thực.
+    Nếu df_geology không có cột X/Y VN-2000, bỏ qua overlay.
+    """
+    try:
+        kcn    = d.get("kcn_result") or d.get("ai_result", {})
+        geo    = d.get("geo_logic", {})
+        n_nhip = int(kcn.get("tong_so_nhip", 3))
+        H_tru  = float(d.get("H_tru_est", 5.0))
+        cao_dd = float(d.get("cao_day_dam", H_tru + 5.0))
+        H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+        t_ban  = float(d.get("t_ban_mm", 200)) / 1000.0
+        B_tk   = float(d.get("B", 20.0))
+        bc     = float(d.get("bc", 12.0))
+        L_cau  = float(geo.get("L_cau", n_nhip * float(kcn.get("chieu_dai", 40))))
+        x0     = float(geo.get("x_mo_trai", -L_cau / 2))
+        x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
+        x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
+
+        # ── Xác định tên cột ─────────────────────────────────────────────
+        lt_col  = next((c for c in df_geology.columns
+                        if 'ý trình' in c or c.lower() == 'ly_trinh'), None)
+        x_col   = next((c for c in df_geology.columns
+                        if c in ['X', 'Easting', 'E', 'VN2000_X']), None)
+        y_col   = next((c for c in df_geology.columns
+                        if c in ['Y', 'Northing', 'N', 'VN2000_Y']), None)
+        off_col = next((c for c in df_geology.columns
+                        if 'ffset' in c or c.lower() == 'offset'), None)
+
+        if not (lt_col and x_col and y_col and off_col):
+            return  # Thiếu cột VN-2000 → bỏ qua
+
+        # ── Tim tuyến trong VN-2000 ───────────────────────────────────────
+        df_cl = (df_geology[df_geology[off_col] == 0]
+                 [[lt_col, x_col, y_col, 'Z']]
+                 .drop_duplicates(lt_col)
+                 .sort_values(lt_col))
+        if df_cl.empty:
+            return
+
+        lt_v  = df_cl[lt_col].values
+        vx_v  = df_cl[x_col].values
+        vy_v  = df_cl[y_col].values
+        vz_v  = df_cl['Z'].values
+
+        def _ixy(s):
+            return (float(np.interp(s, lt_v, vx_v)),
+                    float(np.interp(s, lt_v, vy_v)),
+                    float(np.interp(s, lt_v, vz_v)))
+
+        # ── Cao độ (áp he_so_z để khớp địa hình) ────────────────────────
+        z_deck = (cao_dd + H_dam + t_ban) * he_so_z
+        z_cap  = cao_dd * he_so_z
+        z_sh_b = (cao_dd - 0.80 - H_tru) * he_so_z
+        z_be_b = (cao_dd - 0.80 - H_tru - 1.50) * he_so_z
+        MNCN   = float(d.get("MNCN", 3.5)) * he_so_z
+        H_tk   = float(d.get("H", 3.0)) * he_so_z
+
+        piers = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
+
+        # ── Trụ — đường đứng dày ─────────────────────────────────────────
+        for i, xt in enumerate(piers):
+            px, py, _ = _ixy(xt)
+            fig.add_trace(go.Scatter3d(
+                x=[px, px, px, px], y=[py, py, py, py],
+                z=[z_be_b, z_sh_b, z_cap, z_deck],
+                mode="lines",
+                line=dict(color="#7f8c8d", width=12),
+                name="Trụ cầu" if i == 0 else "",
+                showlegend=(i == 0),
+            ))
+
+        # ── Mố trái / phải ────────────────────────────────────────────────
+        for xm, nm in [(x0, "Mố trái"), (x_end, "Mố phải")]:
+            px, py, _ = _ixy(xm)
+            fig.add_trace(go.Scatter3d(
+                x=[px, px], y=[py, py],
+                z=[z_be_b, z_deck],
+                mode="lines",
+                line=dict(color="#c0a06b", width=16),
+                name=nm, showlegend=(nm == "Mố trái"),
+            ))
+
+        # ── Dải mặt cầu dọc tim tuyến ────────────────────────────────────
+        s_pts = np.linspace(x0, x_end, min(60, len(lt_v)))
+        dX = [_ixy(s)[0] for s in s_pts]
+        dY = [_ixy(s)[1] for s in s_pts]
+        fig.add_trace(go.Scatter3d(
+            x=dX, y=dY, z=[z_deck] * len(dX),
+            mode="lines",
+            line=dict(color="#bdc3c7", width=8),
+            name="Mặt cầu (cầu AI)",
+            showlegend=True,
+        ))
+
+        # ── Tĩnh không (đường đỏ) ────────────────────────────────────────
+        pxL, pyL, _ = _ixy(x_tim - B_tk / 2)
+        pxR, pyR, _ = _ixy(x_tim + B_tk / 2)
+        for z_tk in [MNCN, MNCN + H_tk]:
+            fig.add_trace(go.Scatter3d(
+                x=[pxL, pxR], y=[pyL, pyR], z=[z_tk, z_tk],
+                mode="lines",
+                line=dict(color="#e74c3c", width=5, dash="dot"),
+                name="Tĩnh không" if z_tk == MNCN else "",
+                showlegend=(z_tk == MNCN),
+            ))
+
+    except Exception as exc:
+        import traceback
+        print(f"[add_bridge_to_terrain_fig] Lỗi: {exc}\n{traceback.format_exc()}")
