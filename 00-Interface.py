@@ -130,7 +130,6 @@ def show_options_dialog():
 
     with sec_in2:
         st.markdown("**Số liệu cao độ thủy văn (m)**")
-        h_tn_tb = st.number_input("Cao độ tự nhiên trung bình:", value=st.session_state.design_data.get('h_tn_tb', 2.15), format="%.3f")
         # Gợi ý từ terrain đã nạp (nếu có)
         _lt_min = _lt_max = None
         if 'df_tim_line' in st.session_state and st.session_state.df_tim_line is not None:
@@ -147,6 +146,25 @@ def show_options_dialog():
             step=1.0, format="%.2f", key="x_tim_clearance",
             help="Lý trình điểm tim cầu vượt qua sông/kênh. Phải nằm trong phạm vi lý trình file khảo sát."
         )
+        # Cao độ tự nhiên tính tự động từ địa hình tại vùng tim cầu ±80m
+        _df_tl = st.session_state.get('df_tim_line', None)
+        if _df_tl is not None and not _df_tl.empty:
+            _lt_col_t = next((c for c in _df_tl.columns if 'ý trình' in c or c.lower()=='ly_trinh'), None)
+            _z_col_t  = next((c for c in _df_tl.columns if c.upper() == 'Z'), None)
+            if _lt_col_t and _z_col_t:
+                _mask_t = (
+                    (_df_tl[_lt_col_t] >= x_tim_clearance - 80) &
+                    (_df_tl[_lt_col_t] <= x_tim_clearance + 80)
+                )
+                _sub_t = _df_tl[_mask_t]
+                h_tn_tb = float(_sub_t[_z_col_t].mean()) if not _sub_t.empty else float(_df_tl[_z_col_t].mean())
+                st.success(f"📐 Cao độ tự nhiên TB (từ địa hình ±80m): **{h_tn_tb:.3f} m**")
+            else:
+                h_tn_tb = st.session_state.design_data.get('h_tn_tb', 0.0)
+                st.warning("⚠️ Không tìm thấy cột cao độ Z trong dữ liệu địa hình.")
+        else:
+            h_tn_tb = st.session_state.design_data.get('h_tn_tb', 0.0)
+            st.warning("⚠️ Chưa nạp file địa hình (.NTD). Nạp file để tính cao độ tự nhiên chính xác.")
         h1  = st.number_input("Cao độ MNCN (H1%):",  value=st.session_state.design_data.get('MNCN', 3.50), format="%.3f")
         h5  = st.number_input("Cao độ MNTT (H5%):",  value=st.session_state.design_data.get('MNTT', 2.00), format="%.3f")
         h10 = st.number_input("Cao độ MNTC (H10%):", value=st.session_state.design_data.get('MNTC', 1.50), format="%.3f")
@@ -439,7 +457,7 @@ if selected_ribbon == "THUYẾT MINH":
             st.write(f"MNTT (H5%)  : {d.get('MNTT',0):.3f} m")
             st.write(f"MNTC (H10%) : {d.get('MNTC',0):.3f} m")
             st.write(f"MNTN (H98%) : {d.get('MNTN',0):.3f} m")
-            st.write(f"CĐTN trung bình: {d.get('h_tn_tb',0):.3f} m")
+            st.write(f"CĐTN (từ địa hình): {d.get('h_tn_tb',0):.3f} m")
         with c3:
             st.markdown("**Bề rộng mặt cắt**")
             st.write(f"Tĩnh không B : **{d.get('B',0):.2f} m**")
