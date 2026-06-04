@@ -717,7 +717,8 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                         _n_before = len(_fig_t.data)
                         _err_overlay = None
                         try:
-                            BVK.add_bridge_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
+                            # Gọi hàm tổng hợp đầy đủ (Digital Twin)
+                            BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
                         except Exception as _oe:
                             _err_overlay = str(_oe)
                         _n_after = len(_fig_t.data)
