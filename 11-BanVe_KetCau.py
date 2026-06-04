@@ -698,13 +698,19 @@ def ve_cau_3d(d, df_tim_line=None):
 
 
 # ===========================================================================
-# 5. OVERLAY KẾT CẤU CẦU LÊN HÌNH ĐỊA HÌNH 3D THỰC ĐO
+# 5. OVERLAY KẾT CẤU CẦU LÊN HÌNH ĐỊA HÌNH 3D THỰC ĐO (VN-2000)
 # ===========================================================================
 def add_bridge_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
     """
-    Thêm trace kết cấu cầu (trụ, dầm, mố) vào hình địa hình 3D thực đo.
-    Sử dụng tim tuyến (Offset=0) từ df_geology để lấy tọa độ VN-2000 thực.
-    Nếu df_geology không có cột X/Y VN-2000, bỏ qua overlay.
+    Thêm kết cấu cầu vào hình địa hình 3D thực đo VN-2000.
+
+    Nguyên tắc khớp tọa độ:
+    - Terrain dùng X_Real, Y_Real (VN-2000 sau offset vuông góc) và Z*he_so_z
+    - Tim cầu = tim tuyến khảo sát (Offset=0) → X_VN2000, Y_VN2000
+    - Lý trình tim tĩnh không là điểm neo chung giữa 2 mô hình
+    - Phương ngang cầu = vuông góc với Góc_Tuyến tại mỗi cọc
+
+    Columns df_geology: Lý trình, Offset, Z, X_VN2000, Y_VN2000, Góc_Tuyến, X_Real, Y_Real
     """
     try:
         kcn    = d.get("kcn_result") or d.get("ai_result", {})
@@ -721,92 +727,138 @@ def add_bridge_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
         x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
 
-        # ── Xác định tên cột ─────────────────────────────────────────────
-        lt_col  = next((c for c in df_geology.columns
-                        if 'ý trình' in c or c.lower() == 'ly_trinh'), None)
-        x_col   = next((c for c in df_geology.columns
-                        if c in ['X', 'Easting', 'E', 'VN2000_X']), None)
-        y_col   = next((c for c in df_geology.columns
-                        if c in ['Y', 'Northing', 'N', 'VN2000_Y']), None)
-        off_col = next((c for c in df_geology.columns
-                        if 'ffset' in c or c.lower() == 'offset'), None)
-
-        if not (lt_col and x_col and y_col and off_col):
-            return  # Thiếu cột VN-2000 → bỏ qua
-
-        # ── Tim tuyến trong VN-2000 ───────────────────────────────────────
-        df_cl = (df_geology[df_geology[off_col] == 0]
-                 [[lt_col, x_col, y_col, 'Z']]
-                 .drop_duplicates(lt_col)
-                 .sort_values(lt_col))
-        if df_cl.empty:
+        # ── Lấy tim tuyến VN-2000 từ df_geology ─────────────────────────
+        # Columns: Lý trình, X_VN2000, Y_VN2000, Góc_Tuyến (từ convert_to_vn2000)
+        req_cols = {'Lý trình', 'X_VN2000', 'Y_VN2000', 'Góc_Tuyến', 'Offset', 'Z'}
+        missing = req_cols - set(df_geology.columns)
+        if missing:
+            print(f"[add_bridge] Thiếu cột: {missing}. Có: {list(df_geology.columns)}")
             return
 
-        lt_v  = df_cl[lt_col].values
-        vx_v  = df_cl[x_col].values
-        vy_v  = df_cl[y_col].values
-        vz_v  = df_cl['Z'].values
+        df_cl = (df_geology[df_geology['Offset'] == 0]
+                 [['Lý trình', 'X_VN2000', 'Y_VN2000', 'Góc_Tuyến', 'Z']]
+                 .drop_duplicates('Lý trình')
+                 .sort_values('Lý trình'))
+        if df_cl.empty:
+            print("[add_bridge] Tim tuyến rỗng (Offset==0 không có dữ liệu)")
+            return
 
-        def _ixy(s):
+        lt_v   = df_cl['Lý trình'].values
+        vx_v   = df_cl['X_VN2000'].values   # X VN-2000 tim tuyến
+        vy_v   = df_cl['Y_VN2000'].values   # Y VN-2000 tim tuyến
+        goc_v  = df_cl['Góc_Tuyến'].values  # hướng tuyến (radian)
+        vz_v   = df_cl['Z'].values           # cao độ địa hình tim tuyến
+
+        def _at(s):
+            """Trả về (X_VN2000, Y_VN2000, Góc_Tuyến, Z) tại lý trình s."""
             return (float(np.interp(s, lt_v, vx_v)),
                     float(np.interp(s, lt_v, vy_v)),
+                    float(np.interp(s, lt_v, goc_v)),
                     float(np.interp(s, lt_v, vz_v)))
 
-        # ── Cao độ (áp he_so_z để khớp địa hình) ────────────────────────
-        z_deck = (cao_dd + H_dam + t_ban) * he_so_z
-        z_cap  = cao_dd * he_so_z
-        z_sh_b = (cao_dd - 0.80 - H_tru) * he_so_z
-        z_be_b = (cao_dd - 0.80 - H_tru - 1.50) * he_so_z
-        MNCN   = float(d.get("MNCN", 3.5)) * he_so_z
-        H_tk   = float(d.get("H", 3.0)) * he_so_z
+        def _vn2000(s, offset_ngang=0.0):
+            """
+            Chuyển (Lý trình s, offset ngang) → (X_Real, Y_Real) VN-2000.
+            offset_ngang > 0 = phía trái (theo quy ước), < 0 = phải.
+            Công thức giống convert_to_vn2000: vuông góc với Góc_Tuyến.
+            """
+            xc, yc, goc, _ = _at(s)
+            perp = goc + np.pi / 2           # hướng vuông góc với tim tuyến
+            xr = xc + offset_ngang * np.cos(perp)
+            yr = yc + offset_ngang * np.sin(perp)
+            return xr, yr
+
+        # ── Cao độ kết cấu (× he_so_z để khớp terrain) ──────────────────
+        hz = he_so_z
+        z_deck = (cao_dd + H_dam + t_ban) * hz
+        z_cap  =  cao_dd * hz
+        z_sh_b = (cao_dd - 0.80 - H_tru) * hz
+        z_be_b = (cao_dd - 0.80 - H_tru - 1.50) * hz
+        MNCN   =  float(d.get("MNCN", 3.5)) * hz
+        H_tk   =  float(d.get("H", 3.0)) * hz
 
         piers = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
 
-        # ── Trụ — đường đứng dày ─────────────────────────────────────────
+        # ── Trụ — đường thẳng đứng (2 nhánh: trái và phải tim) ───────────
+        W_tru = 1.2
         for i, xt in enumerate(piers):
-            px, py, _ = _ixy(xt)
+            sl = (i == 0)
+            for off in [-W_tru / 2, W_tru / 2]:
+                xr, yr = _vn2000(xt, off)
+                fig.add_trace(go.Scatter3d(
+                    x=[xr, xr, xr, xr], y=[yr, yr, yr, yr],
+                    z=[z_be_b, z_sh_b, z_cap, z_deck],
+                    mode="lines",
+                    line=dict(color="#7f8c8d", width=10),
+                    name="Trụ cầu" if (sl and off < 0) else "",
+                    showlegend=(sl and off < 0),
+                ))
+            # Xà mũ ngang
+            xrL, yrL = _vn2000(xt, -2.0)
+            xrR, yrR = _vn2000(xt,  2.0)
             fig.add_trace(go.Scatter3d(
-                x=[px, px, px, px], y=[py, py, py, py],
-                z=[z_be_b, z_sh_b, z_cap, z_deck],
-                mode="lines",
-                line=dict(color="#7f8c8d", width=12),
-                name="Trụ cầu" if i == 0 else "",
-                showlegend=(i == 0),
+                x=[xrL, xrR], y=[yrL, yrR], z=[z_cap, z_cap],
+                mode="lines", line=dict(color="#c8d6c0", width=14),
+                showlegend=False,
             ))
 
         # ── Mố trái / phải ────────────────────────────────────────────────
         for xm, nm in [(x0, "Mố trái"), (x_end, "Mố phải")]:
-            px, py, _ = _ixy(xm)
-            fig.add_trace(go.Scatter3d(
-                x=[px, px], y=[py, py],
-                z=[z_be_b, z_deck],
-                mode="lines",
-                line=dict(color="#c0a06b", width=16),
-                name=nm, showlegend=(nm == "Mố trái"),
-            ))
+            sl = (nm == "Mố trái")
+            for off in [-bc/2, bc/2]:
+                xr, yr = _vn2000(xm, off)
+                fig.add_trace(go.Scatter3d(
+                    x=[xr, xr], y=[yr, yr], z=[z_be_b, z_deck],
+                    mode="lines", line=dict(color="#c0a06b", width=14),
+                    name=nm if (sl and off < 0) else "",
+                    showlegend=(sl and off < 0),
+                ))
 
-        # ── Dải mặt cầu dọc tim tuyến ────────────────────────────────────
-        s_pts = np.linspace(x0, x_end, min(60, len(lt_v)))
-        dX = [_ixy(s)[0] for s in s_pts]
-        dY = [_ixy(s)[1] for s in s_pts]
-        fig.add_trace(go.Scatter3d(
-            x=dX, y=dY, z=[z_deck] * len(dX),
-            mode="lines",
-            line=dict(color="#bdc3c7", width=8),
-            name="Mặt cầu (cầu AI)",
-            showlegend=True,
+        # ── Bề mặt bản mặt cầu (dải rộng bc, dọc theo tim tuyến) ────────
+        n_pts = min(60, len(lt_v))
+        s_pts = np.linspace(x0, x_end, n_pts)
+
+        # 2 dãy điểm: biên trái (-bc/2) và biên phải (+bc/2)
+        X_L, Y_L, X_R, Y_R = [], [], [], []
+        for s in s_pts:
+            xl, yl = _vn2000(s, -bc/2)
+            xr, yr = _vn2000(s,  bc/2)
+            X_L.append(xl); Y_L.append(yl)
+            X_R.append(xr); Y_R.append(yr)
+
+        surf_x = np.array([X_L, X_R])   # shape (2, n_pts)
+        surf_y = np.array([Y_L, Y_R])
+        surf_z = np.full((2, n_pts), z_deck)
+
+        fig.add_trace(go.Surface(
+            x=surf_x, y=surf_y, z=surf_z,
+            colorscale=[[0, "#d5d8dc"], [1, "#d5d8dc"]],
+            opacity=0.85, showscale=False,
+            name="Bản mặt cầu",
+            hovertemplate="Mặt cầu<br>Z=%.2f m<extra></extra>" % (z_deck / hz),
         ))
 
-        # ── Tĩnh không (đường đỏ) ────────────────────────────────────────
-        pxL, pyL, _ = _ixy(x_tim - B_tk / 2)
-        pxR, pyR, _ = _ixy(x_tim + B_tk / 2)
-        for z_tk in [MNCN, MNCN + H_tk]:
+        # ── Tĩnh không — khung đỏ tại biên ──────────────────────────────
+        xL_tk = x_tim - B_tk / 2
+        xR_tk = x_tim + B_tk / 2
+        for xt_tk, side in [(xL_tk, "Biên trái TK"), (xR_tk, "Biên phải TK")]:
+            xr, yr = _vn2000(xt_tk, 0)
             fig.add_trace(go.Scatter3d(
-                x=[pxL, pxR], y=[pyL, pyR], z=[z_tk, z_tk],
-                mode="lines",
-                line=dict(color="#e74c3c", width=5, dash="dot"),
-                name="Tĩnh không" if z_tk == MNCN else "",
-                showlegend=(z_tk == MNCN),
+                x=[xr, xr], y=[yr, yr],
+                z=[MNCN, MNCN + H_tk],
+                mode="lines+markers",
+                line=dict(color="#e74c3c", width=6),
+                marker=dict(size=5, color="#e74c3c"),
+                name=side, showlegend=True,
+            ))
+        # Thanh ngang đáy tĩnh không (nối 2 biên)
+        xrL, yrL = _vn2000(xL_tk, 0)
+        xrR, yrR = _vn2000(xR_tk, 0)
+        for z_tk_level in [MNCN, MNCN + H_tk]:
+            fig.add_trace(go.Scatter3d(
+                x=[xrL, xrR], y=[yrL, yrR], z=[z_tk_level, z_tk_level],
+                mode="lines", line=dict(color="#e74c3c", width=4, dash="dot"),
+                showlegend=False,
             ))
 
     except Exception as exc:
