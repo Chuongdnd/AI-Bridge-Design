@@ -79,6 +79,7 @@ try:
     LPC  = importlib.import_module("10-LopPhu_MatCau")  # Lớp phủ mặt cầu
     BVK  = importlib.import_module("11-BanVe_KetCau")   # Bản vẽ kết cấu 2D/3D
     importlib.reload(PLOT)
+    importlib.reload(BVK)
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
     st.stop()
