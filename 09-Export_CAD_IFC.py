@@ -487,54 +487,70 @@ def export_tru_dxf(design_data) -> bytes:
 # 4 & 5. IFC — LOW-LEVEL API (version-stable, IFC4)
 # ===========================================================================
 def _new_ifc():
-    """Tạo IFC4 file với header, units và context chuẩn."""
+    """Tạo IFC4 file với header, units và context chuẩn (Revit 2023+ compatible)."""
     ifc = ifcopenshell.file(schema="IFC4")
     try:
         ifc.wrapped_data.header.file_name.name = "bridge.ifc"
         ifc.wrapped_data.header.file_name.author = ["UTH-AI Bridge Design"]
+        ifc.wrapped_data.header.file_description.description = [
+            "ViewDefinition [CoordinationView_V2.0]"
+        ]
     except Exception:
         pass
 
+    # OwnerHistory — Revit 2023+ yêu cầu bắt buộc
+    person  = ifc.createIfcPerson(None, "UTH")
+    org     = ifc.createIfcOrganization(None, "UTH")
+    p_org   = ifc.createIfcPersonAndOrganization(person, org)
+    app     = ifc.createIfcApplication(org, "1.0", "AI Bridge Design", "UTH-BIM")
+    oh      = ifc.createIfcOwnerHistory(p_org, app, None, "ADDED", None, None, None, 0)
+
     # Units: meter + radian
     unit_assignment = ifc.createIfcUnitAssignment([
-        ifc.createIfcSIUnit(None, "LENGTHUNIT",  None, "METRE"),
-        ifc.createIfcSIUnit(None, "AREAUNIT",    None, "SQUARE_METRE"),
-        ifc.createIfcSIUnit(None, "VOLUMEUNIT",  None, "CUBIC_METRE"),
+        ifc.createIfcSIUnit(None, "LENGTHUNIT",     None, "METRE"),
+        ifc.createIfcSIUnit(None, "AREAUNIT",       None, "SQUARE_METRE"),
+        ifc.createIfcSIUnit(None, "VOLUMEUNIT",     None, "CUBIC_METRE"),
         ifc.createIfcSIUnit(None, "PLANEANGLEUNIT", None, "RADIAN"),
     ])
-    project = ifc.createIfcProject(
-        ifcopenshell.guid.new(), None, "Bridge Project", None,
-        None, None, None, (unit_assignment,), None
-    )
 
     # Geometric context
-    origin_2d   = ifc.createIfcCartesianPoint([0.0, 0.0])
-    ax_2d       = ifc.createIfcAxis2Placement2D(origin_2d, None)
-    origin_3d   = ifc.createIfcCartesianPoint([0.0, 0.0, 0.0])
-    z_dir       = ifc.createIfcDirection([0.0, 0.0, 1.0])
-    x_dir       = ifc.createIfcDirection([1.0, 0.0, 0.0])
-    ax_3d       = ifc.createIfcAxis2Placement3D(origin_3d, z_dir, x_dir)
-    geo_ctx     = ifc.createIfcGeometricRepresentationContext(
+    origin_2d = ifc.createIfcCartesianPoint([0.0, 0.0])
+    ax_2d     = ifc.createIfcAxis2Placement2D(origin_2d, None)
+    origin_3d = ifc.createIfcCartesianPoint([0.0, 0.0, 0.0])
+    z_dir     = ifc.createIfcDirection([0.0, 0.0, 1.0])
+    x_dir     = ifc.createIfcDirection([1.0, 0.0, 0.0])
+    ax_3d     = ifc.createIfcAxis2Placement3D(origin_3d, z_dir, x_dir)
+    geo_ctx   = ifc.createIfcGeometricRepresentationContext(
         None, "Model", 3, 1.0e-5, ax_3d, ax_2d
     )
-    body_ctx    = ifc.createIfcGeometricRepresentationSubContext(
+    body_ctx  = ifc.createIfcGeometricRepresentationSubContext(
         "Body", "Model", None, None, None, None, geo_ctx, None, "MODEL_VIEW", None
+    )
+
+    # Project — RepresentationContexts=(geo_ctx,), UnitsInContext=unit_assignment (đã sửa thứ tự)
+    project = ifc.createIfcProject(
+        ifcopenshell.guid.new(), oh, "Bridge Project", None,
+        None, None, None, (geo_ctx,), unit_assignment
     )
 
     # Site → Building → Storey hierarchy
     site_placement = ifc.createIfcLocalPlacement(
-        None, ifc.createIfcAxis2Placement3D(origin_3d, z_dir, x_dir)
+        None, ifc.createIfcAxis2Placement3D(
+            ifc.createIfcCartesianPoint([0.0, 0.0, 0.0]),
+            ifc.createIfcDirection([0.0, 0.0, 1.0]),
+            ifc.createIfcDirection([1.0, 0.0, 0.0])
+        )
     )
-    site     = ifc.createIfcSite(ifcopenshell.guid.new(), None, "Site", None, None,
+    site     = ifc.createIfcSite(ifcopenshell.guid.new(), oh, "Site", None, None,
                                   site_placement, None, None, "ELEMENT", None, None, None, None, None)
-    building = ifc.createIfcBuilding(ifcopenshell.guid.new(), None, "Bridge", None, None,
+    building = ifc.createIfcBuilding(ifcopenshell.guid.new(), oh, "Bridge", None, None,
                                       site_placement, None, None, "ELEMENT", None, None, None)
-    storey   = ifc.createIfcBuildingStorey(ifcopenshell.guid.new(), None, "Level 0",
+    storey   = ifc.createIfcBuildingStorey(ifcopenshell.guid.new(), oh, "Level 0",
                                             None, None, site_placement, None, None, "ELEMENT", 0.0)
 
-    ifc.createIfcRelAggregates(ifcopenshell.guid.new(), None, None, None, project, [site])
-    ifc.createIfcRelAggregates(ifcopenshell.guid.new(), None, None, None, site,    [building])
-    ifc.createIfcRelAggregates(ifcopenshell.guid.new(), None, None, None, building,[storey])
+    ifc.createIfcRelAggregates(ifcopenshell.guid.new(), oh, None, None, project,  [site])
+    ifc.createIfcRelAggregates(ifcopenshell.guid.new(), oh, None, None, site,     [building])
+    ifc.createIfcRelAggregates(ifcopenshell.guid.new(), oh, None, None, building, [storey])
 
     return ifc, storey, body_ctx
 

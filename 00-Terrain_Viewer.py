@@ -609,16 +609,16 @@ def dap_them_ket_cau_dia_chat_3d(fig, df_hk, df_layers, df_spt, matrix_x, matrix
             ))
             
     return fig
-import uuid
+import uuid as _uuid_mod
 
 def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"):
     """
-    Xuất lưới địa hình ra IFC (IfcTriangulatedFaceSet) với đơn vị mét,
-    hướng mặt hướng lên trên, tương thích Revit.
+    Xuất lưới địa hình ra IFC tương thích Revit 2023+ (schema IFC4).
+    Tọa độ VN-2000 được căn giữa về gốc; vị trí thực ghi vào ObjectPlacement của IfcSite.
     """
     try:
         import ifcopenshell
-        from ifcopenshell import guid
+        from ifcopenshell import guid as ifc_guid
     except ImportError:
         st.error("Thiếu thư viện ifcopenshell. Hãy cài: pip install ifcopenshell")
         return False
@@ -628,99 +628,137 @@ def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"
         return False
 
     rows, cols = matrix_x.shape
-    vertices = []
-    idx_map = {}
-    triangles = []
 
-    # Thu thập các điểm không NaN
+    # Tọa độ VN-2000 thường rất lớn (> 500 000 m) → Revit không chấp nhận
+    # → trừ offset về gốc, ghi offset vào ObjectPlacement của IfcSite
+    x_off = float(np.nanmean(matrix_x))
+    y_off = float(np.nanmean(matrix_y))
+
+    # Xây dựng danh sách đỉnh (key = (i,j) để tránh lỗi float hash)
+    idx_grid = {}   # (i,j) → 0-based index
+    vertices  = []  # [[x-x_off, y-y_off, z], ...]
+
     for i in range(rows):
         for j in range(cols):
-            x = matrix_x[i, j]
-            y = matrix_y[i, j]
-            z = matrix_z[i, j]
-            if np.isnan(x) or np.isnan(y) or np.isnan(z):
+            xv = float(matrix_x[i, j])
+            yv = float(matrix_y[i, j])
+            zv = float(matrix_z[i, j])
+            if np.isnan(xv) or np.isnan(yv) or np.isnan(zv):
                 continue
-            key = (x, y, z)
-            if key not in idx_map:
-                idx_map[key] = len(vertices)
-                vertices.append([float(x), float(y), float(z)])
+            idx_grid[(i, j)] = len(vertices)
+            vertices.append([xv - x_off, yv - y_off, zv])
 
-    # Tạo tam giác với hướng mặt hướng lên
+    # Tạo tam giác (IFC dùng 1-based index)
+    triangles = []
     for i in range(rows - 1):
         for j in range(cols - 1):
-            p00 = (matrix_x[i,j], matrix_y[i,j], matrix_z[i,j])
-            p10 = (matrix_x[i+1,j], matrix_y[i+1,j], matrix_z[i+1,j])
-            p01 = (matrix_x[i,j+1], matrix_y[i,j+1], matrix_z[i,j+1])
-            p11 = (matrix_x[i+1,j+1], matrix_y[i+1,j+1], matrix_z[i+1,j+1])
-            if any(np.isnan(v) for v in p00 + p10 + p01 + p11):
+            corners = [(i,j), (i+1,j), (i,j+1), (i+1,j+1)]
+            if not all(c in idx_grid for c in corners):
                 continue
+            v0, v1, v2, v3 = [idx_grid[c] for c in corners]
 
-            i1 = idx_map[p00] + 1
-            i2 = idx_map[p10] + 1
-            i3 = idx_map[p01] + 1
-            i4 = idx_map[p11] + 1
+            def _tri(a, b, c):
+                pa, pb, pc = np.array(vertices[a]), np.array(vertices[b]), np.array(vertices[c])
+                normal = np.cross(pb - pa, pc - pa)
+                return [a+1, b+1, c+1] if normal[2] >= 0 else [a+1, c+1, b+1]
 
-            # Tam giác 1
-            p1 = np.array(p00)
-            p2 = np.array(p10)
-            p3 = np.array(p01)
-            normal = np.cross(p2 - p1, p3 - p1)
-            if normal[2] < 0:
-                triangles.append([i1, i3, i2])
-            else:
-                triangles.append([i1, i2, i3])
+            triangles.append(_tri(v0, v1, v2))
+            triangles.append(_tri(v1, v3, v2))
 
-            # Tam giác 2
-            p1 = np.array(p10)
-            p2 = np.array(p11)
-            p3 = np.array(p01)
-            normal = np.cross(p2 - p1, p3 - p1)
-            if normal[2] < 0:
-                triangles.append([i2, i3, i4])
-            else:
-                triangles.append([i2, i4, i3])
+    if not vertices or not triangles:
+        st.error("Không đủ dữ liệu để xuất IFC (cần ít nhất 3 điểm hợp lệ).")
+        return False
 
-    # Tạo file IFC
+    # ── Tạo file IFC4 ──────────────────────────────────────────────────────
     f = ifcopenshell.file(schema="IFC4")
+    try:
+        f.wrapped_data.header.file_name.name = str(filepath)
+        f.wrapped_data.header.file_name.author = ["UTH AI Bridge Design"]
+        f.wrapped_data.header.file_name.organization = ["UTH"]
+        f.wrapped_data.header.file_description.description = [
+            "ViewDefinition [CoordinationView_V2.0]"
+        ]
+    except Exception:
+        pass
+
+    # OwnerHistory — Revit 2023+ từ chối file thiếu mục này
+    person  = f.create_entity("IfcPerson",           Identification=None, FamilyName="UTH")
+    org     = f.create_entity("IfcOrganization",     Identification=None, Name="UTH")
+    p_org   = f.create_entity("IfcPersonAndOrganization", ThePerson=person, TheOrganization=org)
+    app     = f.create_entity("IfcApplication",
+                               ApplicationDeveloper=org, Version="1.0",
+                               ApplicationFullName="AI Bridge Design",
+                               ApplicationIdentifier="UTH-BIM")
+    oh = f.create_entity("IfcOwnerHistory",
+                          OwningUser=p_org, OwningApplication=app,
+                          ChangeAction="ADDED", CreationDate=0)
 
     # Đơn vị
-    unit_len = f.create_entity("IfcSIUnit", UnitType="LENGTHUNIT", Name="METRE")
-    unit_area = f.create_entity("IfcSIUnit", UnitType="AREAUNIT", Name="SQUARE_METRE")
-    unit_vol = f.create_entity("IfcSIUnit", UnitType="VOLUMEUNIT", Name="CUBIC_METRE")
-    f.create_entity("IfcUnitAssignment", Units=[unit_len, unit_area, unit_vol])
+    units = f.create_entity("IfcUnitAssignment", Units=[
+        f.create_entity("IfcSIUnit", UnitType="LENGTHUNIT",     Name="METRE"),
+        f.create_entity("IfcSIUnit", UnitType="AREAUNIT",       Name="SQUARE_METRE"),
+        f.create_entity("IfcSIUnit", UnitType="VOLUMEUNIT",     Name="CUBIC_METRE"),
+        f.create_entity("IfcSIUnit", UnitType="PLANEANGLEUNIT", Name="RADIAN"),
+    ])
 
-    # Project
-    proj = f.create_entity("IfcProject", GlobalId=guid.compress(uuid.uuid4().hex), Name=name)
+    # Geometric context
+    origin  = f.create_entity("IfcCartesianPoint", Coordinates=[0.0, 0.0, 0.0])
+    z_dir   = f.create_entity("IfcDirection",      DirectionRatios=[0.0, 0.0, 1.0])
+    x_dir   = f.create_entity("IfcDirection",      DirectionRatios=[1.0, 0.0, 0.0])
+    wcs     = f.create_entity("IfcAxis2Placement3D", Location=origin, Axis=z_dir, RefDirection=x_dir)
+    geo_ctx = f.create_entity("IfcGeometricRepresentationContext",
+                               ContextType="Model",
+                               CoordinateSpaceDimension=3,
+                               Precision=1.0e-5,
+                               WorldCoordinateSystem=wcs)
+    body_ctx = f.create_entity("IfcGeometricRepresentationSubContext",
+                                ContextIdentifier="Body",
+                                ContextType="Model",
+                                ParentContext=geo_ctx,
+                                TargetView="MODEL_VIEW")
 
-    # Bối cảnh hình học
-    ctx = f.create_entity("IfcGeometricRepresentationContext",
-                          ContextType="Model",
-                          CoordinateSpaceDimension=3,
-                          WorldCoordinateSystem=f.create_entity("IfcAxis2Placement3D"))
+    # IfcProject — phải có RepresentationContexts và UnitsInContext
+    proj = f.create_entity("IfcProject",
+                           GlobalId=ifc_guid.compress(_uuid_mod.uuid4().hex),
+                           OwnerHistory=oh,
+                           Name="Bridge Terrain",
+                           RepresentationContexts=[geo_ctx],
+                           UnitsInContext=units)
 
-    # Danh sách điểm
-    points = f.create_entity("IfcCartesianPointList3D", CoordList=vertices)
+    # Placement của IfcSite: đặt tại tọa độ VN-2000 thực tế
+    sp_origin = f.create_entity("IfcCartesianPoint", Coordinates=[x_off, y_off, 0.0])
+    sp_ax     = f.create_entity("IfcAxis2Placement3D",
+                                 Location=sp_origin,
+                                 Axis=f.create_entity("IfcDirection", DirectionRatios=[0.0, 0.0, 1.0]),
+                                 RefDirection=f.create_entity("IfcDirection", DirectionRatios=[1.0, 0.0, 0.0]))
+    site_pl   = f.create_entity("IfcLocalPlacement", RelativePlacement=sp_ax)
 
-    # Mặt tam giác
-    tfs = f.create_entity("IfcTriangulatedFaceSet",
-                          Coordinates=points,
-                          CoordIndex=triangles,
-                          Closed=False)
-
-    # Biểu diễn hình học
+    # Địa hình (IfcTriangulatedFaceSet)
+    pt_list = f.create_entity("IfcCartesianPointList3D", CoordList=vertices)
+    tfs     = f.create_entity("IfcTriangulatedFaceSet",
+                               Coordinates=pt_list,
+                               CoordIndex=triangles,
+                               Closed=False)
     shape_rep = f.create_entity("IfcShapeRepresentation",
-                                ContextOfItems=ctx,
-                                RepresentationType="Tessellation",
-                                Items=[tfs])
+                                 ContextOfItems=body_ctx,
+                                 RepresentationIdentifier="Body",
+                                 RepresentationType="Tessellation",
+                                 Items=[tfs])
+    prod_shape = f.create_entity("IfcProductDefinitionShape",
+                                  Representations=[shape_rep])
 
-    # Site
-    site = f.create_entity("IfcSite", GlobalId=guid.compress(uuid.uuid4().hex), Name=name)
-    site.Representation = f.create_entity("IfcProductDefinitionShape",
-                                          Representations=[shape_rep])
+    # IfcSite chứa bề mặt địa hình
+    site = f.create_entity("IfcSite",
+                           GlobalId=ifc_guid.compress(_uuid_mod.uuid4().hex),
+                           OwnerHistory=oh,
+                           Name=name,
+                           ObjectPlacement=site_pl,
+                           Representation=prod_shape,
+                           CompositionType="ELEMENT")
 
-    # Quan hệ aggregation
     f.create_entity("IfcRelAggregates",
-                    GlobalId=guid.compress(uuid.uuid4().hex),
+                    GlobalId=ifc_guid.compress(_uuid_mod.uuid4().hex),
+                    OwnerHistory=oh,
                     RelatingObject=proj,
                     RelatedObjects=[site])
 
