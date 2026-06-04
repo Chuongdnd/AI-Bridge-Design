@@ -95,30 +95,35 @@ def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=Tr
 
 
 # ===========================================================================
-# TÍNH VỊ TRÍ TRỤ — Đảm bảo KHÔNG vi phạm tĩnh không
+# TÍNH VỊ TRÍ TRỤ — Đặt NGOÀI tĩnh không với khoảng cách an toàn
 # ===========================================================================
+
+# Khoảng cách an toàn tối thiểu từ MÉP TRỤ đến BIÊN tĩnh không (TCVN 8818)
+_PIER_SAFETY = 2.0   # m  (mép trụ cách biên thông thuyền ≥ 2m)
+
 def _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk):
     """
-    Tính vị trí các trụ đảm bảo NGOÀI vùng tĩnh không [x_tim-B/2, x_tim+B/2].
+    Tính vị trí các trụ đảm bảo NGOÀI vùng tĩnh không + khoảng an toàn 2m.
 
     Quy tắc:
     - n_nhip = 1 : không có trụ
-    - n_nhip = 2 : 1 trụ tại biên tĩnh không phù hợp nhất (cân bằng nhịp)
-    - n_nhip = 3 : 2 trụ tại 2 biên tĩnh không (x_tim ± B/2)
-    - n_nhip ≥ 4 : 2 trụ tại biên + thêm trụ phân bố đều trong đoạn tiếp cận
+    - n_nhip = 2 : 1 trụ ngoài biên TK + _PIER_SAFETY
+    - n_nhip = 3 : 2 trụ tại x_tim ± (B/2 + _PIER_SAFETY)
+    - n_nhip ≥ 4 : 2 trụ tại biên + thêm trụ trong đoạn tiếp cận
 
     Returns: list[float] — x-positions của các trụ, đã sắp xếp tăng dần
     """
     if n_nhip <= 1:
         return []
 
-    xL = x_tim - B_tk / 2   # biên trái tĩnh không
-    xR = x_tim + B_tk / 2   # biên phải tĩnh không
+    # Biên tĩnh không + khoảng an toàn → vị trí TIM trụ tối thiểu
+    xL = x_tim - B_tk / 2 - _PIER_SAFETY   # trụ trái: ngoài biên trái 2m
+    xR = x_tim + B_tk / 2 + _PIER_SAFETY   # trụ phải: ngoài biên phải 2m
     L_cau = x_end - x0
 
-    # Đảm bảo biên tĩnh không nằm trong phạm vi cầu
-    xL = max(xL, x0 + L_cau * 0.05)
-    xR = min(xR, x_end - L_cau * 0.05)
+    # Không để trụ quá sát mố (giữ ≥ 6% L_cau để có nhịp tiếp cận tối thiểu)
+    xL = max(xL, x0 + L_cau * 0.06)
+    xR = min(xR, x_end - L_cau * 0.06)
 
     if n_nhip == 2:
         # 1 trụ: chọn vị trí nào cho nhịp cân bằng hơn
@@ -185,19 +190,39 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
     x_end = float(geo.get("x_mo_phai", x0 + L_cau))
     x_tim = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
 
-    # ── Vị trí trụ đặt ngoài tĩnh không ─────────────────────────────────
+    # ── Helper: lấy cao độ địa hình TN tại lý trình x ────────────────────
+    _lt_col = _z_col = None
+    _lt_arr = _z_arr = None
+    if df_tim_line is not None and not df_tim_line.empty:
+        _lt_col = next((c for c in df_tim_line.columns
+                        if 'ý trình' in c or c.lower() in ['ly_trinh', 'chainage']), None)
+        _z_col  = next((c for c in df_tim_line.columns
+                        if c.upper() in ['Z', 'CAO_DO', 'H', 'ELEVATION']), None)
+        if _lt_col and _z_col:
+            _lt_arr = df_tim_line[_lt_col].values
+            _z_arr  = df_tim_line[_z_col].values
+
+    def _tz(x):
+        """Cao độ địa hình thực tế tại lý trình x. Fallback về h_tn_tb nếu không có data."""
+        if _lt_arr is None:
+            return h_tn
+        if x < _lt_arr.min() or x > _lt_arr.max():
+            return h_tn
+        return float(np.interp(x, _lt_arr, _z_arr))
+
+    # ── Vị trí trụ đặt ngoài tĩnh không + safety ─────────────────────────
     piers    = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
     supports = [x0] + piers + [x_end]
     spans    = [(supports[i], supports[i+1]) for i in range(len(supports)-1)]
 
-    # Cao độ các cấu kiện
+    # ── Cao độ kết cấu (tuyệt đối) ───────────────────────────────────────
     z_deck   = cao_dd + H_dam + t_ban
     z_cap_t  = cao_dd
     z_cap_b  = cao_dd - 0.80
-    z_sh_b   = z_cap_b - H_tru
+    z_sh_b   = z_cap_b - H_tru       # đáy thân trụ (= đỉnh bệ cọc)
     z_be_t   = z_sh_b
-    z_be_b   = z_sh_b - 1.50
-    z_min    = min(z_be_b - 0.5, MNTN - 0.5, h_tn - 0.5)
+    z_be_b   = z_sh_b - 1.50         # đáy bệ cọc
+    z_min    = min(z_be_b - 1.0, MNTN - 0.5)
 
     W_cap = max(2.0, L_cau / n_nhip * 0.05 + 1.0)
     W_tru = 1.2
@@ -259,30 +284,77 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
         ))
 
     # ── Mố trái / phải ────────────────────────────────────────────────────
+    # Cao độ đất nền tại vị trí mố lấy từ địa hình thực tế
     for xm, side, sign in [(x0, "Trái", 1), (x_end, "Phải", -1)]:
+        z_terr_mo = _tz(xm)                      # cao độ địa hình tại mố
+        z_mo_bot  = min(z_be_b, z_terr_mo - 1.5) # bệ cọc ngầm dưới đất
+
+        # Phần ngầm (bệ cọc, cọc) — nét đứt, mờ
         _poly(fig,
             [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
-            [z_be_b, z_be_b, z_deck, z_deck],
+            [z_mo_bot, z_mo_bot, z_terr_mo, z_terr_mo],
+            "rgba(192,160,107,0.3)", _C["be_dk"],
+            "", showlegend=False, lw=1)
+
+        # Phần nổi trên mặt đất (thân mố từ terrain → deck)
+        _poly(fig,
+            [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
+            [z_terr_mo, z_terr_mo, z_deck, z_deck],
             _C["moc"], _C["be_dk"], f"Mố {side}")
 
-    # ── Trụ giữa (đặt NGOÀI tĩnh không) ──────────────────────────────────
+        # Đường địa hình tại mố (chỉ thị)
+        fig.add_annotation(
+            x=xm + sign*W_mo*0.5, y=z_terr_mo,
+            text=f"Z={z_terr_mo:.2f}m",
+            showarrow=False, font=dict(size=7, color="#27ae60"),
+            yanchor="bottom", bgcolor="rgba(255,255,255,0.7)"
+        )
+
+    # ── Trụ giữa (đặt NGOÀI tĩnh không + 2m an toàn) ─────────────────────
     for i, xt in enumerate(piers):
         sl = (i == 0)
-        # Bệ cọc
-        _poly(fig,
-            [xt-W_be, xt+W_be, xt+W_be, xt-W_be],
-            [z_be_b, z_be_b, z_be_t, z_be_t],
-            _C["be"], _C["be_dk"], "Bệ cọc" if sl else "", showlegend=sl)
-        # Thân trụ
-        _poly(fig,
-            [xt-W_tru/2, xt+W_tru/2, xt+W_tru/2, xt-W_tru/2],
-            [z_sh_b, z_sh_b, z_cap_b, z_cap_b],
-            _C["btong"], _C["btong_dk"], f"Thân trụ T{i+1}", showlegend=sl)
-        # Xà mũ
+        z_terr_tru = _tz(xt)   # cao độ địa hình tại vị trí trụ (thực tế)
+
+        # Phần NGẦM: bệ cọc + thân trụ dưới mặt đất → nét đứt mờ
+        z_underground_top = min(z_sh_b, z_terr_tru)  # thân trụ ngập đến terrain
+        if z_be_b < z_terr_tru:
+            # Bệ cọc ngầm
+            _poly(fig,
+                [xt-W_be, xt+W_be, xt+W_be, xt-W_be],
+                [z_be_b, z_be_b, min(z_be_t, z_terr_tru), min(z_be_t, z_terr_tru)],
+                "rgba(170,183,184,0.3)", _C["be_dk"],
+                "Bệ cọc (ngầm)" if sl else "", showlegend=sl, lw=1)
+            # Thân trụ ngầm (nếu có)
+            if z_sh_b < z_terr_tru:
+                _poly(fig,
+                    [xt-W_tru/2, xt+W_tru/2, xt+W_tru/2, xt-W_tru/2],
+                    [z_sh_b, z_sh_b, z_terr_tru, z_terr_tru],
+                    "rgba(200,214,192,0.3)", _C["btong_dk"],
+                    "", showlegend=False, lw=1)
+
+        # Phần NỔI: thân trụ từ terrain → đáy xà mũ
+        z_shaft_visible_bot = max(z_sh_b, z_terr_tru)
+        if z_shaft_visible_bot < z_cap_b:
+            _poly(fig,
+                [xt-W_tru/2, xt+W_tru/2, xt+W_tru/2, xt-W_tru/2],
+                [z_shaft_visible_bot, z_shaft_visible_bot, z_cap_b, z_cap_b],
+                _C["btong"], _C["btong_dk"], f"Thân trụ T{i+1}", showlegend=sl)
+
+        # Xà mũ (luôn nổi)
         _poly(fig,
             [xt-W_cap, xt+W_cap, xt+W_cap, xt-W_cap],
             [z_cap_b, z_cap_b, z_cap_t, z_cap_t],
             _C["btong"], _C["dam_dk"], "Xà mũ" if sl else "", showlegend=sl)
+
+        # Cao độ địa hình tại trụ
+        fig.add_annotation(
+            x=xt, y=z_terr_tru,
+            text=f"Z={z_terr_tru:.2f}m",
+            showarrow=True, arrowhead=2, arrowcolor="#27ae60",
+            ax=25, ay=-15,
+            font=dict(size=7, color="#27ae60"),
+            bgcolor="rgba(255,255,255,0.7)"
+        )
 
     # ── Dầm theo từng nhịp (chiều dài thực) ──────────────────────────────
     for i, (xs, xe) in enumerate(spans):
@@ -324,8 +396,19 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
            f"<b>L_cầu = {L_cau:.1f}m ({n_nhip} nhịp — {loai})</b>",
            color="#c0392b", dy=0)
     if len(piers) >= 2:
+        khoang_thong = piers[-1] - piers[0]
+        ok_str = "✓" if khoang_thong >= B_tk + 2*_PIER_SAFETY else "⚠"
         _dim_h(fig, dy_dim, piers[0], piers[-1],
-               f"Khoảng tĩnh không {piers[-1]-piers[0]:.1f}m ≥ B={B_tk:.1f}m ✓",
+               f"Khoảng thông thuyền {khoang_thong:.1f}m (TK={B_tk:.1f}m+2×{_PIER_SAFETY:.0f}m safety) {ok_str}",
+               color="#e74c3c", dy=0)
+    elif len(piers) == 1:
+        # n_nhip=2: nhịp chính phải ≥ B_tk + 2×safety
+        xs_main = min(piers[0], x_end - (piers[0]-x0))
+        xe_main = max(piers[0], x_end - (piers[0]-x0))
+        span_main = spans[1][1] - spans[1][0] if piers[0] < x_tim else spans[0][1] - spans[0][0]
+        ok_str = "✓" if span_main >= B_tk + 2*_PIER_SAFETY else "⚠"
+        _dim_h(fig, dy_dim, x_tim-B_tk/2, x_tim+B_tk/2,
+               f"Nhịp chính {span_main:.1f}m ≥ B_tk={B_tk:.1f}m {ok_str}",
                color="#e74c3c", dy=0)
     _dim_v(fig, x_end+W_mo+0.3, z_sh_b, z_cap_b, f"H_trụ={H_tru:.1f}m", dx=0.2)
     _dim_v(fig, x0-W_mo-0.3, cao_dd, cao_dd+H_dam, f"H_dầm={H_dam:.2f}m", dx=0.2)
