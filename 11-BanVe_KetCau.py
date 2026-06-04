@@ -900,37 +900,23 @@ def add_bridge_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
 
 # ===========================================================================
-# 6. MÔI TRƯỜNG 3D TỔNG HỢP — Digital Twin tích hợp toàn bộ kết quả AI
+# 6. MÔI TRƯỜNG 3D TỔNG HỢP — Digital Twin (Mesh3d khối thực sự)
 # ===========================================================================
 def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
     """
-    Phối hợp TẤT CẢ kết quả tính toán vào 1 môi trường 3D thống nhất:
+    Phối hợp TẤT CẢ kết quả tính toán vào 1 môi trường 3D thống nhất.
+    Tất cả cấu kiện dùng _abox() → Mesh3d 8 đỉnh 12 tam giác (KHỐI 3D thực),
+    giống hệt ve_cau_3d nhưng tọa độ VN-2000 căn theo tim tuyến khảo sát.
 
-    Lớp 1 — Thủy văn & Tĩnh không (01-Tinh_khong):
-        • Mặt phẳng mực nước MNCN / MNTT / MNTN (bán trong suốt)
-        • Khung tĩnh không B×H (dây đỏ)
-
-    Lớp 2 — Trắc dọc thiết kế (02-Yeuto_Hinhhoc):
-        • Đường đỏ thiết kế (cao độ thiết kế dọc tim tuyến)
-        • Đường địa hình TN tại tim tuyến (đường đen)
-
-    Lớp 3 — Kết cấu nhịp (06-AI_KetCauNhip):
-        • Lớp phủ BTN (dark thin slab)
-        • Bản mặt cầu BTCT (grey slab - Mesh3d)
-        • Dầm chính n dầm × L_nhip (boxes)
-
-    Lớp 4 — Trụ cầu (07-AI_MoTru):
-        • Xà mũ ngang (cap beam)
-        • Thân trụ (1 / 2 / 3 cột tùy loại)
-
-    Lớp 5 — Móng (08-AI_Mong):
-        • Bệ cọc
-        • Cọc (lưới cọc đến độ sâu L_coc)
-
-    Lớp 6 — Mố hai đầu cầu
+    Lớp 1 — Thủy văn (01-Tinh_khong): mặt phẳng mực nước + khung TK
+    Lớp 2 — Trắc dọc (02-Yeuto_Hinhhoc): đường đỏ + đường địa hình TN
+    Lớp 3 — Kết cấu nhịp (06-AI_KetCauNhip): lớp phủ + bản + dầm (khối)
+    Lớp 4 — Trụ cầu (07-AI_MoTru): xà mũ + thân trụ (khối)
+    Lớp 5 — Móng (08-AI_Mong): bệ cọc (khối) + cọc (lines)
+    Lớp 6 — Mố hai đầu (khối)
     """
     try:
-        # ── Lấy thông số ──────────────────────────────────────────────────
+        # ── Thông số ──────────────────────────────────────────────────────
         kcn    = d.get("kcn_result") or d.get("ai_result", {})
         geo    = d.get("geo_logic", {})
         tru_r  = d.get("tru_result", {}) or {}
@@ -942,46 +928,44 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
         kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
         oh_dam = float(kcn.get("overhang", 0.5))
-        loai_t = str(tru_r.get("loai_tru", "Thân cột 2 trụ"))
-        n_cot  = 3 if "3" in loai_t else (2 if "cột" in loai_t.lower() else 1)
+        loai_t = str(tru_r.get("loai_tru", "Than cot 2 tru"))
+        n_cot  = 3 if "3" in loai_t else (2 if "cot" in loai_t.lower() or "cột" in loai_t.lower() else 1)
 
         bc     = float(d.get("bc", 12.0))
         t_ban  = float(d.get("t_ban_mm", 200)) / 1000.0
-        t_phu  = 0.07   # lớp phủ BTN 70mm
+        t_phu  = 0.07
         B_tk   = float(d.get("B", 20.0))
         H_tk   = float(d.get("H", 3.0))
         MNCN   = float(d.get("MNCN", 3.5))
         MNTT   = float(d.get("MNTT", 2.0))
         MNTN   = float(d.get("MNTN", 0.5))
-
         H_tru  = float(d.get("H_tru_est", 5.0))
         cao_dd = float(d.get("cao_day_dam", H_tru + 5.0))
-
         D_coc  = float(mong_r.get("D_coc_mm", 600)) / 1000.0 if mong_r else 0.6
         L_coc  = float(mong_r.get("L_coc_tu", 35)) if mong_r else 35.0
 
-        L_cau  = float(geo.get("L_cau", n_nhip * L_nhip))
-        x0     = float(geo.get("x_mo_trai", -L_cau / 2))
-        x_end  = float(geo.get("x_mo_phai",  x0 + L_cau))
-        x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
+        L_cau = float(geo.get("L_cau", n_nhip * L_nhip))
+        x0    = float(geo.get("x_mo_trai", -L_cau / 2))
+        x_end = float(geo.get("x_mo_phai", x0 + L_cau))
+        x_tim = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
 
-        # ── Kiểm tra cột df_geology ───────────────────────────────────────
-        req = {'Lý trình', 'X_VN2000', 'Y_VN2000', 'Góc_Tuyến', 'Offset', 'Z'}
+        # ── Kiểm tra cột ──────────────────────────────────────────────────
+        req = {"Lý trình", "X_VN2000", "Y_VN2000", "Góc_Tuyến", "Offset", "Z"}
         if req - set(df_geology.columns):
             print(f"[add_all] Thiếu cột: {req - set(df_geology.columns)}")
             return
 
-        df_cl = (df_geology[df_geology['Offset'] == 0]
-                 [['Lý trình','X_VN2000','Y_VN2000','Góc_Tuyến','Z']]
-                 .drop_duplicates('Lý trình').sort_values('Lý trình'))
+        df_cl = (df_geology[df_geology["Offset"] == 0]
+                 [["Lý trình", "X_VN2000", "Y_VN2000", "Góc_Tuyến", "Z"]]
+                 .drop_duplicates("Lý trình").sort_values("Lý trình"))
         if df_cl.empty:
             return
 
-        lt_v  = df_cl['Lý trình'].values
-        vx_v  = df_cl['X_VN2000'].values
-        vy_v  = df_cl['Y_VN2000'].values
-        goc_v = df_cl['Góc_Tuyến'].values
-        vz_v  = df_cl['Z'].values  # cao độ địa hình tim tuyến
+        lt_v  = df_cl["Lý trình"].values
+        vx_v  = df_cl["X_VN2000"].values
+        vy_v  = df_cl["Y_VN2000"].values
+        goc_v = df_cl["Góc_Tuyến"].values
+        vz_v  = df_cl["Z"].values
 
         def _at(s):
             return (float(np.interp(s, lt_v, vx_v)),
@@ -996,287 +980,218 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
         hz = he_so_z
 
-        # ── Cao độ kết cấu (tuyệt đối × he_so_z) ────────────────────────
-        z_phu     = (cao_dd + H_dam + t_ban + t_phu) * hz   # mặt đường
-        z_deck    = (cao_dd + H_dam + t_ban) * hz            # đỉnh bản
-        z_ban_bot = (cao_dd + H_dam) * hz                    # đáy bản
-        z_beam_t  = (cao_dd + H_dam) * hz                    # đỉnh dầm
-        z_beam_b  = cao_dd * hz                               # đáy dầm
-        z_cap_t   = cao_dd * hz                               # đỉnh xà mũ
-        z_cap_b   = (cao_dd - 0.80) * hz
-        z_sh_t    = z_cap_b
-        z_sh_b    = (cao_dd - 0.80 - H_tru) * hz
-        z_be_t    = z_sh_b
-        z_be_b    = (cao_dd - 0.80 - H_tru - 1.50) * hz
-        z_pile_t  = z_be_b
-        z_pile_b  = (cao_dd - 0.80 - H_tru - 1.50 - L_coc) * hz
+        # ── Cao độ × he_so_z ──────────────────────────────────────────────
+        z_phu  = (cao_dd + H_dam + t_ban + t_phu) * hz
+        z_deck = (cao_dd + H_dam + t_ban) * hz
+        z_bant = (cao_dd + H_dam) * hz
+        z_beamb = cao_dd * hz
+        z_capt = cao_dd * hz
+        z_capb = (cao_dd - 0.80) * hz
+        z_sht  = z_capb
+        z_shb  = (cao_dd - 0.80 - H_tru) * hz
+        z_bet  = z_shb
+        z_beb  = (cao_dd - 0.80 - H_tru - 1.50) * hz
+        z_pileb = z_beb - L_coc * hz
 
-        # cap beam geometry
-        cap_W = max(2.0, bc * 0.18 + 1.0)
-        be_W  = cap_W + 0.8
-        W_cot = min(1.0, bc * 0.06 + 0.4)   # bề rộng cột đơn
+        cap_W     = max(2.0, bc * 0.18 + 1.0)
+        be_W      = cap_W + 0.8
+        W_tru     = 1.2
+        W_cot     = min(1.0, bc * 0.06 + 0.4)
+        cap_thick = 0.4
+        be_long   = be_W * 0.7
+        mo_L      = 3.5
 
         piers    = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
         supports = [x0] + piers + [x_end]
         spans    = [(supports[i], supports[i+1]) for i in range(len(supports)-1)]
 
-        # ── Helper: Mesh3d dải ribbon ─────────────────────────────────────
-        def _ribbon_mesh(s_arr, off_L, off_R, z_val, color, opacity, name):
-            """Dải Mesh3d từ s_arr[0] đến s_arr[-1], rộng off_R - off_L ngang cầu."""
-            XL, YL, XR, YR = [], [], [], []
-            for s in s_arr:
-                xl, yl = _vn(s, off_L); xr, yr = _vn(s, off_R)
-                XL.append(xl); YL.append(yl); XR.append(xr); YR.append(yr)
-            n = len(s_arr)
-            vx = XL + XR; vy = YL + YR; vz = [z_val]*n + [z_val]*n
-            ii, jj, kk = [], [], []
-            for k in range(n-1):
-                ii += [k, k+1]; jj += [k+1, n+k+1]; kk += [n+k, n+k]
-            return go.Mesh3d(x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
-                             color=color, opacity=opacity, flatshading=True,
-                             name=name, showlegend=bool(name),
-                             lighting=dict(ambient=0.8, diffuse=0.6))
-
-        N = min(50, max(len(lt_v), 6))
-        s_all = np.linspace(x0, x_end, N)
+        # ── Helper: HỘP 3D căn theo tim tuyến VN-2000 ────────────────────
+        # Cùng logic _box3d nhưng XY lấy từ _vn(lý_trình, offset_ngang)
+        def _abox(s0, s1, oL, oR, zb, zt, color, opacity=0.88, name="", sl=True):
+            c = [_vn(s0, oL), _vn(s0, oR), _vn(s1, oR), _vn(s1, oL)]
+            vx = [p[0] for p in c] + [p[0] for p in c]
+            vy = [p[1] for p in c] + [p[1] for p in c]
+            vz = [zb]*4 + [zt]*4
+            ii = [0,0, 4,4, 0,0, 3,3, 0,0, 1,1]
+            jj = [1,2, 5,6, 1,5, 2,6, 3,7, 2,6]
+            kk = [2,3, 6,7, 5,4, 6,7, 7,4, 6,5]
+            return go.Mesh3d(
+                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
+                color=color, opacity=opacity, flatshading=True,
+                name=name, showlegend=sl and bool(name),
+                lighting=dict(ambient=0.65, diffuse=0.85, specular=0.2),
+                hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
+            )
 
         # =========================================================
         # LỚP 1 — THỦY VĂN & TĨNH KHÔNG
         # =========================================================
-
-        # Mặt phẳng mực nước (dùng terrain extent để tạo mặt phẳng rộng)
-        _y_ext = bc * 2.0  # bề rộng hiển thị
+        yw = bc * 2.5
         for z_w, lbl, clr, op in [
             (MNCN * hz, f"MNCN = {MNCN:.3f}m", "#2980b9", 0.35),
-            (MNTT * hz, f"MNTT = {MNTT:.3f}m", "#3498db", 0.25),
-            (MNTN * hz, f"MNTN = {MNTN:.3f}m", "#1abc9c", 0.20),
+            (MNTT * hz, f"MNTT = {MNTT:.3f}m", "#3498db", 0.22),
+            (MNTN * hz, f"MNTN = {MNTN:.3f}m", "#1abc9c", 0.18),
         ]:
-            XWL, YWL, XWR, YWR = [], [], [], []
-            for s in np.linspace(x0-5, x_end+5, 12):
-                xl, yl = _vn(s, -_y_ext); xr, yr = _vn(s, _y_ext)
-                XWL.append(xl); YWL.append(yl); XWR.append(xr); YWR.append(yr)
-            nw = 12
-            vxw = XWL+XWR; vyw = YWL+YWR; vzw = [z_w]*nw + [z_w]*nw
-            iiw, jjw, kkw = [], [], []
-            for k in range(nw-1):
-                iiw += [k, k+1]; jjw += [k+1, nw+k+1]; kkw += [nw+k, nw+k]
-            fig.add_trace(go.Mesh3d(x=vxw, y=vyw, z=vzw, i=iiw, j=jjw, k=kkw,
-                                    color=clr, opacity=op, flatshading=True,
-                                    name=lbl, showlegend=True))
+            # Mặt phẳng nước — là thin slab để có volume nhỏ
+            fig.add_trace(_abox(x0-5, x_end+5, -yw, yw,
+                                z_w - 0.03*hz, z_w, clr, op, lbl))
 
-        # Khung tĩnh không B × H (dây đỏ nổi bật)
+        # Khung tĩnh không B×H (dây đỏ)
         xL_tk = x_tim - B_tk/2; xR_tk = x_tim + B_tk/2
         xrL, yrL = _vn(xL_tk, 0); xrR, yrR = _vn(xR_tk, 0)
-        z_tk_b = MNCN * hz; z_tk_t = (MNCN + H_tk) * hz
-        # 4 cạnh khung
-        for xs, ys, xe, ye, z0, z1, _nm in [
-            (xrL, yrL, xrR, yrR, z_tk_b, z_tk_b, "Đáy tĩnh không"),
-            (xrL, yrL, xrR, yrR, z_tk_t, z_tk_t, "Đỉnh tĩnh không"),
-            (xrL, yrL, xrL, yrL, z_tk_b, z_tk_t, "Cột trái TK"),
-            (xrR, yrR, xrR, yrR, z_tk_b, z_tk_t, "Cột phải TK"),
+        z_tkb = MNCN * hz; z_tkt = (MNCN + H_tk) * hz
+        for xs, ys, xe, ye, z0, z1, nm in [
+            (xrL,yrL, xrR,yrR, z_tkb,z_tkb, "Đáy TK"),
+            (xrL,yrL, xrR,yrR, z_tkt,z_tkt, "Đỉnh TK"),
+            (xrL,yrL, xrL,yrL, z_tkb,z_tkt, "Cột trái TK"),
+            (xrR,yrR, xrR,yrR, z_tkb,z_tkt, "Cột phải TK"),
         ]:
             fig.add_trace(go.Scatter3d(
                 x=[xs,xe], y=[ys,ye], z=[z0,z1],
                 mode="lines+markers",
                 line=dict(color="#e74c3c", width=6),
                 marker=dict(size=5, color="#e74c3c"),
-                name=_nm, showlegend=True,
+                name=nm, showlegend=True,
             ))
-        # Text nhãn B, H
         fig.add_trace(go.Scatter3d(
-            x=[(xrL+xrR)/2], y=[(yrL+yrR)/2],
-            z=[(z_tk_b+z_tk_t)/2],
-            mode="text",
-            text=[f"B={B_tk}m × H={H_tk}m"],
-            textfont=dict(color="#e74c3c", size=11),
-            showlegend=False,
+            x=[(xrL+xrR)/2], y=[(yrL+yrR)/2], z=[(z_tkb+z_tkt)/2],
+            mode="text", text=[f"B={B_tk}m × H={H_tk}m"],
+            textfont=dict(color="#e74c3c", size=11), showlegend=False,
         ))
 
         # =========================================================
-        # LỚP 2 — TRẮC DỌC THIẾT KẾ (đường đỏ + địa hình tim)
+        # LỚP 2 — TRẮC DỌC (đường line — đúng cho profile)
         # =========================================================
-
-        # Đường địa hình TN tại tim tuyến
-        s_prof = np.linspace(lt_v[0], lt_v[-1], 100)
+        s_range = np.linspace(lt_v[0], lt_v[-1], 100)
         XP, YP, ZP = [], [], []
-        for s in s_prof:
+        for s in s_range:
             xc, yc = _vn(s, 0)
-            zc = float(np.interp(s, lt_v, vz_v)) * hz
-            XP.append(xc); YP.append(yc); ZP.append(zc)
-        fig.add_trace(go.Scatter3d(
-            x=XP, y=YP, z=ZP, mode="lines",
-            line=dict(color="#27ae60", width=4),
-            name="Địa hình TN tim tuyến",
-        ))
+            XP.append(xc); YP.append(yc)
+            ZP.append(float(np.interp(s, lt_v, vz_v)) * hz)
+        fig.add_trace(go.Scatter3d(x=XP, y=YP, z=ZP, mode="lines",
+                                   line=dict(color="#27ae60", width=4),
+                                   name="Địa hình TN tim tuyến"))
 
-        # Đường đỏ thiết kế
         x_t1  = geo.get("x_t1", x0); x_t2 = geo.get("x_t2", x_end)
-        y_t   = geo.get("y_t", 4.0); y_dn = geo.get("y_dinh", 4.5)
-        R_geo = geo.get("R", 5000);  i_geo = geo.get("i_val", 0.04)
+        y_t   = geo.get("y_t", 4.0); y_dn  = geo.get("y_dinh", 4.5)
+        R_geo = geo.get("R", 5000);  i_geo  = geo.get("i_val", 0.04)
         y_base = geo.get("y_base_goc", MNTT)
-
         def _rdz(s):
-            if s < x_t1:   yr = y_t  - i_geo*(x_t1 - s)
-            elif s > x_t2: yr = y_t  - i_geo*(s - x_t2)
+            if   s < x_t1: yr = y_t  - i_geo*(x_t1 - s)
+            elif s > x_t2: yr = y_t  - i_geo*(s  - x_t2)
             else:           yr = y_dn - (s - x_tim)**2 / (2*R_geo)
             return (yr + y_base) * hz
-
-        XR2, YR2, ZR2 = [], [], []
+        XRD, YRD, ZRD = [], [], []
         for s in np.linspace(x0-5, x_end+5, 80):
-            xc, yc = _vn(s, 0); ZR2.append(_rdz(s))
-            XR2.append(xc); YR2.append(yc)
-        fig.add_trace(go.Scatter3d(
-            x=XR2, y=YR2, z=ZR2, mode="lines",
-            line=dict(color="#e74c3c", width=5),
-            name="Đường đỏ thiết kế",
-        ))
+            xc, yc = _vn(s, 0)
+            XRD.append(xc); YRD.append(yc); ZRD.append(_rdz(s))
+        fig.add_trace(go.Scatter3d(x=XRD, y=YRD, z=ZRD, mode="lines",
+                                   line=dict(color="#e74c3c", width=5),
+                                   name="Đường đỏ thiết kế"))
 
         # =========================================================
-        # LỚP 3 — KẾT CẤU NHỊP
+        # LỚP 3 — KẾT CẤU NHỊP (Mesh3d KHỐI 3D)
         # =========================================================
 
         # Lớp phủ BTN
-        fig.add_trace(_ribbon_mesh(s_all, -bc/2, bc/2, z_phu,
-                                    "#2c3e50", 0.90, "Lớp phủ BTN"))
+        fig.add_trace(_abox(x0, x_end, -bc/2, bc/2,
+                            z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
 
         # Bản mặt cầu
-        fig.add_trace(_ribbon_mesh(s_all, -bc/2, bc/2, z_deck,
-                                    "#d5d8dc", 0.90, "Bản mặt cầu"))
+        fig.add_trace(_abox(x0, x_end, -bc/2, bc/2,
+                            z_bant, z_deck, "#d5d8dc", 0.82, "Bản mặt cầu"))
 
-        # Dầm chính (n_dam dầm, mỗi dầm là ribbon hẹp)
+        # Dầm chính — mỗi dầm 1 hộp
+        bf_half = 0.20
         y_first = -bc/2 + oh_dam
-        bw_half = 0.18  # nửa bề rộng dầm
         for i_sp, (xs, xe) in enumerate(spans):
-            sl = (i_sp == 0)
-            ss = np.linspace(xs, xe, 20)
+            sl_sp = (i_sp == 0)
             for i_d in range(n_dam):
                 yd = y_first + i_d * kc_dam
-                # Đỉnh dầm → đáy dầm (show as top face only for clarity)
-                fig.add_trace(_ribbon_mesh(
-                    ss, yd-bw_half, yd+bw_half, z_beam_b,
-                    "#85929e", 0.92,
-                    f"Dầm {kcn.get('loai_dam','')}" if (sl and i_d==0) else ""))
+                fig.add_trace(_abox(
+                    xs, xe, yd - bf_half, yd + bf_half,
+                    z_beamb, z_bant, "#85929e", 0.92,
+                    f"Dầm {kcn.get('loai_dam','')}" if (sl_sp and i_d == 0) else "",
+                    sl=sl_sp and i_d == 0,
+                ))
 
         # =========================================================
-        # LỚP 4 — TRỤ CẦU
+        # LỚP 4 — TRỤ CẦU (Mesh3d KHỐI 3D)
         # =========================================================
 
         for i_p, xt in enumerate(piers):
             sl = (i_p == 0)
-            xc, yc = _vn(xt, 0)
 
-            # Xà mũ (cap beam) — ribbon ngang
-            ss_cap = np.linspace(xt, xt, 2)
-            # Dùng Scatter3d ngang qua cap_W
-            _pts = 12
-            xrL_c, yrL_c = _vn(xt, -cap_W)
-            xrR_c, yrR_c = _vn(xt,  cap_W)
-            xc_arr = np.linspace(xrL_c, xrR_c, _pts).tolist()
-            yc_arr = np.linspace(yrL_c, yrR_c, _pts).tolist()
-            for z_l in [z_cap_b, z_cap_t]:
-                fig.add_trace(go.Scatter3d(
-                    x=xc_arr, y=yc_arr, z=[z_l]*_pts,
-                    mode="lines",
-                    line=dict(color="#aab7b8", width=10),
-                    name="Xà mũ" if (sl and z_l==z_cap_t) else "",
-                    showlegend=(sl and z_l==z_cap_t),
-                ))
+            # Xà mũ
+            fig.add_trace(_abox(xt-cap_thick, xt+cap_thick, -cap_W, cap_W,
+                                z_capb, z_capt, "#d5dbdb", 0.90,
+                                "Xà mũ" if sl else "", sl=sl))
 
             # Thân trụ (n_cot cột)
-            starts = np.linspace(-cap_W*0.6, cap_W*0.6, n_cot)
-            for i_c, off in enumerate(starts):
-                xcol, ycol = _vn(xt, off)
-                zz = np.linspace(z_sh_b, z_sh_t, 10).tolist()
-                fig.add_trace(go.Scatter3d(
-                    x=[xcol]*10, y=[ycol]*10, z=zz,
-                    mode="lines+markers",
-                    line=dict(color="#7f8c8d", width=8),
-                    marker=dict(size=3, color="#7f8c8d"),
-                    name=f"Thân trụ T{i_p+1}" if (sl and i_c==0) else "",
-                    showlegend=(sl and i_c==0),
+            col_offs = np.linspace(-cap_W*0.6, cap_W*0.6, n_cot)
+            for i_c, off_c in enumerate(col_offs):
+                fig.add_trace(_abox(
+                    xt - W_tru/2, xt + W_tru/2,
+                    off_c - W_cot/2, off_c + W_cot/2,
+                    z_shb, z_sht, "#c8d6c0", 0.92,
+                    f"Thân trụ T{i_p+1}" if (sl and i_c == 0) else "",
+                    sl=sl and i_c == 0,
                 ))
 
         # =========================================================
-        # LỚP 5 — MÓNG: BỆ CỌC + CỌC
+        # LỚP 5 — MÓNG (Mesh3d KHỐI + cọc lines)
         # =========================================================
 
         n_coc_row = 3 if be_W >= 2.5 else 2
-        coc_offs_long = [-be_W*0.55, 0, be_W*0.55][:n_coc_row]
-        coc_offs_trans= coc_offs_long
-
         for i_p, xt in enumerate(piers):
             sl = (i_p == 0)
 
-            # Bệ cọc (dải ngang)
-            xrL_b, yrL_b = _vn(xt, -be_W)
-            xrR_b, yrR_b = _vn(xt,  be_W)
-            _np = 10
-            xb_arr = np.linspace(xrL_b, xrR_b, _np).tolist()
-            yb_arr = np.linspace(yrL_b, yrR_b, _np).tolist()
-            for z_b_lv in [z_be_b, z_be_t]:
-                fig.add_trace(go.Scatter3d(
-                    x=xb_arr, y=yb_arr, z=[z_b_lv]*_np,
-                    mode="lines",
-                    line=dict(color="#566573", width=8),
-                    name="Bệ cọc" if (sl and z_b_lv==z_be_t) else "",
-                    showlegend=(sl and z_b_lv==z_be_t),
-                ))
+            # Bệ cọc (hộp)
+            fig.add_trace(_abox(xt-be_long, xt+be_long, -be_W, be_W,
+                                z_beb, z_bet, "#aab7b8", 0.90,
+                                "Bệ cọc" if sl else "", sl=sl))
 
-            # Cọc (lưới n×n)
-            for dl in coc_offs_long:
-                for dt in coc_offs_trans:
-                    xpile, ypile = _vn(xt + dl*0.3, dt)
+            # Cọc (line - OK vì cọc thực tế cũng tròn/mảnh)
+            c_ds = np.linspace(-be_W*0.65, be_W*0.65, n_coc_row)
+            c_ls = np.linspace(-be_long*0.65, be_long*0.65, n_coc_row)
+            for dl in c_ls:
+                for dt in c_ds:
+                    xp, yp = _vn(xt + dl, dt)
+                    lbl_coc = (f"Cọc Ø{int(D_coc*1000)}mm L={L_coc:.0f}m"
+                               if (sl and dl == c_ls[0] and dt == c_ds[0]) else "")
                     fig.add_trace(go.Scatter3d(
-                        x=[xpile, xpile], y=[ypile, ypile],
-                        z=[z_pile_t, z_pile_b],
-                        mode="lines+markers",
-                        line=dict(color="#4a4a4a", width=4),
-                        marker=dict(size=3, color="#4a4a4a"),
-                        name=f"Cọc Ø{int(D_coc*1000)}mm L={L_coc:.0f}m" if (sl and dl==coc_offs_long[0] and dt==coc_offs_trans[0]) else "",
-                        showlegend=(sl and dl==coc_offs_long[0] and dt==coc_offs_trans[0]),
+                        x=[xp, xp], y=[yp, yp], z=[z_bet, z_pileb],
+                        mode="lines",
+                        line=dict(color="#4a4a4a", width=5),
+                        name=lbl_coc,
+                        showlegend=bool(lbl_coc),
                     ))
 
         # =========================================================
-        # LỚP 6 — MỐ HAI ĐẦU CẦU
+        # LỚP 6 — MỐ HAI ĐẦU (Mesh3d KHỐI 3D)
         # =========================================================
 
         for xm, nm in [(x0, "Mố trái"), (x_end, "Mố phải")]:
             sl = (nm == "Mố trái")
-            # Thân mố: đường đứng tim + ngang bc
-            xmc, ymc = _vn(xm, 0)
-            fig.add_trace(go.Scatter3d(
-                x=[xmc, xmc], y=[ymc, ymc],
-                z=[z_be_b, z_deck],
-                mode="lines+markers",
-                line=dict(color="#c0a06b", width=14),
-                marker=dict(size=6, color="#c0a06b", symbol="square"),
-                name=nm, showlegend=sl,
-            ))
-            for z_lv in [z_be_b, z_beam_b, z_deck]:
-                xrL_m, yrL_m = _vn(xm, -bc/2)
-                xrR_m, yrR_m = _vn(xm,  bc/2)
-                fig.add_trace(go.Scatter3d(
-                    x=[xrL_m, xmc, xrR_m], y=[yrL_m, ymc, yrR_m],
-                    z=[z_lv]*3, mode="lines",
-                    line=dict(color="#c0a06b", width=6),
-                    showlegend=False,
-                ))
+            sign = 1 if xm == x0 else -1
+            fig.add_trace(_abox(xm, xm + sign*mo_L, -bc/2-0.5, bc/2+0.5,
+                                z_beb, z_deck, "#c0a06b", 0.85, nm, sl=sl))
 
-        # ── Cập nhật title figure để phản ánh tổng hợp ────────────────
+        # ── Title ─────────────────────────────────────────────────────────
         fig.update_layout(
             title=dict(
-                text=(f"MÔI TRƯỜNG 3D TỔNG HỢP — Digital Twin Cầu<br>"
+                text=(f"<b>MÔI TRƯỜNG 3D TỔNG HỢP</b><br>"
                       f"<sup>{n_nhip}×{L_nhip}m {kcn.get('loai_dam','').upper()} | "
                       f"B={bc}m | H_trụ={H_tru:.1f}m | "
-                      f"Tĩnh không B={B_tk}m×H={H_tk}m | "
-                      f"Cọc Ø{int(D_coc*1000)}mm L={L_coc:.0f}m</sup>"),
-                x=0.5, font=dict(size=13)
+                      f"Cọc Ø{int(D_coc*1000)}mm L={L_coc:.0f}m | "
+                      f"Tĩnh không B={B_tk}m×H={H_tk}m</sup>"),
+                x=0.5, font=dict(size=12),
             ),
             legend=dict(
                 orientation="v", x=1.01, y=0.5,
-                font=dict(size=9),
+                font=dict(size=8),
                 bgcolor="rgba(255,255,255,0.85)",
-                bordercolor="#cccccc", borderwidth=1,
+                bordercolor="#ccc", borderwidth=1,
             ),
         )
 
