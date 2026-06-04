@@ -779,85 +779,118 @@ def add_bridge_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
         piers = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
 
-        # ── Trụ — đường thẳng đứng (2 nhánh: trái và phải tim) ───────────
-        W_tru = 1.2
-        for i, xt in enumerate(piers):
-            sl = (i == 0)
-            for off in [-W_tru / 2, W_tru / 2]:
-                xr, yr = _vn2000(xt, off)
-                fig.add_trace(go.Scatter3d(
-                    x=[xr, xr, xr, xr], y=[yr, yr, yr, yr],
-                    z=[z_be_b, z_sh_b, z_cap, z_deck],
-                    mode="lines",
-                    line=dict(color="#7f8c8d", width=10),
-                    name="Trụ cầu" if (sl and off < 0) else "",
-                    showlegend=(sl and off < 0),
-                ))
-            # Xà mũ ngang
-            xrL, yrL = _vn2000(xt, -2.0)
-            xrR, yrR = _vn2000(xt,  2.0)
-            fig.add_trace(go.Scatter3d(
-                x=[xrL, xrR], y=[yrL, yrR], z=[z_cap, z_cap],
-                mode="lines", line=dict(color="#c8d6c0", width=14),
-                showlegend=False,
-            ))
-
-        # ── Mố trái / phải ────────────────────────────────────────────────
-        for xm, nm in [(x0, "Mố trái"), (x_end, "Mố phải")]:
-            sl = (nm == "Mố trái")
-            for off in [-bc/2, bc/2]:
-                xr, yr = _vn2000(xm, off)
-                fig.add_trace(go.Scatter3d(
-                    x=[xr, xr], y=[yr, yr], z=[z_be_b, z_deck],
-                    mode="lines", line=dict(color="#c0a06b", width=14),
-                    name=nm if (sl and off < 0) else "",
-                    showlegend=(sl and off < 0),
-                ))
-
-        # ── Bề mặt bản mặt cầu (dải rộng bc, dọc theo tim tuyến) ────────
-        n_pts = min(60, len(lt_v))
+        # ── Bề mặt bản mặt cầu — go.Mesh3d (dải tam giác dọc tim tuyến) ──
+        # go.Surface với z=const không render được vì colorscale min==max → dùng Mesh3d
+        n_pts = min(40, max(len(lt_v), 4))
         s_pts = np.linspace(x0, x_end, n_pts)
 
-        # 2 dãy điểm: biên trái (-bc/2) và biên phải (+bc/2)
         X_L, Y_L, X_R, Y_R = [], [], [], []
         for s in s_pts:
-            xl, yl = _vn2000(s, -bc/2)
-            xr, yr = _vn2000(s,  bc/2)
+            xl, yl = _vn2000(s, -bc / 2)
+            xr, yr = _vn2000(s,  bc / 2)
             X_L.append(xl); Y_L.append(yl)
             X_R.append(xr); Y_R.append(yr)
 
-        surf_x = np.array([X_L, X_R])   # shape (2, n_pts)
-        surf_y = np.array([Y_L, Y_R])
-        surf_z = np.full((2, n_pts), z_deck)
-
-        fig.add_trace(go.Surface(
-            x=surf_x, y=surf_y, z=surf_z,
-            colorscale=[[0, "#d5d8dc"], [1, "#d5d8dc"]],
-            opacity=0.85, showscale=False,
+        # Vertices: [left edge points] + [right edge points]
+        mesh_x = X_L + X_R
+        mesh_y = Y_L + Y_R
+        mesh_z = [z_deck] * n_pts + [z_deck] * n_pts
+        # Triangulation: 2 triangles per quad
+        ii_m, jj_m, kk_m = [], [], []
+        for k in range(n_pts - 1):
+            # Quad: L[k], L[k+1], R[k], R[k+1]
+            ii_m += [k,       k + 1       ]
+            jj_m += [k + 1,   n_pts + k + 1]
+            kk_m += [n_pts + k, n_pts + k  ]
+        fig.add_trace(go.Mesh3d(
+            x=mesh_x, y=mesh_y, z=mesh_z,
+            i=ii_m, j=jj_m, k=kk_m,
+            color="#c8d0d8", opacity=0.92,
+            flatshading=True,
+            lighting=dict(ambient=0.8, diffuse=0.6),
             name="Bản mặt cầu",
-            hovertemplate="Mặt cầu<br>Z=%.2f m<extra></extra>" % (z_deck / hz),
+            showlegend=True,
+            hovertemplate="Bản mặt cầu<br>Z=%.2fm<extra></extra>" % (z_deck / hz),
         ))
 
-        # ── Tĩnh không — khung đỏ tại biên ──────────────────────────────
+        # ── Trụ — Mesh3d hộp + đường dọc có marker ─────────────────────
+        cap_W_half = max(2.0, bc * 0.18)   # nửa bề rộng xà mũ (thực tế ~2-3m)
+        for i, xt in enumerate(piers):
+            sl = (i == 0)
+
+            # Đường tim trụ (có marker để nhìn thấy ở mọi góc)
+            xc, yc = _vn2000(xt, 0)
+            zz = np.linspace(max(z_be_b, -1.0), z_deck, 8).tolist()
+            fig.add_trace(go.Scatter3d(
+                x=[xc] * 8, y=[yc] * 8, z=zz,
+                mode="lines+markers",
+                line=dict(color="#566573", width=8),
+                marker=dict(size=4, color="#566573", symbol="circle"),
+                name="Trụ cầu" if sl else "",
+                showlegend=sl,
+            ))
+
+            # Xà mũ: đường ngang rộng cap_W_half mỗi bên — có marker ở đầu
+            xrL, yrL = _vn2000(xt, -cap_W_half)
+            xrR, yrR = _vn2000(xt,  cap_W_half)
+            fig.add_trace(go.Scatter3d(
+                x=[xrL, xc, xrR], y=[yrL, yc, yrR],
+                z=[z_cap, z_cap, z_cap],
+                mode="lines+markers",
+                line=dict(color="#aab7b8", width=10),
+                marker=dict(size=6, color="#aab7b8", symbol="square"),
+                name="Xà mũ" if sl else "",
+                showlegend=sl,
+            ))
+
+        # ── Mố trái / phải — đường đứng + ngang, có marker ──────────────
+        for xm, nm in [(x0, "Mố trái"), (x_end, "Mố phải")]:
+            sl = (nm == "Mố trái")
+            # Tim mố
+            xc, yc = _vn2000(xm, 0)
+            fig.add_trace(go.Scatter3d(
+                x=[xc, xc], y=[yc, yc],
+                z=[z_be_b, z_deck],
+                mode="lines+markers",
+                line=dict(color="#c0a06b", width=10),
+                marker=dict(size=6, color="#c0a06b", symbol="square"),
+                name=nm, showlegend=sl,
+            ))
+            # Thanh ngang mố (rộng bc)
+            xrL, yrL = _vn2000(xm, -bc / 2)
+            xrR, yrR = _vn2000(xm,  bc / 2)
+            for z_level in [z_be_b, z_deck]:
+                fig.add_trace(go.Scatter3d(
+                    x=[xrL, xc, xrR], y=[yrL, yc, yrR],
+                    z=[z_level] * 3,
+                    mode="lines",
+                    line=dict(color="#c0a06b", width=6),
+                    showlegend=False,
+                ))
+
+        # ── Tĩnh không — khung đỏ (biên thông thuyền) ────────────────────
         xL_tk = x_tim - B_tk / 2
         xR_tk = x_tim + B_tk / 2
-        for xt_tk, side in [(xL_tk, "Biên trái TK"), (xR_tk, "Biên phải TK")]:
-            xr, yr = _vn2000(xt_tk, 0)
-            fig.add_trace(go.Scatter3d(
-                x=[xr, xr], y=[yr, yr],
-                z=[MNCN, MNCN + H_tk],
-                mode="lines+markers",
-                line=dict(color="#e74c3c", width=6),
-                marker=dict(size=5, color="#e74c3c"),
-                name=side, showlegend=True,
-            ))
-        # Thanh ngang đáy tĩnh không (nối 2 biên)
         xrL, yrL = _vn2000(xL_tk, 0)
         xrR, yrR = _vn2000(xR_tk, 0)
+
+        # Cột đứng ở 2 biên
+        for xr_v, yr_v, side in [(xrL, yrL, "Biên trái TK"), (xrR, yrR, "Biên phải TK")]:
+            fig.add_trace(go.Scatter3d(
+                x=[xr_v, xr_v], y=[yr_v, yr_v],
+                z=[MNCN, MNCN + H_tk],
+                mode="lines+markers",
+                line=dict(color="#e74c3c", width=5),
+                marker=dict(size=6, color="#e74c3c", symbol="circle"),
+                name=side, showlegend=True,
+            ))
+        # Thanh ngang đáy và đỉnh tĩnh không
         for z_tk_level in [MNCN, MNCN + H_tk]:
             fig.add_trace(go.Scatter3d(
-                x=[xrL, xrR], y=[yrL, yrR], z=[z_tk_level, z_tk_level],
-                mode="lines", line=dict(color="#e74c3c", width=4, dash="dot"),
+                x=[xrL, xrR], y=[yrL, yrR],
+                z=[z_tk_level, z_tk_level],
+                mode="lines",
+                line=dict(color="#e74c3c", width=4, dash="dot"),
                 showlegend=False,
             ))
 

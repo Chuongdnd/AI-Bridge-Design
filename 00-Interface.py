@@ -671,11 +671,29 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                         _df_geo, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view
                     )
                     if _fig_t:
-                        BVK.add_bridge_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
+                        _n_before = len(_fig_t.data)
+                        _err_overlay = None
+                        try:
+                            BVK.add_bridge_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
+                        except Exception as _oe:
+                            _err_overlay = str(_oe)
+                        _n_after = len(_fig_t.data)
+
                         st.plotly_chart(_fig_t, use_container_width=True,
                                         config={"displayModeBar": True})
-                        st.caption("Cầu (màu xám/nâu) được đặt đúng trên địa hình VN-2000. "
-                                   "Kéo chuột xoay • Scroll zoom • Shift+drag pan.")
+                        st.caption(
+                            f"Địa hình: {_n_before} trace | Kết cấu cầu: +{_n_after - _n_before} trace. "
+                            "Kéo chuột xoay • Scroll zoom • Shift+drag pan."
+                        )
+                        if _err_overlay:
+                            st.error(f"Lỗi overlay kết cấu: {_err_overlay}")
+                        elif _n_after == _n_before:
+                            st.warning("⚠️ Không thêm được trace kết cấu — kiểm tra cột df_geology bên dưới")
+                            with st.expander("Debug df_geology"):
+                                st.write("Columns:", list(_df_geo.columns))
+                                st.write("Offset values:", sorted(_df_geo['Offset'].unique()[:10].tolist()) if 'Offset' in _df_geo.columns else "N/A")
+                                st.write("x_mo_trai:", d.get('geo_logic',{}).get('x_mo_trai'))
+                                st.write("Lý trình range:", float(_df_geo['Lý trình'].min()), "→", float(_df_geo['Lý trình'].max()) if 'Lý trình' in _df_geo.columns else "N/A")
                     else:
                         st.error("Không tạo được mô hình địa hình.")
                 except Exception as _e:
