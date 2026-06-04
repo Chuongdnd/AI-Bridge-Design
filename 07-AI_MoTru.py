@@ -174,7 +174,7 @@ def predict_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song,
     dict với: loai_tru, do_tin_cay, xep_hang (top-3), ghi_chu
     """
     if models is None:
-        return _rule_based_pier(vtk, B_cau, H_tru, is_urban, is_river)
+        return _rule_based_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song=cap_song)
 
     try:
         le_dam = models["le_dam"]
@@ -222,31 +222,60 @@ def predict_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song,
 
     except Exception as e:
         return _rule_based_pier(vtk, B_cau, H_tru, is_urban, is_river,
-                                note=f"[fallback] {e}")
+                                cap_song=cap_song, note=f"[fallback] {e}")
 
 
 # ---------------------------------------------------------------------------
-# 4. QUY TẮC KINH NGHIỆM (DỰ PHÒNG)
+# 4. QUY TẮC KỸ THUẬT — CẦU VƯỢT SÔNG (DỰ PHÒNG)
 # ---------------------------------------------------------------------------
-def _rule_based_pier(vtk, B_cau, H_tru, is_urban, is_river, note=""):
+def _rule_based_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song="VI", note=""):
     """
-    Phân loại trụ theo quy tắc kinh nghiệm khi không có mô hình.
-    Logic dựa theo thực tế các dự án VN.
+    Phân loại trụ cầu vượt sông theo quy tắc kỹ thuật.
+
+    Nguyên tắc chọn trụ (cầu vượt sông cấp III–VI):
+    ─────────────────────────────────────────────────
+    • Cấp V–VI (sông nhỏ, tải va tàu nhỏ):
+        → Trụ thân cột (2 hoặc 3 thân tùy B_cầu).
+          Cột thanh mảnh phù hợp dòng chảy nhỏ,
+          có thể bố trí thêm cốt thép để chịu va tàu.
+    • Cấp III–IV (sông vừa, tải va tàu lớn hơn):
+        → Trụ đặc thân hẹp.
+          Tiết diện đặc đảm bảo chịu va tàu tốt hơn.
+    • Trụ rất thấp (H ≤ 2.5m): luôn chọn trụ đặc (kinh tế).
     """
-    if H_tru <= 3.0:
-        loai = "Trụ đặc"
-    elif is_urban and vtk >= 80:
-        loai = "Khung 2 cột"
-    elif B_cau >= 20:
-        loai = "Khung 2 cột"
-    elif H_tru >= 8.0:
-        loai = "Thân rỗng"
-    elif is_river:
-        loai = "Trụ đặc"
+    cap_int = _encode_cap_song(cap_song) if cap_song else 4
+
+    if is_river:
+        if H_tru <= 2.5:
+            # Trụ thấp → trụ đặc bất kể cấp sông
+            loai = "Trụ đặc"
+        elif cap_int >= 5:
+            # Cấp V, VI: thân cột (2 hoặc 3 thân tuỳ bề rộng)
+            if B_cau >= 16:
+                loai = "Thân cột 3 trụ"
+            else:
+                loai = "Thân cột 2 trụ"
+        elif cap_int >= 3:
+            # Cấp III, IV: trụ đặc thân hẹp chịu va tàu tốt hơn
+            loai = "Trụ đặc thân hẹp"
+        else:
+            # Cấp I, II: trụ đặc thân hẹp (tải va tàu lớn)
+            loai = "Trụ đặc thân hẹp"
     else:
-        loai = "Khung 2 cột"
+        # Không phải vượt sông (hiện đề tài không dùng nhánh này)
+        if H_tru <= 3.0:
+            loai = "Trụ đặc"
+        elif B_cau >= 20:
+            loai = "Khung 2 cột"
+        elif H_tru >= 8.0:
+            loai = "Thân rỗng"
+        else:
+            loai = "Khung 2 cột"
 
-    ghi_chu = f"Quy tắc kinh nghiệm: H_trụ={H_tru}m, B_cầu={B_cau}m. {note}".strip()
+    ghi_chu = (
+        f"Quy tắc kỹ thuật: Cấp sông {cap_song}, "
+        f"H_trụ={H_tru:.1f}m, B_cầu={B_cau:.1f}m. {note}"
+    ).strip()
     return {
         "loai_tru":   loai,
         "do_tin_cay": 0.0,

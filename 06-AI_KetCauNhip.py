@@ -236,29 +236,72 @@ def _calc_girder_layout(dam_type, L_span, B_cau, models):
     return round(kc, 2), n_dam, max(0.2, oh)
 
 
-def _score_candidate(dam_type, L_span, n_nhip, h_dam, L_cau_tong):
-    """Hàm điểm cho tối ưu hóa tổ hợp."""
-    score = 0
-    # Ưu tiên ít trụ
+def _score_candidate(dam_type, L_span, n_nhip, h_dam, L_cau_tong, B_tk=None):
+    """
+    Hàm điểm cho tối ưu hóa tổ hợp (loại dầm × chiều dài nhịp).
+
+    Nguyên tắc chấm điểm:
+    1. Ít trụ → tiết kiệm chi phí (tối đa 60 pt)
+    2. Chiều dài nhịp phù hợp với bề rộng tĩnh không B_tk (tối đa 30 pt)
+       - B_tk nhỏ (cầu nhỏ): nhịp ngắn 12–24m tối ưu kinh tế
+       - B_tk trung bình:     nhịp 24–38m
+       - B_tk lớn:            nhịp 33–40m
+    3. Loại dầm phù hợp với chiều dài nhịp (tối đa 35 pt)
+       - Dầm bản:  L ≤ 15m
+       - T ngược:  12 ≤ L ≤ 22m
+       - Dầm I:    18 ≤ L ≤ 33m
+       - Super-T:  27 ≤ L ≤ 40m
+    4. Tỉ lệ L/H tối ưu kết cấu 17–22 (tối đa 15 pt)
+    """
+    score = 0.0
+
+    # ── 1. Ít trụ ──────────────────────────────────────────────────────────
     if L_cau_tong and L_cau_tong > 0:
         score += 60.0 / max(n_nhip, 1)
     else:
-        score += 50
-    # Nhịp nằm trong dải tối ưu
-    if 30 <= L_span <= 40:
+        score += 50.0
+
+    # ── 2. Dải nhịp tối ưu theo B_tk ──────────────────────────────────────
+    if B_tk is not None and B_tk <= 10:
+        # Cầu nhỏ (kênh, sông nhỏ cấp V–VI): nhịp ngắn tối ưu
+        if 12 <= L_span <= 24:
+            score += 30
+        elif 24 < L_span <= 33:
+            score += 12
+        # nhịp > 33m với cầu nhỏ: lãng phí → không thưởng
+    elif B_tk is not None and B_tk <= 22:
+        # Cầu trung bình (cấp IV–V)
+        if 24 <= L_span <= 38:
+            score += 30
+        elif 18 <= L_span < 24 or 38 < L_span <= 42:
+            score += 15
+    else:
+        # Cầu lớn (cấp I–III) hoặc B_tk không biết
+        if 33 <= L_span <= 40:
+            score += 30
+        elif 25 <= L_span < 33 or 40 < L_span <= 45:
+            score += 15
+
+    # ── 3. Phù hợp loại dầm ↔ chiều dài nhịp ──────────────────────────────
+    if dam_type == "Dầm bản" and L_span <= 15:
+        score += 35
+    elif dam_type == "T ngược" and 12 <= L_span <= 22:
+        score += 33
+    elif dam_type == "Dầm I" and 18 <= L_span <= 33:
         score += 30
-    elif 25 <= L_span < 30 or 40 < L_span <= 45:
-        score += 15
-    # Ưu tiên loại dầm phổ biến
-    type_pref = {"Super-T": 35, "Dầm I": 25, "T ngược": 15, "Dầm bản": 10}
-    score += type_pref.get(dam_type, 5)
-    # Tỉ lệ L/H
+    elif dam_type == "Super-T" and 27 <= L_span <= 40:
+        score += 35
+    elif dam_type in {"Super-T", "Dầm I"}:
+        score += 8   # phổ biến nhưng nhịp không tối ưu
+
+    # ── 4. Tỉ lệ L/H ───────────────────────────────────────────────────────
     if h_dam > 0:
         ratio = L_span / h_dam
         if 17 <= ratio <= 22:
             score += 15
         elif 15 <= ratio <= 25:
             score += 8
+
     return score
 
 
@@ -327,7 +370,7 @@ def _predict_optimize(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
                 n_nhip = 1
                 L_thuc = L
 
-            score = _score_candidate(dam_type, L_thuc, n_nhip, H_dam, L_cau_tong)
+            score = _score_candidate(dam_type, L_thuc, n_nhip, H_dam, L_cau_tong, B_tk=B_tk)
             if score > best_score:
                 best_score = score
                 best = (dam_type, round(L_thuc, 2), n_nhip, H_dam)
