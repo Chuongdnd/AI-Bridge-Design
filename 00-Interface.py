@@ -88,6 +88,7 @@ if 'design_data' not in st.session_state:
         'day_dam': 0.0, 'khau_do_ngang': 0.0, 'bc': 12.0, 'loai_duong': "Do thi",
         'B': 20.0, 'H': 4.75, 'loai_doi_tuong_vuot': "Vượt sông", 'goc_giao': 90.0,
         'MNCN': 3.5, 'MNTT': 2.0, 'MNTC': 1.5, 'MNTN': 0.5, 'h_tn_tb': 0.0,
+        'x_tim_clearance': 0.0,
         'cap_song': 'VI', 'vtk': 60, 'i_max_hinh_hoc': 4.0, 'R_hinh_hoc': 5000,
         't_ban_mm': 200,       # chiều dày bản mặt cầu (mm), min 175mm theo TCVN 11823
         'is_urban': 0,         # 1 = khu đông dân cư (ảnh hưởng chọn loại cọc)
@@ -129,7 +130,22 @@ def show_options_dialog():
     with sec_in2:
         st.markdown("**Số liệu cao độ thủy văn (m)**")
         h_tn_tb = st.number_input("Cao độ tự nhiên trung bình:", value=st.session_state.design_data.get('h_tn_tb', 2.15), format="%.3f")
-        x_tim_clearance = st.number_input("📍 Lý trình tim tĩnh không (m)", value=0.0, step=1.0, format="%.2f", key="x_tim_clearance")
+        # Gợi ý từ terrain đã nạp (nếu có)
+        _lt_min = _lt_max = None
+        if 'df_tim_line' in st.session_state and st.session_state.df_tim_line is not None:
+            _tl = st.session_state.df_tim_line
+            _lt_col = next((c for c in _tl.columns if 'ý trình' in c or c.lower()=='ly_trinh'), None)
+            if _lt_col:
+                _lt_min = float(_tl[_lt_col].min())
+                _lt_max = float(_tl[_lt_col].max())
+                _suggest = (_lt_min + _lt_max) / 2
+                st.info(f"🗺️ Địa hình: Lý trình {_lt_min:.1f} → {_lt_max:.1f}m  |  Gợi ý tim cầu ≈ **{_suggest:.1f}m**")
+        x_tim_clearance = st.number_input(
+            "📍 Lý trình tim tĩnh không (m)",
+            value=float(st.session_state.design_data.get('x_tim_clearance', 0.0)),
+            step=1.0, format="%.2f", key="x_tim_clearance",
+            help="Lý trình điểm tim cầu vượt qua sông/kênh. Phải nằm trong phạm vi lý trình file khảo sát."
+        )
         h1  = st.number_input("Cao độ MNCN (H1%):",  value=st.session_state.design_data.get('MNCN', 3.50), format="%.3f")
         h5  = st.number_input("Cao độ MNTT (H5%):",  value=st.session_state.design_data.get('MNTT', 2.00), format="%.3f")
         h10 = st.number_input("Cao độ MNTC (H10%):", value=st.session_state.design_data.get('MNTC', 1.50), format="%.3f")
@@ -190,6 +206,7 @@ def show_options_dialog():
             res['loai_doi_tuong_vuot'] = "Vượt sông"
             res['t_ban_mm'] = t_ban_mm
             res['is_urban'] = is_urban_val
+            res['x_tim_clearance'] = x_tim_clearance  # lưu để hiển thị lại lần sau
 
             if res_geo.get("status") == "success":
                 # ── Bước 2: Hình học ─────────────────────────────────────────
@@ -656,7 +673,33 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
         # ── TAB 1: 3D Tổng hợp ─────────────────────────────────────────
         with tab_3d:
             if has_terr:
-                st.success("🗺️ Kết cấu cầu được overlay lên mô hình địa hình thực đo VN-2000")
+                # ── Kiểm tra alignment lý trình cầu vs địa hình ──────────────
+                _geo_d2 = d.get("geo_logic", {})
+                _xmo_t  = float(_geo_d2.get("x_mo_trai", -60))
+                _xmo_p  = float(_geo_d2.get("x_mo_phai",  60))
+                _xtim   = float(_geo_d2.get("x_tim_clearance", (_xmo_t+_xmo_p)/2))
+                _lt_col2= next((c for c in _df_geo.columns if 'ý trình' in c or c.lower()=='ly_trinh'), 'Lý trình')
+                _lt_min2= float(_df_geo[_lt_col2].min()) if _lt_col2 in _df_geo.columns else 0
+                _lt_max2= float(_df_geo[_lt_col2].max()) if _lt_col2 in _df_geo.columns else 999
+                _overlap = max(_lt_min2, _xmo_t) < min(_lt_max2, _xmo_p)
+
+                _c1, _c2, _c3 = st.columns(3)
+                _c1.metric("🗺️ Lý trình địa hình", f"{_lt_min2:.1f} → {_lt_max2:.1f} m")
+                _c2.metric("🌉 Lý trình cầu", f"{_xmo_t:.1f} → {_xmo_p:.1f} m")
+                _c3.metric("⭕ Tim tĩnh không", f"{_xtim:.1f} m")
+
+                if not _overlap:
+                    _suggest_tim = (_lt_min2 + _lt_max2) / 2
+                    st.error(
+                        f"❌ **Cầu không nằm trong phạm vi địa hình!** "
+                        f"Địa hình: {_lt_min2:.1f}→{_lt_max2:.1f}m | Cầu: {_xmo_t:.1f}→{_xmo_p:.1f}m. "
+                        f"👉 Mở **OPTIONS** và đặt **Lý trình tim tĩnh không ≈ {_suggest_tim:.1f}m** "
+                        f"để cầu khớp với địa hình."
+                    )
+                else:
+                    _pct_ok = 100*(min(_lt_max2,_xmo_p)-max(_lt_min2,_xmo_t))/max(1,_xmo_p-_xmo_t)
+                    st.success(f"✅ Cầu khớp địa hình ({_pct_ok:.0f}% chiều dài cầu nằm trong phạm vi địa hình)")
+
                 col_o1, col_o2, col_o3 = st.columns(3)
                 with col_o1:
                     che_do_view = st.selectbox("🎨 Chế độ địa hình:",
