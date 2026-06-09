@@ -90,47 +90,53 @@ def logout():
 # ─────────────────────────────────────────────────────────────────────────────
 
 def show_login_page():
-    """Hien thi trang dang nhap. Tra ve True neu dang nhap thanh cong."""
+    """Hien thi trang dang nhap centred, co the nhan Enter de submit."""
 
-    # CSS trang dang nhap
     st.markdown("""
 <style>
-.login-box {
-    max-width: 420px;
-    margin: 60px auto;
-    padding: 40px 36px 32px;
+/* An toan bo sidebar va header o trang login */
+[data-testid="stSidebar"]        { display: none !important; }
+[data-testid="stHeader"]         { display: none !important; }
+[data-testid="stToolbarActions"] { display: none !important; }
+[data-testid="stDecoration"]     { display: none !important; }
+[data-testid="stStatusWidget"]   { display: none !important; }
+.stDeployButton                  { display: none !important; }
+#MainMenu                        { display: none !important; }
+footer                           { display: none !important; }
+
+/* Nen trang login */
+.stApp { background: #0f0f1a; }
+
+/* Bo form Streamlit */
+[data-testid="stForm"] {
     background: #1e1e2e;
-    border-radius: 14px;
     border: 1px solid #3a3a5c;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-}
-.login-title {
-    text-align: center;
-    color: #f0f0f0;
-    font-size: 22px;
-    font-weight: 700;
-    margin-bottom: 6px;
-}
-.login-sub {
-    text-align: center;
-    color: #888;
-    font-size: 13px;
-    margin-bottom: 28px;
+    border-radius: 16px;
+    padding: 32px 28px 24px !important;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.5);
 }
 </style>
 """, unsafe_allow_html=True)
 
-    _, mid, _ = st.columns([1, 2, 1])
+    # Khoang trong phia tren de can chinh doc
+    st.markdown("<br><br><br>", unsafe_allow_html=True)
+
+    _, mid, _ = st.columns([1.2, 1, 1.2])
     with mid:
-        st.markdown('<div class="login-box">', unsafe_allow_html=True)
-        st.markdown('<div class="login-title">🏗️ Hệ thống Thiết kế Cầu AI</div>', unsafe_allow_html=True)
-        st.markdown('<div class="login-sub">UTH — Vui lòng đăng nhập để tiếp tục</div>', unsafe_allow_html=True)
+        st.markdown(
+            "<h2 style='text-align:center;color:#f0f0f0;margin-bottom:4px'>🏗️ Hệ thống Thiết kế Cầu AI</h2>"
+            "<p style='text-align:center;color:#888;font-size:13px;margin-bottom:24px'>"
+            "UTH — Vui lòng đăng nhập để tiếp tục</p>",
+            unsafe_allow_html=True,
+        )
 
-        username = st.text_input("Tên đăng nhập", key="login_user", placeholder="username")
-        password = st.text_input("Mật khẩu", type="password", key="login_pass", placeholder="••••••••")
+        with st.form("login_form", clear_on_submit=False):
+            username = st.text_input("Tên đăng nhập", placeholder="username", key="lf_user")
+            password = st.text_input("Mật khẩu", type="password", placeholder="••••••••", key="lf_pass")
+            submitted = st.form_submit_button("🔐 Đăng nhập", use_container_width=True, type="primary")
 
-        if st.button("🔐 Đăng nhập", use_container_width=True, type="primary", key="login_btn"):
-            db = _load()
+        if submitted:
+            db    = _load()
             udata = db["users"].get(username.strip())
             if udata and _verify(password, udata["password_hash"], udata["salt"]):
                 st.session_state["auth_ok"]   = True
@@ -141,9 +147,7 @@ def show_login_page():
                 }
                 st.rerun()
             else:
-                st.error("Tên đăng nhập hoặc mật khẩu không đúng.")
-
-        st.markdown("</div>", unsafe_allow_html=True)
+                st.error("❌ Tên đăng nhập hoặc mật khẩu không đúng.", icon=None)
 
     return is_authenticated()
 

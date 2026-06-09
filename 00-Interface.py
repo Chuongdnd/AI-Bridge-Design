@@ -11,6 +11,18 @@ import plotly.graph_objects as go
 # --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
+# ── Ẩn toolbar GitHub / Deploy / MainMenu (áp dụng cho CẢ trang login) ──────
+st.markdown("""
+<style>
+[data-testid="stToolbarActions"]  { display: none !important; }
+[data-testid="stDecoration"]      { display: none !important; }
+[data-testid="stStatusWidget"]    { display: none !important; }
+.stDeployButton                   { display: none !important; }
+#MainMenu                         { display: none !important; }
+footer                            { display: none !important; }
+</style>
+""", unsafe_allow_html=True)
+
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
 _auth_spec = _iutil.spec_from_file_location("auth00", os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-Auth.py"))
@@ -20,19 +32,6 @@ _auth_spec.loader.exec_module(AUTH)
 if not AUTH.is_authenticated():
     AUTH.show_login_page()
     st.stop()
-
-# ── Ẩn toolbar GitHub / Deploy / MainMenu ────────────────────────────────────
-st.markdown("""
-<style>
-/* Ẩn các nút GitHub/Share/Deploy ở góc phải — GIỮ nút toggle sidebar */
-[data-testid="stToolbarActions"]  { display: none !important; }
-[data-testid="stDecoration"]      { display: none !important; }
-[data-testid="stStatusWidget"]    { display: none !important; }
-.stDeployButton                   { display: none !important; }
-#MainMenu                         { display: none !important; }
-footer                            { display: none !important; }
-</style>
-""", unsafe_allow_html=True)
 
 # Khởi tạo bộ nhớ hội thoại chatbot
 if 'messages' not in st.session_state:

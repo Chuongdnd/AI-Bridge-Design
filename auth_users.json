@@ -1,0 +1,11 @@
+{
+  "users": {
+    "admin": {
+      "name": "Administrator",
+      "email": "",
+      "role": "admin",
+      "salt": "a3f80bf2773d9004fac7fa3d841f6c56",
+      "password_hash": "e16c660295c069d54c7fae892ef8d1ec7d6238bd74ed6421498808cff569ba3f"
+    }
+  }
+}
