@@ -665,6 +665,85 @@ if selected_ribbon == "THUYẾT MINH":
         except Exception as ex:
             st.error(f"Lỗi mặt cắt ngang: {ex}")
 
+    # ── VII. SO SÁNH 3 PHƯƠNG ÁN LOẠI DẦM ───────────────────────────────
+    _alts = st.session_state.get("alternatives")
+    with st.expander("**VII. SO SÁNH 3 PHƯƠNG ÁN LOẠI DẦM**", expanded=bool(_alts)):
+        if not _alts:
+            st.info("Chạy pipeline để tự động sinh 3 phương án so sánh.")
+        else:
+            _pa_colors = [a["color"] for a in _alts]
+            _pa_labels = [a["label"] for a in _alts]
+
+            # Thẻ tóm tắt nhanh mỗi PA
+            _c1, _c2, _c3 = st.columns(3)
+            for _col, _alt in zip([_c1, _c2, _c3], _alts):
+                _k  = _alt["kcn"]
+                _t  = _alt["tru"]
+                _m  = _alt["mong"]
+                with _col:
+                    st.markdown(
+                        f"<div style='background:{_alt['color']}18;border:1px solid {_alt['color']}55;"
+                        f"border-radius:10px;padding:14px'>"
+                        f"<div style='font-weight:700;color:{_alt['color']};font-size:15px'>{_alt['label']}</div>"
+                        f"<div style='font-size:12px;color:#aaa;margin-bottom:10px'>{_alt['mo_ta']}</div>"
+                        f"<table style='width:100%;font-size:13px'>"
+                        f"<tr><td style='color:#888'>Sơ đồ nhịp</td>"
+                        f"<td style='text-align:right;font-weight:600'>{_k['tong_so_nhip']} × {_k['chieu_dai']:.1f} m</td></tr>"
+                        f"<tr><td style='color:#888'>Chiều cao H</td>"
+                        f"<td style='text-align:right;font-weight:600'>{_k['chieu_cao_dam']:.2f} m</td></tr>"
+                        f"<tr><td style='color:#888'>L/H</td>"
+                        f"<td style='text-align:right;font-weight:600'>{_k.get('ti_le_L_H',0) or 0:.1f}</td></tr>"
+                        f"<tr><td style='color:#888'>Loại trụ</td>"
+                        f"<td style='text-align:right;font-weight:600'>{_t['loai_tru']}</td></tr>"
+                        f"<tr><td style='color:#888'>Số trụ</td>"
+                        f"<td style='text-align:right;font-weight:600'>{_alt['n_tru']} trụ</td></tr>"
+                        f"<tr><td style='color:#888'>Loại móng</td>"
+                        f"<td style='text-align:right;font-weight:600'>{_m['loai_mong']}</td></tr>"
+                        f"<tr><td style='color:#888'>Đường kính cọc</td>"
+                        f"<td style='text-align:right;font-weight:600'>{_m['D_coc_chon_txt']}</td></tr>"
+                        f"<tr style='border-top:1px solid #444'><td style='color:#888;padding-top:6px'>Chi phí tương đối</td>"
+                        f"<td style='text-align:right;font-weight:700;color:{_alt['color']};padding-top:6px'>{_alt['cost_pct']:.0f}%</td></tr>"
+                        f"<tr><td style='color:#888'>Thời gian TC</td>"
+                        f"<td style='text-align:right;font-weight:600'>{_alt['thoi_gian']:.1f} tháng</td></tr>"
+                        f"</table></div>",
+                        unsafe_allow_html=True,
+                    )
+
+            st.markdown("")
+            # Bieu do nhanh chi phi + so tru
+            _fig2 = go.Figure()
+            _fig2.add_trace(go.Bar(
+                name="Chi phí (%)",
+                x=_pa_labels,
+                y=[a["cost_pct"] for a in _alts],
+                marker_color=_pa_colors,
+                text=[f"{a['cost_pct']:.0f}%" for a in _alts],
+                textposition="outside",
+                yaxis="y",
+            ))
+            _fig2.add_trace(go.Scatter(
+                name="Số trụ giữa",
+                x=_pa_labels,
+                y=[a["n_tru"] for a in _alts],
+                mode="lines+markers+text",
+                text=[str(a["n_tru"]) for a in _alts],
+                textposition="top center",
+                line=dict(color="#e74c3c", width=2, dash="dot"),
+                marker=dict(size=10, color="#e74c3c"),
+                yaxis="y2",
+            ))
+            _fig2.update_layout(
+                yaxis=dict(title="Chi phí (%, Dầm I=100%)", side="left"),
+                yaxis2=dict(title="Số trụ giữa", side="right", overlaying="y",
+                            rangemode="tozero"),
+                plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+                height=280, margin=dict(t=10, b=10, l=10, r=10),
+                legend=dict(orientation="h", y=-0.25),
+                barmode="group",
+            )
+            st.plotly_chart(_fig2, use_container_width=True, key="pa_quick_chart")
+            st.caption("Xem đầy đủ biểu đồ radar & bảng chi tiết ở tab **SO SÁNH PHƯƠNG ÁN**.")
+
     st.markdown("---")
     st.caption("Kết quả mang tính tham khảo sơ bộ. Cần kiểm tra và điều chỉnh theo tiêu chuẩn TCVN hiện hành.")
 
@@ -1099,22 +1178,103 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
 elif selected_ribbon == "SO SÁNH PHƯƠNG ÁN":
     alts = st.session_state.get("alternatives", None)
     if alts is None:
-        st.title("📊 So sánh 3 Phương án Thiết kế Cầu")
-        st.info(
-            "👆 Chưa có dữ liệu phương án. Hãy nhấn **⚙️ OPTIONS** và chạy toàn bộ AI pipeline trước."
-        )
-        st.markdown("""
-**3 phương án sẽ được sinh tự động:**
-- **PA1 — AI tối ưu**: phương án AI khuyến nghị, cân bằng kỹ thuật và kinh tế
-- **PA2 — Nhiều nhịp ngắn**: dầm I/T ngược, trụ thân cột mảnh, thi công nhanh
-- **PA3 — Ít trụ nhất**: nhịp dài Super-T, trụ đặc thân hẹp, ít cản dòng chảy
+        st.title("📊 So sánh 3 Phương án Loại Dầm")
+        st.info("👆 Nhấn **⚙️ OPTIONS** → điền thông số → **OK** để AI tự sinh 3 phương án cho công trình cụ thể của bạn.")
+        st.markdown("---")
+        st.markdown("### Giới thiệu 3 phương án so sánh")
+        st.caption("Hệ thống sẽ tính toán cùng một cầu với 3 loại dầm khác nhau, sau đó so sánh kỹ thuật + kinh tế để hỗ trợ chọn phương án tối ưu.")
 
-**Tab so sánh bao gồm:**
-- Bảng đa tiêu chí: KCN, trụ, móng từng phương án
-- Biểu đồ chi phí tương đối và thời gian thi công
-- Biểu đồ radar đánh giá 5 tiêu chí
-- Bảng so sánh loại trụ và phương án móng
-        """)
+        # Thẻ thông tin 3 loai dam
+        _c1, _c2, _c3 = st.columns(3)
+        _dam_cards = [
+            {
+                "color": "#3498db",
+                "title": "PA1 — Dầm I",
+                "subtitle": "BTCT dự ứng lực — đúc sẵn",
+                "specs": [
+                    ("Chiều dài nhịp", "18 – 33 m"),
+                    ("Tỉ lệ H/L tối ưu", "1/15 – 1/18"),
+                    ("Số dầm / MCN", "5 – 9 dầm"),
+                    ("Khoảng cách tim", "1.8 – 2.2 m"),
+                ],
+                "tru": "Thân cột 2–3 trụ (tải trọng trung bình)",
+                "pros": "Phổ biến nhất tại VN, nhà cung cấp nhiều, thi công nhanh",
+                "cons": "Chiều cao dầm lớn hơn Super-T, cần cẩu lắp chuyên dụng",
+                "use": "Cầu nông thôn, đường tỉnh, cấp IV–VI",
+            },
+            {
+                "color": "#2ecc71",
+                "title": "PA2 — T ngược",
+                "subtitle": "BTCT thường / DƯL — đổ tại chỗ hoặc đúc sẵn",
+                "specs": [
+                    ("Chiều dài nhịp", "12 – 22 m"),
+                    ("Tỉ lệ H/L tối ưu", "1/12 – 1/15"),
+                    ("Số dầm / MCN", "5 – 11 dầm"),
+                    ("Khoảng cách tim", "0.9 – 1.2 m"),
+                ],
+                "tru": "Thân cột đơn hoặc 2 trụ (tải nhỏ, nhịp ngắn)",
+                "pros": "Chi phí dầm đơn chiếc thấp nhất, đơn giản thi công",
+                "cons": "Nhiều trụ hơn → cản dòng, tăng chi phí móng",
+                "use": "Cầu kênh nhỏ, đường nông thôn cấp V–VI",
+            },
+            {
+                "color": "#e67e22",
+                "title": "PA3 — Super-T",
+                "subtitle": "BTCT dự ứng lực — đúc sẵn tiết diện T rỗng",
+                "specs": [
+                    ("Chiều dài nhịp", "27 – 40 m"),
+                    ("Tỉ lệ H/L tối ưu", "1/18 – 1/20"),
+                    ("Số dầm / MCN", "4 – 7 dầm"),
+                    ("Khoảng cách tim", "2.0 – 2.5 m"),
+                ],
+                "tru": "Trụ đặc / đặc thân hẹp (tải lớn từ nhịp dài)",
+                "pros": "Ít trụ, ít cản dòng, kết cấu thanh mảnh hiện đại",
+                "cons": "Trọng lượng dầm lớn → cần thiết bị cẩu lắp mạnh hơn",
+                "use": "Cầu sông lớn, quốc lộ, cấp III–IV",
+            },
+        ]
+        for _col, _card in zip([_c1, _c2, _c3], _dam_cards):
+            with _col:
+                _spec_rows = "".join(
+                    f"<tr><td style='color:#aaa;padding:3px 0'>{k}</td>"
+                    f"<td style='text-align:right;font-weight:600;padding:3px 0'>{v}</td></tr>"
+                    for k, v in _card["specs"]
+                )
+                st.markdown(
+                    f"<div style='background:{_card['color']}15;border:1px solid {_card['color']}50;"
+                    f"border-radius:12px;padding:16px;height:100%'>"
+                    f"<div style='font-size:16px;font-weight:700;color:{_card['color']}'>{_card['title']}</div>"
+                    f"<div style='font-size:12px;color:#999;margin-bottom:12px'>{_card['subtitle']}</div>"
+                    f"<table style='width:100%;font-size:13px;border-collapse:collapse'>{_spec_rows}</table>"
+                    f"<hr style='border-color:#444;margin:10px 0'>"
+                    f"<div style='font-size:12px;color:#aaa'><b style='color:{_card['color']}'>Loại trụ:</b> {_card['tru']}</div>"
+                    f"<div style='font-size:12px;color:#aaa;margin-top:6px'><b style='color:#2ecc71'>✔</b> {_card['pros']}</div>"
+                    f"<div style='font-size:12px;color:#aaa;margin-top:4px'><b style='color:#e74c3c'>✘</b> {_card['cons']}</div>"
+                    f"<div style='font-size:11px;background:{_card['color']}22;border-radius:6px;"
+                    f"padding:6px 8px;margin-top:10px;color:{_card['color']}'>"
+                    f"📌 {_card['use']}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
+
+        st.markdown("---")
+        st.markdown("### Nội dung so sánh sau khi chạy pipeline")
+        _info_cols = st.columns(4)
+        for _ic, (_icon, _txt) in zip(_info_cols, [
+            ("📐", "Bảng đa tiêu chí\nKCN · Trụ · Móng"),
+            ("💰", "Chi phí tương đối\n(Dầm I = 100%)"),
+            ("📊", "Biểu đồ radar\n5 tiêu chí đánh giá"),
+            ("🏛️", "So sánh loại trụ\nvà phương án móng"),
+        ]):
+            with _ic:
+                st.markdown(
+                    f"<div style='text-align:center;padding:14px;background:#1e1e2e;"
+                    f"border-radius:10px;border:1px solid #333'>"
+                    f"<div style='font-size:26px'>{_icon}</div>"
+                    f"<div style='font-size:12px;color:#aaa;white-space:pre-line;margin-top:6px'>{_txt}</div>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
     else:
         try:
             SSP.render_comparison_tab(alts, st)
