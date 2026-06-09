@@ -11,6 +11,16 @@ import plotly.graph_objects as go
 # --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
 
+# ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
+import importlib.util as _iutil
+_auth_spec = _iutil.spec_from_file_location("auth00", os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-Auth.py"))
+AUTH = _iutil.module_from_spec(_auth_spec)
+_auth_spec.loader.exec_module(AUTH)
+
+if not AUTH.is_authenticated():
+    AUTH.show_login_page()
+    st.stop()
+
 # ── Ẩn toolbar GitHub / Deploy / MainMenu ────────────────────────────────────
 st.markdown("""
 <style>
@@ -78,6 +88,7 @@ try:
     TC   = importlib.import_module("04-Pier-test")
     LPC  = importlib.import_module("10-LopPhu_MatCau")  # Lớp phủ mặt cầu
     BVK  = importlib.import_module("11-BanVe_KetCau")   # Bản vẽ kết cấu 2D/3D
+    SSP  = importlib.import_module("09-So_Sanh_PA")     # So sánh 3 phương án
     importlib.reload(PLOT)
     importlib.reload(BVK)
 except Exception as e:
@@ -103,6 +114,9 @@ if 'design_data' not in st.session_state:
 
 if 'chatbot_context' not in st.session_state:
     st.session_state.chatbot_context = "Chưa tiến hành chạy dự báo tính toán."
+
+if 'alternatives' not in st.session_state:
+    st.session_state.alternatives = None
 
 if 'current_tab' not in st.session_state:
     st.session_state.current_tab = "THUYẾT MINH"
@@ -242,20 +256,13 @@ def show_options_dialog():
 
                 L_cau    = res['geo_logic'].get('L_cau', None)
                 moi_tr   = "Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông"
-                xlsx_path = os.path.join(os.path.dirname(__file__), "Girder.xlsx")
-                csv_path  = os.path.join(os.path.dirname(__file__), "Phan loai Tru.csv")
+                v3_path  = os.path.join(os.path.dirname(__file__), "Data", "Bridge_Train_Dataset_v3.xlsx")
 
-                # ── Bước 3 (legacy): Dầm — dùng cho bản vẽ kỹ thuật ─────────
-                grd_models = GRD.train_bridge_ai_system(xlsx_path)
-                if grd_models:
-                    res['ai_result'] = GRD.predict_main_span(
-                        b_tk=res['B'], goc=goc_giao, b_cau=res['bc'],
-                        env=moi_tr, models=grd_models,
-                        L_cau_tong=L_cau, method='auto'
-                    )
+                # ── Bước 3 (legacy GRD module — bo qua neu khong co file) ────
+                res['ai_result'] = None
 
-                # ── Bước 4: AI Kết cấu nhịp (v2, đầy đủ đặc trưng) ──────────
-                kcn_models = KCN.train_kcn_ai(xlsx_path)
+                # ── Bước 4: AI Kết cấu nhịp ──────────────────────────────────
+                kcn_models = KCN.train_kcn_ai(v3_path=v3_path)
                 if kcn_models:
                     res['kcn_result'] = KCN.predict_kcn(
                         B_tk=res['B'], H_tk=res.get('H', 3.5),
@@ -267,7 +274,7 @@ def show_options_dialog():
                     res['kcn_result'] = None
 
                 # ── Bước 5: AI Mố – Trụ ──────────────────────────────────────
-                pier_models = MOT.train_pier_ai(csv_path)
+                pier_models = MOT.train_pier_ai(v3_path=v3_path)
                 loai_dam_cho_tru = (
                     res['kcn_result']['loai_dam'] if res.get('kcn_result')
                     else res.get('ai_result', {}).get('loai_dam', 'Super-T')
@@ -299,7 +306,7 @@ def show_options_dialog():
                     res['tru_result']['loai_tru'] if res.get('tru_result')
                     else 'Thân cột 2 trụ'
                 )
-                fnd_models = MONG.train_foundation_ai()
+                fnd_models = MONG.train_foundation_ai(v3_path=v3_path)
                 res['mong_result'] = MONG.predict_foundation(
                     H_tru=H_tru_est, loai_tru=loai_tru_str,
                     is_river=is_river, cap_song=res['cap_song'],
@@ -318,6 +325,25 @@ def show_options_dialog():
                 )
 
                 st.session_state.design_data = res
+
+                # ── Bước 8: Sinh 3 phương án so sánh ──────────────────────
+                try:
+                    st.session_state.alternatives = SSP.generate_3_alternatives(
+                        B_tk=res['B'], H_tk=res.get('H', 3.5), goc=goc_giao,
+                        B_cau=res['bc'], moi_truong=moi_tr, L_cau=L_cau,
+                        kcn_models=kcn_models, pier_models=pier_models,
+                        fnd_models=fnd_models,
+                        MNCN=h1, H_tk_nhip=res.get('H', 3.5), h98=h98,
+                        cap_song=res['cap_song'], is_urban=is_urban_val,
+                        is_river=1, vtk=res['vtk'],
+                        pa1_kcn=res.get('kcn_result'),
+                        pa1_tru=res.get('tru_result'),
+                        pa1_mong=res.get('mong_result'),
+                    )
+                except Exception as _alt_err:
+                    st.session_state.alternatives = None
+                    st.warning(f"Không sinh được phương án so sánh: {_alt_err}")
+
                 kcn = res.get('kcn_result') or res.get('ai_result', {})
                 st.session_state.chatbot_context = (
                     f"Vtk={res['vtk']}km/h | "
@@ -335,7 +361,7 @@ def show_options_dialog():
 # =========================================================================
 st.markdown('<div id="custom-ribbon-container">', unsafe_allow_html=True)
 
-ribbon_options = ["THUYẾT MINH", "BẢN VẼ KỸ THUẬT"]
+ribbon_options = ["THUYẾT MINH", "BẢN VẼ KỸ THUẬT", "SO SÁNH PHƯƠNG ÁN"]
 # Map old tab names về mới
 if st.session_state.current_tab == "BẢN VẼ KẾT CẤU":
     st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
@@ -344,7 +370,7 @@ default_idx = ribbon_options.index(st.session_state.current_tab) if st.session_s
 selected_ribbon = option_menu(
     menu_title=None,
     options=ribbon_options,
-    icons=["house", "rulers"],
+    icons=["house", "rulers", "bar-chart-line"],
     menu_icon="cast",
     default_index=default_idx,
     orientation="horizontal",
@@ -393,6 +419,24 @@ with st.sidebar:
     st.write("👤 **SVTH:** Chương DND")
     st.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
     st.caption("🎓 *Đề tài:* Tích hợp AI và BIM tự động hóa thiết kế cầu đường bộ")
+
+    st.markdown("---")
+
+    # ── Thông tin tài khoản & đăng xuất ─────────────────────────────────
+    _u = AUTH.current_user()
+    st.caption(f"🔑 Đăng nhập: **{_u.get('name', _u.get('username',''))}** ({_u.get('role','')})")
+    _col1, _col2 = st.columns(2)
+    with _col1:
+        if st.button("🚪 Đăng xuất", use_container_width=True, key="btn_logout"):
+            AUTH.logout()
+            st.rerun()
+    with _col2:
+        _show_acct = st.button("👥 Tài khoản", use_container_width=True, key="btn_acct",
+                               disabled=not AUTH.is_admin(),
+                               help="Quản lý tài khoản (chỉ admin)")
+    if _show_acct and AUTH.is_admin():
+        with st.expander("👥 Quản lý tài khoản", expanded=True):
+            AUTH.show_account_panel()
 
     st.markdown("---")
     st.subheader("🤖 Bridge AI Assistant")
@@ -1049,3 +1093,33 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                                 st.error("Xuất thất bại.")
                         except Exception as _ex:
                             st.error(f"Lỗi: {_ex}")
+
+# =========================================================================
+# SO SÁNH PHƯƠNG ÁN
+# =========================================================================
+elif selected_ribbon == "SO SÁNH PHƯƠNG ÁN":
+    alts = st.session_state.get("alternatives", None)
+    if alts is None:
+        st.title("📊 So sánh 3 Phương án Thiết kế Cầu")
+        st.info(
+            "👆 Chưa có dữ liệu phương án. Hãy nhấn **⚙️ OPTIONS** và chạy toàn bộ AI pipeline trước."
+        )
+        st.markdown("""
+**3 phương án sẽ được sinh tự động:**
+- **PA1 — AI tối ưu**: phương án AI khuyến nghị, cân bằng kỹ thuật và kinh tế
+- **PA2 — Nhiều nhịp ngắn**: dầm I/T ngược, trụ thân cột mảnh, thi công nhanh
+- **PA3 — Ít trụ nhất**: nhịp dài Super-T, trụ đặc thân hẹp, ít cản dòng chảy
+
+**Tab so sánh bao gồm:**
+- Bảng đa tiêu chí: KCN, trụ, móng từng phương án
+- Biểu đồ chi phí tương đối và thời gian thi công
+- Biểu đồ radar đánh giá 5 tiêu chí
+- Bảng so sánh loại trụ và phương án móng
+        """)
+    else:
+        try:
+            SSP.render_comparison_tab(alts, st)
+        except Exception as _ssp_err:
+            st.error(f"Lỗi render so sánh phương án: {_ssp_err}")
+            import traceback
+            st.code(traceback.format_exc())
