@@ -88,8 +88,10 @@ try:
     LPC  = importlib.import_module("10-LopPhu_MatCau")  # Lớp phủ mặt cầu
     BVK  = importlib.import_module("11-BanVe_KetCau")   # Bản vẽ kết cấu 2D/3D
     SSP  = importlib.import_module("09-So_Sanh_PA")     # So sánh 3 phương án
+    CTD  = importlib.import_module("12-ChiTiet_Dam")    # Chi tiết dầm
     importlib.reload(PLOT)
     importlib.reload(BVK)
+    importlib.reload(CTD)
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
     st.stop()
@@ -801,13 +803,15 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
         )
 
         # ── Sub-tabs ────────────────────────────────────────────────────
-        tab_3d, tab_btc, tab_mcn_vt, tab_nhip, tab_mcn, tab_tru, tab_dia_chat, tab_tru3d, tab_export = st.tabs([
+        (tab_3d, tab_btc, tab_mcn_vt, tab_nhip, tab_mcn,
+         tab_tru, tab_ctd, tab_dia_chat, tab_tru3d, tab_export) = st.tabs([
             "🌐 3D Tổng hợp"        + (" 🗺️" if has_terr else " (sơ đồ)"),
             "📋 Bố trí chung",
             "✂️ MCN Mố/Trụ",
             "📏 Sơ đồ nhịp"         + (" 🗺️" if has_terr else ""),
             "📐 MCN điển hình",
             "🏛️ Trụ cầu 2D",
+            "🔩 Chi tiết dầm",
             "🪨 Địa chất",
             "🏗️ Trụ 3D tham số",
             "📤 Xuất bản vẽ",
@@ -1024,6 +1028,16 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                 c4.metric("Ø cọc", _mg.get("D_coc_chon_txt","—") if _mg else "—")
             except Exception as _e:
                 st.error(f"Lỗi vẽ trụ: {_e}")
+
+        # ── TAB CHI TIẾT DẦM ──────────────────────────────────────────
+        with tab_ctd:
+            try:
+                CTD.render_chi_tiet_dam_tab(d, st)
+            except Exception as _e:
+                import traceback
+                st.error(f"Lỗi tab Chi tiết dầm: {_e}")
+                with st.expander("Chi tiết lỗi"):
+                    st.code(traceback.format_exc())
 
         # ── TAB 5: Địa chất & Địa hình chi tiết ───────────────────────
         with tab_dia_chat:

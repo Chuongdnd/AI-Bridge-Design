@@ -439,78 +439,71 @@ def _beam_poly(fig, xc, H, loai, kc, t_ban):
     Vẽ mặt cắt ngang dầm tại tim xc.
     z=0 tại mặt dưới bản mặt cầu; dầm nằm trong [z0, z0-H].
 
-    Hình dạng chuẩn theo ảnh tham chiếu:
-    - Super-T  : cánh trên rộng (≈ kc), haunch thon, cánh đáy nhỏ
-    - T ngược  : web hẹp ở TRÊN, cánh rộng ở ĐÁY (T lộn ngược)
-    - Dầm I    : cánh trên = cánh dưới, web hẹp ở giữa (12 điểm)
+    Profile chuẩn dựa trên bản vẽ SPT thực tế (Chi tiết dầm SPT, L=38.2m):
+    - Super-T (14đ): cánh trên=kc, haunch→web song song, cánh đáy nhỏ (tỷ lệ từ PDF)
+    - T ngược  (8đ): web hẹp TRÊN, cánh rộng ĐÁY (T lộn ngược)
+    - Dầm I   (12đ): cánh trên = cánh dưới, web hẹp
     """
     z0 = -t_ban
-    loai_l = loai.lower()
+    ll = loai.lower()
 
-    if "bản" in loai_l:
-        # Dầm bản: hình chữ nhật
+    if "bản" in ll:
         hw = kc * 0.48
         _poly(fig, [xc-hw, xc+hw, xc+hw, xc-hw],
               [z0, z0, z0-H, z0-H],
               _C["dam"], _C["dam_dk"], showlegend=False)
 
-    elif "t ngược" in loai_l or "t-ngược" in loai_l or "tngược" in loai_l:
-        # Dầm T ngược (inverted-T):
-        # - Web (sườn) HẸP ở TRÊN, nhúng vào bản BT đổ tại chỗ
-        # - Bản cánh (flange) RỘNG ở ĐÁY
-        #              ██   ← web hẹp (tw)
-        #              ██
-        #    ███████████████ ← cánh đáy rộng (fw)
-        tw  = max(0.07, min(0.13, kc * 0.10))   # nửa bề rộng web
-        fw  = min(kc * 0.44, 0.50)               # nửa bề rộng cánh đáy
-        fh  = min(H * 0.24, 0.30)               # chiều cao cánh đáy
+    elif "t ngược" in ll or "t-ngược" in ll or "tngược" in ll:
+        # Dầm T ngược: web hẹp TRÊN, cánh rộng ĐÁY
+        tw = max(0.07, min(0.13, kc * 0.10))
+        fw = min(kc * 0.44, 0.50)
+        fh = min(H * 0.24, 0.30)
         xs = [xc-tw, xc+tw, xc+tw, xc+fw, xc+fw, xc-fw, xc-fw, xc-tw]
-        ys = [z0,    z0,    z0-H+fh, z0-H+fh, z0-H, z0-H, z0-H+fh, z0-H+fh]
+        ys = [z0, z0, z0-H+fh, z0-H+fh, z0-H, z0-H, z0-H+fh, z0-H+fh]
         _poly(fig, xs, ys, _C["dam"], _C["dam_dk"], showlegend=False)
 
-    elif "super" in loai_l:
-        # Dầm Super-T (SPT):
-        # - Cánh trên RỘNG (≈ toàn khoảng cách tim), các cánh sát nhau
-        # - Haunch (vát) chuyển từ cánh sang web
-        # - Web thon, cánh đáy nhỏ
-        # ████████████████ ← cánh trên rộng (tf_hw ≈ 0.46·kc)
-        # ████         ████← haunch
-        #    █████████    ← web + cánh đáy nhỏ
-        tf_hw  = min(kc * 0.46, 1.10)   # nửa bề rộng cánh trên
-        tf_h   = min(H * 0.12, 0.20)    # chiều cao cánh trên
-        haunch = min(H * 0.10, 0.14)    # chiều cao haunch (chuyển cánh→web)
-        w_top  = min(kc * 0.15, 0.26)   # nửa rộng web tại đỉnh
-        w_bot  = min(kc * 0.11, 0.18)   # nửa rộng web tại đáy (thon nhẹ)
-        bf_hw  = min(kc * 0.22, 0.34)   # nửa bề rộng cánh đáy
-        bf_h   = min(H * 0.12, 0.18)    # chiều cao cánh đáy
-        # 12 điểm: clockwise từ góc trên-trái
+    elif "super" in ll:
+        # Dầm Super-T (SPT) — 14 điểm theo chi tiết bản vẽ SPT (PDF tham chiếu):
+        # Ref: H=1750mm → cánh trong=1220mm (225+770+225), đáy=1020mm (160+700+160)
+        # Tỷ lệ chuẩn hóa theo H (H/1.750):
+        k      = H / 1.750
+        tf_hw  = kc / 2                              # cánh trên NGOÀI = toàn kc
+        tin_hw = min(kc/2 - 0.05, 0.610 * k)        # cánh trong = 1220/2 mm (ref)
+        tf_h   = max(0.150, 0.200 * k)              # dày cánh trên (200mm ref)
+        hau_h  = max(0.080, 0.150 * k)              # cao haunch (150mm ref)
+        w_hw   = max(0.230, 0.350 * k)              # nửa web song song (350mm ref)
+        bt_h   = max(0.030, 0.050 * k)              # vùng mở rộng web→cánh đáy
+        bf_hw  = max(0.380, 0.510 * k)              # nửa cánh đáy (510mm ref)
+        bf_h   = max(0.100, 0.150 * k)              # dày cánh đáy (150mm ref)
         xs = [
-            xc-tf_hw, xc+tf_hw,          # 1,2 : đỉnh cánh trên (rộng)
-            xc+tf_hw, xc+w_top,          # 3,4 : cạnh phải cánh → haunch phải
-            xc+w_bot, xc+bf_hw,          # 5,6 : cuối haunch → cánh đáy phải trên
-            xc+bf_hw, xc-bf_hw,          # 7,8 : đáy cánh đáy
-            xc-bf_hw, xc-w_bot,          # 9,10: cánh đáy trái → cuối haunch
-            xc-w_top, xc-tf_hw,          # 11,12: haunch trái → cạnh cánh trái
+            xc-tf_hw, xc+tf_hw,        # 1,2 : đỉnh cánh ngoài (=kc, rộng)
+            xc+tf_hw, xc+tin_hw,       # 3,4 : phải ngoài → haunch phải bắt đầu
+            xc+w_hw,                   # 5   : cuối haunch (đỉnh web song song)
+            xc+w_hw,                   # 6   : đáy web song song phải
+            xc+bf_hw, xc+bf_hw,        # 7,8 : cánh đáy phải
+            xc-bf_hw, xc-bf_hw,        # 9,10: cánh đáy trái
+            xc-w_hw,                   # 11  : đáy web song song trái
+            xc-w_hw,                   # 12  : đỉnh web song song trái
+            xc-tin_hw, xc-tf_hw,       # 13,14: haunch trái → ngoài trái
         ]
         ys = [
-            z0,    z0,                   # 1,2
-            z0-tf_h, z0-tf_h-haunch,    # 3,4
-            z0-H+bf_h, z0-H+bf_h,       # 5,6
-            z0-H, z0-H,                 # 7,8
-            z0-H+bf_h, z0-H+bf_h,      # 9,10
-            z0-tf_h-haunch, z0-tf_h,    # 11,12
+            z0, z0,                                  # 1,2
+            z0-tf_h, z0-tf_h,                        # 3,4: đáy cánh trên
+            z0-tf_h-hau_h,                           # 5  : cuối haunch
+            z0-H+bf_h+bt_h,                          # 6  : đáy web song song
+            z0-H+bf_h, z0-H,                         # 7,8: cánh đáy phải
+            z0-H, z0-H+bf_h,                         # 9,10: cánh đáy trái
+            z0-H+bf_h+bt_h,                          # 11 : đáy web trái
+            z0-tf_h-hau_h,                           # 12 : đỉnh web trái
+            z0-tf_h, z0-tf_h,                        # 13,14: đáy cánh trên trái
         ]
         _poly(fig, xs, ys, _C["dam"], _C["dam_dk"], showlegend=False)
 
-    else:  # Dầm I (mặc định)
-        # I-beam: cánh trên = cánh dưới, web hẹp
-        #  ████████  ← cánh trên (fw)
-        #     ██     ← web (tw)
-        #  ████████  ← cánh dưới (fw)
-        tw = max(0.07, min(0.11, kc * 0.07))   # nửa bề rộng web
-        fw = max(0.16, min(0.30, kc * 0.20))   # nửa bề rộng cánh
-        tf = min(H * 0.13, 0.18)               # chiều cao cánh (trên & dưới)
-        # 12 điểm chuẩn I-beam
+    else:  # Dầm I
+        # 12 điểm chuẩn: cánh trên = cánh dưới, web hẹp giữa
+        tw = max(0.07, min(0.11, kc * 0.07))
+        fw = max(0.16, min(0.30, kc * 0.20))
+        tf = min(H * 0.13, 0.18)
         xs = [xc-fw, xc+fw, xc+fw, xc+tw,   xc+tw,   xc+fw,
               xc+fw, xc-fw, xc-fw, xc-tw,   xc-tw,   xc-fw]
         ys = [z0,    z0,    z0-tf, z0-tf,   z0-H+tf, z0-H+tf,
@@ -758,6 +751,117 @@ def ve_mat_dung_tru_2d(d):
 
 
 # ===========================================================================
+# 3b. HELPER — Extrude profile dầm thành Mesh3D
+# ===========================================================================
+
+def _spt_profile_yz(yd, z_top, H, kc):
+    """
+    Profile SPT 14 điểm trong mặt phẳng (y, z) cho 3D.
+    yd = tim dầm theo trục ngang y.
+    z_top = cao độ đỉnh dầm (= cao_dd + H_dam).
+    Trả về (ys, zs) — y-coords và z-coords theo hệ toàn cục.
+    """
+    k      = H / 1.750
+    tf_hw  = kc / 2
+    tin_hw = min(kc/2 - 0.05, 0.610 * k)
+    tf_h   = max(0.150, 0.200 * k)
+    hau_h  = max(0.080, 0.150 * k)
+    w_hw   = max(0.230, 0.350 * k)
+    bt_h   = max(0.030, 0.050 * k)
+    bf_hw  = max(0.380, 0.510 * k)
+    bf_h   = max(0.100, 0.150 * k)
+    z0 = z_top
+    ys = [
+        yd-tf_hw, yd+tf_hw,
+        yd+tf_hw, yd+tin_hw,
+        yd+w_hw, yd+w_hw,
+        yd+bf_hw, yd+bf_hw,
+        yd-bf_hw, yd-bf_hw,
+        yd-w_hw, yd-w_hw,
+        yd-tin_hw, yd-tf_hw,
+    ]
+    zs = [
+        z0, z0,
+        z0-tf_h, z0-tf_h,
+        z0-tf_h-hau_h,
+        z0-H+bf_h+bt_h,
+        z0-H+bf_h, z0-H,
+        z0-H, z0-H+bf_h,
+        z0-H+bf_h+bt_h,
+        z0-tf_h-hau_h,
+        z0-tf_h, z0-tf_h,
+    ]
+    return ys, zs
+
+
+def _tngược_profile_yz(yd, z_top, H, kc):
+    k = H / 1.20
+    tw  = max(0.065, 0.080 * k)
+    fw  = min(kc * 0.44, 0.480)
+    fh  = max(0.100, 0.220 * k)
+    z0  = z_top
+    ys  = [yd-tw, yd+tw, yd+tw, yd+fw, yd+fw, yd-fw, yd-fw, yd-tw]
+    zs  = [z0, z0, z0-H+fh, z0-H+fh, z0-H, z0-H, z0-H+fh, z0-H+fh]
+    return ys, zs
+
+
+def _dami_profile_yz(yd, z_top, H, kc):
+    k = H / 1.60
+    fw = max(0.160, 0.200 * k)
+    tw = max(0.070, 0.090 * k)
+    tf = max(0.120, 0.160 * k)
+    z0 = z_top
+    ys = [yd-fw, yd+fw, yd+fw, yd+tw, yd+tw, yd+fw,
+          yd+fw, yd-fw, yd-fw, yd-tw, yd-tw, yd-fw]
+    zs = [z0, z0, z0-tf, z0-tf, z0-H+tf, z0-H+tf,
+          z0-H, z0-H, z0-H+tf, z0-H+tf, z0-tf, z0-tf]
+    return ys, zs
+
+
+def _beam_mesh3d(yd, z_top, x_start, x_end, H, kc, loai, color, name="", sl=True):
+    """
+    Tạo go.Mesh3d cho một dầm bằng cách extrude profile 2D (y,z) theo trục x.
+    Trục: x=chiều dài, y=ngang, z=cao độ.
+    """
+    ll = loai.lower()
+    if "super" in ll:
+        prof_y, prof_z = _spt_profile_yz(yd, z_top, H, kc)
+    elif "t ngược" in ll or "tngược" in ll or "t-ngược" in ll:
+        prof_y, prof_z = _tngược_profile_yz(yd, z_top, H, kc)
+    else:
+        prof_y, prof_z = _dami_profile_yz(yd, z_top, H, kc)
+
+    n = len(prof_y)
+    # Mặt trước (x=x_start) và mặt sau (x=x_end)
+    vx = [x_start]*n + [x_end]*n
+    vy = prof_y + prof_y
+    vz = prof_z + prof_z
+
+    ii, jj, kk = [], [], []
+    # Mặt bên (side) — mỗi cạnh → 2 tam giác
+    for i in range(n):
+        i1 = (i + 1) % n
+        a, b, c, e = i, i1, i + n, i1 + n
+        ii += [a, a]; jj += [b, c]; kk += [c, e]
+    # Mặt đầu bên trái (fan từ điểm 0)
+    for i in range(1, n - 1):
+        ii.append(0); jj.append(i); kk.append(i + 1)
+    # Mặt đầu bên phải (fan từ điểm n)
+    for i in range(1, n - 1):
+        ii.append(n); jj.append(n + i + 1); kk.append(n + i)
+
+    return go.Mesh3d(
+        x=vx, y=vy, z=vz,
+        i=ii, j=jj, k=kk,
+        color=color, opacity=0.90,
+        name=name, showlegend=sl and bool(name),
+        flatshading=True,
+        lighting=dict(ambient=0.65, diffuse=0.85, specular=0.15),
+        hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
+    )
+
+
+# ===========================================================================
 # 4. MÔ HÌNH 3D — Kết cấu + địa hình (nếu có df_tim_line)
 # ===========================================================================
 def ve_cau_3d(d, df_tim_line=None):
@@ -866,17 +970,22 @@ def ve_cau_3d(d, df_tim_line=None):
         traces.append(_box3d(xt-cap_W, -bc/2*0.9, z_cap_b, xt+cap_W, bc/2*0.9, z_cap_t,
                              color="#d5dbdb", name="Xà mũ" if sl else "", sl=sl))
 
-    # ── Dầm chính theo từng nhịp ──────────────────────────────────────────
-    bf      = 0.35
-    y_first = -bc/2 + oh
+    # ── Dầm chính theo từng nhịp — profile 3D chính xác ─────────────────────
+    loai_dam = str(kcn.get("loai_dam", "Super-T"))
+    y_first  = -bc/2 + oh
     for i_nhip, (xs, xe) in enumerate(spans):
         sl = (i_nhip == 0)
         for i_dam in range(n_dam):
             yd = y_first + i_dam * kc_dam
-            traces.append(_box3d(xs, yd-bf/2, cao_dd, xe, yd+bf/2, cao_dd+H_dam,
-                                 color="#85929e", opacity=0.92,
-                                 name=f"Dầm {kcn.get('loai_dam','')}" if (sl and i_dam==0) else "",
-                                 sl=(sl and i_dam==0)))
+            # z_top = cao độ đỉnh dầm (= đáy bản mặt cầu)
+            z_top_dam = cao_dd + H_dam
+            traces.append(_beam_mesh3d(
+                yd, z_top_dam, xs, xe,
+                H_dam, kc_dam, loai_dam,
+                color="#85929e",
+                name=f"Dầm {loai_dam}" if (sl and i_dam == 0) else "",
+                sl=(sl and i_dam == 0),
+            ))
 
     # ── Bản mặt cầu ───────────────────────────────────────────────────────
     for i_nhip, (xs, xe) in enumerate(spans):
