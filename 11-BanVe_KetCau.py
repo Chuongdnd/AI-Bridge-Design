@@ -435,41 +435,91 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
 # 2. MẶT CẮT NGANG ĐIỂN HÌNH ĐẦY ĐỦ
 # ===========================================================================
 def _beam_poly(fig, xc, H, loai, kc, t_ban):
+    """
+    Vẽ mặt cắt ngang dầm tại tim xc.
+    z=0 tại mặt dưới bản mặt cầu; dầm nằm trong [z0, z0-H].
+
+    Hình dạng chuẩn theo ảnh tham chiếu:
+    - Super-T  : cánh trên rộng (≈ kc), haunch thon, cánh đáy nhỏ
+    - T ngược  : web hẹp ở TRÊN, cánh rộng ở ĐÁY (T lộn ngược)
+    - Dầm I    : cánh trên = cánh dưới, web hẹp ở giữa (12 điểm)
+    """
     z0 = -t_ban
     loai_l = loai.lower()
 
     if "bản" in loai_l:
+        # Dầm bản: hình chữ nhật
         hw = kc * 0.48
         _poly(fig, [xc-hw, xc+hw, xc+hw, xc-hw],
               [z0, z0, z0-H, z0-H],
               _C["dam"], _C["dam_dk"], showlegend=False)
 
-    elif "t ngược" in loai_l or "t-ngược" in loai_l:
-        fw = min(kc * 0.45, 0.55)
-        bw = 0.08
-        fh = min(H * 0.22, 0.30)
-        xs = [xc-fw, xc+fw, xc+fw, xc+bw, xc+bw, xc-bw, xc-bw, xc-fw]
-        ys = [z0, z0, z0-fh, z0-fh, z0-H, z0-H, z0-fh, z0-fh]
+    elif "t ngược" in loai_l or "t-ngược" in loai_l or "tngược" in loai_l:
+        # Dầm T ngược (inverted-T):
+        # - Web (sườn) HẸP ở TRÊN, nhúng vào bản BT đổ tại chỗ
+        # - Bản cánh (flange) RỘNG ở ĐÁY
+        #              ██   ← web hẹp (tw)
+        #              ██
+        #    ███████████████ ← cánh đáy rộng (fw)
+        tw  = max(0.07, min(0.13, kc * 0.10))   # nửa bề rộng web
+        fw  = min(kc * 0.44, 0.50)               # nửa bề rộng cánh đáy
+        fh  = min(H * 0.24, 0.30)               # chiều cao cánh đáy
+        xs = [xc-tw, xc+tw, xc+tw, xc+fw, xc+fw, xc-fw, xc-fw, xc-tw]
+        ys = [z0,    z0,    z0-H+fh, z0-H+fh, z0-H, z0-H, z0-H+fh, z0-H+fh]
         _poly(fig, xs, ys, _C["dam"], _C["dam_dk"], showlegend=False)
 
     elif "super" in loai_l:
-        bf  = min(kc * 0.50, 0.62)
-        bw  = 0.10
-        btf = min(kc * 0.48, 0.60)
-        tf  = min(H * 0.08, 0.13)
-        xs = [xc-bf, xc+bf, xc+bf, xc+bw, xc+btf, xc+btf, xc-btf, xc-btf, xc-bw, xc-bf]
-        ys = [z0, z0, z0-tf, z0-tf, z0-tf-H+2*tf, z0-H, z0-H, z0-tf-H+2*tf, z0-tf, z0-tf]
+        # Dầm Super-T (SPT):
+        # - Cánh trên RỘNG (≈ toàn khoảng cách tim), các cánh sát nhau
+        # - Haunch (vát) chuyển từ cánh sang web
+        # - Web thon, cánh đáy nhỏ
+        # ████████████████ ← cánh trên rộng (tf_hw ≈ 0.46·kc)
+        # ████         ████← haunch
+        #    █████████    ← web + cánh đáy nhỏ
+        tf_hw  = min(kc * 0.46, 1.10)   # nửa bề rộng cánh trên
+        tf_h   = min(H * 0.12, 0.20)    # chiều cao cánh trên
+        haunch = min(H * 0.10, 0.14)    # chiều cao haunch (chuyển cánh→web)
+        w_top  = min(kc * 0.15, 0.26)   # nửa rộng web tại đỉnh
+        w_bot  = min(kc * 0.11, 0.18)   # nửa rộng web tại đáy (thon nhẹ)
+        bf_hw  = min(kc * 0.22, 0.34)   # nửa bề rộng cánh đáy
+        bf_h   = min(H * 0.12, 0.18)    # chiều cao cánh đáy
+        # 12 điểm: clockwise từ góc trên-trái
+        xs = [
+            xc-tf_hw, xc+tf_hw,          # 1,2 : đỉnh cánh trên (rộng)
+            xc+tf_hw, xc+w_top,          # 3,4 : cạnh phải cánh → haunch phải
+            xc+w_bot, xc+bf_hw,          # 5,6 : cuối haunch → cánh đáy phải trên
+            xc+bf_hw, xc-bf_hw,          # 7,8 : đáy cánh đáy
+            xc-bf_hw, xc-w_bot,          # 9,10: cánh đáy trái → cuối haunch
+            xc-w_top, xc-tf_hw,          # 11,12: haunch trái → cạnh cánh trái
+        ]
+        ys = [
+            z0,    z0,                   # 1,2
+            z0-tf_h, z0-tf_h-haunch,    # 3,4
+            z0-H+bf_h, z0-H+bf_h,       # 5,6
+            z0-H, z0-H,                 # 7,8
+            z0-H+bf_h, z0-H+bf_h,      # 9,10
+            z0-tf_h-haunch, z0-tf_h,    # 11,12
+        ]
         _poly(fig, xs, ys, _C["dam"], _C["dam_dk"], showlegend=False)
 
-    else:  # Dầm I
-        tw = 0.08; fw = 0.18; tf = min(H * 0.08, 0.10)
-        xs = [xc-fw, xc+fw, xc+fw, xc+tw, xc+fw, xc+fw, xc-fw, xc-fw, xc-tw, xc-fw]
-        ys = [z0, z0, z0-tf, z0-tf, z0-H+tf, z0-H, z0-H, z0-H+tf, z0-tf, z0-tf]
+    else:  # Dầm I (mặc định)
+        # I-beam: cánh trên = cánh dưới, web hẹp
+        #  ████████  ← cánh trên (fw)
+        #     ██     ← web (tw)
+        #  ████████  ← cánh dưới (fw)
+        tw = max(0.07, min(0.11, kc * 0.07))   # nửa bề rộng web
+        fw = max(0.16, min(0.30, kc * 0.20))   # nửa bề rộng cánh
+        tf = min(H * 0.13, 0.18)               # chiều cao cánh (trên & dưới)
+        # 12 điểm chuẩn I-beam
+        xs = [xc-fw, xc+fw, xc+fw, xc+tw,   xc+tw,   xc+fw,
+              xc+fw, xc-fw, xc-fw, xc-tw,   xc-tw,   xc-fw]
+        ys = [z0,    z0,    z0-tf, z0-tf,   z0-H+tf, z0-H+tf,
+              z0-H,  z0-H,  z0-H+tf, z0-H+tf, z0-tf, z0-tf]
         _poly(fig, xs, ys, _C["dam"], _C["dam_dk"], showlegend=False)
 
 
 def ve_mat_cat_ngang_2d(d):
-    """MCN điển hình: bản, lớp phủ, dầm, lan can, kích thước."""
+    """MCN điển hình: bản, lớp phủ, dầm, lan can, kích thước, chú thích lớp."""
     kcn   = d.get("kcn_result") or d.get("ai_result", {})
     bc    = float(d.get("bc", 12.0))
     loai  = str(kcn.get("loai_dam", "Dầm I"))
@@ -478,59 +528,147 @@ def ve_mat_cat_ngang_2d(d):
     H_dam = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
     oh    = float(kcn.get("overhang", 0.5))
     t_ban = float(d.get("t_ban_mm", 200)) / 1000.0
-    t_phu = 0.070
-    H_lc  = 1.10
-    W_lc  = 0.30
+    loai_l = loai.lower()
+
+    # Chiều dày lớp phủ theo loại đường
+    lop_phu = d.get("lop_phu_result", {})
+    t_phu   = float(lop_phu.get("tong_day_tt", 70)) / 1000.0 if lop_phu else 0.070
+    t_phu   = max(0.050, min(t_phu, 0.120))
+
+    H_lc = 1.10   # chiều cao lan can
+    W_lc = 0.30   # bề rộng lan can
 
     fig = go.Figure()
 
-    # Lớp phủ
-    _poly(fig, [-bc/2, bc/2, bc/2, -bc/2], [t_phu, t_phu, 0, 0],
-          _C["phu"], _C["dam_dk"], "Lớp phủ BTN", lw=1)
-    # Bản mặt cầu
+    x_first = -bc/2 + oh   # tim dầm đầu tiên
+
+    # ── Bê tông đổ tại chỗ giữa các dầm (cho T ngược và Dầm I) ──────────
+    is_tngược = "t ngược" in loai_l or "t-ngược" in loai_l or "tngược" in loai_l
+    is_damiI  = not ("bản" in loai_l or "super" in loai_l or is_tngược)
+    if is_tngược or is_damiI:
+        # Vùng BT đổ tại chỗ giữa các dầm (từ đáy bản → đỉnh cánh dầm)
+        # (màu nhạt hơn để phân biệt với dầm precast)
+        for i in range(n_dam - 1):
+            x_left  = x_first + i * kc
+            x_right = x_first + (i + 1) * kc
+            _poly(fig,
+                  [x_left, x_right, x_right, x_left],
+                  [-t_ban, -t_ban, -t_ban - H_dam * 0.5, -t_ban - H_dam * 0.5],
+                  "rgba(200,210,200,0.45)", "rgba(127,140,141,0.3)",
+                  "BT đổ tại chỗ" if i == 0 else "", showlegend=(i == 0), lw=0.5)
+
+    # ── Lớp phủ mặt cầu ──────────────────────────────────────────────────
+    # Lớp BTN (bê tông nhựa chặt)
+    t_btn = min(t_phu * 0.7, 0.07)
+    _poly(fig, [-bc/2, bc/2, bc/2, -bc/2],
+          [t_phu, t_phu, t_phu - t_btn, t_phu - t_btn],
+          "#2c3e50", "#1a252f", "BTN mặt đường", lw=1)
+    # Lớp dính bám + phòng nước
+    _poly(fig, [-bc/2, bc/2, bc/2, -bc/2],
+          [t_phu - t_btn, t_phu - t_btn, 0, 0],
+          "#7f8c8d", "#566573", "Lớp dính bám + phòng nước", lw=0.8, opacity=0.7)
+
+    # ── Bản mặt cầu BTCT ─────────────────────────────────────────────────
     _poly(fig, [-bc/2, bc/2, bc/2, -bc/2], [0, 0, -t_ban, -t_ban],
-          _C["ban"], _C["btong_dk"], "Bản mặt cầu")
-    # Dầm
-    x_first = -bc/2 + oh
+          _C["ban"], _C["btong_dk"], "Bản mặt cầu BTCT")
+
+    # ── Dầm chính ────────────────────────────────────────────────────────
     _beam_poly(fig, x_first, H_dam, loai, kc, t_ban)
     for i in range(1, n_dam):
         _beam_poly(fig, x_first + i * kc, H_dam, loai, kc, t_ban)
     fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers",
         marker=dict(color=_C["dam"], size=10, symbol="square"),
-        name=f"Dầm {loai} ({n_dam} dầm)"))
+        name=f"Dầm {loai} BTCT DƯL ({n_dam} dầm)"))
 
-    # Lan can
+    # ── Lan can ───────────────────────────────────────────────────────────
     for side in [-1, 1]:
-        xb = side * bc/2
+        xb = side * bc / 2
         xi = xb - side * W_lc
-        _poly(fig, [xi, xb, xb, xi], [t_phu, t_phu, t_phu+H_lc, t_phu+H_lc],
+        _poly(fig, [xi, xb, xb, xi],
+              [t_phu, t_phu, t_phu + H_lc, t_phu + H_lc],
               _C["lan_can"], "#2c3e50",
-              "Lan can" if side == -1 else "", showlegend=(side == -1))
+              "Lan can / dải an toàn" if side == -1 else "",
+              showlegend=(side == -1))
+        # Chân lan can
+        _poly(fig, [xi, xb, xb, xi],
+              [0, 0, t_phu, t_phu],
+              "#95a5a6", "#7f8c8d", "", showlegend=False, lw=0.5)
 
-    # Dimensions
+    # ── Đường tim cầu ────────────────────────────────────────────────────
+    fig.add_shape(type="line", x0=0, y0=-t_ban - H_dam - 0.3, x1=0, y1=t_phu + H_lc + 0.1,
+                  line=dict(color="#aab7b8", width=1, dash="dashdot"))
+    fig.add_annotation(x=0, y=t_phu + H_lc + 0.12, text="TIM CẦU",
+                       showarrow=False, font=dict(size=8, color="#7f8c8d"),
+                       xanchor="center")
+
+    # ── Chú thích lớp cấu tạo (góc phải) ────────────────────────────────
+    ann_x = bc / 2 + 0.2
+    ann_y = t_phu + 0.05
+    layer_notes = [
+        (f"BTN {int(t_btn*1000)}mm (C16 chặt)",        t_phu - t_btn / 2),
+        ("Nhựa dính bám TC 0.5 kg/m²",                 t_phu * 0.15),
+        ("Lớp phòng nước dạng phun",                   -t_ban * 0.1),
+        (f"BMC BTCT tối thiểu {int(t_ban*1000)}mm",    -t_ban * 0.6),
+    ]
+    for note, y_pos in layer_notes:
+        fig.add_annotation(
+            x=ann_x, y=y_pos,
+            text=f"<b>←</b> {note}",
+            showarrow=False,
+            xanchor="left",
+            font=dict(size=7, color="#2c3e50"),
+            bgcolor="rgba(255,255,255,0.85)",
+        )
+
+    # ── Kích thước ────────────────────────────────────────────────────────
     z_bot = -t_ban - H_dam
-    _dim_h(fig, z_bot - 0.3, -bc/2, bc/2, f"B_cầu = {bc}m", dy=0)
+    _dim_h(fig, z_bot - 0.35, -bc/2, bc/2, f"Bc = {bc} m", dy=0)
     if n_dam >= 2:
-        _dim_h(fig, z_bot - 0.8, x_first, x_first+kc,
-               f"@{kc}m (×{n_dam-1})", color="#8e44ad", dy=0)
-    _dim_v(fig, bc/2 + 0.3, -t_ban, -t_ban-H_dam, f"H={H_dam}m", dx=0.2)
-    _dim_v(fig, bc/2 + 1.0, -t_ban, 0, f"t_bản={int(t_ban*1000)}mm", dx=0.2)
-    _dim_v(fig, bc/2 + 1.7, 0, t_phu, f"Lớp phủ={int(t_phu*1000)}mm",
-           color="#c0392b", dx=0.2)
+        _dim_h(fig, z_bot - 0.85, x_first, x_first + kc,
+               f"@{kc:.2f}m (×{n_dam-1} khoảng)", color="#8e44ad", dy=0)
+        # Khoảng cách từ tim dầm ngoài cùng đến mép cầu (overhang)
+        _dim_h(fig, z_bot - 0.85, -bc/2, x_first,
+               f"oh={oh:.2f}m", color="#27ae60", dy=0)
+    _dim_v(fig, bc/2 + 1.8, -t_ban, -t_ban - H_dam,
+           f"H_dầm={H_dam:.2f}m", dx=0.2)
+    _dim_v(fig, bc/2 + 2.6, -t_ban, 0,
+           f"t_bản={int(t_ban*1000)}mm", dx=0.2)
+    _dim_v(fig, bc/2 + 2.6, 0, t_phu,
+           f"LP={int(t_phu*1000)}mm", color="#c0392b", dx=0.2)
+
+    # ── Ký hiệu vật liệu (đường gạch chéo cho BTCT) ──────────────────────
+    # Tim dầm đầu tiên — ghi nhãn loại dầm
+    fig.add_annotation(
+        x=x_first, y=-t_ban - H_dam * 0.5,
+        text=f"<b>DẦM {loai.upper()}<br>BTCT DƯL</b>",
+        showarrow=True, arrowhead=2, arrowcolor=_C["dim"],
+        ax=-40, ay=20,
+        font=dict(size=7, color="#2c3e50"),
+        bgcolor="rgba(255,255,255,0.9)",
+        bordercolor=_C["dim"], borderwidth=0.5,
+    )
+
+    # Tỷ lệ ước tính (dựa vào bề rộng)
+    ty_le = max(50, int(bc * 8))
+    ty_le = min(200, (ty_le // 25) * 25)
 
     fig.update_layout(
         title=dict(
-            text=f"MẶT CẮT NGANG ĐIỂN HÌNH — B={bc}m | {n_dam}×{loai} | t_bản={int(t_ban*1000)}mm",
-            x=0.5, font=dict(size=12)
+            text=(f"MẶT CẮT NGANG ĐIỂN HÌNH — TỶ LỆ 1:{ty_le}<br>"
+                  f"<span style='font-size:11px'>"
+                  f"B={bc}m | {n_dam} dầm {loai.upper()} BTCT DƯL | "
+                  f"@{kc:.2f}m | t_bản={int(t_ban*1000)}mm"
+                  f"</span>"),
+            x=0.5, font=dict(size=13)
         ),
-        xaxis=dict(title="Bề rộng cầu (m)", showgrid=True, gridcolor="#ecf0f1",
-                   range=[-bc/2 - 2.8, bc/2 + 2.8]),
-        yaxis=dict(title="Chiều cao (m)", scaleanchor="x", scaleratio=1,
+        xaxis=dict(title="Bề rộng (m)", showgrid=True, gridcolor="#ecf0f1",
+                   range=[-bc/2 - 3.5, bc/2 + 4.5]),
+        yaxis=dict(title="Cao độ (m)", scaleanchor="x", scaleratio=1,
                    showgrid=True, gridcolor="#ecf0f1",
-                   range=[-t_ban - H_dam - 1.2, t_phu + H_lc + 0.5]),
-        height=520, template="plotly_white",
+                   range=[-t_ban - H_dam - 1.4, t_phu + H_lc + 0.6]),
+        height=560, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
-        margin=dict(l=70, r=55, t=70, b=100),
+        margin=dict(l=70, r=80, t=90, b=100),
     )
     return fig
 
