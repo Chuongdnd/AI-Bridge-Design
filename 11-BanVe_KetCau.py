@@ -850,15 +850,36 @@ def _beam_mesh3d(yd, z_top, x_start, x_end, H, kc, loai, color, name="", sl=True
     for i in range(1, n - 1):
         ii.append(n); jj.append(n + i + 1); kk.append(n + i)
 
-    return go.Mesh3d(
+    mesh = go.Mesh3d(
         x=vx, y=vy, z=vz,
         i=ii, j=jj, k=kk,
-        color=color, opacity=0.90,
+        color=color, opacity=1.0,
         name=name, showlegend=sl and bool(name),
         flatshading=True,
-        lighting=dict(ambient=0.65, diffuse=0.85, specular=0.15),
+        lighting=dict(ambient=0.55, diffuse=0.85, specular=0.30,
+                      roughness=0.65, fresnel=0.05),
+        lightposition=dict(x=500, y=300, z=1500),
         hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
     )
+
+    # Đường viền nét — Revit Shaded edges
+    n_p = len(prof_y)
+    ex, ey, ez = [], [], []
+    for xi in [x_start, x_end]:
+        for pi in range(n_p):
+            ex.append(xi); ey.append(prof_y[pi]); ez.append(prof_z[pi])
+        ex.append(xi); ey.append(prof_y[0]); ez.append(prof_z[0])
+        ex.append(None); ey.append(None); ez.append(None)
+    for pi in range(n_p):
+        ex += [x_start, x_end, None]
+        ey += [prof_y[pi], prof_y[pi], None]
+        ez += [prof_z[pi], prof_z[pi], None]
+    edges = go.Scatter3d(
+        x=ex, y=ey, z=ez, mode="lines",
+        line=dict(color="#1a252f", width=1.0),
+        name="", showlegend=False, hoverinfo="skip",
+    )
+    return mesh, edges
 
 
 # ===========================================================================
@@ -979,19 +1000,21 @@ def ve_cau_3d(d, df_tim_line=None):
             yd = y_first + i_dam * kc_dam
             # z_top = cao độ đỉnh dầm (= đáy bản mặt cầu)
             z_top_dam = cao_dd + H_dam
-            traces.append(_beam_mesh3d(
+            _m, _e = _beam_mesh3d(
                 yd, z_top_dam, xs, xe,
                 H_dam, kc_dam, loai_dam,
                 color="#85929e",
                 name=f"Dầm {loai_dam}" if (sl and i_dam == 0) else "",
                 sl=(sl and i_dam == 0),
-            ))
+            )
+            traces.append(_m)
+            traces.append(_e)
 
     # ── Bản mặt cầu ───────────────────────────────────────────────────────
     for i_nhip, (xs, xe) in enumerate(spans):
         sl = (i_nhip == 0)
         traces.append(_box3d(xs, -bc/2, cao_dd+H_dam, xe, bc/2, z_deck,
-                             color="#e8eaf0", opacity=0.72,
+                             color="#e8eaf0", opacity=0.55,
                              name="Bản mặt cầu" if sl else "", sl=sl))
 
     fig = go.Figure(data=traces)
@@ -1014,12 +1037,15 @@ def ve_cau_3d(d, df_tim_line=None):
             x=0.5, font=dict(size=13)
         ),
         scene=dict(
-            xaxis_title="Lý trình (m)",
-            yaxis_title="Ngang cầu (m)",
-            zaxis_title="Cao độ (m)",
+            xaxis=dict(title="Lý trình (m)", backgroundcolor="#f0f0f0",
+                       gridcolor="#cccccc", showbackground=True),
+            yaxis=dict(title="Ngang cầu (m)", backgroundcolor="#e8e8e8",
+                       gridcolor="#cccccc", showbackground=True),
+            zaxis=dict(title="Cao độ (m)", backgroundcolor="#e0e0e0",
+                       gridcolor="#cccccc", showbackground=True),
             aspectmode="data",
             camera=dict(eye=dict(x=1.4, y=-1.8, z=0.8)),
-            bgcolor="#f5f6fa",
+            bgcolor="white",
         ),
         height=640,
         legend=dict(orientation="h", y=-0.06, font=dict(size=9)),

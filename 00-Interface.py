@@ -803,17 +803,16 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
         )
 
         # ── Sub-tabs ────────────────────────────────────────────────────
-        (tab_3d, tab_btc, tab_mcn_vt, tab_nhip, tab_mcn,
-         tab_tru, tab_ctd, tab_dia_chat, tab_tru3d, tab_export) = st.tabs([
-            "🌐 3D Tổng hợp"        + (" 🗺️" if has_terr else " (sơ đồ)"),
+        (tab_3d, tab_btc, tab_mcn_vt,
+         tab_spt, tab_tng, tab_dami,
+         tab_dia_chat, tab_export) = st.tabs([
+            "🌐 3D Tổng hợp"  + (" 🗺️" if has_terr else " (sơ đồ)"),
             "📋 Bố trí chung",
             "✂️ MCN Mố/Trụ",
-            "📏 Sơ đồ nhịp"         + (" 🗺️" if has_terr else ""),
-            "📐 MCN điển hình",
-            "🏛️ Trụ cầu 2D",
-            "🔩 Chi tiết dầm",
+            "🔩 Chi tiết SPT",
+            "🔩 T ngược",
+            "🔩 Dầm I",
             "🪨 Địa chất",
-            "🏗️ Trụ 3D tham số",
             "📤 Xuất bản vẽ",
         ])
 
@@ -979,67 +978,37 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
             except Exception as _e:
                 st.error(f"Lỗi vẽ MCN vị trí: {_e}")
 
-        # ── TAB 4: Sơ đồ nhịp ──────────────────────────────────────────
-        with tab_nhip:
-            if has_terr:
-                st.success("🗺️ Hiển thị đường địa hình thực đo theo tim tuyến")
-            else:
-                st.info("💡 Nạp file địa hình để hiển thị đường địa hình thực đo phía dưới cầu")
+        # ── TAB: Chi tiết dầm SPT ─────────────────────────────────────
+        with tab_spt:
             try:
-                fig_nhip = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim)
-                st.plotly_chart(fig_nhip, use_container_width=True,
-                                config={"scrollZoom": True, "displayModeBar": True})
-                _g = d.get("geo_logic", {})
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Chiều dài cầu", f"{_g.get('L_cau',0):.1f} m")
-                c2.metric("Số nhịp", kcn["tong_so_nhip"])
-                c3.metric("L nhịp điển hình", f"{kcn['chieu_dai']} m")
-                c4.metric("Cao độ đáy dầm", f"{d.get('cao_day_dam',0):.3f} m")
-            except Exception as _e:
-                st.error(f"Lỗi vẽ sơ đồ nhịp: {_e}")
-
-        # ── TAB 3: MCN ────────────────────────────────────────────────
-        with tab_mcn:
-            st.markdown("##### Mặt cắt ngang điển hình — đầy đủ cấu tạo")
-            try:
-                fig_mcn = BVK.ve_mat_cat_ngang_2d(d)
-                st.plotly_chart(fig_mcn, use_container_width=True,
-                                config={"scrollZoom": True, "displayModeBar": True})
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("Bề rộng cầu", f"{d.get('bc',12):.1f} m")
-                c2.metric("Số dầm", kcn.get("so_luong_dam","—"))
-                c3.metric("Khoảng cách tim", f"{kcn.get('khoang_cach_dam',2):.2f} m")
-                c4.metric("Chiều dày bản", f"{d.get('t_ban_mm',200)} mm")
-            except Exception as _e:
-                st.error(f"Lỗi vẽ MCN: {_e}")
-
-        # ── TAB 4: Trụ cầu 2D ─────────────────────────────────────────
-        with tab_tru:
-            st.markdown("##### Mặt đứng trụ cầu — đặt ngoài tĩnh không")
-            try:
-                fig_tru = BVK.ve_mat_dung_tru_2d(d)
-                st.plotly_chart(fig_tru, use_container_width=True,
-                                config={"scrollZoom": True, "displayModeBar": True})
-                _mg = d.get("mong_result", {})
-                c1, c2, c3, c4 = st.columns(4)
-                c1.metric("H trụ", f"{d.get('H_tru_est',0):.1f} m")
-                c2.metric("Loại trụ", tru.get("loai_tru","—") if tru else "—")
-                c3.metric("Loại móng", _mg.get("loai_mong","—") if _mg else "—")
-                c4.metric("Ø cọc", _mg.get("D_coc_chon_txt","—") if _mg else "—")
-            except Exception as _e:
-                st.error(f"Lỗi vẽ trụ: {_e}")
-
-        # ── TAB CHI TIẾT DẦM ──────────────────────────────────────────
-        with tab_ctd:
-            try:
-                CTD.render_chi_tiet_dam_tab(d, st)
+                CTD.render_chi_tiet_loai(d, st, "Super-T", key_prefix="spt")
             except Exception as _e:
                 import traceback
-                st.error(f"Lỗi tab Chi tiết dầm: {_e}")
+                st.error(f"Lỗi tab SPT: {_e}")
                 with st.expander("Chi tiết lỗi"):
                     st.code(traceback.format_exc())
 
-        # ── TAB 5: Địa chất & Địa hình chi tiết ───────────────────────
+        # ── TAB: Chi tiết dầm T ngược ─────────────────────────────────
+        with tab_tng:
+            try:
+                CTD.render_chi_tiet_loai(d, st, "T ngược", key_prefix="tng")
+            except Exception as _e:
+                import traceback
+                st.error(f"Lỗi tab T ngược: {_e}")
+                with st.expander("Chi tiết lỗi"):
+                    st.code(traceback.format_exc())
+
+        # ── TAB: Chi tiết dầm I ────────────────────────────────────────
+        with tab_dami:
+            try:
+                CTD.render_chi_tiet_loai(d, st, "Dầm I", key_prefix="dami")
+            except Exception as _e:
+                import traceback
+                st.error(f"Lỗi tab Dầm I: {_e}")
+                with st.expander("Chi tiết lỗi"):
+                    st.code(traceback.format_exc())
+
+        # ── TAB: Địa chất & Địa hình chi tiết ─────────────────────────
         with tab_dia_chat:
             if not has_terr:
                 st.info("Nạp file địa hình ở trên để xem mô hình địa chất.")
@@ -1087,58 +1056,7 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                 except Exception as _e:
                     st.error(f"Lỗi địa chất: {_e}")
 
-        # ── TAB 6: Trụ 3D tham số ─────────────────────────────────────
-        with tab_tru3d:
-            st.subheader("🏗️ Mô hình Trụ cầu 3D Tham số hóa")
-            c1, c2 = st.columns(2)
-            with c1:
-                H   = st.number_input("H thân trụ (m)",   value=5.0,  step=0.5, key="ht3")
-                W   = st.number_input("W thân (dọc) (m)", value=1.5,  step=0.1, key="wt3")
-                L   = st.number_input("L thân (ngang)(m)",value=3.0,  step=0.1, key="lt3")
-                top_H = st.number_input("H đỉnh trụ (m)", value=0.5,  step=0.1, key="tph3")
-                top_W = st.number_input("W đỉnh trụ (m)", value=2.0,  step=0.1, key="tpw3")
-            with c2:
-                base_H = st.number_input("H bệ trụ (m)",  value=1.0,  step=0.1, key="bh3")
-                base_W = st.number_input("W bệ trụ (m)",  value=2.5,  step=0.1, key="bw3")
-                base_L = st.number_input("L bệ trụ (m)",  value=4.0,  step=0.1, key="bl3")
-            btn_cols = st.columns([2,1,1])
-            with btn_cols[0]:
-                run_3d = st.button("🚀 Tạo mô hình 3D", use_container_width=True, key="run3d")
-            with btn_cols[1]:
-                if st.button("⬇️ DXF trụ", use_container_width=True, key="dxf_tru3"):
-                    try:
-                        _b = EXP.export_tru_dxf(d)
-                        st.download_button("💾 DXF", _b, "ban_ve_tru.dxf",
-                                           mime="application/octet-stream", key="dl_tru3")
-                    except Exception as _ex:
-                        st.error(str(_ex))
-            with btn_cols[2]:
-                if st.button("⬇️ IFC trụ", use_container_width=True, key="ifc_tru3"):
-                    try:
-                        _b = EXP.export_pier_ifc(d)
-                        st.download_button("💾 IFC", _b, "pier.ifc",
-                                           mime="application/octet-stream", key="dl_ptru3")
-                    except Exception as _ex:
-                        st.error(str(_ex))
-            if run_3d:
-                with st.spinner("Đang tạo mô hình..."):
-                    pier = TC.create_pier(H, W, L, top_W, top_H, base_W, base_H, base_L)
-                    verts, faces = TC.trimesh_to_plotly_mesh(pier)
-                    fig_pier = go.Figure(data=[go.Mesh3d(
-                        x=verts[:,0], y=verts[:,1], z=verts[:,2],
-                        i=faces[:,0], j=faces[:,1], k=faces[:,2],
-                        color="lightgray", opacity=0.9, flatshading=True,
-                        lighting=dict(ambient=0.5, diffuse=0.8, specular=0.5)
-                    )])
-                    fig_pier.update_layout(
-                        scene=dict(xaxis_title="X (m)", yaxis_title="Y (m)", zaxis_title="Z (m)",
-                                   aspectmode="data"),
-                        height=600, margin=dict(l=0,r=0,b=0,t=30),
-                        title="Mô hình trụ 3D (trimesh)"
-                    )
-                    st.plotly_chart(fig_pier, use_container_width=True)
-
-        # ── TAB 7: Xuất bản vẽ ─────────────────────────────────────────
+        # ── TAB: Xuất bản vẽ ───────────────────────────────────────────
         with tab_export:
             st.subheader("📤 Xuất bản vẽ kỹ thuật")
             exp_cols = st.columns(3)
