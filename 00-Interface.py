@@ -648,14 +648,15 @@ def show_options_dialog():
                     kcn_models = KCN.train_kcn_ai()   # fallback: phiên bản cũ không có v3_path
                 except Exception:
                     kcn_models = None
-                if kcn_models:
+                try:
                     res['kcn_result'] = KCN.predict_kcn(
                         B_tk=res['B'], H_tk=res.get('H', 3.5),
                         goc=goc_giao, B_cau=res['bc'],
                         moi_truong=moi_tr, L_cau_tong=L_cau,
-                        models=kcn_models, method='auto'
+                        models=kcn_models,
+                        method='auto' if kcn_models else 'rb'
                     )
-                else:
+                except Exception:
                     res['kcn_result'] = None
 
                 # ── Bước 5: AI Mố – Trụ ──────────────────────────────────────
