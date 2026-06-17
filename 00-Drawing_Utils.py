@@ -108,26 +108,15 @@ def ve_trac_doc_cau(res, df_tim_line=None):
                            text=f"TĨNH KHÔNG<br>B={B}m, H={H_tk}m",
                            showarrow=False, font=dict(color="magenta", size=9))
     
-    # 6. Mực nước / mặt đường bị vượt
-    label_res = res.get('label', "")
-    is_duong_bo = "vượt đường bộ" in label_res.lower()
-    if is_duong_bo:
-        fig.add_trace(go.Scatter(
-            x=[x_start, x_end], y=[0, 0],
-            mode='lines',
-            name='Mặt đường bị vượt',
-            line=dict(color='#7f8c8d', width=2, dash='dash')
-        ))
-    else:
-        h1 = res.get('MNCN', 0) - y_base_goc
-        h5 = res.get('MNTT', 0) - y_base_goc
-        h10 = res.get('MNTC', 0) - y_base_goc
-        h98 = res.get('MNTN', 0) - y_base_goc
-        # Dùng hàm ve_ky_hieu_muc_nuoc_plotly đã có
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_trai + 20, h1, "MNCN H1%", "red")
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_trai + 40, h5, "MNTT H5%", "blue")
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_phai - 40, h10, "MNTC H10%", "green")
-        ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_phai - 20, h98, "MNTN H98%", "orange")
+    # 6. Mực nước (cầu vượt sông/kênh)
+    h1 = res.get('MNCN', 0) - y_base_goc
+    h5 = res.get('MNTT', 0) - y_base_goc
+    h10 = res.get('MNTC', 0) - y_base_goc
+    h98 = res.get('MNTN', 0) - y_base_goc
+    ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_trai + 20, h1, "MNCN H1%", "red")
+    ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_trai + 40, h5, "MNTT H5%", "blue")
+    ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_phai - 40, h10, "MNTC H10%", "green")
+    ve_ky_hieu_muc_nuoc_plotly(fig, x_mo_phai - 20, h98, "MNTN H98%", "orange")
     
     # 7. Đường gióng T1, T2
     fig.add_shape(type="line", x0=x_t1, y0=y_min-5, x1=x_t1, y1=y_t,
@@ -149,19 +138,347 @@ def ve_trac_doc_cau(res, df_tim_line=None):
     )
     return fig
 
-def ve_mat_cat_ngang(res_mcn):
-    bc = res_mcn.get('bc_cau', 12.0)
-    w_lc = res_mcn.get('w_lc', 0.5)
-    
+def ve_mat_cat_ngang(res_mcn, bridge_mode=False):
+    """
+    Vẽ mặt cắt ngang đường/cầu chi tiết.
+    bridge_mode=True : vẽ MCN tại cầu — với cao tốc, lề trồng cỏ → lan can + dải phụ khai thác
+                       (Điều 6.12.1 TCVN 5729:2012, Hình 4); chiều rộng cầu = chiều rộng nền đường.
+    res_mcn: dict trả về từ YTHH.thiet_ke_mcn_cau_web().
+    """
+    n_lan        = float(res_mcn.get('n_lan', 2))
+    w_lan        = float(res_mcn.get('w_lan', 3.5))
+    w_le         = float(res_mcn.get('w_le', 0.5))
+    w_le_gc      = float(res_mcn.get('w_le_gc') or 0.0)
+    w_dpc        = float(res_mcn.get('w_dpc', 0.0))
+    w_lc         = float(res_mcn.get('w_lc', 0.5))
+    loai         = res_mcn.get('loai') or ''
+    tieu_chuan   = res_mcn.get('tieu_chuan', '—')
+    i_doc        = float(res_mcn.get('i_doc_ngang', 2.0))
+    is_caotoc    = bool(res_mcn.get('is_caotoc', False))
+    is_dothi     = bool(res_mcn.get('is_dothi', False))
+    # Cao tốc extras
+    w_dat_at_dg  = float(res_mcn.get('w_dat_an_toan_dg', 0.0))
+    w_dpc_core   = float(res_mcn.get('w_dpc_core', w_dpc))
+    w_le_trong_co= float(res_mcn.get('w_le_trong_co', 0.0))
+    i_le_tc      = float(res_mcn.get('i_le_trong_co', 0.0))
+
+    if is_caotoc:
+        # Cao tốc: lề = dải AT (le_gc) + lề trồng cỏ (le_trong_co); không có gờ LC riêng
+        w_le_gc_draw = w_le_gc
+        w_dat_draw   = w_le_trong_co
+        w_lc_draw    = 0.0
+    else:
+        w_le_gc_draw = min(w_le_gc, w_le)
+        w_dat_draw   = max(0.0, w_le - w_le_gc_draw)
+        w_lc_draw    = w_lc
+
+    w_xechay_1ben = (n_lan * w_lan) / 2.0
+
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=[-bc/2, bc/2, bc/2, -bc/2, -bc/2], y=[0, 0, -0.25, -0.25, 0], fill="toself", fillcolor="#bdc3c7", line=dict(color="black", width=2), name="Bản mặt cầu", hoverinfo="skip"))
-    fig.add_trace(go.Scatter(x=[-bc/2, -bc/2 + w_lc, -bc/2 + w_lc, -bc/2, -bc/2], y=[0, 0, 0.4, 0.4, 0], fill="toself", fillcolor="#7f8c8d", line=dict(color="black", width=1.5), showlegend=False, hoverinfo="skip"))
-    fig.add_trace(go.Scatter(x=[bc/2 - w_lc, bc/2, bc/2, bc/2 - w_lc, bc/2 - w_lc], y=[0, 0, 0.4, 0.4, 0], fill="toself", fillcolor="#7f8c8d", line=dict(color="black", width=1.5), showlegend=False, hoverinfo="skip"))
+
+    def _band(x0, x1, y0, y1, color, name="", sl=False):
+        fig.add_trace(go.Scatter(
+            x=[x0, x1, x1, x0, x0], y=[y0, y0, y1, y1, y0],
+            fill="toself", fillcolor=color, line=dict(color="black", width=1),
+            mode="lines", name=name, showlegend=sl, hoverinfo="skip"
+        ))
+
+    def _dim(x0, x1, y, txt, color="#34495e", fs=9):
+        fig.add_shape(type="line", x0=x0, y0=y, x1=x1, y1=y, line=dict(color=color, width=1))
+        for xi in (x0, x1):
+            fig.add_shape(type="line", x0=xi, y0=y-0.05, x1=xi, y1=y+0.05, line=dict(color=color, width=1))
+        fig.add_annotation(x=(x0+x1)/2, y=y+0.07, text=txt, showarrow=False,
+                           font=dict(size=fs, color=color), yanchor="bottom",
+                           bgcolor="rgba(255,255,255,0.85)")
+
+    def _slope_arrow(x_from, x_to, y_ref, i_pct, color="#e74c3c"):
+        h_vis = 0.08
+        x_l, x_r = min(x_from, x_to), max(x_from, x_to)
+        y_tim, y_le = y_ref + h_vis, y_ref
+        fig.add_trace(go.Scatter(x=[x_l, x_r], y=[y_tim, y_le], mode="lines",
+                                 line=dict(color=color, width=1.5, dash="dot"),
+                                 showlegend=False, hoverinfo="skip"))
+        fig.add_annotation(x=x_r, y=y_le, ax=x_l, ay=y_tim,
+                           xref="x", yref="y", axref="x", ayref="y",
+                           showarrow=True, arrowhead=2, arrowsize=1.0,
+                           arrowwidth=1.5, arrowcolor=color)
+        fig.add_annotation(x=(x_l+x_r)/2, y=(y_tim+y_le)/2+0.05,
+                           text=f"i={i_pct:.1f}%", showarrow=False,
+                           font=dict(size=8, color=color), bgcolor="rgba(255,255,255,0.8)")
+
+    # bridge_mode: lề trồng cỏ → Lan can + dải phụ khai thác (Điều 6.12.1 TCVN 5729:2012)
+    outer_color = "#95a5a6" if (is_caotoc and bridge_mode) else ("#85c88a" if is_caotoc else "#d2b48c")
+    outer_label = ("Lan can + dải phụ khai thác" if bridge_mode
+                   else ("Lề trồng cỏ" if is_caotoc else "Lề đất"))
+
+    # ── Vùng trung tâm: DPC ──────────────────────────────────────────────────
+    if is_caotoc:
+        # Vẽ tách: DPC lõi (giữa) + dải an toàn DG (2 bên)
+        # Trên cầu: dải phân cách lõi có khoảng trống cho khe hở 2 cầu tách + lan can AT
+        _dpc_color = "#1e8449" if bridge_mode else "#27ae60"
+        _dpc_label = "DPC (khoảng trống giữa 2 cầu)" if bridge_mode else "Dải phân cách lõi"
+        _band(-w_dpc_core/2, w_dpc_core/2, 0, 0.15, _dpc_color, _dpc_label, sl=True)
+        for s in (1, -1):
+            _band(s*w_dpc_core/2, s*w_dpc/2, -0.02, 0.10, "#a9dfbf",
+                  "Dải an toàn DG" if s==1 else "", sl=(s==1))
+    elif w_dpc > 0:
+        _band(-w_dpc/2, w_dpc/2, 0, 0.15, "#2ecc71", "Dải phân cách", sl=True)
+
+    x_in   = w_dpc / 2
+    x_xc   = x_in   + w_xechay_1ben
+    x_legc = x_xc   + w_le_gc_draw
+    x_le   = x_legc + w_dat_draw
+    x_lc   = x_le   + w_lc_draw
+
+    for s in (1, -1):
+        _band(s*x_in, s*x_xc, 0, 0.10, "#7f8c8d", "Mặt đường" if s==1 else "", sl=(s==1))
+        if w_le_gc_draw > 0:
+            _band(s*x_xc, s*x_legc, -0.05, 0.05, "#aeb6bf",
+                  ("Lề gia cố" if not is_caotoc else "Lề gia cố / DAT") if s==1 else "", sl=(s==1))
+        if w_dat_draw > 0:
+            _band(s*x_legc, s*x_le, -0.05, 0.0, outer_color,
+                  outer_label if s==1 else "", sl=(s==1))
+            # Lan can cầu: đường đứng ký hiệu lan can ở mép ngoài
+            if is_caotoc and bridge_mode:
+                fig.add_shape(type="line", x0=s*x_le, y0=0.0, x1=s*x_le, y1=0.35,
+                              line=dict(color="#2c3e50", width=2))
+                fig.add_shape(type="line", x0=s*(x_le-0.1), y0=0.30, x1=s*(x_le+0.1), y1=0.30,
+                              line=dict(color="#2c3e50", width=2))
+        if w_lc_draw > 0:
+            if is_dothi:
+                _he_color = "#f5cba7"   # màu hè đường (vỉa hè)
+                _band(s*x_le, s*x_lc, -0.05, 0.08, _he_color,
+                      "Hè đường" if s==1 else "", sl=(s==1))
+                # Gờ đường (bó vỉa) tại mép tiếp giáp hè/lề
+                fig.add_shape(type="line", x0=s*x_le, y0=-0.05, x1=s*x_le, y1=0.15,
+                              line=dict(color="#7f8c8d", width=2))
+            else:
+                _band(s*x_le, s*x_lc, 0, 0.30, "#2c3e50",
+                      "Gờ/lan can" if s==1 else "", sl=(s==1))
+
+        # Mũi tên dốc ngang mặt đường
+        _slope_arrow(s*x_in, s*x_xc, 0.10, i_doc, "#e74c3c")
+        # Dải AT trong DG (cao tốc) — dốc ra ngoài
+        if is_caotoc and w_dat_at_dg > 0:
+            _slope_arrow(s*w_dpc_core/2, s*w_dpc/2, 0.10, i_doc, "#e74c3c")
+        # Lề gia cố
+        if w_le_gc_draw > 0:
+            _slope_arrow(s*x_xc, s*x_legc, 0.05, i_doc, "#e74c3c")
+        # Lề trồng cỏ (cao tốc đường) / lan can phụ (cầu) — dốc ngang 6% / phẳng
+        if is_caotoc and w_dat_draw > 0 and not bridge_mode:
+            _slope_arrow(s*x_legc, s*x_le, 0.0, i_le_tc, "#8e44ad")
+
+    # ── Đường kích thước ────────────────────────────────────────────────────
+    x_total = x_lc if w_lc_draw > 0 else x_le
+    _dim(-x_total, x_total, 0.60, f"Tổng MCN = {2*x_total:.2f}m", color="#c0392b")
+    if is_caotoc:
+        _dim(-w_dpc_core/2, w_dpc_core/2, -0.25, f"DPC lõi {w_dpc_core:.2f}m", color="#27ae60")
+        _dim(-w_dpc/2, w_dpc/2, -0.40, f"Dải giữa {w_dpc:.2f}m", color="#1e8449")
+    elif w_dpc > 0:
+        _dim(-w_dpc/2, w_dpc/2, -0.25, f"DPC {w_dpc:.2f}m", color="#27ae60")
+    _dim(x_in, x_xc, -0.25, f"PXC {w_xechay_1ben:.2f}m", color="#34495e")
+    _dim(x_xc, x_le if w_lc_draw == 0 else x_lc, -0.45,
+         f"Lề {w_le:.2f}m", color="#8e44ad")
+
+    if is_caotoc:
+        _prefix = "MCN TẠI CẦU" if bridge_mode else "MCN ĐƯỜNG ĐẦU CẦU"
+        _outer_txt = "Lan can+dải phụ" if bridge_mode else f"Lề TC {i_le_tc:.0f}%"
+        subtitle = (f"{tieu_chuan} | {n_lan//2:g} làn/chiều × {w_lan:.2f}m | "
+                    f"DG={w_dpc:.2f}m (lõi {w_dpc_core:.2f}m) | "
+                    f"Lề={w_le:.2f}m | i={i_doc:.1f}% | {_outer_txt}")
+    elif is_dothi:
+        _prefix = "MCN"
+        _he_txt  = f"Hè {w_lc:.1f}m | " if w_lc_draw > 0 else ""
+        subtitle = (f"{tieu_chuan} | {n_lan:g} làn × {w_lan:.2f}m | "
+                    f"DPC={w_dpc:.2f}m | Lề={w_le:.2f}m | {_he_txt}B_tổng={2*x_total:.2f}m | i={i_doc:.1f}%")
+    else:
+        _prefix = "MCN TẠI CẦU" if bridge_mode else "MCN"
+        subtitle = (f"{tieu_chuan} | {n_lan:g} làn × {w_lan:.2f}m | DPC={w_dpc:.2f}m | "
+                    f"Lề={w_le:.2f}m (gc {w_le_gc:.2f}m) | B_tổng={2*x_total:.2f}m | i={i_doc:.1f}%")
 
     fig.update_layout(
-        title=dict(text=f"MẶT CẮT NGANG CẦU ĐIỂN HÌNH (B_cầu = {bc}m)", x=0.5),
-        xaxis=dict(title="Bề rộng cầu (m)", range=[-bc/2 - 2, bc/2 + 2], showgrid=False, zeroline=True),
-        yaxis=dict(title="Chiều cao cấu tạo (m)", scaleanchor="x", scaleratio=1, range=[-1, 2], showgrid=False),
-        height=380, template="plotly_white", dragmode='pan'
+        title=dict(
+            text=f"{_prefix} — {loai.upper()}<br>"
+                 f"<span style='font-size:10px'>{subtitle}</span>",
+            x=0.5, font=dict(size=13),
+        ),
+        xaxis=dict(title="Bề rộng (m)", showgrid=True, gridcolor="#ecf0f1",
+                   range=[-x_total-1.5, x_total+1.5], scaleanchor="y", scaleratio=2.2),
+        yaxis=dict(showgrid=False, zeroline=False, range=[-0.7, 0.90], showticklabels=False),
+        height=360, template="plotly_white",
+        legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
+        margin=dict(l=40, r=30, t=70, b=90),
+    )
+    return fig
+
+
+def _box3d_simple(x0, x1, y0, y1, z0, z1, color, name="", sl=False, opacity=1.0):
+    """Khối hộp 3D đơn giản (8 đỉnh, mặt phẳng) — dùng để extrude mặt cắt ngang."""
+    xs = [x0, x1, x1, x0, x0, x1, x1, x0]
+    ys = [y0, y0, y1, y1, y0, y0, y1, y1]
+    zs = [z0, z0, z0, z0, z1, z1, z1, z1]
+    ii = [0, 0, 4, 4, 0, 0, 3, 3, 0, 0, 1, 1]
+    jj = [1, 2, 5, 6, 1, 5, 2, 6, 3, 7, 2, 6]
+    kk = [2, 3, 6, 7, 5, 4, 6, 7, 7, 4, 6, 5]
+    return go.Mesh3d(
+        x=xs, y=ys, z=zs, i=ii, j=jj, k=kk,
+        color=color, opacity=opacity, flatshading=True,
+        lighting=dict(ambient=0.55, diffuse=0.85, specular=0.25, roughness=0.65),
+        name=name, showlegend=sl,
+    )
+
+
+def ve_mat_cat_ngang_3d(res_mcn, chieu_dai=20.0, bridge_mode=False):
+    """
+    Mô hình 3D một đoạn ngắn (mặc định 20m) của mặt cắt ngang đường — khối đặc,
+    có đường viền rõ (kiểu Shaded trong Revit). Mặt đường thể hiện độ dốc ngang thực.
+    res_mcn: dict trả về từ YTHH.thiet_ke_mcn_cau_web().
+    bridge_mode=True: lề trồng cỏ (cao tốc) → lan can + dải phụ khai thác (Điều 6.12).
+    """
+    n_lan        = float(res_mcn.get('n_lan', 2))
+    w_lan        = float(res_mcn.get('w_lan', 3.5))
+    w_le         = float(res_mcn.get('w_le', 0.5))
+    w_le_gc      = float(res_mcn.get('w_le_gc') or 0.0)
+    w_dpc        = float(res_mcn.get('w_dpc', 0.0))
+    w_lc         = float(res_mcn.get('w_lc', 0.5))
+    loai         = res_mcn.get('loai') or ''
+    i_doc        = float(res_mcn.get('i_doc_ngang', 2.0)) / 100.0
+    is_caotoc    = bool(res_mcn.get('is_caotoc', False))
+    is_dothi     = bool(res_mcn.get('is_dothi', False))
+    w_dat_at_dg  = float(res_mcn.get('w_dat_an_toan_dg', 0.0))
+    w_dpc_core   = float(res_mcn.get('w_dpc_core', w_dpc))
+    w_le_trong_co= float(res_mcn.get('w_le_trong_co', 0.0))
+    i_le_tc_r    = float(res_mcn.get('i_le_trong_co', 0.0)) / 100.0
+
+    if is_caotoc:
+        w_le_gc_draw = w_le_gc
+        w_dat_draw   = w_le_trong_co
+        w_lc_draw    = 0.0
+    else:
+        w_le_gc_draw = min(w_le_gc, w_le)
+        w_dat_draw   = max(0.0, w_le - w_le_gc_draw)
+        w_lc_draw    = w_lc
+
+    w_xechay_1ben = (n_lan * w_lan) / 2.0
+    x_in   = w_dpc / 2
+    x_xc   = x_in   + w_xechay_1ben
+    x_legc = x_xc   + w_le_gc_draw
+    x_le   = x_legc + w_dat_draw
+    x_lc   = x_le   + w_lc_draw
+
+    def _z_road(abs_x):
+        """Cao độ z mặt đường (dốc ngang i_doc từ mép trong ra ngoài)."""
+        return 0.10 - abs(abs_x - x_in) * i_doc
+
+    def _z_le_tc(abs_x):
+        """Cao độ lề trồng cỏ (dốc 6% ra ngoài, tiếp nối với mép lề gia cố)."""
+        z_at_legc = _z_road(x_legc) - 0.05   # z mặt lề gc tại mép
+        return z_at_legc - (abs_x - x_legc) * i_le_tc_r
+
+    L0, L1 = 0.0, float(chieu_dai)
+    _ii = [0,0,4,4, 0,0,3,3, 0,0,1,1]
+    _jj = [1,2,5,6, 1,5,2,6, 2,6,2,6]
+    _kk = [2,3,6,7, 5,4,6,7, 6,5,6,5]
+    traces = []
+
+    def _slope_prism(y_in, y_out, z_in_top, z_out_top, z_bot, color, name="", sl=False):
+        """Lăng trụ có mặt trên nghiêng (2 cao độ z khác nhau)."""
+        xs = [L0, L1, L1, L0,  L0, L1, L1, L0]
+        ys = [y_in, y_in, y_out, y_out,  y_in, y_in, y_out, y_out]
+        zs = [z_in_top, z_in_top, z_out_top, z_out_top,  z_bot, z_bot, z_bot, z_bot]
+        return go.Mesh3d(x=xs, y=ys, z=zs, i=_ii, j=_jj, k=_kk,
+                         color=color, opacity=1.0, flatshading=True,
+                         lighting=dict(ambient=0.55, diffuse=0.85, specular=0.25, roughness=0.65),
+                         name=name, showlegend=sl)
+
+    # ── DPC / dải giữa ──────────────────────────────────────────────────────
+    if is_caotoc:
+        traces.append(_box3d_simple(L0, L1, -w_dpc_core/2, w_dpc_core/2, 0, 0.15,
+                                     "#27ae60", "Dải phân cách lõi", sl=True))
+        for s in (1, -1):
+            traces.append(_slope_prism(
+                s*w_dpc_core/2, s*w_dpc/2,
+                _z_road(w_dpc_core/2), _z_road(w_dpc/2),
+                -0.02, "#a9dfbf",
+                "Dải an toàn DG" if s==1 else "", sl=(s==1)
+            ))
+    elif w_dpc > 0:
+        traces.append(_box3d_simple(L0, L1, -w_dpc/2, w_dpc/2, 0, 0.15, "#2ecc71",
+                                     "Dải phân cách", sl=True))
+
+    for s in (1, -1):
+        # Mặt đường (dốc ngang)
+        traces.append(_slope_prism(
+            s*x_in, s*x_xc, _z_road(x_in), _z_road(x_xc), 0.0,
+            "#7f8c8d", "Mặt đường" if s==1 else "", sl=(s==1)
+        ))
+
+        # Lề gia cố (cùng dốc ngang mặt đường)
+        if w_le_gc_draw > 0:
+            traces.append(_slope_prism(
+                s*x_xc, s*x_legc, _z_road(x_xc)-0.05, _z_road(x_legc)-0.05, -0.05,
+                "#aeb6bf",
+                ("Lề gia cố" if not is_caotoc else "DAT / Lề gia cố") if s==1 else "",
+                sl=(s==1)
+            ))
+
+        # Lề đất / lề trồng cỏ / lan can+dải phụ (bridge_mode)
+        if w_dat_draw > 0:
+            if is_caotoc and bridge_mode:
+                # Điều 6.12.1: lề trồng cỏ → lan can + dải phụ khai thác (cùng chiều rộng)
+                z_flat = _z_road(x_legc)
+                traces.append(_box3d_simple(L0, L1, s*x_legc, s*x_le, -0.05, z_flat,
+                                             "#95a5a6",
+                                             "Lan can+dải phụ khai thác" if s==1 else "", sl=(s==1)))
+                # Gờ lan can nhô lên
+                traces.append(_box3d_simple(L0, L1, s*x_le-s*0.15, s*x_le, z_flat, z_flat+0.50,
+                                             "#7f8c8d", "", sl=False))
+            elif is_caotoc:
+                traces.append(_slope_prism(
+                    s*x_legc, s*x_le, _z_le_tc(x_legc), _z_le_tc(x_le), -0.05,
+                    "#85c88a", "Lề trồng cỏ" if s==1 else "", sl=(s==1)
+                ))
+            else:
+                traces.append(_box3d_simple(L0, L1, s*x_legc, s*x_le, -0.05, 0.0,
+                                             "#d2b48c", "Lề đất" if s==1 else "", sl=(s==1)))
+
+        # Gờ/lan can hoặc hè đường (không phải cao tốc)
+        if w_lc_draw > 0:
+            if is_dothi:
+                traces.append(_box3d_simple(L0, L1, s*x_le, s*x_lc, -0.05, 0.08,
+                                             "#f5cba7", "Hè đường" if s==1 else "", sl=(s==1)))
+                # Bó vỉa nhỏ tại ranh giới hè/lề
+                traces.append(_box3d_simple(L0, L1, s*(x_le-0.10), s*x_le, -0.05, 0.15,
+                                             "#7f8c8d", "", sl=False))
+            else:
+                traces.append(_box3d_simple(L0, L1, s*x_le, s*x_lc, 0, 0.30,
+                                             "#2c3e50", "Gờ/lan can" if s==1 else "", sl=(s==1)))
+
+    fig = go.Figure(data=traces)
+    _3d_prefix = ("MCN TẠI CẦU (Đ.6.12)" if bridge_mode else
+                  ("MCN ĐƯỜNG ĐẦU CẦU" if is_caotoc else "MCN"))
+    _slope_note = (f" / lan can+dải phụ" if (is_caotoc and bridge_mode) else
+                   (f" / lề TC {i_le_tc_r*100:.0f}%" if is_caotoc else
+                    (f" / hè {w_lc:.1f}m" if (is_dothi and w_lc_draw > 0) else "")))
+    fig.update_layout(
+        title=dict(
+            text=(f"MÔ HÌNH 3D {_3d_prefix} — {loai.upper()} (đoạn {chieu_dai:.0f}m) | "
+                  f"i={i_doc*100:.1f}%{_slope_note}"),
+            x=0.5, font=dict(size=12)
+        ),
+        scene=dict(
+            xaxis=dict(title="Chiều dài (m)", backgroundcolor="#f0f0f0",
+                       gridcolor="#cccccc", showbackground=True),
+            yaxis=dict(title="Bề rộng (m)", backgroundcolor="#e8e8e8",
+                       gridcolor="#cccccc", showbackground=True),
+            zaxis=dict(title="Cao độ (m)", backgroundcolor="#e0e0e0",
+                       gridcolor="#cccccc", showbackground=True),
+            aspectmode="data",
+            camera=dict(eye=dict(x=-1.6, y=-2.0, z=1.1)),
+            bgcolor="white",
+        ),
+        height=480, margin=dict(l=0, r=0, t=50, b=0),
+        legend=dict(font=dict(size=9)),
+        paper_bgcolor="white",
     )
     return fig

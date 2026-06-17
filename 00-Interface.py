@@ -75,8 +75,7 @@ if 'bridge_library' not in st.session_state:
 # --- KẾT NỐI HỆ THỐNG MODULES THÀNH PHẦN ---
 try:
     TK   = importlib.import_module("01-Tinh_khong")
-    YTHH = importlib.import_module("02-Yeuto_Hinhhoc")
-    MCN  = importlib.import_module("03-MatCatNgang")
+    YTHH = importlib.import_module("02-Yeuto_Hinhhoc")  # Yếu tố hình học + MCN
     GRD  = importlib.import_module("05-Main_Girder")    # Legacy girder (dùng cho bản vẽ)
     KCN  = importlib.import_module("06-AI_KetCauNhip")  # AI Kết cấu nhịp v2
     MOT  = importlib.import_module("07-AI_MoTru")       # AI Mố – Trụ v2
@@ -131,7 +130,6 @@ def show_options_dialog():
     sec_in1, sec_in2, sec_in3 = st.columns(3)
     
     with sec_in1:
-        loai_c = "Vượt sông"   # Đề tài tập trung vào cầu vượt sông, kênh
         st.info("🌊 Phạm vi đề tài: Cầu vượt sông/kênh cấp IV–VI (TCVN 8818)")
         goc_giao = st.number_input("Góc giao chéo (độ):", min_value=30.0, max_value=90.0, value=st.session_state.design_data.get('goc_giao', 90.0), step=1.0)
         mien  = st.selectbox("Khu vực miền:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
@@ -161,8 +159,12 @@ def show_options_dialog():
             step=1.0, format="%.2f", key="x_tim_clearance",
             help="Lý trình điểm tim cầu vượt qua sông/kênh. Phải nằm trong phạm vi lý trình file khảo sát."
         )
-        # Cao độ tự nhiên tính tự động từ địa hình tại vùng tim cầu ±80m
+        # Cao độ tự nhiên: lấy THỰC theo từng điểm từ dữ liệu địa hình đã nạp
+        # (h_tn_tb chỉ còn dùng làm giá trị trung bình hiển thị / dự phòng khi
+        #  ngoài phạm vi khảo sát hoặc chưa nạp địa hình).
         _df_tl = st.session_state.get('df_tim_line', None)
+        lt_diahinh_arr = None
+        z_diahinh_arr = None
         if _df_tl is not None and not _df_tl.empty:
             _lt_col_t = next((c for c in _df_tl.columns if 'ý trình' in c or c.lower()=='ly_trinh'), None)
             _z_col_t  = next((c for c in _df_tl.columns if c.upper() == 'Z'), None)
@@ -173,7 +175,12 @@ def show_options_dialog():
                 )
                 _sub_t = _df_tl[_mask_t]
                 h_tn_tb = float(_sub_t[_z_col_t].mean()) if not _sub_t.empty else float(_df_tl[_z_col_t].mean())
-                st.success(f"📐 Cao độ tự nhiên TB (từ địa hình ±80m): **{h_tn_tb:.3f} m**")
+                lt_diahinh_arr = _df_tl[_lt_col_t].to_numpy()
+                z_diahinh_arr  = _df_tl[_z_col_t].to_numpy()
+                st.success(
+                    f"📐 Cao độ tự nhiên TB (từ địa hình ±80m): **{h_tn_tb:.3f} m** — "
+                    f"tính toán vị trí điểm đầu/cuối cầu sẽ dùng cao độ THỰC theo từng điểm."
+                )
             else:
                 h_tn_tb = st.session_state.design_data.get('h_tn_tb', 0.0)
                 st.warning("⚠️ Không tìm thấy cột cao độ Z trong dữ liệu địa hình.")
@@ -196,16 +203,201 @@ def show_options_dialog():
     with sec_in3:
         st.markdown("**Tiêu chuẩn hình học trắc dọc tuyến**")
         l_hinhhoc = st.selectbox("Loại đường thiết kế:", ["Cao tốc", "O to", "Do thi"])
-        
+
+        mcn_oto_override = {}   # chỉ có nội dung khi l_hinhhoc == "O to"
+
         if l_hinhhoc == "Cao tốc":
             d_hinhhoc = st.radio("Địa hình:", options=["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Khó khăn")
             v_list = [120, 100] if d_hinhhoc == "1" else [80, 60]
             v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list)
             input_tra_cuu = v_hinhhoc
+
+            # ── MCN cao tốc theo TCVN 5729:2012 Bảng 1 ──────────────────────
+            _dpc_ct_labels = {
+                "co_lop_phu_khong_tru": "Có lớp phủ, không bố trí trụ công trình",
+                "co_lop_phu_co_tru":    "Có lớp phủ, có bố trí trụ công trình",
+                "khong_lop_phu":        "Không có lớp phủ (trồng cỏ / hình chữ V)",
+            }
+            st.markdown("**Mặt cắt ngang đường (TCVN 5729:2012 Bảng 1)**")
+            loai_dpc_ct = st.selectbox(
+                "Cấu tạo dải giữa:",
+                options=list(_dpc_ct_labels.keys()),
+                format_func=lambda k: _dpc_ct_labels[k],
+                help="Theo Điều 6.5 — xác định chiều rộng dải phân cách lõi."
+            )
+            tra_ct = YTHH.tra_cuu_mcn_caotoc(v_hinhhoc, loai_dpc_ct)
+            if tra_ct.get("status") == "success":
+                st.caption(
+                    f"{tra_ct['bang_ap_dung']} — Vtk={v_hinhhoc}km/h: "
+                    f"Mặt đường ≥ **{tra_ct['w_mat_duong_min']:g}m** (2 làn/chiều × {tra_ct['w_lan_min']:g}m) | "
+                    f"Lề gia cố ≥ **{tra_ct['w_le_dat_min']:g}m** | "
+                    f"DAT dải giữa ≥ **{tra_ct['w_dat_an_toan_dg_min']:g}m** | "
+                    f"DPC lõi ≥ **{tra_ct['w_dpc_core_min']:g}m** | "
+                    f"Nền ≥ **{tra_ct['w_nen_min']:g}m**"
+                )
+                st.caption(
+                    "Độ dốc ngang (cố định TCVN 5729:2012): "
+                    f"Mặt đường & dải AT = **{tra_ct['i_mat_duong']:g}%** | "
+                    f"Lề trồng cỏ = **{tra_ct['i_le_trong_co']:g}%**"
+                )
+                c_ct1, c_ct2 = st.columns(2)
+                with c_ct1:
+                    n_lan_ct = st.number_input(
+                        "Số làn xe mỗi chiều:",
+                        min_value=int(tra_ct["n_lan_moi_chieu_min"]),
+                        value=int(tra_ct["n_lan_moi_chieu_min"]),
+                        step=1,
+                        help=f"Tối thiểu {tra_ct['n_lan_moi_chieu_min']} làn/chiều (Bảng 1). "
+                             f"Thêm 1 làn = +{tra_ct['w_lan_them']:g}m mặt đường (Điều 6.8)."
+                    )
+                    w_le_dat_ct = st.number_input(
+                        "Chiều rộng lề gia cố / dải AT (m):",
+                        min_value=float(tra_ct["w_le_dat_min"]),
+                        value=float(tra_ct["w_le_dat_min"]),
+                        step=0.25, format="%.2f",
+                        help=f"Tối thiểu {tra_ct['w_le_dat_min']:g}m theo Bảng 1."
+                    )
+                with c_ct2:
+                    w_dat_at_dg_ct = st.number_input(
+                        "Dải an toàn trong dải giữa (m):",
+                        min_value=float(tra_ct["w_dat_an_toan_dg_min"]),
+                        value=float(tra_ct["w_dat_an_toan_dg_min"]),
+                        step=0.25, format="%.2f",
+                        help=f"Tối thiểu {tra_ct['w_dat_an_toan_dg_min']:g}m mỗi bên (Bảng 1)."
+                    )
+                    w_dpc_core_ct = st.number_input(
+                        "Chiều rộng dải phân cách lõi (m):",
+                        min_value=float(tra_ct["w_dpc_core_min"]),
+                        value=float(tra_ct["w_dpc_core_min"]),
+                        step=0.25, format="%.2f",
+                        help=f"Tối thiểu {tra_ct['w_dpc_core_min']:g}m theo Bảng 1 (loại đã chọn)."
+                    )
+                mcn_oto_override = {
+                    "loai_dpc_ct": loai_dpc_ct,
+                    "n_lan_moi_chieu": n_lan_ct,
+                    "w_lan": tra_ct["w_lan_min"],
+                    "w_le_dat": w_le_dat_ct,
+                    "w_le_trong_co": tra_ct["w_le_trong_co_min"],
+                    "w_dat_an_toan_dg": w_dat_at_dg_ct,
+                    "w_dpc_core": w_dpc_core_ct,
+                }
+            else:
+                st.warning(f"⚠️ {tra_ct.get('message','Không tra được MCN cao tốc.')}")
+                mcn_oto_override = {"loai_dpc_ct": loai_dpc_ct}
         elif l_hinhhoc == "O to":
             cap_duong_oto = st.selectbox("Cấp đường ô tô:", ["I", "II", "III", "IV", "V", "VI"])
             d_hinhhoc = st.radio("Địa hình vùng:", ["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi")
             input_tra_cuu = cap_duong_oto
+
+            # ── MCN tối thiểu theo TCVN 4054:2005 (Bảng 6/7) + khai báo tùy chỉnh ──
+            dia_hinh_mcn = "dong_bang" if d_hinhhoc == "1" else "nui"
+            tra_mcn = YTHH.tra_cuu_mcn_oto(cap_duong_oto, dia_hinh_mcn)
+            if tra_mcn.get("status") == "success":
+                st.markdown("**Mặt cắt ngang đường (TCVN 4054:2005)**")
+                st.caption(
+                    f"{tra_mcn['bang_ap_dung']} — Cấp {cap_duong_oto}: tối thiểu "
+                    f"**{tra_mcn['so_lan_min']:g} làn × {tra_mcn['w_lan_min']:g}m** | "
+                    f"Dải PC ≥ **{tra_mcn['w_dpc_min']:g}m** | "
+                    f"Lề ≥ **{tra_mcn['w_le_min']:g}m**"
+                    + (f" (gia cố ≥ {tra_mcn['w_le_gc_min']:g}m)" if tra_mcn['w_le_gc_min'] else "")
+                    + f" | Nền đường ≥ **{tra_mcn['w_nen_duong_min']:g}m**"
+                )
+                c_mcn1, c_mcn2 = st.columns(2)
+                with c_mcn1:
+                    so_lan_oto = st.number_input(
+                        "Số làn xe thiết kế:",
+                        min_value=int(tra_mcn["so_lan_min"]), value=int(tra_mcn["so_lan_min"]), step=1,
+                        help=f"Tối thiểu {tra_mcn['so_lan_min']:g} làn theo TCVN 4054:2005."
+                    )
+                    w_lan_oto = st.number_input(
+                        "Chiều rộng 1 làn xe (m):",
+                        min_value=float(tra_mcn["w_lan_min"]), value=float(tra_mcn["w_lan_min"]),
+                        step=0.25, format="%.2f",
+                        help=f"Tối thiểu {tra_mcn['w_lan_min']:g}m theo TCVN 4054:2005."
+                    )
+                with c_mcn2:
+                    w_le_oto = st.number_input(
+                        "Chiều rộng lề đường (m):",
+                        min_value=float(tra_mcn["w_le_min"]), value=float(tra_mcn["w_le_min"]),
+                        step=0.25, format="%.2f",
+                        help=f"Tối thiểu {tra_mcn['w_le_min']:g}m theo TCVN 4054:2005."
+                    )
+                    w_dpc_oto = st.number_input(
+                        "Chiều rộng dải phân cách giữa (m):",
+                        min_value=float(tra_mcn["w_dpc_min"]), value=float(tra_mcn["w_dpc_min"]),
+                        step=0.25, format="%.2f",
+                        help=f"Tối thiểu {tra_mcn['w_dpc_min']:g}m theo TCVN 4054:2005"
+                             + (" (cấp này không bắt buộc có dải phân cách)." if tra_mcn['w_dpc_min'] == 0 else ".")
+                    )
+                # ── Dải phân cách giữa (Bảng 8) — chỉ hiện khi có DPC ──
+                _dpc_labels = {
+                    "be_tong_duc_san": "BT đúc sẵn, bó vỉa có lớp phủ (không có trụ)",
+                    "co_tru_cot":      "Xây bó vỉa, có lớp phủ, có bố trí trụ công trình",
+                    "khong_lop_phu":   "Không có lớp phủ",
+                }
+                _dpc_keys = list(_dpc_labels.keys())
+                if w_dpc_oto > 0:
+                    st.markdown("**Dải phân cách giữa (Bảng 8 – TCVN 4054:2005)**")
+                    loai_dpc_oto = st.selectbox(
+                        "Loại cấu tạo dải phân cách:",
+                        options=_dpc_keys,
+                        format_func=lambda k: _dpc_labels[k],
+                        help="Theo Điều 4.4.1 – chỉ bố trí khi đường có ≥ 4 làn xe."
+                    )
+                    _b8 = YTHH.tra_cuu_dai_phan_cach(loai_dpc_oto)
+                    st.caption(
+                        f"Tối thiểu theo Bảng 8: phần phân cách ≥ **{_b8['w_phan_cach']:g}m** | "
+                        f"phần an toàn 2×{_b8['w_an_toan_moi_ben']:g}m | "
+                        f"Tổng dải PC ≥ **{_b8['w_toi_thieu']:g}m**"
+                    )
+                    if w_dpc_oto < _b8["w_toi_thieu"]:
+                        st.warning(
+                            f"⚠️ Dải phân cách nhập ({w_dpc_oto:.2f}m) nhỏ hơn tối thiểu "
+                            f"Bảng 8 ({_b8['w_toi_thieu']:g}m) cho loại '{_dpc_labels[loai_dpc_oto]}'."
+                        )
+                else:
+                    loai_dpc_oto = "be_tong_duc_san"  # mặc định, không hiển thị
+
+                # ── Độ dốc ngang mặt đường (Bảng 9) ──
+                _mat_labels = {
+                    "btxm_bthua":    "Bê tông xi măng / bê tông nhựa (1.5–2.0%)",
+                    "lat_da_tot":    "Mặt đường lát đá tốt, phẳng (2.0–3.0%)",
+                    "lat_da_tb":     "Mặt đường lát đá chất lượng TB (3.0–3.5%)",
+                    "da_dam_cap_phoi": "Đá dăm, cấp phối, mặt đường cấp thấp (3.0–3.5%)",
+                }
+                st.markdown("**Độ dốc ngang mặt đường (Bảng 9 – TCVN 4054:2005)**")
+                loai_mat_duong_oto = st.selectbox(
+                    "Loại mặt đường (ảnh hưởng độ dốc ngang):",
+                    options=list(_mat_labels.keys()),
+                    format_func=lambda k: _mat_labels[k],
+                )
+                _b9 = YTHH.tra_cuu_doc_ngang(loai_mat_duong_oto)
+                st.caption(
+                    f"Bảng 9: độ dốc ngang mặt đường & lề gia cố: "
+                    f"**{_b9['i_min']:g}% – {_b9['i_max']:g}%** | "
+                    f"Lề không gia cố: **{_b9['i_le_khong_gc_min']:g}% – {_b9['i_le_khong_gc_max']:g}%**"
+                )
+                i_doc_ngang_oto = st.number_input(
+                    "Độ dốc ngang thiết kế i (%):",
+                    min_value=float(_b9["i_min"]),
+                    max_value=float(_b9["i_max"]),
+                    value=float(_b9["i_goi_y"]),
+                    step=0.5, format="%.1f",
+                    help=f"TCVN 4054:2005 Bảng 9: {_b9['i_min']:g}% – {_b9['i_max']:g}% cho loại mặt đường này."
+                )
+
+                mcn_oto_override = {
+                    "cap_duong": cap_duong_oto, "dia_hinh": dia_hinh_mcn,
+                    "so_lan": so_lan_oto, "w_lan": w_lan_oto,
+                    "w_le": w_le_oto, "w_dpc": w_dpc_oto,
+                    "w_le_gc": tra_mcn.get("w_le_gc_min"),
+                    "loai_dpc": loai_dpc_oto,
+                    "loai_mat_duong": loai_mat_duong_oto,
+                    "i_doc_ngang": i_doc_ngang_oto,
+                }
+            else:
+                st.warning(f"⚠️ {tra_mcn.get('message','Không tra được MCN tối thiểu.')}")
+                mcn_oto_override = {"cap_duong": cap_duong_oto, "dia_hinh": dia_hinh_mcn}
         else:
             loai_dt = st.selectbox("Phân loại đường đô thị:", ["Trục chính đô thị", "Đường chính đô thị", "Đường khu vực", "Đường nội bộ"])
             cap_dt = st.selectbox("Cấp kỹ thuật kỹ sư:", ["Đặc biệt", "Cấp I", "Cấp II"] if loai_dt == "Trục chính đô thị" else ["Cấp I", "Cấp II"])
@@ -214,12 +406,198 @@ def show_options_dialog():
             d_hinhhoc = st.radio("Địa hình đô thị:", ["1", "2"], format_func=lambda x: "Bằng phẳng" if x == "1" else "Khó khăn")
             input_tra_cuu = v_hinhhoc
 
+            # ── MCN đường đô thị — Bảng 10, 12, 13 TCVN 13592:2022 ────────────
+            _dt_labels = {
+                "cao_toc_do_thi":   "Đường cao tốc đô thị",
+                "pho_chinh_chu_yeu":"Đường phố chính chủ yếu",
+                "pho_chinh_thu_yeu":"Đường phố chính thứ yếu",
+                "pho_gom":          "Đường phố gom",
+                "pho_noi_bo":       "Đường phố nội bộ",
+            }
+            _col_dtA, _col_dtB = st.columns(2)
+            with _col_dtA:
+                loai_dt_mcn = st.selectbox(
+                    "Loại đường phố (MCN — Bảng 10):",
+                    options=list(_dt_labels.keys()),
+                    format_func=lambda k: _dt_labels[k],
+                    key="loai_dt_mcn",
+                )
+            with _col_dtB:
+                dieu_kien_xd = st.radio(
+                    "Điều kiện xây dựng (ảnh hưởng Bảng 14, 15):",
+                    options=["I", "II", "III"],
+                    horizontal=True,
+                    key="dieu_kien_xd",
+                    help="I: Thuận lợi | II: Bình thường | III: Khó khăn",
+                )
+            tra_dt = YTHH.tra_cuu_mcn_do_thi(v_hinhhoc, loai_dt_mcn, dieu_kien_xd)
+
+            if tra_dt.get("status") == "success":
+                # ── Hiển thị tra cứu ─────────────────────────────────────────
+                st.caption(
+                    f"📐 **Bảng 10** — {tra_dt['mo_ta']} | VTK {v_hinhhoc} km/h | "
+                    f"Làn tối thiểu: **{tra_dt['w_lan_min']:.2f}m** | "
+                    f"Số làn: **{tra_dt['so_lan_toi_thieu']}** (mong muốn {tra_dt['so_lan_mong_muon']})"
+                )
+                _dat_at_cap = (tra_dt['w_dat_at_loaiI'] if dieu_kien_xd == "I"
+                               else tra_dt['w_dat_at_loaiII_III'])
+                st.caption(
+                    f"📐 **Bảng 13** — Lề: **{tra_dt['w_le_min']:.2f}÷{tra_dt['w_le_max']:.2f}m** | "
+                    + (f"Dải AT (đk {dieu_kien_xd}): **{_dat_at_cap:.2f}m**"
+                       if _dat_at_cap else "Dải AT: không bắt buộc ở VTK này")
+                )
+                if tra_dt["co_dpc"] and tra_dt["dpc_min"] is not None:
+                    st.caption(
+                        f"📐 **Bảng 14** — Dải phân cách tối thiểu (đk {dieu_kien_xd}): "
+                        f"**{tra_dt['dpc_min']:.2f}m** (mong muốn {tra_dt['dpc_mong_muon']:.2f}m)"
+                    )
+                elif tra_dt.get("dpc_note"):
+                    st.caption(f"📐 **Bảng 14** — {tra_dt['dpc_note']}")
+                if tra_dt["he_min"] is not None:
+                    st.caption(
+                        f"📐 **Bảng 15** — Hè đường tối thiểu (đk {dieu_kien_xd}): "
+                        f"**{tra_dt['he_min']:.1f}m**"
+                    )
+
+                # ── Phần xe chạy ──────────────────────────────────────────────
+                st.markdown("**Phần xe chạy (Bảng 10):**")
+                _c1, _c2 = st.columns(2)
+                with _c1:
+                    n_lan_dt = st.number_input(
+                        "Số làn xe:",
+                        min_value=tra_dt["so_lan_toi_thieu"], value=tra_dt["so_lan_toi_thieu"],
+                        step=2, key="n_lan_dt",
+                    )
+                    w_lan_dt = st.number_input(
+                        "Chiều rộng 1 làn xe (m):",
+                        min_value=tra_dt["w_lan_min"], value=tra_dt["w_lan_min"],
+                        step=0.25, format="%.2f", key="w_lan_dt",
+                    )
+                with _c2:
+                    w_le_dt = st.number_input(
+                        f"Lề đường (m) — tối thiểu {tra_dt['w_le_min']:.2f}m:",
+                        min_value=tra_dt["w_le_min"],
+                        max_value=max(tra_dt["w_le_max"], tra_dt["w_le_min"] + 3.0),
+                        value=tra_dt["w_le_min"],
+                        step=0.25, format="%.2f", key="w_le_dt",
+                    )
+
+                # ── Dải phân cách (Bảng 14) ───────────────────────────────────
+                st.markdown("**Dải phân cách giữa (Bảng 14):**")
+                if tra_dt["co_dpc"] and tra_dt["dpc_min"] is not None:
+                    w_dpc_dt = st.number_input(
+                        f"Chiều rộng DPC (m) — tối thiểu {tra_dt['dpc_min']:.2f}m "
+                        f"(mong muốn {tra_dt['dpc_mong_muon']:.2f}m):",
+                        min_value=tra_dt["dpc_min"],
+                        value=tra_dt["dpc_min"],
+                        step=0.50, format="%.2f", key="w_dpc_dt",
+                    )
+                elif tra_dt.get("dpc_note"):
+                    st.info(f"ℹ️ {tra_dt['dpc_note']}")
+                    w_dpc_dt = 0.0
+                else:
+                    w_dpc_dt = st.number_input(
+                        "Chiều rộng DPC (m, 0 nếu không có):",
+                        min_value=0.0, value=0.0, step=0.5, format="%.2f", key="w_dpc_dt",
+                    )
+
+                # ── Hè đường (Bảng 15) ────────────────────────────────────────
+                st.markdown("**Hè đường / Dải bên đường (Bảng 15):**")
+                _he_min_val = tra_dt["he_min"] if tra_dt["he_min"] is not None else 0.0
+                if _he_min_val > 0:
+                    w_he_dt = st.number_input(
+                        f"Chiều rộng hè đường (m) — tối thiểu {_he_min_val:.1f}m:",
+                        min_value=_he_min_val, value=_he_min_val,
+                        step=0.5, format="%.1f", key="w_he_dt",
+                    )
+                else:
+                    st.info("ℹ️ Loại đường này không quy định hè đường bắt buộc.")
+                    w_he_dt = st.number_input(
+                        "Chiều rộng hè đường (m, 0 nếu không có):",
+                        min_value=0.0, value=0.0, step=0.5, format="%.1f", key="w_he_dt",
+                    )
+
+                # ── Dải trồng cây (Bảng 16 — tham khảo) ─────────────────────
+                with st.expander("📋 Bảng 16 — Kích thước tối thiểu dải trồng cây (tham khảo)"):
+                    _tc_ref = tra_dt.get("trong_cay_ref", {})
+                    _tc_labels = {
+                        "cay_bong_mat_1_hang":     "Cây bóng mát trồng 1 hàng",
+                        "cay_bong_mat_2_hang":     "Cây bóng mát trồng 2 hàng",
+                        "dai_cay_bui_bai_co":      "Dải cây bụi, bãi cỏ",
+                        "vuon_cay_nha_1_tang":     "Vườn cây trước nhà 1 tầng",
+                        "vuon_cay_nha_nhieu_tang": "Vườn cây trước nhà nhiều tầng",
+                    }
+                    st.table(pd.DataFrame({
+                        "Hình thức trồng cây": [_tc_labels.get(k, k) for k in _tc_ref],
+                        "Chiều rộng tối thiểu (m)": list(_tc_ref.values()),
+                    }))
+
+                # ── Mặt đường và độ dốc ngang (Bảng 12) ─────────────────────
+                st.markdown("**Độ dốc ngang (Bảng 12):**")
+                _loai_mat_dt_labels = {
+                    "btxm_bthua":      "Bê tông xi măng / bê tông nhựa",
+                    "nhua_khac":       "Mặt đường nhựa khác",
+                    "lat_da_tot":      "Lát đá tốt, phẳng",
+                    "da_dam_cap_phoi": "Đá dăm, cấp phối",
+                }
+                loai_mat_dt = st.selectbox(
+                    "Loại mặt đường:",
+                    options=list(_loai_mat_dt_labels.keys()),
+                    format_func=lambda k: _loai_mat_dt_labels[k],
+                    key="loai_mat_dt",
+                )
+                tra_doc_dt = YTHH.tra_cuu_doc_ngang_do_thi(loai_mat_dt)
+                i_doc_ngang_dt = st.number_input(
+                    f"Độ dốc ngang i (%) — Bảng 12: {tra_doc_dt['i_min']:g}÷{tra_doc_dt['i_max']:g}%:",
+                    min_value=float(tra_doc_dt["i_min"]),
+                    max_value=float(tra_doc_dt["i_max"]),
+                    value=float(tra_doc_dt["i_goi_y"]),
+                    step=0.5, format="%.1f", key="i_doc_ngang_dt",
+                )
+                mcn_oto_override = {
+                    "loai_dt":        loai_dt_mcn,
+                    "dieu_kien_xd":   dieu_kien_xd,
+                    "so_lan":         n_lan_dt,
+                    "w_lan":          w_lan_dt,
+                    "w_le":           w_le_dt,
+                    "w_dpc":          w_dpc_dt,
+                    "w_he":           w_he_dt,
+                    "loai_mat_duong": loai_mat_dt,
+                    "i_doc_ngang":    i_doc_ngang_dt,
+                }
+            else:
+                st.warning(f"⚠️ {tra_dt.get('message','Không tra được MCN đô thị.')}")
+                mcn_oto_override = {"loai_dt": loai_dt_mcn, "dieu_kien_xd": dieu_kien_xd}
+
         b_cau = st.number_input("Bề rộng Bc mặt cắt cầu (m):", min_value=6.0, value=st.session_state.design_data.get('bc', 12.0), step=0.5)
 
-    res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
-    r_final_calc = 5000
-    if res_geo.get("status") == "success":
-        r_final_calc = res_geo["R_loi_tt"]
+        res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
+        r_final_calc = 5000
+        i_final_calc = 4.0
+        if res_geo.get("status") == "success":
+            r_gh = float(res_geo["R_loi_gh"])
+            r_tt = float(res_geo["R_loi_tt"])
+            imax_calc = float(str(res_geo.get('imax', 4)).split('%')[0])
+
+            st.markdown("**Bán kính đường cong đứng lồi**")
+            st.caption(
+                f"Theo {res_geo['tieu_chuan']}: R giới hạn (tối thiểu) = **{r_gh:,.0f} m** | "
+                f"R thông thường (khuyến nghị) = **{r_tt:,.0f} m**"
+            )
+            r_final_calc = st.number_input(
+                "Bán kính đường cong đứng lồi R thiết kế (m):",
+                min_value=r_gh, value=max(r_tt, r_gh), step=100.0, format="%.0f",
+                help=f"Có thể chọn lớn hơn giá trị khuyến nghị, nhưng không được nhỏ hơn "
+                     f"giá trị giới hạn tối thiểu {r_gh:,.0f} m theo {res_geo['tieu_chuan']}."
+            )
+
+            st.markdown("**Độ dốc dọc**")
+            st.caption(f"Độ dốc dọc lớn nhất cho phép theo tiêu chuẩn: **imax = {imax_calc:.1f} %**")
+            i_final_calc = st.number_input(
+                "Độ dốc dọc thiết kế i (%):",
+                min_value=0.0, max_value=imax_calc, value=imax_calc, step=0.1, format="%.1f",
+                help=f"Không được vượt quá độ dốc dọc lớn nhất cho phép {imax_calc:.1f}% theo {res_geo['tieu_chuan']}."
+            )
 
     st.markdown("---")
     
@@ -241,22 +619,23 @@ def show_options_dialog():
             res['t_ban_mm'] = t_ban_mm
             res['is_urban'] = is_urban_val
             res['x_tim_clearance'] = x_tim_clearance  # lưu để hiển thị lại lần sau
+            res['mcn_oto_input'] = mcn_oto_override   # khai báo MCN đường ô tô (nếu có)
 
             if res_geo.get("status") == "success":
                 # ── Bước 2: Hình học ─────────────────────────────────────────
                 res['R_hinh_hoc'] = r_final_calc
+                res['i_max_hinh_hoc'] = i_final_calc
                 res['geo_logic']  = YTHH.tinh_toan_geo_logic(
-                    res, h_tn_tb if loai_c == "Vượt sông" else h1,
-                    res.get('day_dam', 0.0), x_tim_clearance=x_tim_clearance
+                    res, h_tn_tb,
+                    res.get('day_dam', 0.0), x_tim_clearance=x_tim_clearance,
+                    lt_diahinh=lt_diahinh_arr, z_diahinh=z_diahinh_arr
                 )
-                imax_raw = res_geo.get('imax', '0')
-                res['i_max_hinh_hoc'] = float(str(imax_raw).split('%')[0])
                 res['bc']         = b_cau
                 res['loai_duong'] = l_hinhhoc
                 res['vtk']        = res_geo.get("v_thiet_ke", 60)
 
                 L_cau    = res['geo_logic'].get('L_cau', None)
-                moi_tr   = "Đô thị" if loai_c == "Vượt đường bộ" else "Vượt sông"
+                moi_tr   = "Vượt sông"
                 v3_path  = os.path.join(os.path.dirname(__file__), "Data", "Bridge_Train_Dataset_v3.xlsx")
 
                 # ── Bước 3 (legacy GRD module — bo qua neu khong co file) ────
@@ -278,11 +657,11 @@ def show_options_dialog():
                 pier_models = MOT.train_pier_ai(v3_path=v3_path)
                 loai_dam_cho_tru = (
                     res['kcn_result']['loai_dam'] if res.get('kcn_result')
-                    else res.get('ai_result', {}).get('loai_dam', 'Super-T')
+                    else (res.get('ai_result') or {}).get('loai_dam', 'Super-T')
                 )
                 H_dam_est = (
                     res['kcn_result']['chieu_cao_dam'] if res.get('kcn_result')
-                    else res.get('ai_result', {}).get('chieu_cao', 1.75)
+                    else (res.get('ai_result') or {}).get('chieu_cao', 1.75)
                 )
                 # Ước tính chiều cao trụ từ cao độ
                 H_tru_est, cao_day_dam, cao_mat_cau = MOT.estimate_pier_height(
@@ -345,7 +724,7 @@ def show_options_dialog():
                     st.session_state.alternatives = None
                     st.warning(f"Không sinh được phương án so sánh: {_alt_err}")
 
-                kcn = res.get('kcn_result') or res.get('ai_result', {})
+                kcn = res.get('kcn_result') or (res.get('ai_result') or {})
                 st.session_state.chatbot_context = (
                     f"Vtk={res['vtk']}km/h | "
                     f"LoaiDam={kcn.get('loai_dam','?')} | "
@@ -394,8 +773,8 @@ with ctrl_col1:
     if st.button("⚙️ OPTIONS - KHAI BÁO SỐ LIỆU", use_container_width=True, type="secondary"):
         show_options_dialog()
 with ctrl_col2:
-    if st.session_state.design_data.get('kcn_result') or st.session_state.design_data.get('ai_result', {}).get('loai_dam'):
-        _ai_p  = st.session_state.design_data.get('kcn_result') or st.session_state.design_data.get('ai_result', {})
+    if st.session_state.design_data.get('kcn_result') or (st.session_state.design_data.get('ai_result') or {}).get('loai_dam'):
+        _ai_p  = st.session_state.design_data.get('kcn_result') or (st.session_state.design_data.get('ai_result') or {})
         _geo_p = st.session_state.design_data.get('geo_logic', {})
         st.markdown(
             f"<div style='padding-top:5px; font-size:13px;'>"
@@ -659,13 +1038,227 @@ if selected_ribbon == "THUYẾT MINH":
     # ── VI. MẶT CẮT NGANG ────────────────────────────────────────────────
     with st.expander("**VI. MẶT CẮT NGANG CẦU**", expanded=False):
         try:
-            res_mcn = MCN.thiet_ke_mcn_cau_web({
+            _mcn_in = dict(d.get('mcn_oto_input') or {})
+            res_mcn = YTHH.thiet_ke_mcn_cau_web({
                 "loai": d.get('loai_duong', 'Do thi'),
-                "vtk":  d.get('vtk', 60)
+                "vtk":  d.get('vtk', 60),
+                **_mcn_in,
             })
+
+            tra_tt     = res_mcn.get("tra_cuu_toi_thieu")
+            is_caotoc  = res_mcn.get("is_caotoc", False)
+            is_dothi   = res_mcn.get("is_dothi", False)
+
+            if is_caotoc and tra_tt and tra_tt.get("status") == "success":
+                # ── So sánh Bảng 1 TCVN 5729:2012 ──
+                st.caption(f"📐 {res_mcn['tieu_chuan']} — Vtk={tra_tt.get('vtk','')}km/h — {tra_tt.get('mo_ta_dpc','')}")
+                df_so_sanh = pd.DataFrame({
+                    "Yếu tố": [
+                        "Số làn/chiều", "Chiều rộng 1 làn (m)", "Mặt đường/chiều (m)",
+                        "Lề gia cố/DAT (m)", "DAT dải giữa (m)", "DPC lõi (m)", "Nền đường (m)"
+                    ],
+                    "Tiêu chuẩn (TCVN 5729:2012)": [
+                        tra_tt["n_lan_moi_chieu_min"], tra_tt["w_lan_min"],
+                        tra_tt["w_mat_duong_min"], tra_tt["w_le_dat_min"],
+                        tra_tt["w_dat_an_toan_dg_min"], tra_tt["w_dpc_core_min"],
+                        tra_tt["w_nen_min"],
+                    ],
+                    "Thiết kế (người dùng nhập)": [
+                        res_mcn["n_lan_moi_chieu"], res_mcn["w_lan"],
+                        res_mcn["w_mat_1chieu"], res_mcn["w_le_gc"],
+                        res_mcn["w_dat_an_toan_dg"], res_mcn["w_dpc_core"],
+                        round(res_mcn.get("w_nen_duong_min") or
+                              2*(res_mcn["w_le_trong_co"]+res_mcn["w_le_gc"]+res_mcn["w_mat_1chieu"])
+                              +res_mcn["w_dpc"], 2),
+                    ],
+                })
+                st.table(df_so_sanh)
+                _khong_dat = (
+                    res_mcn["n_lan_moi_chieu"] < tra_tt["n_lan_moi_chieu_min"] or
+                    res_mcn["w_lan"]           < tra_tt["w_lan_min"] or
+                    res_mcn["w_le_gc"]         < tra_tt["w_le_dat_min"] or
+                    res_mcn["w_dat_an_toan_dg"]< tra_tt["w_dat_an_toan_dg_min"] or
+                    res_mcn["w_dpc_core"]      < tra_tt["w_dpc_core_min"]
+                )
+                if _khong_dat:
+                    st.error("⚠️ Một số giá trị thiết kế NHỎ HƠN mức tiêu chuẩn TCVN 5729:2012!")
+                else:
+                    st.success("✅ Giá trị thiết kế thỏa mãn tiêu chuẩn TCVN 5729:2012.")
+                st.caption(
+                    f"Độ dốc ngang (cố định TCVN 5729:2012): "
+                    f"Mặt đường & DAT = **{res_mcn['i_doc_ngang']:g}%** | "
+                    f"Lề trồng cỏ = **{res_mcn['i_le_trong_co']:g}%**"
+                )
+
+            elif is_dothi and tra_tt and tra_tt.get("status") == "success":
+                # ── So sánh Bảng 10/13/14/15 TCVN 13592:2022 ──
+                _dkx = tra_tt.get("dieu_kien_xd", "II")
+                st.caption(
+                    f"📐 {res_mcn['tieu_chuan']} — {tra_tt.get('mo_ta','')} | "
+                    f"VTK {tra_tt.get('vtk','')} km/h | Điều kiện xây dựng: {_dkx}"
+                )
+                # Bảng 10/13
+                _dat_at_cap = (tra_tt.get('w_dat_at_loaiI') if _dkx == "I"
+                               else tra_tt.get('w_dat_at_loaiII_III'))
+                df_10_13 = pd.DataFrame({
+                    "Yếu tố": [
+                        "Số làn xe (tối thiểu)", "Chiều rộng 1 làn (m)",
+                        "Lề đường tối thiểu (m)", "Lề đường tối đa (m)",
+                    ],
+                    f"Tiêu chuẩn Bảng 10/13": [
+                        f"{tra_tt['so_lan_toi_thieu']} (mong {tra_tt['so_lan_mong_muon']})",
+                        tra_tt["w_lan_min"], tra_tt["w_le_min"], tra_tt["w_le_max"],
+                    ],
+                    "Thiết kế (nhập)": [
+                        res_mcn["n_lan"], res_mcn["w_lan"],
+                        res_mcn["w_le"], res_mcn["w_le"],
+                    ],
+                })
+                st.table(df_10_13)
+                _khong_dat_dt = (
+                    res_mcn["n_lan"] < tra_tt["so_lan_toi_thieu"] or
+                    res_mcn["w_lan"] < tra_tt["w_lan_min"] or
+                    res_mcn["w_le"]  < tra_tt["w_le_min"]
+                )
+                if _khong_dat_dt:
+                    st.error("⚠️ Một số giá trị NHỎ HƠN mức tối thiểu TCVN 13592:2022!")
+                else:
+                    st.success("✅ Phần xe chạy và lề thỏa mãn TCVN 13592:2022.")
+                if _dat_at_cap:
+                    st.caption(
+                        f"Dải an toàn (Bảng 13, đk {_dkx}): **{_dat_at_cap:.2f}m** "
+                        f"(bắt buộc khi VTK ≥ 50 km/h — Điều 9.4.3)"
+                    )
+                # Bảng 14 — DPC
+                _dpc_min = tra_tt.get("dpc_min")
+                _dpc_mm  = tra_tt.get("dpc_mong_muon")
+                _dpc_note= tra_tt.get("dpc_note")
+                if tra_tt.get("co_dpc") and _dpc_min is not None:
+                    _w_dpc_tk = res_mcn.get("w_dpc", 0)
+                    _ok_dpc   = _w_dpc_tk >= _dpc_min
+                    st.caption(
+                        f"Dải phân cách (Bảng 14, đk {_dkx}): "
+                        f"tối thiểu **{_dpc_min:.2f}m** (mong muốn {_dpc_mm:.2f}m) | "
+                        f"Thiết kế: **{_w_dpc_tk:.2f}m** — "
+                        + ("✅ Đạt" if _ok_dpc else "⚠️ Chưa đạt tối thiểu")
+                    )
+                elif _dpc_note:
+                    st.caption(f"Dải phân cách (Bảng 14): {_dpc_note}")
+                # Bảng 15 — Hè đường
+                _he_min = tra_tt.get("he_min")
+                _w_he_tk = res_mcn.get("w_he", res_mcn.get("w_lc", 0))
+                if _he_min is not None:
+                    _ok_he = _w_he_tk >= _he_min
+                    st.caption(
+                        f"Hè đường (Bảng 15, đk {_dkx}): "
+                        f"tối thiểu **{_he_min:.1f}m** | "
+                        f"Thiết kế: **{_w_he_tk:.1f}m** — "
+                        + ("✅ Đạt" if _ok_he else "⚠️ Chưa đạt tối thiểu")
+                    )
+                # Bảng 12 — độ dốc ngang
+                _b12 = res_mcn.get("doc_ngang_b9", {})
+                if _b12:
+                    _i    = res_mcn.get("i_doc_ngang", _b12.get("i_goi_y", 2.0))
+                    _ok_i = res_mcn.get("i_doc_ngang_trong_pham_vi", True)
+                    st.caption(
+                        f"Độ dốc ngang — {_b12.get('mo_ta','')} | "
+                        f"Phạm vi Bảng 12: **{_b12['i_min']:g}%–{_b12['i_max']:g}%** | "
+                        f"Thiết kế: **{_i:.1f}%** — "
+                        + ("✅ Trong phạm vi" if _ok_i else "⚠️ Ngoài phạm vi TCVN")
+                    )
+
+            elif not is_caotoc and not is_dothi and tra_tt and tra_tt.get("status") == "success":
+                # ── So sánh Bảng 6/7 TCVN 4054:2005 ──
+                st.caption(f"📐 {res_mcn['tieu_chuan']} — Cấp {tra_tt['cap_duong']}")
+                df_so_sanh = pd.DataFrame({
+                    "Yếu tố": ["Số làn xe", "Chiều rộng 1 làn (m)", "Dải phân cách (m)",
+                               "Lề đường (m)", "Lề gia cố (m)"],
+                    "Tối thiểu (TCVN 4054:2005)": [
+                        tra_tt["so_lan_min"], tra_tt["w_lan_min"], tra_tt["w_dpc_min"],
+                        tra_tt["w_le_min"], tra_tt["w_le_gc_min"] or "—",
+                    ],
+                    "Thiết kế (người dùng nhập)": [
+                        res_mcn["n_lan"], res_mcn["w_lan"], res_mcn["w_dpc"],
+                        res_mcn["w_le"], res_mcn["w_le_gc"] or "—",
+                    ],
+                })
+                st.table(df_so_sanh)
+                _khong_dat = (
+                    res_mcn["n_lan"] < tra_tt["so_lan_min"] or
+                    res_mcn["w_lan"] < tra_tt["w_lan_min"] or
+                    res_mcn["w_dpc"] < tra_tt["w_dpc_min"] or
+                    res_mcn["w_le"]  < tra_tt["w_le_min"]
+                )
+                if _khong_dat:
+                    st.error("⚠️ Một số giá trị thiết kế NHỎ HƠN mức tối thiểu theo tiêu chuẩn!")
+                else:
+                    st.success("✅ Giá trị thiết kế thỏa mãn chiều rộng tối thiểu theo tiêu chuẩn.")
+
+                # ── Bảng 8 ──
+                _dpc_b8 = res_mcn.get("dpc_b8", {})
+                if res_mcn.get("w_dpc", 0) > 0 and _dpc_b8:
+                    _w_dpc_min_b8 = res_mcn.get("w_dpc_min_b8", 0)
+                    _ok_dpc = res_mcn["w_dpc"] >= _w_dpc_min_b8
+                    st.caption(
+                        f"Dải phân cách — {_dpc_b8.get('mo_ta','')} | "
+                        f"Tối thiểu Bảng 8: **{_w_dpc_min_b8:g}m** | "
+                        f"Thiết kế: **{res_mcn['w_dpc']:.2f}m** — "
+                        + ("✅ Đạt" if _ok_dpc else "⚠️ Chưa đạt")
+                    )
+                # ── Bảng 9 ──
+                _b9 = res_mcn.get("doc_ngang_b9", {})
+                if _b9:
+                    _i = res_mcn.get("i_doc_ngang", _b9.get("i_goi_y", 2.0))
+                    _ok_i = res_mcn.get("i_doc_ngang_trong_pham_vi", True)
+                    st.caption(
+                        f"Độ dốc ngang — {_b9.get('mo_ta','')} | "
+                        f"Phạm vi Bảng 9: **{_b9['i_min']:g}% – {_b9['i_max']:g}%** | "
+                        f"Thiết kế: **{_i:.1f}%** — "
+                        + ("✅ Trong phạm vi" if _ok_i else "⚠️ Ngoài phạm vi TCVN")
+                    )
+
+            elif tra_tt and tra_tt.get("status") == "error":
+                st.warning(f"⚠️ {tra_tt.get('message')}")
+
             st.code(res_mcn.get('mo_phong', 'Chưa có sơ đồ.'), language="text")
+
+            if is_caotoc:
+                st.markdown("#### MCN đường đầu cầu")
+            _c2d, _c3d = st.columns(2)
+            with _c2d:
+                fig_mcn_2d = PLOT.ve_mat_cat_ngang(res_mcn, bridge_mode=False)
+                st.plotly_chart(fig_mcn_2d, use_container_width=True,
+                                config={"scrollZoom": True, "displayModeBar": True},
+                                key="mcn_oto_2d")
+            with _c3d:
+                fig_mcn_3d = PLOT.ve_mat_cat_ngang_3d(res_mcn, chieu_dai=20.0, bridge_mode=False)
+                st.plotly_chart(fig_mcn_3d, use_container_width=True,
+                                config={"scrollZoom": True, "displayModeBar": True},
+                                key="mcn_oto_3d")
+
+            if is_caotoc:
+                st.markdown("#### MCN tại cầu — Điều 6.12 TCVN 5729:2012")
+                _c2d_cau, _c3d_cau = st.columns(2)
+                with _c2d_cau:
+                    fig_cau_2d = PLOT.ve_mat_cat_ngang(res_mcn, bridge_mode=True)
+                    st.plotly_chart(fig_cau_2d, use_container_width=True,
+                                    config={"scrollZoom": True, "displayModeBar": True},
+                                    key="mcn_cau_2d")
+                with _c3d_cau:
+                    fig_cau_3d = PLOT.ve_mat_cat_ngang_3d(res_mcn, chieu_dai=20.0, bridge_mode=True)
+                    st.plotly_chart(fig_cau_3d, use_container_width=True,
+                                    config={"scrollZoom": True, "displayModeBar": True},
+                                    key="mcn_cau_3d")
+                st.caption(
+                    "Theo Điều 6.12.1 TCVN 5729:2012: chiều rộng cầu bằng chiều rộng nền đường (Bảng 1). "
+                    "Lề trồng cỏ được thay bằng lan can cầu + dải phụ khai thác cùng chiều rộng. "
+                    "Theo Điều 6.12.4: hai chiều xe chạy thường được bố trí thành 2 cầu tách biệt."
+                )
         except Exception as ex:
+            import traceback
             st.error(f"Lỗi mặt cắt ngang: {ex}")
+            with st.expander("Chi tiết lỗi"):
+                st.code(traceback.format_exc())
 
     # ── VII. SO SÁNH 3 PHƯƠNG ÁN LOẠI DẦM ───────────────────────────────
     _alts = st.session_state.get("alternatives")
