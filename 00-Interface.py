@@ -642,7 +642,12 @@ def show_options_dialog():
                 res['ai_result'] = None
 
                 # ── Bước 4: AI Kết cấu nhịp ──────────────────────────────────
-                kcn_models = KCN.train_kcn_ai(v3_path=v3_path)
+                try:
+                    kcn_models = KCN.train_kcn_ai(v3_path=v3_path)
+                except TypeError:
+                    kcn_models = KCN.train_kcn_ai()   # fallback: phiên bản cũ không có v3_path
+                except Exception:
+                    kcn_models = None
                 if kcn_models:
                     res['kcn_result'] = KCN.predict_kcn(
                         B_tk=res['B'], H_tk=res.get('H', 3.5),
@@ -654,7 +659,12 @@ def show_options_dialog():
                     res['kcn_result'] = None
 
                 # ── Bước 5: AI Mố – Trụ ──────────────────────────────────────
-                pier_models = MOT.train_pier_ai(v3_path=v3_path)
+                try:
+                    pier_models = MOT.train_pier_ai(v3_path=v3_path)
+                except TypeError:
+                    pier_models = MOT.train_pier_ai()
+                except Exception:
+                    pier_models = None
                 loai_dam_cho_tru = (
                     res['kcn_result']['loai_dam'] if res.get('kcn_result')
                     else (res.get('ai_result') or {}).get('loai_dam', 'Super-T')
