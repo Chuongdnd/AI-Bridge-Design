@@ -24,8 +24,13 @@ Ba loại cọc và tiêu chí lựa chọn
     - Kinh tế, thi công nhanh
 """
 
+import os
+import sys
 import numpy as np
 import pandas as pd
+
+_DIR = os.path.dirname(os.path.abspath(__file__))
+_V3_DEFAULT = os.path.join(_DIR, "Data", "Bridge_Train_Dataset_v3.xlsx")
 
 # ── Bảng tra đường kính cọc ──────────────────────────────────────────────────
 # loai_song → (D tại H≤4m, D tại 4<H≤8m, D tại H>8m) [mm]
@@ -124,6 +129,80 @@ def _chon_loai_coc(D_coc_mm, loai_song, H_tru, L_coc_max, is_urban):
 
 
 # ===========================================================================
+# V3 DATA LOADER — Đọc dữ liệu thực từ Bridge_Train_Dataset_v3.xlsx
+# ===========================================================================
+def load_foundation_data_v3(v3_path=None):
+    """
+    Đọc dữ liệu móng cọc từ v3.
+    Trả về DataFrame có cột: H_tru, D_coc_mm, is_urban, cap_int, is_river, L_coc_est, Loai_coc
+    Hoặc DataFrame rỗng nếu chưa có data.
+    """
+    path = v3_path or _V3_DEFAULT
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    try:
+        data_dir = os.path.join(_DIR, "Data")
+        if data_dir not in sys.path:
+            sys.path.insert(0, data_dir)
+        from v3_loader import get_foundation_df
+        df = get_foundation_df(path)
+    except Exception as e:
+        print(f"[Mong-AI] Không nạp v3_loader: {e}")
+        return pd.DataFrame()
+
+    if df.empty:
+        return df
+
+    # Chuẩn hóa cấp sông → số nguyên
+    if "cap_song" in df.columns:
+        df["cap_int"] = (
+            df["cap_song"].astype(str)
+            .str.replace(r"[Cc]ấp\s*", "", regex=True).str.strip()
+            .apply(_cap_song_to_int)
+        )
+    else:
+        df["cap_int"] = 4
+
+    # Anh xa ten cot v3 (snake_case) -> ten chuan noi bo
+    # v3 cols: h_tru, loai_mong, chieu_dai_coc, duong_kinh_coc, so_coc, pp_tc_coc
+    rename = {
+        "h_tru":          "H_tru",
+        "loai_mong":      "Loai_coc",
+        "chieu_dai_coc":  "L_coc_est",
+        "duong_kinh_coc": "D_coc_mm",
+        "so_coc":         "so_coc",
+    }
+    df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+
+    # Ép kiểu số
+    for c in ["H_tru", "D_coc_mm", "L_coc_est", "is_urban", "is_river", "cap_int"]:
+        if c in df.columns:
+            df[c] = pd.to_numeric(df[c], errors="coerce")
+
+    # Giá trị mặc định
+    if "is_urban" not in df.columns:
+        df["is_urban"] = 0
+    if "is_river" not in df.columns:
+        df["is_river"] = 1
+
+    # Điền D_coc_mm từ quy tắc nếu thiếu
+    if "D_coc_mm" not in df.columns or df["D_coc_mm"].isna().all():
+        def _infer_D(row):
+            loai = _chon_loai_song(int(row.get("cap_int", 4)), bool(row.get("is_river", 1)))
+            return _chon_D_coc(loai, float(row.get("H_tru", 5)))
+        df["D_coc_mm"] = df.apply(_infer_D, axis=1)
+
+    # Loc dong co label
+    if "Loai_coc" in df.columns:
+        drop_sub = [c for c in ["Loai_coc","H_tru"] if c in df.columns]
+        df = df.dropna(subset=drop_sub)
+        df = df[df["Loai_coc"].astype(str).str.strip().str.len() > 0]
+
+    keep = [c for c in ["H_tru","D_coc_mm","is_urban","cap_int","is_river","L_coc_est","Loai_coc"] if c in df.columns]
+    return df[keep].reset_index(drop=True)
+
+
+# ===========================================================================
 # AI MODEL — Khung Random Forest trên dữ liệu tổng hợp
 # ===========================================================================
 def _generate_synthetic_data(n=600, seed=42):
@@ -152,10 +231,10 @@ def _generate_synthetic_data(n=600, seed=42):
     return pd.DataFrame(rows)
 
 
-def train_foundation_ai():
+def train_foundation_ai(v3_path=None):
     """
     Huấn luyện Random Forest phân loại loại cọc.
-    Dùng dataset tổng hợp từ quy tắc kỹ thuật.
+    Ưu tiên dữ liệu thực từ v3; fallback sang dataset tổng hợp khi chưa đủ data.
     Trả về dict models (dùng với predict_foundation_ai).
     """
     try:
@@ -164,7 +243,23 @@ def train_foundation_ai():
     except ImportError:
         return None
 
-    df = _generate_synthetic_data()
+    MIN_ROWS = 10
+    df_v3 = load_foundation_data_v3(v3_path or _V3_DEFAULT)
+    df_syn = _generate_synthetic_data()
+
+    if len(df_v3) >= MIN_ROWS:
+        df = pd.concat([df_syn, df_v3], ignore_index=True)
+        print(f"[Mong-AI] Gộp v3 ({len(df_v3)}) + synthetic ({len(df_syn)}) = {len(df)} mẫu")
+    else:
+        df = df_syn
+        if len(df_v3) > 0:
+            df = pd.concat([df_syn, df_v3], ignore_index=True)
+            print(f"[Mong-AI] Dùng synthetic ({len(df_syn)}) + {len(df_v3)} mẫu v3")
+        else:
+            print(f"[Mong-AI] Dùng synthetic: {len(df_syn)} mẫu (v3 chưa có data)")
+
+    if "L_coc_est" not in df.columns:
+        df["L_coc_est"] = 40.0
     feat_cols = ["H_tru", "D_coc_mm", "is_urban", "cap_int", "is_river", "L_coc_est"]
     X = df[feat_cols]
     y = df["Loai_coc"]

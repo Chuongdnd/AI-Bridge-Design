@@ -1,12 +1,13 @@
 """
-Module 07 — AI Mố – Trụ (Pier Classification AI)
-Spec: Bridge_Features_Dataset.xlsx → Sheet 04_Mố – Trụ
-Data: Phan loai Tru.csv
+Module 07 — AI Mo - Tru (Pier Classification AI)
+Data  : Bridge_Train_Dataset_v3.xlsx — sheet 06_Mo-Tru + 02 + 03 + 07
 Features: Vtk, B_cau, H_tru, Is_Urban, Is_River, Cap_song, Loai_dam
-Label   : Loai_tru (phân loại trụ)
+Label   : Loai_tru (phan loai tru)
+Fallback: Rule-Based khi chua co du lieu train
 """
 
 import os
+import sys
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, GradientBoostingClassifier
@@ -14,6 +15,9 @@ from sklearn.preprocessing import LabelEncoder, OrdinalEncoder
 from sklearn.model_selection import StratifiedKFold, cross_val_score
 import warnings
 warnings.filterwarnings("ignore")
+
+_DIR = os.path.dirname(os.path.abspath(__file__))
+_V3_DEFAULT = os.path.join(_DIR, "Data", "Bridge_Train_Dataset_v3.xlsx")
 
 # Thứ tự cấp sông (I = lớn nhất, VI = nhỏ nhất)
 _CAP_SONG_ORDER = ["I", "II", "III", "IV", "V", "VI"]
@@ -34,80 +38,127 @@ def _encode_cap_song(val):
 # ---------------------------------------------------------------------------
 # 1. NẠP & CHUẨN BỊ DỮ LIỆU
 # ---------------------------------------------------------------------------
-def load_pier_data(file_path):
+def load_pier_data_v3(v3_path=None):
     """
-    Đọc Phan loai Tru.csv.
-    Lọc bỏ cầu 1 nhịp (không có trụ), chuẩn hóa cột.
+    Đọc dữ liệu trụ cầu từ Bridge_Train_Dataset_v3.xlsx.
+    Trả về (DataFrame, le_dam) cùng cấu trúc cột với load_pier_data(), hoặc (rỗng, None).
     """
-    df = pd.read_csv(file_path, encoding="utf-8-sig")
-    df.columns = [c.strip() for c in df.columns]
+    path = v3_path or _V3_DEFAULT
+    if not os.path.exists(path):
+        return pd.DataFrame(), None
+    try:
+        data_dir = os.path.join(_DIR, "Data")
+        if data_dir not in sys.path:
+            sys.path.insert(0, data_dir)
+        from v3_loader import get_pier_df
+        df = get_pier_df(path)
+    except Exception as e:
+        print(f"[Pier-AI] Không nạp v3_loader: {e}")
+        return pd.DataFrame(), None
 
-    # Chuẩn hóa tên cột
-    rename = {}
-    for c in df.columns:
-        lc = c.lower()
-        if "vtk" in lc:
-            rename[c] = "Vtk"
-        elif "b_cau" in lc or "b cau" in lc:
-            rename[c] = "B_cau"
-        elif "h_tru" in lc or "h tru" in lc:
-            rename[c] = "H_tru"
-        elif "is_urban" in lc:
-            rename[c] = "Is_Urban"
-        elif "is_river" in lc:
-            rename[c] = "Is_River"
-        elif "cap_song" in lc or "cap song" in lc:
-            rename[c] = "Cap_song"
-        elif "loai_dam" in lc or "loai dam" in lc:
-            rename[c] = "Loai_dam"
-        elif "loai_tru" in lc or "loai tru" in lc:
-            rename[c] = "Loai_tru"
-    df = df.rename(columns=rename)
+    if df.empty:
+        return df, None
 
-    # Loại bỏ cầu 1 nhịp (không có trụ)
-    if "Loai_tru" in df.columns:
-        df = df[~df["Loai_tru"].astype(str).str.contains("Không có", na=False)]
+    # Anh xa ten cot v3 (snake_case) -> ten chuan noi bo
+    # v3 cols: vtk, b_cau, bc, h_tru, loai_tru, cap_song, loai_vuot, loai_duong, loai_dam
+    rename = {
+        "vtk":      "Vtk",
+        "b_cau":    "B_cau",
+        "bc":       "B_cau_alt",
+        "h_tru":    "H_tru",
+        "loai_tru": "Loai_tru",
+        "loai_dam": "Loai_dam",
+    }
+    df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
 
-    # Ép kiểu số
-    for c in ["Vtk", "B_cau", "H_tru", "Is_Urban", "Is_River"]:
+    # B_cau tu bc neu thieu
+    if "B_cau" not in df.columns and "B_cau_alt" in df.columns:
+        df["B_cau"] = df["B_cau_alt"]
+    elif "B_cau_alt" in df.columns:
+        df["B_cau"] = df["B_cau"].fillna(df["B_cau_alt"])
+
+    # Ep kieu so
+    for c in ["Vtk", "B_cau", "H_tru"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    # Mã hóa cấp sông
-    if "Cap_song" in df.columns:
+    # Cap_song tu v3 (gia tri vi du: "III", "VI", hoac raw text)
+    if "cap_song" in df.columns:
+        df["Cap_song"] = df["cap_song"].astype(str).str.strip().str.replace(
+            r"(?i)cap\s*", "", regex=True).str.strip()
         df["Cap_song_enc"] = df["Cap_song"].apply(_encode_cap_song)
     else:
-        df["Cap_song_enc"] = 4
+        df["Cap_song"]     = "VI"
+        df["Cap_song_enc"] = 6
 
-    # Mã hóa loại dầm
+    # Is_Urban / Is_River tu loai_duong / loai_vuot
+    if "Is_Urban" not in df.columns:
+        if "loai_duong" in df.columns:
+            df["Is_Urban"] = df["loai_duong"].astype(str).str.lower().str.contains(
+                "do thi|urban", na=False).astype(int)
+        else:
+            df["Is_Urban"] = 0
+    if "Is_River" not in df.columns:
+        if "loai_vuot" in df.columns:
+            df["Is_River"] = df["loai_vuot"].astype(str).str.lower().str.contains(
+                "song|kenh", na=False).astype(int)
+        else:
+            df["Is_River"] = 1
+
+    # Ma hoa loai dam (neu co)
+    le_dam = None
     if "Loai_dam" in df.columns:
         le_dam = LabelEncoder()
-        df["Loai_dam_enc"] = le_dam.fit_transform(df["Loai_dam"].astype(str).str.strip())
+        df["Loai_dam_enc"] = le_dam.fit_transform(df["Loai_dam"].astype(str).str.strip().fillna("Unknown"))
     else:
-        le_dam = None
         df["Loai_dam_enc"] = 0
 
-    # Loại bỏ dòng thiếu
+    # Loc bo cau 1 nhip / khong co tru
+    if "Loai_tru" in df.columns:
+        df = df[~df["Loai_tru"].astype(str).str.contains("Không có|Không trụ", na=False)]
+        df = df.dropna(subset=["Loai_tru"])
+        df = df[df["Loai_tru"].astype(str).str.strip().str.len() > 0]
+
     req = [c for c in ["Vtk", "B_cau", "H_tru", "Loai_tru"] if c in df.columns]
     df = df.dropna(subset=req)
 
-    return df, le_dam
+    return df.reset_index(drop=True), le_dam
 
 
 # ---------------------------------------------------------------------------
 # 2. HUẤN LUYỆN
 # ---------------------------------------------------------------------------
-def train_pier_ai(file_path):
+def train_pier_ai(v3_path=None, **_):
     """
-    Huấn luyện mô hình phân loại trụ cầu.
-    Trả về dict models hoặc None.
+    Huan luyen mo hinh phan loai tru cau tu Bridge_Train_Dataset_v3.xlsx.
+    Tra ve dict models khi v3 co >= 6 mau, nguoc lai tra None
+    (predict_pier() se dung Rule-Based fallback tu dong).
     """
-    if not os.path.exists(file_path):
+    MIN_ROWS = 6
+    v3p = v3_path or _V3_DEFAULT
+
+    df, le_dam = load_pier_data_v3(v3p)
+    n_v3 = len(df)
+    if n_v3 < MIN_ROWS:
+        print(f"[Pier-AI] Chua du du lieu (v3={n_v3}, can >={MIN_ROWS}). Dung Rule-Based.")
         return None
+    print(f"[Pier-AI] Dung v3: {n_v3} mau")
+
     try:
-        df, le_dam = load_pier_data(file_path)
-        if len(df) < 6:
-            return None
+        # Re-encode Loai_dam_enc nhat quan
+        if "Loai_dam" in df.columns:
+            le_dam = LabelEncoder()
+            df = df.copy()
+            df["Loai_dam_enc"] = le_dam.fit_transform(df["Loai_dam"].astype(str).str.strip().fillna("Unknown"))
+        elif le_dam is None:
+            df = df.copy()
+            df["Loai_dam_enc"] = 0
+
+        # Đảm bảo Cap_song_enc tồn tại
+        if "Cap_song_enc" not in df.columns:
+            df = df.copy()
+            cap_src = df.get("Cap_song", df.get("cap_song", pd.Series(["VI"]*len(df))))
+            df["Cap_song_enc"] = cap_src.astype(str).str.replace(r"[Cc]ấp\s*","",regex=True).str.strip().apply(_encode_cap_song)
 
         # ─── Bộ đặc trưng theo spec Sheet 04 ───
         feat_cols = []
@@ -304,24 +355,20 @@ def estimate_pier_height(MNCN, H_tinh_khong, H_dam, MNTN):
 if __name__ == "__main__":
     import sys
     sys.stdout.reconfigure(encoding="utf-8")
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    csv_path = os.path.join(current_dir, "Phan loai Tru.csv")
 
-    print("=== Huấn luyện mô hình Trụ cầu ===")
-    mdl = train_pier_ai(csv_path)
+    print("=== Huan luyen mo hinh Tru cau (v3) ===")
+    mdl = train_pier_ai()
     if mdl is None:
-        print("THẤT BẠI — kiểm tra Phan loai Tru.csv")
+        print("Chua co du lieu train — dung Rule-Based fallback")
     else:
-        print(f"Học từ {mdl['n_samples']} mẫu | features: {mdl['feat_cols']}")
-        print(f"Các loại trụ: {mdl['classes']}")
-        if mdl["cv_acc"]:
-            print(f"Cross-val accuracy: {mdl['cv_acc']}%")
+        print(f"Hoc tu {mdl['n_samples']} mau | features: {mdl['feat_cols']}")
+        print(f"Cac loai tru: {mdl['classes']}")
 
-        print("\n=== Ví dụ dự đoán ===")
-        res = predict_pier(
-            vtk=100, B_cau=17.5, H_tru=5.08,
-            is_urban=0, is_river=1, cap_song="VI",
-            loai_dam="T ngược", models=mdl
-        )
-        for k, v in res.items():
-            print(f"  {k}: {v}")
+    print("\n=== Vi du du doan (Rule-Based khi models=None) ===")
+    res = predict_pier(
+        vtk=100, B_cau=17.5, H_tru=5.08,
+        is_urban=0, is_river=1, cap_song="VI",
+        loai_dam="Super-T", models=mdl
+    )
+    for k, v in res.items():
+        print(f"  {k}: {v}")

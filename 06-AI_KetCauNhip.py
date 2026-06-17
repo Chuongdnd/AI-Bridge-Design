@@ -1,12 +1,13 @@
 """
 Module 06 — AI Kết cấu nhịp (Span Structure AI)
-Spec: Bridge_Features_Dataset.xlsx → Sheet 03_Kết cấu nhịp
-Data: Girder.xlsx → sheet 'MainSpan'
+Data  : Bridge_Train_Dataset_v3.xlsx — sheet 07_Kết cấu nhịp + 02 + 03
 Features: B_tk, H_tk, Goc_xien, B_cau, Moi_truong
 Labels  : Loai_dam (classifier) + L_dam, H_dam, Kc_dam, SL_dam (regressors)
+Fallback: Rule-Based khi chưa có dữ liệu train
 """
 
 import os
+import sys
 import numpy as np
 import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier
@@ -15,105 +16,116 @@ from sklearn.model_selection import cross_val_score
 import warnings
 warnings.filterwarnings("ignore")
 
+_DIR = os.path.dirname(os.path.abspath(__file__))
+_V3_DEFAULT = os.path.join(_DIR, "Data", "Bridge_Train_Dataset_v3.xlsx")
+
 # ---------------------------------------------------------------------------
 # Danh sách nhịp tiêu chuẩn (m) — theo thực tế VN
 STD_LENGTHS = [12, 15, 18, 21, 24, 25, 27, 30, 33, 38.2, 40]
-
-# Tên cột chuẩn hóa
-_COL_ALIASES = {
-    "B_tk":       ["Bề rộng tĩnh không B", "tĩnh không B", "B (m)", "Bề rộng tĩnh không"],
-    "H_tk":       ["Chiều cao tĩnh không H", "Chiều cao tĩnh không", "H (m)"],
-    "Goc_xien":   ["Góc xiên Tim cầu/Dòng", "Góc xiên", "Góc giao"],
-    "B_cau":      ["B_cầu (m)", "B_cầu", "Bề rộng cầu (m)", "Bề rộng cầu"],
-    "Moi_truong": ["Môi trường"],
-    "Loai_dam":   ["Loại dầm (Nhịp chính)", "Loại dầm", "Loai_dam"],
-    "L_dam":      ["Chiều dài dầm (m)", "Chiều dài dầm"],
-    "SL_dam":     ["SL dầm", "Số lượng dầm"],
-    "Kc_dam":     ["K/c dầm (m)", "Khoảng cách dầm (m)", "Khoảng cách dầm"],
-    "H_dam":      ["H_dầm (m)", "Chiều cao dầm (m)", "Chiều cao dầm"],
-}
-
-
-def _resolve_col(df_cols, aliases):
-    for a in aliases:
-        for c in df_cols:
-            if a.lower() in c.lower() or c.lower() in a.lower():
-                return c
-    return None
-
-
-def _normalize_df(df):
-    """Đổi tên cột thô sang tên chuẩn."""
-    df = df.copy()
-    df.columns = [str(c).strip() for c in df.columns]
-    rename = {}
-    for std_name, aliases in _COL_ALIASES.items():
-        found = _resolve_col(list(df.columns), aliases)
-        if found and found != std_name:
-            rename[found] = std_name
-    df = df.rename(columns=rename)
-    return df
 
 
 # ---------------------------------------------------------------------------
 # 1. NẠP & CHUẨN BỊ DỮ LIỆU
 # ---------------------------------------------------------------------------
-def load_training_data(file_path):
+def load_training_data_v3(v3_path=None):
     """
-    Đọc Girder.xlsx sheet 'MainSpan'.
-    Trả về DataFrame đã chuẩn hóa, sẵn sàng huấn luyện.
+    Đọc dữ liệu huấn luyện từ Bridge_Train_Dataset_v3.xlsx.
+    Trả về DataFrame cùng cấu trúc cột với load_training_data(), hoặc rỗng nếu chưa có data.
     """
-    df = pd.read_excel(file_path, sheet_name="MainSpan")
-    df = _normalize_df(df)
+    path = v3_path or _V3_DEFAULT
+    if not os.path.exists(path):
+        return pd.DataFrame()
+    try:
+        data_dir = os.path.join(_DIR, "Data")
+        if data_dir not in sys.path:
+            sys.path.insert(0, data_dir)
+        from v3_loader import get_kcn_df
+        df = get_kcn_df(path)
+    except Exception as e:
+        print(f"[KCN-AI] Không nạp được v3_loader: {e}")
+        return pd.DataFrame()
 
-    num_cols = ["B_tk", "H_tk", "Goc_xien", "B_cau", "L_dam", "H_dam", "SL_dam", "Kc_dam"]
-    for c in num_cols:
+    if df.empty:
+        return df
+
+    # Anh xa ten cot v3 (snake_case) -> ten chuan noi bo module
+    # v3 cols: b_tinh_khong, h_tinh_khong, goc_xien, b_cau/bc, l_tt, l_dam,
+    #          h_dam, so_dam, kc_tim_dam, hang_dau_dam, loai_dam, loai_vuot, loai_duong
+    rename = {
+        "b_tinh_khong": "B_tk",
+        "h_tinh_khong": "H_tk",
+        "goc_xien":     "Goc_xien",
+        "b_cau":        "B_cau",
+        "bc":           "B_cau_alt",
+        "l_dam":        "L_dam",
+        "l_tt":         "L_tt",
+        "h_dam":        "H_dam",
+        "so_dam":       "SL_dam",
+        "kc_tim_dam":   "Kc_dam",
+        "hang_dau_dam": "Overhang",
+        "loai_dam":     "Loai_dam",
+    }
+    df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
+
+    # B_cau tu bc neu thieu
+    if "B_cau" not in df.columns and "B_cau_alt" in df.columns:
+        df["B_cau"] = df["B_cau_alt"]
+    elif "B_cau_alt" in df.columns:
+        df["B_cau"] = df["B_cau"].fillna(df["B_cau_alt"])
+
+    # L_dam tu L_tt neu thieu
+    if "L_dam" not in df.columns and "L_tt" in df.columns:
+        df["L_dam"] = pd.to_numeric(df["L_tt"], errors="coerce") + 0.5
+
+    # Moi_truong tu loai_vuot / loai_duong
+    if "Moi_truong" not in df.columns:
+        src_col = "loai_vuot" if "loai_vuot" in df.columns else (
+                   "loai_duong" if "loai_duong" in df.columns else None)
+        if src_col:
+            df["Moi_truong"] = df[src_col].astype(str).apply(
+                lambda x: "Do thi" if "do thi" in x.lower() else "Vuot song"
+            )
+        else:
+            df["Moi_truong"] = "Vuot song"
+
+    # Ep kieu so
+    for c in ["B_tk","H_tk","Goc_xien","B_cau","L_dam","H_dam","SL_dam","Kc_dam"]:
         if c in df.columns:
             df[c] = pd.to_numeric(df[c], errors="coerce")
 
-    # Góc mặc định 90° nếu thiếu
     if "Goc_xien" in df.columns:
         df["Goc_xien"] = df["Goc_xien"].fillna(90.0)
     else:
         df["Goc_xien"] = 90.0
 
-    if "Moi_truong" not in df.columns:
-        df["Moi_truong"] = "Vượt sông"
-    else:
-        df["Moi_truong"] = df["Moi_truong"].fillna("Vượt sông").astype(str).str.strip()
+    req = [c for c in ["B_tk","L_dam","Loai_dam","H_dam"] if c in df.columns]
+    df = df.dropna(subset=req)
+    if "L_dam" in df.columns:
+        df = df[df["L_dam"] > 0]
 
-    # Chuẩn hóa tên loại dầm
-    if "Loai_dam" in df.columns:
-        df["Loai_dam"] = (
-            df["Loai_dam"]
-            .astype(str).str.strip()
-            .str.replace("Dầm I33", "Dầm I", regex=False)
-            .str.replace("Dầm I BTCT DƯL", "Dầm I", regex=False)
-            .str.replace("Super T BTCT DƯL", "Super-T", regex=False)
-            .str.replace("Super T", "Super-T", regex=False)
-        )
-
-    required = ["B_tk", "L_dam", "Loai_dam", "H_dam"]
-    present  = [c for c in required if c in df.columns]
-    df = df.dropna(subset=present)
-    df = df[df["L_dam"] > 0]
-    return df
+    return df.reset_index(drop=True)
 
 
 # ---------------------------------------------------------------------------
 # 2. HUẤN LUYỆN
 # ---------------------------------------------------------------------------
-def train_kcn_ai(file_path):
+def train_kcn_ai(v3_path=None, **_):
     """
-    Huấn luyện bộ mô hình kết cấu nhịp từ Girder.xlsx.
-    Trả về dict models hoặc None nếu thất bại.
+    Huấn luyện bộ mô hình kết cấu nhịp từ Bridge_Train_Dataset_v3.xlsx.
+    Trả về dict models khi v3 có >= 10 mẫu, ngược lại trả None
+    (predict_kcn() sẽ dùng Rule-Based fallback tự động).
     """
-    if not os.path.exists(file_path):
+    MIN_ROWS = 10
+    v3p = v3_path or _V3_DEFAULT
+
+    df = load_training_data_v3(v3p)
+    n_v3 = len(df)
+    if n_v3 < MIN_ROWS:
+        print(f"[KCN-AI] Chua du du lieu (v3={n_v3}, can >={MIN_ROWS}). Dung Rule-Based.")
         return None
+    print(f"[KCN-AI] Dung v3: {n_v3} mau")
+
     try:
-        df = load_training_data(file_path)
-        if len(df) < 10:
-            return None
 
         # Mã hóa môi trường
         le_env = LabelEncoder()
@@ -476,20 +488,18 @@ def predict_kcn(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong=None,
 if __name__ == "__main__":
     import sys
     sys.stdout.reconfigure(encoding="utf-8")
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    xlsx = os.path.join(current_dir, "Girder.xlsx")
 
-    print("=== Huấn luyện mô hình Kết cấu nhịp ===")
-    mdl = train_kcn_ai(xlsx)
+    print("=== Huan luyen mo hinh Ket cau nhip (v3) ===")
+    mdl = train_kcn_ai()
     if mdl is None:
-        print("THẤT BẠI — kiểm tra lại file Girder.xlsx")
-        exit(1)
-    print(f"Đã học từ {mdl['n_samples']} mẫu | features: {mdl['feat_cols']}")
-    print(f"Các loại dầm: {list(mdl['le_type'].classes_)}")
+        print("Chua co du lieu train — dung Rule-Based fallback")
+    else:
+        print(f"Da hoc tu {mdl['n_samples']} mau | features: {mdl['feat_cols']}")
+        print(f"Cac loai dam: {list(mdl['le_type'].classes_)}")
 
-    print("\n=== Ví dụ dự đoán ===")
+    print("\n=== Vi du du doan ===")
     res = predict_kcn(
-        B_tk=15, H_tk=3.5, goc=90, B_cau=14, moi_truong="Vượt sông",
+        B_tk=15, H_tk=3.5, goc=90, B_cau=14, moi_truong="Vuot song",
         L_cau_tong=100, models=mdl, method="auto"
     )
     for k, v in res.items():
