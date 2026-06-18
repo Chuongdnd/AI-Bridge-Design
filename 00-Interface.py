@@ -597,6 +597,12 @@ def show_options_dialog():
                 min_value=0.0, max_value=imax_calc, value=imax_calc, step=0.1, format="%.1f",
                 help=f"Không được vượt quá độ dốc dọc lớn nhất cho phép {imax_calc:.1f}% theo {res_geo['tieu_chuan']}."
             )
+        else:
+            st.error(
+                f"❌ Không tra được yếu tố hình học cho loại đường **{l_hinhhoc}**: "
+                f"{res_geo.get('message', 'Lỗi không xác định')}. "
+                "Khi nhấn **OK**, hệ thống sẽ **không** chạy được AI pipeline."
+            )
 
     st.markdown("---")
     
@@ -644,9 +650,10 @@ def show_options_dialog():
                 try:
                     kcn_models = KCN.train_kcn_ai(v3_path=v3_path)
                 except TypeError:
-                    kcn_models = KCN.train_kcn_ai()   # fallback: phiên bản cũ không có v3_path
-                except Exception:
+                    kcn_models = KCN.train_kcn_ai()
+                except Exception as _e_train:
                     kcn_models = None
+                    res['_kcn_error'] = f"train: {_e_train}"
                 try:
                     res['kcn_result'] = KCN.predict_kcn(
                         B_tk=res['B'], H_tk=res.get('H', 3.5),
@@ -655,8 +662,9 @@ def show_options_dialog():
                         models=kcn_models,
                         method='auto' if kcn_models else 'rb'
                     )
-                except Exception:
+                except Exception as _e_kcn:
                     res['kcn_result'] = None
+                    res['_kcn_error'] = f"predict: {_e_kcn}"
 
                 # ── Bước 5: AI Mố – Trụ ──────────────────────────────────────
                 try:
@@ -745,6 +753,12 @@ def show_options_dialog():
                 )
                 st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
                 st.rerun()
+            else:
+                st.error(
+                    f"❌ Không tính được yếu tố hình học tuyến: "
+                    f"{res_geo.get('message', 'Lỗi không xác định')}. "
+                    "Kiểm tra lại **Loại đường**, **Vận tốc thiết kế** và **Địa hình** đã chọn."
+                )
 
 # =========================================================================
 # BỌC VÙNG ĐIỀU KHIỂN VÀO KHUNG HTML GHIM CỨNG
@@ -1389,11 +1403,21 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
     st.markdown("---")
 
     if not has_ai:
-        st.info(
-            "⚙️ Nhấn nút **⚙️ OPTIONS - KHAI BÁO SỐ LIỆU** ở góc trên trái, "
-            "điền đầy đủ thông số, sau đó nhấn **💾 OK - Áp dụng cấu hình và Chạy dự báo AI** "
-            "bên trong hộp thoại để hệ thống chạy AI pipeline và hiển thị kết quả tại đây."
-        )
+        _kcn_err  = d.get('_kcn_error')
+        _ran      = 'H_tru_est' in d
+        if _ran:
+            st.warning(
+                "⚠️ Pipeline đã chạy nhưng **AI Kết cấu nhịp không cho kết quả**. "
+                + (f"\n\nChi tiết lỗi: `{_kcn_err}`" if _kcn_err else "")
+                + "\n\nCó thể thiếu file `Data/Bridge_Train_Dataset_v3.xlsx` hoặc lỗi tính toán. "
+                "Mở **⚙️ OPTIONS** để chạy lại."
+            )
+        else:
+            st.info(
+                "⚙️ Nhấn nút **⚙️ OPTIONS - KHAI BÁO SỐ LIỆU** ở góc trên trái, "
+                "điền đầy đủ thông số, sau đó nhấn **💾 OK - Áp dụng cấu hình và Chạy dự báo AI** "
+                "bên trong hộp thoại để hệ thống chạy AI pipeline và hiển thị kết quả tại đây."
+            )
     else:
         _df_geo  = st.session_state.get("df_geology", None)
         _df_tim  = st.session_state.get("df_tim_line", None)
