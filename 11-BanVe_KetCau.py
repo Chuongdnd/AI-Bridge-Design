@@ -160,9 +160,229 @@ def _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk):
 calc_pier_positions = _calc_pier_positions
 
 # ===========================================================================
+# 0b. OVERLAY ĐỊA CHẤT — Trắc dọc
+# ===========================================================================
+_GEO_FILL = [
+    "rgba(190,155, 95,0.28)",
+    "rgba(215,195,135,0.28)",
+    "rgba(185,170,115,0.28)",
+    "rgba(165,155,100,0.28)",
+    "rgba(155,185,140,0.28)",
+    "rgba(120,165,200,0.28)",
+    "rgba( 95,130,180,0.28)",
+    "rgba( 75,105,155,0.28)",
+]
+_GEO_LINE = [
+    "rgba(190,155, 95,0.80)",
+    "rgba(215,195,135,0.80)",
+    "rgba(185,170,115,0.80)",
+    "rgba(165,155,100,0.80)",
+    "rgba(155,185,140,0.80)",
+    "rgba(120,165,200,0.80)",
+    "rgba( 95,130,180,0.80)",
+    "rgba( 75,105,155,0.80)",
+]
+
+
+def _draw_dia_chat_trac_doc(fig, dia_chat_data, x0, x_end, h_tn, z_min, mg=20):
+    """Overlay địa chất lên trắc dọc: tầng lớp màu + hình trụ HK + SPT."""
+    if not dia_chat_data:
+        return
+    hk_list = dia_chat_data.get("ho_khoan_list", [])
+    if not hk_list:
+        return
+
+    x_span = x_end - x0
+
+    def _chainage(hk, idx):
+        lt = hk.get("ly_trinh")
+        if lt is not None:
+            try:
+                return float(lt)
+            except (TypeError, ValueError):
+                pass
+        xc = hk.get("X")
+        if xc is not None:
+            try:
+                xf = float(xc)
+                if x0 - x_span * 0.6 <= xf <= x_end + x_span * 0.6:
+                    return xf
+            except (TypeError, ValueError):
+                pass
+        return x0 + (idx + 0.5) / len(hk_list) * x_span
+
+    hk_ch = sorted(
+        [(i, _chainage(hk, i), hk) for i, hk in enumerate(hk_list)],
+        key=lambda t: t[1],
+    )
+
+    # Thu thập tên lớp theo thứ tự
+    lop_order, seen = [], set()
+    for _, _, hk in hk_ch:
+        for lop in hk.get("lop_dat", []):
+            nm = str(lop.get("ten_lop", "")).strip()
+            if nm and nm not in seen:
+                lop_order.append(nm)
+                seen.add(nm)
+    if not lop_order:
+        return
+
+    x_left  = x0  - mg * 0.20
+    x_right = x_end + mg * 0.20
+    N_WAVE  = 80
+
+    def _wave_boundary(pts_sorted, xl, xr):
+        """Nội suy + thêm gợn sóng nhỏ cho đường ranh giới."""
+        ext = [(xl, pts_sorted[0][1])] + pts_sorted + [(xr, pts_sorted[-1][1])]
+        xw = np.linspace(xl, xr, N_WAVE)
+        zw = np.interp(xw, [p[0] for p in ext], [p[1] for p in ext])
+        amp = max(0.04, (max(p[1] for p in ext) - min(p[1] for p in ext)) * 0.025)
+        zw += amp * np.sin(np.linspace(0, 5 * np.pi, N_WAVE))
+        return xw, zw
+
+    # ── Vẽ tầng lớp địa chất ─────────────────────────────────────────────
+    for li, lop_name in enumerate(lop_order):
+        fill_c = _GEO_FILL[li % len(_GEO_FILL)]
+        line_c = _GEO_LINE[li % len(_GEO_LINE)]
+
+        bot_pts, top_pts = [], []
+        for _, ch, hk in hk_ch:
+            z_m = float(hk.get("Z", h_tn) or h_tn)
+            for lop in hk.get("lop_dat", []):
+                if str(lop.get("ten_lop", "")).strip() == lop_name:
+                    bot_pts.append((ch, float(lop["cao_do_day"])))
+                    if li == 0:
+                        top_pts.append((ch, z_m))
+                    else:
+                        prev = lop_order[li - 1]
+                        for lp2 in hk.get("lop_dat", []):
+                            if str(lp2.get("ten_lop", "")).strip() == prev:
+                                top_pts.append((ch, float(lp2["cao_do_day"])))
+                                break
+                        else:
+                            top_pts.append((ch, z_m))
+                    break
+
+        if not bot_pts:
+            continue
+
+        xb, zb = _wave_boundary(sorted(bot_pts, key=lambda p: p[0]), x_left, x_right)
+        if top_pts:
+            xt2, zt = _wave_boundary(sorted(top_pts, key=lambda p: p[0]), x_left, x_right)
+        else:
+            xt2 = np.linspace(x_left, x_right, N_WAVE)
+            zt  = np.full(N_WAVE, h_tn)
+
+        # Clip tại z_min
+        zb = np.maximum(zb, z_min)
+        zt = np.maximum(zt, z_min)
+
+        fig.add_trace(go.Scatter(
+            x=list(xb) + list(xb[::-1]),
+            y=list(zt) + list(zb[::-1]),
+            fill="toself", fillcolor=fill_c,
+            line=dict(color="rgba(0,0,0,0)", width=0),
+            mode="lines", name=f"Lớp địa chất {lop_name}", showlegend=True,
+            hovertemplate=f"<b>Lớp {lop_name}</b><extra></extra>",
+        ))
+        # Đường ranh giới đáy lớp
+        fig.add_trace(go.Scatter(
+            x=list(xb), y=list(zb),
+            mode="lines", line=dict(color=line_c, width=1.2),
+            showlegend=False, hoverinfo="skip",
+        ))
+        # Nhãn tên lớp tại giữa
+        x_mid = (x_left + x_right) / 2
+        z_bot_mid = float(np.interp(x_mid, xb, zb))
+        z_top_mid = float(np.interp(x_mid, xt2, zt))
+        z_label   = (z_top_mid + z_bot_mid) / 2
+        if z_label > z_min + 0.8:
+            fig.add_annotation(
+                x=x_mid, y=z_label,
+                text=f"<b>{lop_name}</b>",
+                showarrow=False, font=dict(size=9, color="#333333"),
+                bgcolor="rgba(255,255,255,0.78)",
+                bordercolor=line_c, borderwidth=1, borderpad=3,
+            )
+
+    # ── Hình trụ HK ──────────────────────────────────────────────────────
+    bh_w = max(0.35, x_span * 0.004)
+    for _, ch, hk in hk_ch:
+        z_m = float(hk.get("Z", h_tn) or h_tn)
+        lop_dat = hk.get("lop_dat", [])
+        z_bot_hk = float(lop_dat[-1]["cao_do_day"]) if lop_dat else z_min
+        z_bot_hk = max(z_bot_hk, z_min)
+
+        # Màu từng lớp trong cột HK
+        for lop in lop_dat:
+            zd = float(lop["cao_do_day"])
+            zdi= float(lop["cao_do_dinh"])
+            if zd >= z_m or zdi <= z_min:
+                continue
+            top_lop = min(zdi, z_m)
+            bot_lop = max(zd,  z_min)
+            nm = str(lop.get("ten_lop", "")).strip()
+            ci = lop_order.index(nm) if nm in lop_order else 0
+            fig.add_trace(go.Scatter(
+                x=[ch-bh_w, ch+bh_w, ch+bh_w, ch-bh_w, ch-bh_w],
+                y=[bot_lop, bot_lop, top_lop, top_lop, bot_lop],
+                fill="toself", fillcolor=_GEO_FILL[ci % len(_GEO_FILL)],
+                line=dict(color="#444", width=0.6),
+                mode="lines", showlegend=False, hoverinfo="skip",
+            ))
+            # Đường kẻ ngang ranh giới lớp + cao độ
+            fig.add_shape(type="line",
+                x0=ch - bh_w, y0=zd, x1=ch + bh_w * 2.2, y1=zd,
+                line=dict(color="#555", width=0.7))
+            fig.add_annotation(
+                x=ch + bh_w * 2.5, y=zd,
+                text=f"{zd:.1f}",
+                showarrow=False, font=dict(size=7, color="#333"),
+                xanchor="left", yanchor="middle",
+            )
+
+        # Viền ngoài cột HK
+        fig.add_trace(go.Scatter(
+            x=[ch-bh_w, ch+bh_w, ch+bh_w, ch-bh_w, ch-bh_w],
+            y=[z_bot_hk, z_bot_hk, z_m, z_m, z_bot_hk],
+            fill="none",
+            line=dict(color="#111", width=1.4),
+            mode="lines", showlegend=False, hoverinfo="skip",
+        ))
+
+        # SPT bên trái (N values)
+        for s_start, s_end, n_val in hk.get("spt", []):
+            if n_val is None:
+                continue
+            z_spt = z_m - (float(s_start) + float(s_end)) / 2.0
+            if z_spt < z_min or z_spt > z_m + 0.5:
+                continue
+            fig.add_annotation(
+                x=ch - bh_w * 2.5, y=z_spt,
+                text=f"<span style='color:#8B0000'>{int(n_val)}</span>",
+                showarrow=False, font=dict(size=7),
+                xanchor="right", yanchor="middle",
+            )
+
+        # Tên HK + cao độ miệng
+        fig.add_annotation(
+            x=ch, y=z_m + 0.6,
+            text=f"<b>{hk['ten']}</b>",
+            showarrow=False, font=dict(size=9, color="#1F4E79"),
+            yanchor="bottom", bgcolor="rgba(255,255,255,0.85)",
+        )
+        fig.add_annotation(
+            x=ch, y=z_m,
+            text=f"+{z_m:.2f}",
+            showarrow=False, font=dict(size=7, color="#1F4E79"),
+            yanchor="top", xanchor="center",
+        )
+
+
+# ===========================================================================
 # 1. SƠ ĐỒ BỐ TRÍ NHỊP (2D) — Trụ đặt NGOÀI tĩnh không
 # ===========================================================================
-def ve_so_do_nhip_2d(d, df_tim_line=None):
+def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None):
     """
     Sơ đồ nhịp 2D từ design_data.
     - Trụ được đặt tại biên tĩnh không, KHÔNG vi phạm vùng thông thuyền.
@@ -237,6 +457,9 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
 
     mg = max(20, L_cau * 0.15)
     fig = go.Figure()
+
+    # ── Overlay địa chất (vẽ trước để nằm dưới địa hình + kết cấu) ──────
+    _draw_dia_chat_trac_doc(fig, dia_chat_data, x0, x_end, h_tn, z_min, mg=mg)
 
     # ── Đường địa hình từ khảo sát (nếu có) ─────────────────────────────
     if df_tim_line is not None and not df_tim_line.empty:
@@ -476,9 +699,10 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
         ),
         xaxis=dict(title="Lý trình (m)", showgrid=True, gridcolor="#ecf0f1"),
         yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1"),
-        height=580, template="plotly_white",
+        height=680 if dia_chat_data else 580,
+        template="plotly_white",
         legend=dict(orientation="h", y=-0.20, font=dict(size=9)),
-        margin=dict(l=70, r=30, t=70, b=110),
+        margin=dict(l=70, r=30, t=70, b=130),
         hovermode="closest",
     )
     return fig

@@ -1570,7 +1570,9 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     st.plotly_chart(fig_mcn_btc, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
                 st.markdown("**Trắc dọc cầu**")
-                fig_td_btc = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim)
+                _dc_data = st.session_state.get("dia_chat_data")
+                fig_td_btc = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim,
+                                                   dia_chat_data=_dc_data)
                 st.plotly_chart(fig_td_btc, use_container_width=True,
                                 config={"scrollZoom": True, "displayModeBar": True})
             except Exception as _e:
@@ -1654,10 +1656,103 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
 
         # ── TAB: Địa chất & Địa hình chi tiết ─────────────────────────
         with tab_dia_chat:
+            # ── Quy trình 3 bước — luôn hiển thị dù có hay chưa có địa hình ──
+            _dc_tpl = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                   "Data", "Template_DiaChat.xlsx")
+            st.markdown("##### 🪨 Quy trình khai báo dữ liệu địa chất")
+            _cs1, _cs2, _cs3 = st.columns(3)
+            with _cs1:
+                st.markdown(
+                    "<div style='background:#1e3a5f;border-radius:8px;padding:14px'>"
+                    "<div style='color:#f39c12;font-weight:700;font-size:14px'>1️⃣ Tải file template mẫu</div>"
+                    "<div style='color:#ccc;font-size:12px;margin-top:6px'>"
+                    "Mở file, đọc hướng dẫn ở sheet <b>HUONG_DAN</b>.</div></div>",
+                    unsafe_allow_html=True,
+                )
+                st.markdown("")
+                if os.path.exists(_dc_tpl):
+                    with open(_dc_tpl, "rb") as _fh_tpl:
+                        st.download_button(
+                            "⬇️ Tải Template_DiaChat.xlsx",
+                            data=_fh_tpl.read(),
+                            file_name="Template_DiaChat.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            use_container_width=True, key="dl_tpl_dc",
+                            help="Gồm 5 sheet: HUONG_DAN · Toado_HK · HK1 · HK2 · HK3 · SPT",
+                        )
+                    st.caption("Sheet: HUONG_DAN | Toado_HK | HKx | SPT")
+                else:
+                    st.error("⚠️ Không tìm thấy Data/Template_DiaChat.xlsx")
+            with _cs2:
+                st.markdown(
+                    "<div style='background:#1a3d1a;border-radius:8px;padding:14px'>"
+                    "<div style='color:#2ecc71;font-weight:700;font-size:14px'>2️⃣ Điền số liệu vào template</div>"
+                    "<div style='color:#ccc;font-size:12px;margin-top:6px'>"
+                    "• Sheet <b>Toado_HK</b>: tọa độ X, Y (VN-2000) + Z miệng hố<br>"
+                    "• Sheet <b>HK01, HK02…</b>: tên lớp, cao độ đáy lớp, mô tả<br>"
+                    "• Sheet <b>SPT</b>: độ sâu + giá trị N (nếu có)</div></div>",
+                    unsafe_allow_html=True,
+                )
+            with _cs3:
+                st.markdown(
+                    "<div style='background:#3d1a1a;border-radius:8px;padding:14px'>"
+                    "<div style='color:#e74c3c;font-weight:700;font-size:14px'>3️⃣ Upload & phân tích</div>"
+                    "<div style='color:#ccc;font-size:12px;margin-top:6px'>"
+                    "Tải file đã điền lên ô bên dưới. Hệ thống tự đọc và tích hợp "
+                    "vào mô hình 3D địa hình (nếu đã nạp file .NTD).</div></div>",
+                    unsafe_allow_html=True,
+                )
+
+            st.markdown("---")
+
+            # ── Upload file địa chất (luôn hiển thị) ─────────────────────────
+            st.markdown("#### 📤 Tải lên file Excel địa chất đã điền")
+            file_excel_dc = st.file_uploader(
+                "Chọn file .xlsx (cấu trúc theo template):",
+                type=["xlsx"], key="dc_ex",
+                help="File cần có: sheet Toado_HK (tọa độ hố khoan) + sheet HKxx (phân lớp địa chất từng hố).",
+            )
+            df_hk, df_layers, df_spt = None, None, None
+            hien_mat_lop, hien_khoi_lop, do_trong_dh = True, False, 1.0
+
+            if file_excel_dc:
+                with st.spinner("Đang phân tích địa chất..."):
+                    df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
+                if df_hk is not None and not df_hk.empty:
+                    st.success(f"✅ Đọc được **{len(df_hk)} hố khoan** từ file.")
+                    _df_hk_show = df_hk.rename(columns={
+                        "Ho_Khoan": "Hố khoan",
+                        "X_VN2000": "X (VN-2000)",
+                        "Y_VN2000": "Y (VN-2000)",
+                        "Z_Mieng":  "Z miệng (m)",
+                    })
+                    st.dataframe(_df_hk_show, use_container_width=True, hide_index=True)
+                    _cap_parts = []
+                    if df_layers is not None and not df_layers.empty:
+                        _n_lop = (df_layers["Ten_Lop"].nunique()
+                                  if "Ten_Lop" in df_layers.columns else len(df_layers))
+                        _cap_parts.append(f"📐 {_n_lop} loại lớp | {len(df_layers)} bản ghi phân lớp")
+                    if df_spt is not None and not df_spt.empty:
+                        _cap_parts.append(f"🔩 SPT: {len(df_spt)} dòng")
+                    if _cap_parts:
+                        st.caption(" · ".join(_cap_parts))
+                    if has_terr:
+                        cdc1, cdc2, cdc3 = st.columns(3)
+                        with cdc1:
+                            hien_mat_lop  = st.checkbox("Mặt phẳng lớp đất", True)
+                        with cdc2:
+                            hien_khoi_lop = st.checkbox("Khối lớp đất", False)
+                        with cdc3:
+                            do_trong_dh = st.slider("Độ trong suốt:", 0.35, 1.0, 0.72, 0.05)
+                else:
+                    st.error("❌ Không đọc được dữ liệu. Kiểm tra cấu trúc file theo template.")
+
+            # ── Mô hình 3D địa hình + overlay địa chất ───────────────────────
             if not has_terr:
-                st.info("Nạp file địa hình ở trên để xem mô hình địa chất.")
+                st.info("📌 Nạp file địa hình (.NTD + tọa độ VN-2000) ở **đầu tab BẢN VẼ KỸ THUẬT** để xem mô hình 3D địa hình tích hợp địa chất.")
             else:
                 try:
+                    st.markdown("---")
                     st.subheader("📊 Mô hình Địa hình 3D chi tiết")
                     col_d1, col_d2, col_d3 = st.columns(3)
                     with col_d1:
@@ -1667,24 +1762,6 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                     with col_d3:
                         _dm  = st.select_slider("Mịn hoá:", [1,3,5,7], 3, key="dcdm")
                     _ftmp, _, _, _ = TV.ve_dia_hinh_3d(_df_geo, he_so_z=_hz, che_do=_che, do_min=_dm)
-
-                    st.markdown("---")
-                    st.subheader("📊 Tích hợp Địa chất Công trình")
-                    file_excel_dc = st.file_uploader("Tải file Excel địa chất (3 sheet):", type=["xlsx"], key="dc_ex")
-                    df_hk, df_layers, df_spt = None, None, None
-                    hien_mat_lop, hien_khoi_lop, do_trong_dh = True, False, 1.0
-                    if file_excel_dc:
-                        with st.spinner("Đang phân tích địa chất..."):
-                            df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
-                        if df_hk is not None and not df_hk.empty:
-                            st.success(f"✅ Định vị {len(df_hk)} hố khảo sát!")
-                            cdc1, cdc2, cdc3 = st.columns(3)
-                            with cdc1:
-                                hien_mat_lop = st.checkbox("Mặt phẳng lớp đất", True)
-                            with cdc2:
-                                hien_khoi_lop = st.checkbox("Khối lớp đất", False)
-                            with cdc3:
-                                do_trong_dh = st.slider("Độ trong suốt:", 0.35, 1.0, 0.72, 0.05)
                     if _ftmp:
                         if df_hk is not None and not df_hk.empty:
                             _ftmp = TV.dap_them_ket_cau_dia_chat_3d(
