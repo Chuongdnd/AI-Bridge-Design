@@ -407,7 +407,7 @@ def _rule_based_pier(vtk, B_cau, H_tru, is_urban, is_river,
 # 4. HÀM DỰ ĐOÁN — TRẢ VỀ 2 PHƯƠNG ÁN
 # ---------------------------------------------------------------------------
 def predict_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song,
-                 loai_dam, n_nhip, models,
+                 loai_dam, n_nhip=1, models=None,
                  # ── Tham số phân loại mố (tất cả có default, tương thích ngược) ──
                  H_dap=3.0, L_nhip=20.0, SPT_N=10,
                  MNCN=None, MNTN=None, Z_tu_nhien=None,
@@ -532,6 +532,10 @@ def predict_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song,
     )
 
     return {
+        # ── Convenience keys (tương thích ngược với các module cũ) ──
+        "loai_tru":   pa_rb["loai_tru"],
+        "do_tin_cay": pa_rb["do_tin_cay"],
+        # ── Hai phương án đầy đủ ──
         "pa_rb":      pa_rb,
         "pa_ai":      pa_ai,
         "dong_thuan": dong_thuan,
