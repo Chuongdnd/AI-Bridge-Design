@@ -1,463 +1,484 @@
 """
-Module 08 — Móng cầu (Foundation Advisor)
-Căn cứ:
-  - TCVN 10304:2014   Móng cọc — tiêu chuẩn thiết kế
-  - TCVN 11823-2017   Thiết kế cầu đường bộ
-  - Kinh nghiệm thực tế các dự án cầu VN
+Module 08 — Tư vấn Móng Cọc
+Logic Rule-Based theo TCVN 11823:2017 (Thiết kế cầu đường bộ)
+và TCVN 10304:2014 (Móng cọc — tiêu chuẩn thiết kế).
 
-Gồm 2 lớp:
-  1. Rule-Based nâng cao — dùng ngay, không cần dữ liệu
-  2. AI model (Random Forest trên dataset tổng hợp) — khung cho tương lai:
-     khi có dữ liệu dự án thực, thay thế bằng dữ liệu đó để cải thiện độ chính xác.
+Phạm vi: chỉ xem xét hai loại cọc phù hợp công trình cầu vừa–lớn tại Việt Nam:
+  1. Cọc ép BTCT   — tiết diện vuông 200–450 mm
+  2. Cọc khoan nhồi — đường kính 600–1500 mm
 
-Ba loại cọc và tiêu chí lựa chọn
-─────────────────────────────────
-• Cọc khoan nhồi (CKN):
-    - Chiều dài cọc ước tính > 50m (lớp đất tốt quá sâu)
-    - Đường kính cần ≥ 800mm (tải trọng lớn)
-    - Sông lớn (cấp I–II) + H_trụ > 5m
-• Cọc ép BTCT DƯL:
-    - Khu vực đông dân cư (hạn chế tiếng ồn/rung)
-    - Đường kính ≤ 500mm (có thể ép được)
-• Cọc đóng BTCT DƯL:
-    - Không phải khu đông dân, chiều dài ≤ 50m, D < 800mm
-    - Kinh tế, thi công nhanh
+Logic phân loại thực hiện qua 4 tầng:
+  Tầng 0 — điều kiện loại trừ cứng (TCVN 10304 khoản 7)
+  Tầng 1 — chiều sâu đến lớp tựa mũi
+  Tầng 2 — môi trường thi công và điều kiện địa tầng
+  Tầng 3 — tải trọng đầu cọc
+  Tầng 4 — ràng buộc đường kính (CKN ≥ đường kính trụ)
 """
 
-import os
-import sys
-import numpy as np
-import pandas as pd
+import math
 
-_DIR = os.path.dirname(os.path.abspath(__file__))
-_V3_DEFAULT = os.path.join(_DIR, "Data", "Bridge_Train_Dataset_v3.xlsx")
-
-# ── Bảng tra đường kính cọc ──────────────────────────────────────────────────
-# loai_song → (D tại H≤4m, D tại 4<H≤8m, D tại H>8m) [mm]
-_D_COC_TABLE = {
-    "sông_lớn":  (800,  1000, 1200),   # Cấp I, II
-    "sông_vừa":  (600,  800,  1000),   # Cấp III, IV
-    "sông_nhỏ":  (500,  600,  800),    # Cấp V, VI
+# ═══════════════════════════════════════════════════════════════════════════════
+# BẢNG THAM CHIẾU
+# ═══════════════════════════════════════════════════════════════════════════════
+PILE_TYPES = {
+    "Cọc ép BTCT": {
+        "mo_ta":      "Cọc BTCT tiết diện vuông, thi công bằng ép tĩnh",
+        "tieu_chuan": "TCVN 10304:2014, TCVN 7570:2006",
+        "pp_tc":      "Ép tĩnh (ép neo hoặc ép robot)",
+        "uu_diem":    "Chi phí thấp; kiểm soát chất lượng tốt qua lực ép; thi công nhanh",
+        "nhuoc_diem": "Không tựa mũi vào cát/đá; chiều dài tối đa ~40m; không qua đá mồ côi",
+    },
+    "Cọc khoan nhồi": {
+        "mo_ta":      "Cọc BTCT đổ tại chỗ, thi công bằng khoan tạo lỗ",
+        "tieu_chuan": "TCVN 10304:2014",
+        "pp_tc":      "Khoan bùn bentonite hoặc vách ống chống thép",
+        "uu_diem":    "Chiều sâu lớn; không rung động; đường kính linh hoạt; khoan qua đá",
+        "nhuoc_diem": "Chi phí cao; cần thiết bị chuyên dụng; kiểm tra chất lượng phức tạp",
+    },
 }
 
-# Đường kính → (L_min, L_max) chiều dài cọc gợi ý [m] (ĐBSCL/Đông Nam Bộ)
-_L_COC_TABLE = {
-    400:  (20, 30),
-    500:  (28, 38),
-    600:  (32, 45),
-    800:  (38, 52),
-    1000: (45, 60),
-    1200: (50, 65),
-    1500: (55, 70),
+# Kích thước chuẩn — (cạnh_mm hoặc D_mm) → thông số
+PILE_SIZES = {
+    "Cọc ép BTCT": {
+        # cạnh_mm: {chieu_rong_mm, tai_trong_tk_kN, chieu_dai_max_m}
+        200: {"chieu_rong_mm": 200, "tai_trong_tk_kN": 250,  "chieu_dai_max_m": 20},
+        250: {"chieu_rong_mm": 250, "tai_trong_tk_kN": 400,  "chieu_dai_max_m": 28},
+        300: {"chieu_rong_mm": 300, "tai_trong_tk_kN": 600,  "chieu_dai_max_m": 32},
+        350: {"chieu_rong_mm": 350, "tai_trong_tk_kN": 900,  "chieu_dai_max_m": 36},
+        400: {"chieu_rong_mm": 400, "tai_trong_tk_kN": 1200, "chieu_dai_max_m": 40},
+        450: {"chieu_rong_mm": 450, "tai_trong_tk_kN": 1500, "chieu_dai_max_m": 40},
+    },
+    "Cọc khoan nhồi": {
+        # D_mm: {duong_kinh_mm, tai_trong_tk_kN, chieu_dai_max_m}
+        600:  {"duong_kinh_mm": 600,  "tai_trong_tk_kN": 800,  "chieu_dai_max_m": 60},
+        800:  {"duong_kinh_mm": 800,  "tai_trong_tk_kN": 1500, "chieu_dai_max_m": 70},
+        1000: {"duong_kinh_mm": 1000, "tai_trong_tk_kN": 2500, "chieu_dai_max_m": 80},
+        1200: {"duong_kinh_mm": 1200, "tai_trong_tk_kN": 4000, "chieu_dai_max_m": 90},
+        1500: {"duong_kinh_mm": 1500, "tai_trong_tk_kN": 6000, "chieu_dai_max_m": 100},
+    },
 }
 
-# Đường kính → (N_min, N_max) số cọc/bệ gợi ý
-_SO_COC_TABLE = {
-    400:  (4, 6),
-    500:  (4, 8),
-    600:  (4, 8),
-    800:  (4, 9),
-    1000: (4, 9),
-    1200: (4, 6),
-    1500: (2, 4),
-}
+# Nhóm loại đất
+_DAT_DINH = {"Sét", "Sét pha"}
+_DAT_ROI  = {"Cát", "Cát pha", "Cát lẫn sỏi", "Sỏi cuội"}
 
 
-def _cap_song_to_int(cap_song):
-    """'VI' → 6, 'I' → 1, '6' → 6 v.v."""
-    cap_map = {"I": 1, "II": 2, "III": 3, "IV": 4, "V": 5, "VI": 6}
-    s = str(cap_song).strip().upper()
-    if s.isdigit():
-        return int(s)
-    return cap_map.get(s, 4)
-
-
-def _chon_loai_song(cap_int, is_river):
-    if not is_river:
-        return "sông_vừa"   # mặc định (đề tài chỉ vượt sông)
-    if cap_int <= 2:
-        return "sông_lớn"
-    elif cap_int <= 4:
-        return "sông_vừa"
-    return "sông_nhỏ"
-
-
-def _chon_D_coc(loai_song, H_tru):
-    row = _D_COC_TABLE[loai_song]
-    if H_tru <= 4:
-        return row[0]
-    elif H_tru <= 8:
-        return row[1]
-    return row[2]
-
-
-def _chon_loai_coc(D_coc_mm, loai_song, H_tru, L_coc_max, is_urban):
+# ═══════════════════════════════════════════════════════════════════════════════
+# HÀM LOGIC PHÂN LOẠI CỌC
+# ═══════════════════════════════════════════════════════════════════════════════
+def _select_pile_type(dac_trung, tai_trong, is_urban):
     """
-    Quyết định loại cọc dựa trên 3 tiêu chí:
-
-    1. L_coc_max > 50m → CKN (lớp đất tốt quá sâu, cọc đóng/ép không hiệu quả)
-    2. is_urban → cọc ép (hạn chế tiếng ồn/rung trong khu đông dân cư)
-                  ngoại lệ: D > 500mm không ép được → CKN thay thế
-    3. Còn lại  → cọc đóng (kinh tế, tốc độ thi công nhanh)
-                  ngoại lệ: D ≥ 800mm hoặc sông lớn + H_tru > 5m → CKN
-    """
-    if L_coc_max > 50:
-        return (
-            "Cọc khoan nhồi",
-            "Khoan nhồi bùn khoan (bentonite) hoặc vách ống chống thép"
-        )
-    if is_urban:
-        if D_coc_mm <= 500:
-            return (
-                "Cọc ép BTCT DƯL",
-                "Ép tĩnh (ép neo hoặc ép robot) — hạn chế tiếng ồn/rung"
-            )
-        else:
-            return (
-                "Cọc khoan nhồi",
-                "Khoan nhồi (thay thế cọc ép vì D > 500mm)"
-            )
-    if D_coc_mm >= 800 or (loai_song == "sông_lớn" and H_tru > 5):
-        return (
-            "Cọc khoan nhồi",
-            "Khoan nhồi bùn khoan (bentonite) hoặc vách ống chống thép"
-        )
-    return (
-        "Cọc đóng BTCT DƯL",
-        "Đóng búa diesel hoặc búa rung — kinh tế, thi công nhanh"
-    )
-
-
-# ===========================================================================
-# V3 DATA LOADER — Đọc dữ liệu thực từ Bridge_Train_Dataset_v3.xlsx
-# ===========================================================================
-def load_foundation_data_v3(v3_path=None):
-    """
-    Đọc dữ liệu móng cọc từ v3.
-    Trả về DataFrame có cột: H_tru, D_coc_mm, is_urban, cap_int, is_river, L_coc_est, Loai_coc
-    Hoặc DataFrame rỗng nếu chưa có data.
-    """
-    path = v3_path or _V3_DEFAULT
-    if not os.path.exists(path):
-        return pd.DataFrame()
-    try:
-        data_dir = os.path.join(_DIR, "Data")
-        if data_dir not in sys.path:
-            sys.path.insert(0, data_dir)
-        from v3_loader import get_foundation_df
-        df = get_foundation_df(path)
-    except Exception as e:
-        print(f"[Mong-AI] Không nạp v3_loader: {e}")
-        return pd.DataFrame()
-
-    if df.empty:
-        return df
-
-    # Chuẩn hóa cấp sông → số nguyên
-    if "cap_song" in df.columns:
-        df["cap_int"] = (
-            df["cap_song"].astype(str)
-            .str.replace(r"[Cc]ấp\s*", "", regex=True).str.strip()
-            .apply(_cap_song_to_int)
-        )
-    else:
-        df["cap_int"] = 4
-
-    # Anh xa ten cot v3 (snake_case) -> ten chuan noi bo
-    # v3 cols: h_tru, loai_mong, chieu_dai_coc, duong_kinh_coc, so_coc, pp_tc_coc
-    rename = {
-        "h_tru":          "H_tru",
-        "loai_mong":      "Loai_coc",
-        "chieu_dai_coc":  "L_coc_est",
-        "duong_kinh_coc": "D_coc_mm",
-        "so_coc":         "so_coc",
-    }
-    df = df.rename(columns={k: v for k, v in rename.items() if k in df.columns})
-
-    # Ép kiểu số
-    for c in ["H_tru", "D_coc_mm", "L_coc_est", "is_urban", "is_river", "cap_int"]:
-        if c in df.columns:
-            df[c] = pd.to_numeric(df[c], errors="coerce")
-
-    # Giá trị mặc định
-    if "is_urban" not in df.columns:
-        df["is_urban"] = 0
-    if "is_river" not in df.columns:
-        df["is_river"] = 1
-
-    # Điền D_coc_mm từ quy tắc nếu thiếu
-    if "D_coc_mm" not in df.columns or df["D_coc_mm"].isna().all():
-        def _infer_D(row):
-            loai = _chon_loai_song(int(row.get("cap_int", 4)), bool(row.get("is_river", 1)))
-            return _chon_D_coc(loai, float(row.get("H_tru", 5)))
-        df["D_coc_mm"] = df.apply(_infer_D, axis=1)
-
-    # Loc dong co label
-    if "Loai_coc" in df.columns:
-        drop_sub = [c for c in ["Loai_coc","H_tru"] if c in df.columns]
-        df = df.dropna(subset=drop_sub)
-        df = df[df["Loai_coc"].astype(str).str.strip().str.len() > 0]
-
-    keep = [c for c in ["H_tru","D_coc_mm","is_urban","cap_int","is_river","L_coc_est","Loai_coc"] if c in df.columns]
-    return df[keep].reset_index(drop=True)
-
-
-# ===========================================================================
-# AI MODEL — Khung Random Forest trên dữ liệu tổng hợp
-# ===========================================================================
-def _generate_synthetic_data(n=600, seed=42):
-    """
-    Tạo dataset tổng hợp để huấn luyện AI chọn loại cọc.
-    Label được gán theo quy tắc kỹ thuật (_chon_loai_coc).
-    Khi có dữ liệu dự án thực, thay thế hàm này.
-    """
-    rng = np.random.default_rng(seed)
-    rows = []
-    for _ in range(n):
-        H_tru     = float(rng.uniform(2, 16))
-        cap_int   = int(rng.integers(1, 7))
-        is_river  = int(rng.integers(0, 2))
-        is_urban  = int(rng.integers(0, 2))
-        loai_song = _chon_loai_song(cap_int, bool(is_river))
-        D_mm      = _chon_D_coc(loai_song, H_tru)
-        L_est     = float(rng.uniform(20, 70))   # chiều dài cọc ước tính
-
-        loai, _ = _chon_loai_coc(D_mm, loai_song, H_tru, L_est, bool(is_urban))
-        rows.append({
-            "H_tru": H_tru, "D_coc_mm": D_mm, "is_urban": is_urban,
-            "cap_int": cap_int, "is_river": is_river, "L_coc_est": L_est,
-            "Loai_coc": loai,
-        })
-    return pd.DataFrame(rows)
-
-
-def train_foundation_ai(v3_path=None):
-    """
-    Huấn luyện Random Forest phân loại loại cọc.
-    Ưu tiên dữ liệu thực từ v3; fallback sang dataset tổng hợp khi chưa đủ data.
-    Trả về dict models (dùng với predict_foundation_ai).
-    """
-    try:
-        from sklearn.ensemble import RandomForestClassifier
-        from sklearn.preprocessing import LabelEncoder
-    except ImportError:
-        return None
-
-    MIN_ROWS = 10
-    df_v3 = load_foundation_data_v3(v3_path or _V3_DEFAULT)
-    df_syn = _generate_synthetic_data()
-
-    if len(df_v3) >= MIN_ROWS:
-        df = pd.concat([df_syn, df_v3], ignore_index=True)
-        print(f"[Mong-AI] Gộp v3 ({len(df_v3)}) + synthetic ({len(df_syn)}) = {len(df)} mẫu")
-    else:
-        df = df_syn
-        if len(df_v3) > 0:
-            df = pd.concat([df_syn, df_v3], ignore_index=True)
-            print(f"[Mong-AI] Dùng synthetic ({len(df_syn)}) + {len(df_v3)} mẫu v3")
-        else:
-            print(f"[Mong-AI] Dùng synthetic: {len(df_syn)} mẫu (v3 chưa có data)")
-
-    if "L_coc_est" not in df.columns:
-        df["L_coc_est"] = 40.0
-    feat_cols = ["H_tru", "D_coc_mm", "is_urban", "cap_int", "is_river", "L_coc_est"]
-    X = df[feat_cols]
-    y = df["Loai_coc"]
-
-    le = LabelEncoder()
-    y_enc = le.fit_transform(y)
-
-    clf = RandomForestClassifier(
-        n_estimators=300, max_depth=8, min_samples_leaf=2,
-        class_weight="balanced", random_state=42
-    )
-    clf.fit(X, y_enc)
-
-    return {
-        "clf":       clf,
-        "le":        le,
-        "feat_cols": feat_cols,
-        "classes":   list(le.classes_),
-        "note":      "Học từ dữ liệu tổng hợp theo TCVN 10304. Thay bằng dữ liệu thực khi có.",
-    }
-
-
-def predict_foundation_ai(models, H_tru, D_coc_mm, is_urban, cap_int, is_river, L_coc_est):
-    """Dự đoán loại cọc bằng AI model, trả về (loai, xac_suat%)."""
-    if models is None:
-        return None, 0.0
-    try:
-        X_row = [[H_tru, D_coc_mm, is_urban, cap_int, is_river, L_coc_est]]
-        idx   = models["clf"].predict(X_row)[0]
-        proba = models["clf"].predict_proba(X_row)[0]
-        loai  = models["le"].inverse_transform([idx])[0]
-        conf  = float(proba.max()) * 100
-        return loai, conf
-    except Exception:
-        return None, 0.0
-
-
-# ===========================================================================
-# HÀM CHÍNH
-# ===========================================================================
-def predict_foundation(H_tru, loai_tru, is_river, cap_song,
-                       B_cau=None, vtk=None, L_nhip=None,
-                       is_urban=0, foundation_models=None):
-    """
-    Gợi ý loại móng và thông số cọc.
-
-    Params
-    ------
-    H_tru            : Chiều cao thân trụ (m)
-    loai_tru         : Loại trụ đã xác định ('Khung 2 cột', 'Trụ đặc', ...)
-    is_river         : 1 nếu vượt sông
-    cap_song         : Cấp sông ('I'–'VI' hoặc '1'–'6')
-    B_cau            : Bề rộng cầu (m)
-    vtk              : Vận tốc thiết kế (km/h)
-    L_nhip           : Chiều dài nhịp (m)
-    is_urban         : 1 nếu khu vực đông dân cư (hạn chế tiếng ồn/rung)
-    foundation_models: Dict từ train_foundation_ai() (tùy chọn)
+    Phân loại loại cọc qua 4 tầng logic.
 
     Returns
     -------
-    dict đầy đủ thông số móng cọc
+    (loai_coc: str, reasons: list[str], warnings: list[str])
     """
-    cap_int   = _cap_song_to_int(cap_song) if cap_song else 4
-    loai_song = _chon_loai_song(cap_int, bool(is_river))
+    warnings = []
+    reasons  = []
+    force_ckn = False
 
-    H = float(H_tru) if H_tru else 5.0
-    D_coc = _chon_D_coc(loai_song, H)
+    lop_tua       = dac_trung.get("lop_tua_mui_de_xuat") or {}
+    co_lop_tua    = dac_trung.get("co_lop_tua_mui_du_kien", False)
+    loai_dat      = lop_tua.get("loai_dat", "")
+    IL            = lop_tua.get("IL")
+    do_sau        = lop_tua.get("do_sau_dinh") or 30.0
+    co_set_chay   = dac_trung.get("co_set_chay", False)
+    co_da_moi     = dac_trung.get("co_da_moi_co_giua", False)
 
-    # Tra bảng chiều dài và số cọc
-    L_range = _L_COC_TABLE.get(D_coc, (38, 52))
-    N_range = _SO_COC_TABLE.get(D_coc, (4, 9))
+    # ── Tầng 0: Điều kiện loại trừ cứng ─────────────────────────────────────
+    if not co_lop_tua:
+        warnings.append(
+            "⚠️ Không tìm được lớp tựa mũi phù hợp trong phạm vi hố khoan. "
+            "Đề nghị khoan sâu thêm hoặc xem xét cọc ma sát toàn thân. "
+            "Kết quả tính toán dưới đây mang tính sơ bộ."
+        )
 
-    # Điều chỉnh khi trụ rất cao
-    if H > 10:
-        L_range = (L_range[1], L_range[1] + 10)
-        N_range = (N_range[0] + 2, N_range[1] + 2)
+    if loai_dat in _DAT_ROI:
+        force_ckn = True
+        warnings.append(
+            f"❌ [Tầng 0] Lớp tựa mũi là đất rời ({loai_dat}). "
+            "Theo TCVN 10304:2014 khoản 7.2.3, cọc ép không được tựa mũi vào cát/sỏi "
+            "(hiện tượng từ chối giả làm cọc không đạt chiều sâu thiết kế). "
+            "Bắt buộc dùng cọc khoan nhồi."
+        )
+        reasons.append(f"[Tầng 0] Tựa mũi vào đất rời ({loai_dat}) → bắt buộc CKN")
 
-    L_coc_est = L_range[1]   # dùng giá trị max để quyết định loại cọc
+    elif loai_dat in _DAT_DINH and IL is not None and IL > 0.6:
+        force_ckn = True
+        warnings.append(
+            f"❌ [Tầng 0] Lớp tựa mũi là {loai_dat} có IL={IL:.2f} > 0.6 "
+            "(sét dẻo mềm đến dẻo chảy). "
+            "Không phù hợp cho cọc ép tựa mũi theo TCVN 10304:2014. "
+            "Bắt buộc dùng cọc khoan nhồi."
+        )
+        reasons.append(f"[Tầng 0] Sét tựa mũi IL={IL:.2f} > 0.6 → bắt buộc CKN")
 
-    # ── Chọn loại cọc ──────────────────────────────────────────────────────
-    loai_mong_rb, pp_rb = _chon_loai_coc(D_coc, loai_song, H, L_coc_est, bool(is_urban))
+    if co_da_moi:
+        force_ckn = True
+        warnings.append(
+            "❌ [Tầng 0] Phát hiện lớp đá phong hóa hoặc đá mồ côi nằm giữa hố khoan. "
+            "Cọc ép không thể hạ qua lớp đá cứng xen kẹp (TCVN 10304:2014 khoản 7.2.5). "
+            "Bắt buộc dùng cọc khoan nhồi để khoan xuyên."
+        )
+        reasons.append("[Tầng 0] Đá mồ côi/phong hóa giữa hố → bắt buộc CKN")
 
-    # Thử dùng AI (nếu có model)
-    loai_mong_ai, conf_ai = predict_foundation_ai(
-        foundation_models, H, D_coc, is_urban, cap_int, int(bool(is_river)), L_coc_est
+    if co_set_chay:
+        warnings.append(
+            "⚠️ [Thông tin] Có lớp sét với IL > 0.6 trong hố khoan. "
+            "Cần kiểm tra ảnh hưởng đến ma sát thành cọc và ổn định thân cọc "
+            "khi cọc đi qua lớp này (TCVN 10304:2014 khoản 8.2)."
+        )
+
+    if force_ckn:
+        return "Cọc khoan nhồi", reasons, warnings
+
+    # ── Tầng 1: Chiều sâu đến lớp tựa mũi ─────────────────────────────────
+    do_sau_val = float(do_sau)
+    if do_sau_val > 35:
+        force_ckn = True
+        warnings.append(
+            f"⚠️ [Tầng 1] Chiều sâu đến lớp tựa mũi = {do_sau_val:.1f}m > 35m. "
+            "Cọc ép không đủ khả năng thi công tại chiều sâu này. "
+            "Bắt buộc dùng cọc khoan nhồi (TCVN 10304:2014 khoản 6.1)."
+        )
+        reasons.append(f"[Tầng 1] Chiều sâu {do_sau_val:.1f}m > 35m → bắt buộc CKN")
+        return "Cọc khoan nhồi", reasons, warnings
+
+    # ── Chấm điểm tầng 1–3 ─────────────────────────────────────────────────
+    score_ep  = 0
+    score_ckn = 0
+
+    if do_sau_val < 25:
+        score_ep += 2
+        reasons.append(f"[Tầng 1] Chiều sâu lớp tốt {do_sau_val:.1f}m < 25m → ưu tiên cọc ép")
+    else:
+        score_ep  += 1
+        score_ckn += 1
+        reasons.append(f"[Tầng 1] Chiều sâu lớp tốt {do_sau_val:.1f}m = 25–35m → cân nhắc cả hai")
+
+    # Tầng 2: Môi trường thi công
+    if is_urban:
+        score_ckn += 2
+        reasons.append("[Tầng 2] Khu đô thị → ưu tiên CKN (giảm tiếng ồn/rung động TCVN 11823)")
+
+    if dac_trung.get("co_da_phong_hoa") and not dac_trung.get("co_da_moi_co_giua"):
+        score_ckn += 1
+        reasons.append("[Tầng 2] Có đá phong hóa → CKN ngàm vào đá khả thi hơn")
+
+    # Tầng 3: Tải trọng
+    if tai_trong <= 1200:
+        score_ep += 1
+        reasons.append(f"[Tầng 3] Tải trọng {tai_trong:.0f}kN ≤ 1.200kN → cọc ép đủ khả năng")
+    else:
+        score_ckn += 2
+        reasons.append(f"[Tầng 3] Tải trọng {tai_trong:.0f}kN > 1.200kN → ưu tiên CKN để giảm số cọc")
+
+    loai = "Cọc ép BTCT" if score_ep > score_ckn else "Cọc khoan nhồi"
+    return loai, reasons, warnings
+
+
+def _select_pile_size(pile_type, tai_trong, duong_kinh_tru=None):
+    """
+    Chọn kích thước cọc nhỏ nhất thỏa mãn tải trọng và ràng buộc đường kính.
+
+    Giả định tối thiểu 4 cọc/bệ để tính tải 1 cọc.
+    Tăng dần số cọc giả định (4→6→8→9→12) cho đến khi tìm được kích thước phù hợp.
+
+    Returns
+    -------
+    (size_key: int, spec: dict)
+    """
+    sizes = PILE_SIZES[pile_type]
+
+    for n_est in [4, 6, 8, 9, 12]:
+        tai_1coc = tai_trong / n_est
+        tai_tk   = tai_1coc / 0.7   # chia hệ số làm việc nhóm
+        for size_key in sorted(sizes.keys()):
+            spec = sizes[size_key]
+            if spec["tai_trong_tk_kN"] < tai_tk:
+                continue
+            # Tầng 4: D_coc >= D_tru cho CKN
+            if pile_type == "Cọc khoan nhồi" and duong_kinh_tru:
+                if size_key / 1000 < duong_kinh_tru:
+                    continue
+            return size_key, spec
+
+    # Fallback: kích thước lớn nhất có thể (ưu tiên thỏa D_tru)
+    all_keys = sorted(sizes.keys(), reverse=True)
+    if pile_type == "Cọc khoan nhồi" and duong_kinh_tru:
+        filtered = [k for k in all_keys if k / 1000 >= duong_kinh_tru]
+        key = filtered[0] if filtered else all_keys[0]
+    else:
+        key = all_keys[0]
+    return key, sizes[key]
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# HÀM CHÍNH
+# ═══════════════════════════════════════════════════════════════════════════════
+def predict_foundation(dac_trung_dia_chat, tai_trong_dau_coc,
+                       loai_tru=None, duong_kinh_tru=None,
+                       is_urban=False, is_river=False,
+                       cao_do_dau_coc=None):
+    """
+    Tư vấn móng cọc theo Rule-Based — TCVN 11823:2017 + TCVN 10304:2014.
+
+    Parameters
+    ----------
+    dac_trung_dia_chat : dict — từ 00-DiaChat_Loader.dac_trung_tong_hop[hk_name]
+                                (hoặc dict tổng hợp từ nhiều hố khoan)
+    tai_trong_dau_coc  : float — tổng tải trọng tính toán tác dụng lên một bệ cọc (kN)
+    loai_tru           : str   — loại trụ từ Module 07 (thông tin tham khảo)
+    duong_kinh_tru     : float — đường kính / bề rộng trụ (m), dùng cho ràng buộc CKN
+    is_urban           : bool  — khu vực đô thị (hạn chế tiếng ồn/rung)
+    is_river           : bool  — công trình vượt sông
+    cao_do_dau_coc     : float — cao độ đầu cọc (m); mặc định = Z mặt đất - 0.5m
+
+    Returns
+    -------
+    dict đầy đủ thông số tư vấn móng cọc
+    """
+    # ── Xử lý đầu vào ─────────────────────────────────────────────────────────
+    dac_trung = dac_trung_dia_chat or {}
+    P_be      = float(tai_trong_dau_coc) if tai_trong_dau_coc else 800.0
+    D_tru     = float(duong_kinh_tru) if duong_kinh_tru else None
+
+    lop_tua          = dac_trung.get("lop_tua_mui_de_xuat") or {}
+    cao_do_dinh_tua  = lop_tua.get("cao_do_dinh")
+    do_sau_dinh      = lop_tua.get("do_sau_dinh") or 25.0
+    loai_dat_tua     = lop_tua.get("loai_dat", "")
+    RQD_tua          = lop_tua.get("RQD")
+
+    # ── Chọn loại cọc (tầng 0–3) ──────────────────────────────────────────────
+    loai_coc, reasons, warnings = _select_pile_type(
+        dac_trung, P_be, bool(is_urban)
     )
 
-    if loai_mong_ai is not None and conf_ai >= 60:
-        loai_mong  = loai_mong_ai
-        phuong_phap = pp_rb   # giữ mô tả thi công từ RB (phù hợp loại)
-        # Điều chỉnh mô tả theo AI nếu loại khác
-        if loai_mong_ai != loai_mong_rb:
-            _, phuong_phap = _chon_loai_coc(D_coc, loai_song, H, L_coc_est, bool(is_urban))
-        do_tin_cay_txt = f"AI {conf_ai:.0f}%"
+    # ── Chọn kích thước cọc (tầng 4 tích hợp) ─────────────────────────────────
+    size_key, spec = _select_pile_size(loai_coc, P_be, D_tru)
+
+    if loai_coc == "Cọc ép BTCT":
+        D_m           = size_key / 1000        # cạnh cọc (m)
+        kich_thuoc_str = f"{size_key}×{size_key} mm"
     else:
-        loai_mong   = loai_mong_rb
-        phuong_phap = pp_rb
-        do_tin_cay_txt = "Quy tắc kỹ thuật"
-
-    # ── Gợi ý kích thước bệ cọc ────────────────────────────────────────────
-    D_m = D_coc / 1000.0
-    if N_range[0] <= 4:
-        be_goi_y = (
-            f"{round(D_m*2 + 1.0, 1)} × {round(D_m*2 + 1.0, 1)} × "
-            f"{round(1.2 + D_m, 1)} m (bệ 4 cọc)"
+        D_m           = size_key / 1000        # đường kính (m)
+        kich_thuoc_str = f"Ø{size_key} mm"
+        # Ghi nhận nếu cần điều chỉnh đường kính vì ràng buộc Tầng 4
+        if D_tru and D_m < D_tru:
+            warnings.append(
+                f"⚠️ [Tầng 4] Đường kính CKN phải ≥ đường kính trụ "
+                f"({D_tru*1000:.0f}mm). Đã chọn D={size_key}mm."
+            )
+        reasons.append(
+            f"[Tầng 4] D_coc={size_key}mm"
+            + (f" ≥ D_trụ={D_tru*1000:.0f}mm ✓" if D_tru else "")
         )
+
+    # ── Tính chiều dài cắm vào lớp tốt ───────────────────────────────────────
+    if loai_dat_tua == "Đá tươi":
+        # TCVN 10304:2014 khoản 8.3: ngàm vào đá tươi tối thiểu 0.5m
+        cam_vao = 0.5 if (RQD_tua or 0) > 75 else 1.0
+    elif loai_dat_tua == "Đá phong hóa":
+        cam_vao = max(1.5, 2.0 * D_m)
     else:
-        be_goi_y = (
-            f"≥ {round(D_m*3 + 1.0, 1)} m (dọc cầu) × "
-            f"B_cầu ÷ {N_range[1]} m (ngang cầu)"
+        # Đất: max(4m, 4D) — TCVN 10304:2014
+        cam_vao = max(4.0, 4.0 * D_m)
+
+    # ── Cao độ đầu cọc và mũi cọc ─────────────────────────────────────────────
+    Z_surface = dac_trung.get("Z") or 0.0
+    if cao_do_dau_coc is not None:
+        cao_do_dc = float(cao_do_dau_coc)
+    else:
+        cao_do_dc = float(Z_surface) - 0.5  # mặc định: 0.5m dưới mặt đất
+
+    if cao_do_dinh_tua is not None:
+        cao_do_mc = float(cao_do_dinh_tua) - cam_vao
+        L_coc     = round(cao_do_dc - cao_do_mc, 1)
+        L_coc     = max(L_coc, 8.0)  # chiều dài tối thiểu kỹ thuật
+    else:
+        # Ước tính từ chiều sâu lớp tốt khi không có cao độ tuyệt đối
+        L_coc     = round(float(do_sau_dinh) + cam_vao + abs(cao_do_dc - Z_surface), 1)
+        L_coc     = max(L_coc, 8.0)
+        cao_do_mc = cao_do_dc - L_coc
+
+    # Kiểm tra chiều dài tối đa theo kích thước cọc
+    L_max = spec.get("chieu_dai_max_m", 999)
+    if L_coc > L_max:
+        warnings.append(
+            f"⚠️ Chiều dài cọc tính được ({L_coc}m) vượt giới hạn kỹ thuật "
+            f"của {kich_thuoc_str} (L_max={L_max}m). "
+            "Cân nhắc tăng kích thước cọc hoặc thay đổi độ sâu tựa mũi."
         )
 
-    # ── Khuyến nghị kỹ thuật ───────────────────────────────────────────────
-    khuyen_nghi = []
-    if is_river and cap_int <= 2:
-        khuyen_nghi.append(
-            "Kiểm tra xói lở theo TCVN 9845:2013; bảo vệ bệ cọc bằng thảm đá / kè đá."
-        )
-    if H > 8:
-        khuyen_nghi.append(
-            "Trụ cao — cần phân tích ổn định ngang (moment lật, áp lực ngang dòng chảy)."
-        )
-    if is_urban and loai_mong in ("Cọc ép BTCT DƯL", "Cọc khoan nhồi"):
-        khuyen_nghi.append(
-            "Khu đông dân cư — ưu tiên cọc ép/khoan nhồi để hạn chế tiếng ồn và rung động."
-        )
-    if loai_mong == "Cọc khoan nhồi" and L_coc_est > 50:
-        khuyen_nghi.append(
-            f"Chiều dài cọc ước tính {L_coc_est}m — lớp đất tốt sâu, bắt buộc cọc khoan nhồi."
-        )
-    if not khuyen_nghi:
-        khuyen_nghi.append(
-            "Xác định sức chịu tải cọc theo TCVN 10304:2014 sau khi có kết quả khảo sát địa chất."
+    # ── Số cọc trên bệ ────────────────────────────────────────────────────────
+    Q_1coc = spec["tai_trong_tk_kN"]
+    # TCVN 10304: so_coc = ceil(P_be / (Q_tk * η_nhóm))
+    so_coc = max(4, math.ceil(P_be / (Q_1coc * 0.7)))
+
+    # ── Khoảng cách tim cọc và kích thước bệ ──────────────────────────────────
+    kt_tim  = round(3.0 * D_m, 2)   # min 3D (TCVN 10304:2014 khoản 9.3)
+    kt_mep  = round(1.5 * D_m, 2)   # từ tim cọc ngoài đến mép bệ
+
+    n_cols  = math.ceil(math.sqrt(so_coc))
+    n_rows  = math.ceil(so_coc / n_cols)
+    Be_ngang = round((n_cols - 1) * kt_tim + 2 * kt_mep, 2)
+    Be_doc   = round((n_rows - 1) * kt_tim + 2 * kt_mep, 2)
+    Be_cao   = round(max(1.0, 1.5 * D_m), 2)
+
+    # Cảnh báo xói lở cho cầu vượt sông
+    if is_river:
+        warnings.append(
+            "ℹ️ Công trình vượt sông — kiểm tra xói lở đáy sông theo TCVN 9845:2013; "
+            "bảo vệ bệ cọc bằng thảm đá hoặc kè đá hộc."
         )
 
-    cap_lbl = ["I","II","III","IV","V","VI"]
-    cap_str = cap_lbl[cap_int - 1] if 1 <= cap_int <= 6 else str(cap_int)
+    # ── Ghi chú và cơ sở lựa chọn ─────────────────────────────────────────────
+    tru_info = f"Trụ: {loai_tru}. " if loai_tru else ""
     ghi_chu = (
-        f"[{do_tin_cay_txt}] Căn cứ TCVN 10304:2014 — "
-        f"Cấp sông {cap_str}, H_trụ={H:.1f}m, loại sông={loai_song}, "
-        f"{'Khu đông dân cư' if is_urban else 'Khu thông thoáng'}."
+        f"{tru_info}Chọn {loai_coc} ({kich_thuoc_str}), L={L_coc}m, "
+        f"n={so_coc} cọc/bệ. "
+        f"Cơ sở: {'; '.join(reasons[:2]) if reasons else 'Rule-Based'}."
     )
 
     return {
-        "loai_mong":            loai_mong,
-        "D_coc_mm":             D_coc,
-        "D_coc_chon_txt":       f"Ø{D_coc} mm",
-        "L_coc_tu":             L_range[0],
-        "L_coc_den":            L_range[1],
-        "So_coc_tu":            N_range[0],
-        "So_coc_den":           N_range[1],
-        "kich_thuoc_be_goi_y":  be_goi_y,
-        "phuong_phap_thi_cong": phuong_phap,
-        "ghi_chu_mong":         ghi_chu,
-        "khuyen_nghi":          khuyen_nghi,
+        # Kết quả chính
+        "loai_coc":               loai_coc,
+        "kich_thuoc_coc":         kich_thuoc_str,
+        "kich_thuoc_mm":          size_key,
+        "chieu_dai_coc":          L_coc,
+        "so_coc_be":              so_coc,
+        # Bố trí cọc
+        "khoang_cach_tim_coc":    kt_tim,
+        "khoang_cach_mep_be":     kt_mep,
+        "n_cols_be":              n_cols,
+        "n_rows_be":              n_rows,
+        # Kích thước bệ cọc
+        "kich_thuoc_be":          f"{Be_ngang:.2f}m × {Be_doc:.2f}m × {Be_cao:.2f}m",
+        "Be_ngang":               Be_ngang,
+        "Be_doc":                 Be_doc,
+        "Be_cao":                 Be_cao,
+        # Cao độ
+        "cao_do_dau_coc":         round(cao_do_dc, 2),
+        "cao_do_mui_coc":         round(cao_do_mc, 2),
+        "chieu_dai_cam_lop_tot":  cam_vao,
+        # Thông tin lớp tựa mũi
+        "lop_tua_mui":            lop_tua.get("ten_lop", "Chưa xác định"),
+        "loai_dat_tua_mui":       loai_dat_tua,
+        "do_sau_tua_mui":         round(float(do_sau_dinh), 1),
+        # Thông số tải trọng
+        "Q_1coc_tk_kN":           Q_1coc,
+        "tai_trong_be_kN":        P_be,
+        # Kết quả phân tích
+        "warnings":               warnings,
+        "ly_do_chon":             reasons,
+        "ghi_chu":                ghi_chu,
+        "phuong_phap":            "Rule-Based theo TCVN 11823:2017 và TCVN 10304:2014",
     }
 
 
-# ===========================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 # TIỆN ÍCH
-# ===========================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 def format_mong_report(res):
+    """Định dạng kết quả thành chuỗi báo cáo ngắn."""
     lines = [
-        f"  Loại móng      : {res['loai_mong']}",
-        f"  Đường kính cọc : {res['D_coc_chon_txt']}",
-        f"  Chiều dài cọc  : {res['L_coc_tu']} – {res['L_coc_den']} m (gợi ý)",
-        f"  Số cọc/bệ      : {res['So_coc_tu']} – {res['So_coc_den']} cọc",
-        f"  Bệ cọc (gợi ý) : {res['kich_thuoc_be_goi_y']}",
-        f"  Thi công       : {res['phuong_phap_thi_cong']}",
+        f"  Loại cọc        : {res['loai_coc']}",
+        f"  Kích thước      : {res['kich_thuoc_coc']}",
+        f"  Chiều dài cọc   : {res['chieu_dai_coc']} m",
+        f"  Số cọc / bệ     : {res['so_coc_be']} cọc",
+        f"  Kích thước bệ   : {res['kich_thuoc_be']}",
+        f"  Khoảng cách tim : {res['khoang_cach_tim_coc']} m",
+        f"  Cao độ đầu cọc  : {res['cao_do_dau_coc']} m",
+        f"  Cao độ mũi cọc  : {res['cao_do_mui_coc']} m",
+        f"  Lớp tựa mũi     : {res['lop_tua_mui']} ({res['loai_dat_tua_mui']})",
+        f"  Phương pháp     : {res['phuong_phap']}",
     ]
-    for kn in res["khuyen_nghi"]:
-        lines.append(f"  ⚠ {kn}")
+    if res["warnings"]:
+        lines.append("  --- Cảnh báo kỹ thuật ---")
+        for w in res["warnings"]:
+            lines.append(f"  {w}")
     return "\n".join(lines)
 
 
-# ===========================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 # CHẠY THỬ ĐỘC LẬP
-# ===========================================================================
+# ═══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
     import sys
     sys.stdout.reconfigure(encoding="utf-8")
 
-    print("=== Huấn luyện AI Móng cọc ===")
-    mdl = train_foundation_ai()
-    print(f"Model sẵn sàng: {mdl is not None}")
+    # ── Ví dụ 1: Cầu nông thôn nhỏ ──────────────────────────────────────────
+    # Tải đầu cọc 600kN, chiều sâu lớp tốt 18m, đất dính, không đô thị
+    dac_trung_1 = {
+        "lop_tua_mui_de_xuat": {
+            "ten_lop":    "Sét cứng",
+            "loai_dat":   "Sét",
+            "IL":         0.10,
+            "RQD":        None,
+            "cao_do_dinh": -18.0,
+            "cao_do_day":  -26.0,
+            "chieu_day":    8.0,
+            "do_sau_dinh": 18.0,
+            "spt_n_tb":    35.0,
+        },
+        "co_lop_tua_mui_du_kien": True,
+        "co_set_chay":    False,
+        "co_da_moi_co_giua": False,
+        "co_da_phong_hoa": False,
+        "co_da_tuoi":     False,
+        "Z":               0.5,
+    }
 
-    test_cases = [
-        {"H_tru": 5.0,  "loai_tru": "Thân cột 2 trụ", "is_river": 1, "cap_song": "VI",
-         "B_cau": 12.0, "is_urban": 0},
-        {"H_tru": 8.5,  "loai_tru": "Trụ đặc thân hẹp", "is_river": 1, "cap_song": "IV",
-         "B_cau": 17.5, "is_urban": 0},
-        {"H_tru": 4.0,  "loai_tru": "Thân cột 2 trụ", "is_river": 1, "cap_song": "VI",
-         "B_cau": 12.0, "is_urban": 1},   # khu đông dân → cọc ép
-        {"H_tru": 12.0, "loai_tru": "Trụ đặc thân hẹp", "is_river": 1, "cap_song": "II",
-         "B_cau": 20.0, "is_urban": 0},   # sông lớn + trụ cao → CKN
-    ]
+    print("=" * 60)
+    print("VÍ DỤ 1 — Cầu nông thôn nhỏ")
+    print("  Tải: 600 kN  |  Sâu lớp tốt: 18m  |  Không đô thị")
+    print("=" * 60)
+    res1 = predict_foundation(
+        dac_trung_1,
+        tai_trong_dau_coc=600,
+        duong_kinh_tru=0.5,
+        is_urban=False,
+        is_river=True,
+    )
+    print(format_mong_report(res1))
 
-    for tc in test_cases:
-        res = predict_foundation(**tc, foundation_models=mdl)
-        print(f"\n── H={tc['H_tru']}m | Cấp {tc['cap_song']} | urban={tc['is_urban']} ──")
-        print(format_mong_report(res))
+    # ── Ví dụ 2: Cầu vượt sông cấp IV đô thị ────────────────────────────────
+    # Tải 1800kN, sâu 35m, có sét chảy IL=0.7, đô thị
+    dac_trung_2 = {
+        "lop_tua_mui_de_xuat": {
+            "ten_lop":    "Cát chặt vừa",
+            "loai_dat":   "Cát",          # cát → tier 0: force CKN
+            "IL":         None,
+            "RQD":        None,
+            "cao_do_dinh": -35.0,
+            "cao_do_day":  -42.0,
+            "chieu_day":    7.0,
+            "do_sau_dinh": 35.0,
+            "spt_n_tb":    45.0,
+        },
+        "co_lop_tua_mui_du_kien": True,
+        "co_set_chay":    True,          # có sét IL=0.7 tại độ sâu ~15m
+        "co_da_moi_co_giua": False,
+        "co_da_phong_hoa": False,
+        "co_da_tuoi":     False,
+        "Z":               2.0,
+    }
+
+    print("\n" + "=" * 60)
+    print("VÍ DỤ 2 — Cầu vượt sông cấp IV trong đô thị")
+    print("  Tải: 1800 kN  |  Sâu 35m  |  Sét chảy IL=0.7  |  Đô thị")
+    print("=" * 60)
+    res2 = predict_foundation(
+        dac_trung_2,
+        tai_trong_dau_coc=1800,
+        duong_kinh_tru=1.2,
+        is_urban=True,
+        is_river=True,
+    )
+    print(format_mong_report(res2))
+
+    print(f"\nVí dụ 1 → {res1['loai_coc']}  ({res1['kich_thuoc_coc']})  "
+          f"L={res1['chieu_dai_coc']}m  n={res1['so_coc_be']}cọc")
+    print(f"Ví dụ 2 → {res2['loai_coc']}  ({res2['kich_thuoc_coc']})  "
+          f"L={res2['chieu_dai_coc']}m  n={res2['so_coc_be']}cọc")

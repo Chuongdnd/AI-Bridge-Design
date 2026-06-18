@@ -4,8 +4,14 @@ Module 00 — Địa chất Loader
 dữ liệu chuẩn hóa để phục vụ Module 08 phân loại móng cọc.
 
 Định dạng file hỗ trợ:
-  • Template_DiaChat.xlsx (Toado_HK 7 cột)
+  • Template_DiaChat.xlsx (Toado_HK 7 cột, HKx 8 cột mới)
   • HK-VVD.xlsx (Toado_HK 4 cột, SPT dùng "-" cho ô trống)
+
+Các cột mới trong sheet HKx (v2):
+  LOAI_DAT — phân loại đất (Sét, Cát, Đá tươi, …)
+  IL       — chỉ số chảy sét (0–2.0), chỉ cho đất dính
+  RQD      — chỉ số chất lượng đá (%), chỉ cho đá
+  GHI_CHU_LOP — ghi chú đặc điểm lớp
 """
 
 import re
@@ -21,6 +27,17 @@ _SPT_STOP_THRESHOLD   = 15   # N ≥ 15 liên tiếp 2 mẫu → kết thúc vù
 _SPT_GOOD_THRESHOLD   = 20   # N ≥ 20 liên tiếp 3 mẫu → lớp chịu lực
 _SPT_STOP_CONSECUTIVE = 2
 _SPT_GOOD_CONSECUTIVE = 3
+
+# Ngưỡng SPT-N cho lớp tựa mũi theo loại đất
+_SPT_NGUONG_DINH = 30   # đất dính: Sét, Sét pha
+_SPT_NGUONG_ROI  = 40   # đất rời: Cát, Cát pha, Cát lẫn sỏi, Sỏi cuội
+_RQD_NGUONG      = 60   # đá: RQD > 60%
+_CHIEU_DAY_MIN   = 4.0  # chiều dày tối thiểu lớp tựa mũi (m)
+
+# Nhóm loại đất
+_DAT_DINH = {"Sét", "Sét pha"}
+_DAT_ROI  = {"Cát", "Cát pha", "Cát lẫn sỏi", "Sỏi cuội"}
+_DAT_DA   = {"Đá phong hóa", "Đá tươi"}
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -65,8 +82,54 @@ def _normalize_hk_name(name):
     return str(name).strip() if name else ""
 
 
+def _parse_optional_float(val, lo=None, hi=None):
+    """Chuyển giá trị tùy chọn thành float, kiểm tra phạm vi."""
+    if val is None:
+        return None
+    s = str(val).strip()
+    if s in ("-", "", "nan", "None"):
+        return None
+    try:
+        f = float(s)
+        if lo is not None and f < lo:
+            return None
+        if hi is not None and f > hi:
+            return None
+        return f
+    except (ValueError, TypeError):
+        return None
+
+
+def _infer_loai_dat_from_name(ten_lop: str) -> str:
+    """Suy ra LOAI_DAT từ TEN_LOP nếu cột LOAI_DAT không có."""
+    t = str(ten_lop).lower().strip()
+    if any(k in t for k in ["đất đắp", "san lấp", "đắp", "lớp k"]):
+        return "Đất đắp"
+    if any(k in t for k in ["than bùn", "hữu cơ", "bùn than"]):
+        return "Đất hữu cơ"
+    if "đá tươi" in t:
+        return "Đá tươi"
+    if "đá phong hóa" in t or ("đá" in t and "phong hóa" in t):
+        return "Đá phong hóa"
+    if "đá" in t:
+        return "Đá phong hóa"
+    if "sỏi cuội" in t or ("sỏi" in t and "cuội" in t):
+        return "Sỏi cuội"
+    if "cát lẫn sỏi" in t or ("cát" in t and "sỏi" in t):
+        return "Cát lẫn sỏi"
+    if "sét pha" in t or "bùn sét pha" in t:
+        return "Sét pha"
+    if "sét" in t or "bùn" in t:
+        return "Sét"
+    if "cát pha" in t:
+        return "Cát pha"
+    if "cát" in t:
+        return "Cát"
+    return ""
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
-# 1. TÍNH ĐẶC TRƯNG TỔNG HỢP
+# 1. TÍNH ĐẶC TRƯNG TỔNG HỢP (SPT-N)
 # ═══════════════════════════════════════════════════════════════════════════════
 def _compute_characteristics(spt_list):
     """
@@ -121,7 +184,7 @@ def _compute_characteristics(spt_list):
                 if consec_strong >= _SPT_STOP_CONSECUTIVE:
                     break
             else:
-                consec_strong = 0  # 10–14: không yếu nhưng chưa đủ mạnh để dừng
+                consec_strong = 0
 
     if weak_started and weak_n_values:
         base["chieu_sau_lop_yeu"] = round(last_weak_end, 2)
@@ -154,7 +217,158 @@ def _compute_characteristics(spt_list):
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 2. HÀM CHÍNH: ĐỌC FILE EXCEL
+# 2. TÌM LỚP TỰA MŨI VÀ ĐẶC TRƯNG MỚI
+# ═══════════════════════════════════════════════════════════════════════════════
+def _avg_spt_for_layer(lop, spt_list_full, z_mat_dat):
+    """
+    Tính SPT-N trung bình cho một lớp đất dựa trên cao độ lớp và dữ liệu SPT.
+
+    lop          : dict với cao_do_dinh, cao_do_day (cao độ tuyệt đối, m)
+    spt_list_full: list of (start_depth, end_depth, N|None) — độ sâu từ mặt đất
+    z_mat_dat    : cao độ mặt đất (m)
+    """
+    if not spt_list_full or z_mat_dat is None:
+        return None
+
+    # Chuyển cao độ lớp sang độ sâu từ mặt đất
+    depth_dinh = z_mat_dat - lop["cao_do_dinh"]
+    depth_day  = z_mat_dat - lop["cao_do_day"]
+
+    n_values = []
+    for s, e, n in spt_list_full:
+        if n is None:
+            continue
+        mid = (s + e) / 2
+        if depth_dinh - 0.5 <= mid <= depth_day + 0.5:
+            n_values.append(n)
+
+    if not n_values:
+        return None
+    return round(float(np.mean(n_values)), 1)
+
+
+def _find_bearing_layer(lop_dat, spt_list_full, z_mat_dat):
+    """
+    Tìm lớp tựa mũi cọc dự kiến và các cờ kỹ thuật liên quan.
+
+    Parameters
+    ----------
+    lop_dat       : list[dict] — danh sách lớp đất đã có loai_dat, IL, RQD
+    spt_list_full : list of (start_depth, end_depth, N|None)
+    z_mat_dat     : cao độ mặt đất (m) để quy đổi sang độ sâu
+
+    Returns
+    -------
+    dict:
+        lop_tua_mui_de_xuat  : dict mô tả lớp tựa mũi, hoặc None
+        co_lop_tua_mui_du_kien: bool
+        co_da_phong_hoa      : bool
+        cao_do_da_phong_hoa  : float|None
+        co_da_tuoi           : bool
+        cao_do_da_tuoi       : float|None
+        co_set_chay          : bool — có sét IL > 0.6 bất kỳ đâu trong hố
+        co_da_moi_co_giua    : bool — đá phong hóa/mồ côi không phải lớp cuối
+    """
+    result = {
+        "lop_tua_mui_de_xuat":   None,
+        "co_lop_tua_mui_du_kien": False,
+        "co_da_phong_hoa":        False,
+        "cao_do_da_phong_hoa":    None,
+        "co_da_tuoi":             False,
+        "cao_do_da_tuoi":         None,
+        "co_set_chay":            False,
+        "co_da_moi_co_giua":      False,
+    }
+    if not lop_dat:
+        return result
+
+    n_layers = len(lop_dat)
+
+    # ── Quét toàn bộ lớp để đặt cờ ──────────────────────────────────────────
+    for i, lop in enumerate(lop_dat):
+        loai = lop.get("loai_dat", "") or _infer_loai_dat_from_name(lop.get("ten_lop", ""))
+        IL   = lop.get("IL")
+        RQD  = lop.get("RQD")
+        ghi  = str(lop.get("ghi_chu_lop", "") or "").lower()
+
+        # Sét chảy
+        if loai in _DAT_DINH and IL is not None and IL > 0.6:
+            result["co_set_chay"] = True
+
+        # Đá phong hóa (ghi nhận lần đầu)
+        if loai == "Đá phong hóa" and not result["co_da_phong_hoa"]:
+            result["co_da_phong_hoa"]      = True
+            result["cao_do_da_phong_hoa"]  = lop["cao_do_dinh"]
+            # Nếu có lớp đất phi-đá phía dưới → đá ở giữa (mồ côi/xen kẹp)
+            if i < n_layers - 1:
+                has_soil_below = any(
+                    lop_dat[j].get("loai_dat", "") not in _DAT_DA
+                    for j in range(i + 1, n_layers)
+                )
+                if has_soil_below:
+                    result["co_da_moi_co_giua"] = True
+
+        # Đá mồ côi từ GHI_CHU_LOP
+        if "mồ côi" in ghi or "mo coi" in ghi:
+            result["co_da_moi_co_giua"] = True
+
+        # Đá tươi (ghi nhận lần đầu)
+        if loai == "Đá tươi" and not result["co_da_tuoi"]:
+            result["co_da_tuoi"]     = True
+            result["cao_do_da_tuoi"] = lop["cao_do_dinh"]
+
+    # ── Tìm lớp tựa mũi ──────────────────────────────────────────────────────
+    for lop in lop_dat:
+        loai     = lop.get("loai_dat", "") or _infer_loai_dat_from_name(lop.get("ten_lop", ""))
+        IL       = lop.get("IL")
+        RQD      = lop.get("RQD")
+        chieu_day = lop.get("chieu_day", 0) or 0
+
+        # Điều kiện 3: chiều dày ≥ 4m
+        if chieu_day < _CHIEU_DAY_MIN:
+            continue
+
+        # Điều kiện 2: loại trừ sét chảy
+        if loai in _DAT_DINH and IL is not None and IL > 0.6:
+            continue
+
+        # Tính SPT-N trung bình của lớp
+        z = z_mat_dat if z_mat_dat is not None else 0.0
+        spt_avg = _avg_spt_for_layer(lop, spt_list_full, z)
+
+        # Điều kiện 1: ngưỡng SPT/RQD theo loại đất
+        qualifies = False
+        if loai in _DAT_DINH:
+            qualifies = spt_avg is not None and spt_avg > _SPT_NGUONG_DINH
+        elif loai in _DAT_ROI:
+            qualifies = spt_avg is not None and spt_avg > _SPT_NGUONG_ROI
+        elif loai == "Đá phong hóa":
+            qualifies = RQD is not None and RQD > _RQD_NGUONG
+        elif loai == "Đá tươi":
+            # Đá tươi luôn đủ điều kiện tựa mũi CKN
+            qualifies = True
+
+        if qualifies:
+            do_sau = round(z - lop["cao_do_dinh"], 2) if z is not None else None
+            result["lop_tua_mui_de_xuat"] = {
+                "ten_lop":    lop["ten_lop"],
+                "loai_dat":   loai,
+                "IL":         IL,
+                "RQD":        RQD,
+                "cao_do_dinh": lop["cao_do_dinh"],
+                "cao_do_day":  lop["cao_do_day"],
+                "chieu_day":   chieu_day,
+                "do_sau_dinh": do_sau,
+                "spt_n_tb":    spt_avg,
+            }
+            result["co_lop_tua_mui_du_kien"] = True
+            break
+
+    return result
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 3. HÀM CHÍNH: ĐỌC FILE EXCEL
 # ═══════════════════════════════════════════════════════════════════════════════
 def load_geology_excel(file_path):
     """
@@ -238,7 +452,7 @@ def load_geology_excel(file_path):
     hk_names = {hk["ten"] for hk in hk_list_raw}
 
     # ── Sheet SPT ──────────────────────────────────────────────────────────────
-    spt_raw_by_hk = {}   # {ten_hk: [(start, end, N|None), ...]}
+    spt_raw_by_hk = {}
 
     if "SPT" not in sheets:
         errors.append({"ten_sheet": "SPT", "hang": "-", "cot": "-",
@@ -250,8 +464,7 @@ def load_geology_excel(file_path):
             for c in next(ws_spt.iter_rows(min_row=1, max_row=1))
         ]
 
-        # Map cột SPT: "HK1 (N)" → "HK1"
-        spt_col_map = {}   # {ten_hk: col_index_0based}
+        spt_col_map = {}
         for i, h in enumerate(spt_hdr):
             if i == 0:
                 continue
@@ -260,7 +473,6 @@ def load_geology_excel(file_path):
             if key:
                 spt_col_map[key] = i
 
-        # Kiểm tra đầy đủ cột SPT
         for name in hk_names:
             if name not in spt_col_map:
                 errors.append({
@@ -292,7 +504,6 @@ def load_geology_excel(file_path):
                 raw = row[ci] if ci < len(row) else None
                 n   = _parse_spt_value(raw)
 
-                # Validate phạm vi nếu ô có nội dung
                 if raw is not None and str(raw).strip() not in ("-", ""):
                     try:
                         f = float(str(raw).strip())
@@ -304,7 +515,7 @@ def load_geology_excel(file_path):
                                 "mo_ta_loi": f"Giá trị SPT-N = {raw} ngoài khoảng 0–100",
                             })
                     except (ValueError, TypeError):
-                        pass  # '-' đã được xử lý bởi _parse_spt_value
+                        pass
 
                 spt_raw_by_hk[name].append((start_d, end_d, n))
 
@@ -351,17 +562,31 @@ def load_geology_excel(file_path):
             except (TypeError, ValueError):
                 cao_dinh = cao_day = 0.0
 
+            # Đọc các cột mới (tương thích ngược nếu không có)
+            loai_dat_raw = _get("LOAI_DAT")
+            loai_dat = str(loai_dat_raw).strip() if loai_dat_raw else ""
+            if not loai_dat:
+                loai_dat = _infer_loai_dat_from_name(ten_lop)
+
+            il_val  = _parse_optional_float(_get("IL"),  lo=0.0, hi=2.0)
+            rqd_val = _parse_optional_float(_get("RQD"), lo=0.0, hi=100.0)
+            ghi_lop = str(_get("GHI_CHU_LOP", "") or "").strip()
+
             layers.append({
-                "ten_lop":   ten_lop,
+                "ten_lop":     ten_lop,
                 "cao_do_dinh": cao_dinh,
                 "cao_do_day":  cao_day,
                 "chieu_day":   round(cao_dinh - cao_day, 2),
                 "mo_ta":       str(_get("MO_TA", "") or "").strip(),
+                "loai_dat":    loai_dat,
+                "IL":          il_val,
+                "RQD":         rqd_val,
+                "ghi_chu_lop": ghi_lop,
             })
 
         soil_by_hk[sname] = layers
 
-    # ── Ghép dữ liệu + validation phân lớp ────────────────────────────────────
+    # ── Ghép dữ liệu + validation ──────────────────────────────────────────────
     for hk in hk_list_raw:
         ten      = hk["ten"]
         lop_dat  = soil_by_hk.get(ten, [])
@@ -399,13 +624,25 @@ def load_geology_excel(file_path):
         hk["lop_dat"]  = lop_dat
         hk["spt_data"] = [(s, n) for s, e, n in spt_list if n is not None]
         result["ho_khoan_list"].append(hk)
-        result["dac_trung_tong_hop"][ten] = _compute_characteristics(spt_list)
+
+        # Đặc trưng SPT cổ điển
+        chars = _compute_characteristics(spt_list)
+
+        # Đặc trưng tựa mũi và cờ kỹ thuật mới
+        z_mat = hk.get("Z")
+        bearing_info = _find_bearing_layer(lop_dat, spt_list, z_mat)
+        chars.update(bearing_info)
+
+        # Gắn thêm Z vào chars để Module 08 dùng
+        chars["Z"] = z_mat
+
+        result["dac_trung_tong_hop"][ten] = chars
 
     return result
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 3. KIỂM CHỨNG DỮ LIỆU
+# 4. KIỂM CHỨNG DỮ LIỆU
 # ═══════════════════════════════════════════════════════════════════════════════
 def validate_geology_data(data):
     """
@@ -419,7 +656,7 @@ def validate_geology_data(data):
     -------
     str — báo cáo kiểm chứng (multiline text)
     """
-    errs = data.get("validation_errors", [])
+    errs    = data.get("validation_errors", [])
     hk_list = data.get("ho_khoan_list", [])
 
     lines = ["=" * 60, "BÁO CÁO KIỂM CHỨNG DỮ LIỆU ĐỊA CHẤT", "=" * 60]
@@ -446,16 +683,31 @@ def validate_geology_data(data):
         def _fmt(val, unit="m"):
             return f"{val}{unit}" if val is not None else "—"
 
-        z_str    = f"{hk['Z']:.2f}m" if hk.get("Z") is not None else "—"
-        yeu_str  = f"{_fmt(d.get('chieu_sau_lop_yeu'))}(N={_fmt(d.get('spt_n_lop_yeu','—'), '')})"
-        tot_str  = f"{_fmt(d.get('chieu_sau_lop_tot'))}(N={_fmt(d.get('spt_n_lop_tot','—'), '')})"
-        end_str  = _fmt(d.get("do_sau_ket_thuc_khoan"))
-        lines.append(
-            f"  {ten}: Z={z_str}  "
-            f"Lớp_yếu={yeu_str}  "
-            f"Lớp_tốt={tot_str}  "
-            f"Khoan đến={end_str}"
-        )
+        z_str   = f"{hk['Z']:.2f}m" if hk.get("Z") is not None else "—"
+        yeu_str = f"{_fmt(d.get('chieu_sau_lop_yeu'))}(N={_fmt(d.get('spt_n_lop_yeu','—'), '')})"
+        tot_str = f"{_fmt(d.get('chieu_sau_lop_tot'))}(N={_fmt(d.get('spt_n_lop_tot','—'), '')})"
+        end_str = _fmt(d.get("do_sau_ket_thuc_khoan"))
+
+        # Thông tin lớp tựa mũi mới
+        lop_tua = d.get("lop_tua_mui_de_xuat")
+        tua_str = "Chưa tìm được"
+        if lop_tua:
+            tua_str = (
+                f"{lop_tua['ten_lop']} ({lop_tua['loai_dat']}) "
+                f"tại -{lop_tua['do_sau_dinh']:.1f}m, "
+                f"dày {lop_tua['chieu_day']:.1f}m"
+            )
+
+        flags = []
+        if d.get("co_set_chay"):      flags.append("⚠️ Sét chảy")
+        if d.get("co_da_moi_co_giua"): flags.append("⚠️ Đá mồ côi")
+        if d.get("co_da_phong_hoa"):   flags.append("🪨 Đá PH")
+        if d.get("co_da_tuoi"):        flags.append("🪨 Đá tươi")
+
+        lines.append(f"  {ten}: Z={z_str}  Lớp_yếu={yeu_str}  Lớp_tốt={tot_str}  Khoan_đến={end_str}")
+        lines.append(f"       Lớp_tựa_mũi: {tua_str}")
+        if flags:
+            lines.append(f"       Cờ: {' | '.join(flags)}")
 
     lines.append("=" * 60)
     return "\n".join(lines)
@@ -478,13 +730,20 @@ if __name__ == "__main__":
     for hk in d["ho_khoan_list"]:
         print(f"  [{hk['ten']}]  X={hk['X']}  Y={hk['Y']}  Z={hk['Z']}")
         for lop in hk["lop_dat"]:
-            print(f"    Lớp {lop['ten_lop']:5s}  {lop['cao_do_dinh']:7.2f} → {lop['cao_do_day']:7.2f}  ({lop['chieu_day']:.2f} m)")
+            print(
+                f"    Lớp {lop['ten_lop']:8s}  {lop['cao_do_dinh']:7.2f} → {lop['cao_do_day']:7.2f}"
+                f"  ({lop['chieu_day']:.2f}m)  [{lop['loai_dat']}]"
+                f"  IL={lop['IL']}  RQD={lop['RQD']}"
+            )
 
     print("\nĐặc trưng tổng hợp:")
     for ten, c in d["dac_trung_tong_hop"].items():
         print(f"  {ten}:")
-        for k, v in c.items():
-            print(f"    {k}: {v}")
+        lop_tua = c.get("lop_tua_mui_de_xuat")
+        if lop_tua:
+            print(f"    Lớp tựa mũi: {lop_tua['ten_lop']} ({lop_tua['loai_dat']}) "
+                  f"tại -{lop_tua['do_sau_dinh']:.1f}m")
+        print(f"    co_set_chay={c.get('co_set_chay')}  co_da_moi={c.get('co_da_moi_co_giua')}")
 
     print()
     print(validate_geology_data(d))
