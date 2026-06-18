@@ -76,7 +76,6 @@ if 'bridge_library' not in st.session_state:
 try:
     TK   = importlib.import_module("01-Tinh_khong")
     YTHH = importlib.import_module("02-Yeuto_Hinhhoc")  # Yếu tố hình học + MCN
-    GRD  = importlib.import_module("05-Main_Girder")    # Legacy girder (dùng cho bản vẽ)
     KCN  = importlib.import_module("06-AI_KetCauNhip")  # AI Kết cấu nhịp v2
     MOT  = importlib.import_module("07-AI_MoTru")       # AI Mố – Trụ v2
     MONG = importlib.import_module("08-AI_Mong")        # Móng (rule-based)
