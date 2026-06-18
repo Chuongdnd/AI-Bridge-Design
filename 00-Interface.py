@@ -703,11 +703,13 @@ def show_options_dialog():
 
                 is_urban  = is_urban_val
                 is_river  = 1   # đề tài chỉ vượt sông
+                _n_nhip = res.get('kcn_result', {}).get('tong_so_nhip', 1) if res.get('kcn_result') else 1
                 res['tru_result'] = MOT.predict_pier(
                     vtk=res['vtk'], B_cau=res['bc'],
                     H_tru=H_tru_est, is_urban=is_urban,
                     is_river=is_river, cap_song=res['cap_song'],
-                    loai_dam=loai_dam_cho_tru, models=pier_models
+                    loai_dam=loai_dam_cho_tru, n_nhip=_n_nhip,
+                    models=pier_models
                 )
 
                 # ── Bước 6: Móng cầu (AI + RB) ───────────────────────────────

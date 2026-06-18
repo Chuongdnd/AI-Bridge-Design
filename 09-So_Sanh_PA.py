@@ -251,7 +251,7 @@ def generate_3_alternatives(
             vtk=vtk, B_cau=B_cau, H_tru=H_tru_est,
             is_urban=is_urban, is_river=is_river,
             cap_song=cap_song, loai_dam=loai_dam,
-            models=pier_models,
+            n_nhip=n_nhip, models=pier_models,
         )
 
         # ── 4. Mong ────────────────────────────────────────────────────
