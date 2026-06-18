@@ -690,10 +690,13 @@ def show_options_dialog():
                     else (res.get('ai_result') or {}).get('chieu_cao', 1.75)
                 )
                 # Ước tính chiều cao trụ từ cao độ
-                H_tru_est, cao_day_dam, cao_mat_cau = MOT.estimate_pier_height(
+                _ph = MOT.estimate_pier_height(
                     MNCN=h1, H_tinh_khong=res.get('H', 3.5),
                     H_dam=H_dam_est, MNTN=h98
                 )
+                H_tru_est  = _ph['H_than_tru']
+                cao_day_dam = _ph['cao_day_dam']
+                cao_mat_cau = _ph['cao_mat_cau']
                 res['H_tru_est']  = H_tru_est
                 res['cao_day_dam'] = cao_day_dam
                 res['cao_mat_cau'] = cao_mat_cau

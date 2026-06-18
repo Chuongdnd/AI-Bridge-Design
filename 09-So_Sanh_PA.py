@@ -239,10 +239,12 @@ def generate_3_alternatives(
         kcn = _kcn_for_beam(loai_dam, B_tk, goc, B_cau, L_cau, kcn_models)
 
         # ── 2. Chieu cao tru ─────────────────────────────────────────────
-        H_tru_est, cao_day_dam, _ = mod7.estimate_pier_height(
+        _ph = mod7.estimate_pier_height(
             MNCN=MNCN, H_tinh_khong=H_tk_nhip,
             H_dam=kcn["chieu_cao_dam"], MNTN=h98,
         )
+        H_tru_est   = _ph['H_than_tru']
+        cao_day_dam = _ph['cao_day_dam']
 
         # ── 3. Tru — dung AI/RB chung (loai tru phu thuoc H_tru, B_cau, ...) ──
         tru = mod7.predict_pier(
