@@ -186,6 +186,10 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
     MNTN    = float(d.get("MNTN", 0.5))
     B_tk    = float(d.get("B", 20.0))
     H_tk    = float(d.get("H", 3.0))
+    mong    = d.get("mong_result") or {}
+    L_coc   = float(mong.get("L_coc_tu", 30) or 30)
+    D_coc_m = float(mong.get("D_coc_mm", 600) or 600) / 1000.0
+    n_coc_row = max(2, min(4, int(mong.get("So_coc_tu", 4) or 4)))
 
     # Tọa độ Lý trình thực địa
     x0    = float(geo.get("x_mo_trai", -L_cau / 2))
@@ -224,7 +228,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
     z_sh_b   = z_cap_b - H_tru       # đáy thân trụ (= đỉnh bệ cọc)
     z_be_t   = z_sh_b
     z_be_b   = z_sh_b - 1.50         # đáy bệ cọc
-    z_min    = min(z_be_b - 1.0, MNTN - 0.5)
+    z_min    = min(z_be_b - L_coc - 2.0, MNTN - 0.5)
 
     W_cap = max(2.0, L_cau / n_nhip * 0.05 + 1.0)
     W_tru = 1.2
@@ -312,6 +316,25 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
             yanchor="bottom", bgcolor="rgba(255,255,255,0.7)"
         )
 
+        # ── Cọc tại mố ──────────────────────────────────────────────────────
+        n_mo = max(2, min(3, n_coc_row))
+        coc_xs_mo = np.linspace(xm + sign*W_mo*0.2, xm + sign*W_mo*0.8, n_mo)
+        for j, xc in enumerate(coc_xs_mo):
+            fig.add_trace(go.Scatter(
+                x=[xc, xc], y=[z_mo_bot, z_mo_bot - L_coc],
+                mode="lines",
+                line=dict(color="rgba(120,90,50,0.65)", width=max(2, int(D_coc_m * 12))),
+                name=f"Cọc mố Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
+                     if (side == "Trái" and j == 0) else "",
+                showlegend=(side == "Trái" and j == 0),
+            ))
+        fig.add_trace(go.Scatter(
+            x=list(coc_xs_mo), y=[z_mo_bot - L_coc] * n_mo,
+            mode="markers",
+            marker=dict(symbol="triangle-down", size=5, color="rgba(120,90,50,0.8)"),
+            showlegend=False, hoverinfo="skip",
+        ))
+
     # ── Trụ giữa (đặt NGOÀI tĩnh không + 2m an toàn) ─────────────────────
     for i, xt in enumerate(piers):
         sl = (i == 0)
@@ -357,6 +380,25 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
             font=dict(size=7, color="#27ae60"),
             bgcolor="rgba(255,255,255,0.7)"
         )
+
+        # ── Cọc tại trụ (bên dưới bệ cọc) ──────────────────────────────────
+        n_show = max(2, min(n_coc_row, 4))
+        coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
+        for j, xc in enumerate(coc_xs_tru):
+            fig.add_trace(go.Scatter(
+                x=[xc, xc], y=[z_be_b, z_be_b - L_coc],
+                mode="lines",
+                line=dict(color=_C["be_dk"], width=max(2, int(D_coc_m * 12))),
+                name=f"Cọc trụ Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
+                     if (sl and j == 0) else "",
+                showlegend=(sl and j == 0),
+            ))
+        fig.add_trace(go.Scatter(
+            x=list(coc_xs_tru), y=[z_be_b - L_coc] * n_show,
+            mode="markers",
+            marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
+            showlegend=False, hoverinfo="skip",
+        ))
 
     # ── Dầm theo từng nhịp (chiều dài thực) ──────────────────────────────
     for i, (xs, xe) in enumerate(spans):
@@ -414,6 +456,17 @@ def ve_so_do_nhip_2d(d, df_tim_line=None):
                color="#e74c3c", dy=0)
     _dim_v(fig, x_end+W_mo+0.3, z_sh_b, z_cap_b, f"H_trụ={H_tru:.1f}m", dx=0.2)
     _dim_v(fig, x0-W_mo-0.3, cao_dd, cao_dd+H_dam, f"H_dầm={H_dam:.2f}m", dx=0.2)
+    if piers:
+        _dim_v(fig, piers[0] + W_be + 0.6, z_be_b - L_coc, z_be_b,
+               f"L_cọc≈{L_coc:.0f}m", color="#8e44ad", dx=0.2)
+        fig.add_annotation(
+            x=piers[0] + W_be + 1.6, y=z_be_b - L_coc * 0.5,
+            text=f"Cọc Ø{int(D_coc_m*1000)}mm<br>L≈{L_coc:.0f}m",
+            showarrow=True, arrowhead=2, arrowcolor=_C["be_dk"],
+            ax=30, ay=0,
+            font=dict(size=8, color=_C["be_dk"]),
+            bgcolor="rgba(255,255,255,0.85)",
+        )
 
     fig.update_layout(
         title=dict(
@@ -641,6 +694,98 @@ def ve_mat_cat_ngang_2d(d):
         bordercolor=_C["dim"], borderwidth=0.5,
     )
 
+    # ── Kết cấu bên dưới dầm: Xà mũ → Thân trụ → Bệ cọc → Cọc (MCN) ──────
+    H_tru_sub  = float(d.get("H_tru_est", 5.0))
+    mong_sub   = d.get("mong_result") or {}
+    D_coc_sub  = float(mong_sub.get("D_coc_mm", 600) or 600) / 1000.0
+    L_coc_sub  = float(mong_sub.get("L_coc_tu", 30) or 30)
+    n_coc_sub  = max(3, int(mong_sub.get("So_coc_tu", 4) or 4))
+
+    cap_H_sub  = 0.80
+    cap_W_sub  = min(bc * 0.46, bc / 2 - 0.10)
+    W_shaft_sub = max(0.80, bc * 0.065)
+    be_H_sub   = 1.50
+    be_W_sub   = min(cap_W_sub * 1.12, bc / 2 - 0.05)
+    H_show     = min(H_tru_sub, 3.5)   # trụ cao > 3.5m → dùng ký hiệu cắt
+
+    z_bot_sub  = -t_ban - H_dam
+    z_cap_t_s  = z_bot_sub
+    z_cap_b_s  = z_cap_t_s - cap_H_sub
+    z_sh_b_s   = z_cap_b_s - H_show
+    z_be_t_s   = z_sh_b_s
+    z_be_b_s   = z_sh_b_s - be_H_sub
+    r_coc_sub  = D_coc_sub / 2
+
+    # Xà mũ
+    _poly(fig, [-cap_W_sub, cap_W_sub, cap_W_sub, -cap_W_sub],
+          [z_cap_b_s, z_cap_b_s, z_cap_t_s, z_cap_t_s],
+          _C["btong"], _C["dam_dk"], "Xà mũ trụ", opacity=0.85)
+
+    # Thân trụ (2 cột)
+    for xc_sh in [-cap_W_sub * 0.48, cap_W_sub * 0.48]:
+        _poly(fig, [xc_sh - W_shaft_sub/2, xc_sh + W_shaft_sub/2,
+                    xc_sh + W_shaft_sub/2, xc_sh - W_shaft_sub/2],
+              [z_sh_b_s, z_sh_b_s, z_cap_b_s, z_cap_b_s],
+              _C["btong"], _C["btong_dk"],
+              "Thân trụ (MCN)" if xc_sh < 0 else "", showlegend=(xc_sh < 0))
+
+    # Ký hiệu cắt ngang nếu trụ cao > 3.5m
+    if H_tru_sub > 3.5:
+        for xc_sh in [-cap_W_sub * 0.48, cap_W_sub * 0.48]:
+            for dy_break in [0.14, 0.28]:
+                fig.add_shape(type="line",
+                    x0=xc_sh - W_shaft_sub * 0.75, y0=z_sh_b_s - dy_break,
+                    x1=xc_sh + W_shaft_sub * 0.75, y1=z_sh_b_s - dy_break,
+                    line=dict(color=_C["btong_dk"], width=1.5))
+        fig.add_annotation(x=0, y=z_sh_b_s - 0.21,
+            text=f"// (H_trụ={H_tru_sub:.1f}m)",
+            showarrow=False, font=dict(size=7, color=_C["dim"]),
+            bgcolor="rgba(255,255,255,0.8)")
+
+    # Bệ cọc
+    _poly(fig, [-be_W_sub, be_W_sub, be_W_sub, -be_W_sub],
+          [z_be_b_s, z_be_b_s, z_be_t_s, z_be_t_s],
+          _C["be"], _C["be_dk"], "Bệ cọc")
+
+    # Cọc — hiển thị dưới dạng mặt cắt tròn
+    n_coc_show = max(3, min(n_coc_sub, 8))
+    coc_ys = np.linspace(-be_W_sub * 0.80, be_W_sub * 0.80, n_coc_show)
+    theta  = np.linspace(0, 2 * np.pi, 24)
+    for j, yc in enumerate(coc_ys):
+        cx_arr = yc + r_coc_sub * np.cos(theta)
+        cz_arr = (z_be_b_s - r_coc_sub * 1.15) + r_coc_sub * np.sin(theta)
+        fig.add_trace(go.Scatter(
+            x=list(cx_arr) + [cx_arr[0]], y=list(cz_arr) + [cz_arr[0]],
+            fill="toself", fillcolor=_C["be"],
+            line=dict(color=_C["be_dk"], width=1.2), mode="lines",
+            name=f"Cọc Ø{int(D_coc_sub*1000)}mm (MCN)" if j == 0 else "",
+            showlegend=(j == 0),
+        ))
+
+    # Kích thước bệ cọc và khoảng cách cọc
+    z_coc_center = z_be_b_s - r_coc_sub * 1.15
+    _dim_h(fig, z_coc_center - r_coc_sub - 0.35,
+           -be_W_sub, be_W_sub, f"B_bệ = {be_W_sub*2:.1f}m", dy=0)
+    if n_coc_show >= 2:
+        kc_coc_show = abs(coc_ys[1] - coc_ys[0])
+        _dim_h(fig, z_coc_center - r_coc_sub - 0.90,
+               coc_ys[0], coc_ys[1], f"a_cọc={kc_coc_show:.2f}m",
+               color="#8e44ad", dy=0)
+    fig.add_annotation(
+        x=be_W_sub + 0.6, y=z_coc_center,
+        text=f"Cọc Ø{int(D_coc_sub*1000)}mm<br>L≈{L_coc_sub:.0f}m",
+        showarrow=True, arrowhead=2, arrowcolor=_C["be_dk"],
+        ax=40, ay=0,
+        font=dict(size=7, color=_C["be_dk"]),
+        bgcolor="rgba(255,255,255,0.9)",
+    )
+    _dim_v(fig, be_W_sub + 1.8, z_cap_b_s, z_cap_t_s,
+           f"xà mũ {cap_H_sub:.2f}m", dx=0.2)
+    _dim_v(fig, be_W_sub + 1.8, z_be_b_s, z_be_t_s,
+           f"bệ {be_H_sub:.2f}m", dx=0.2)
+
+    z_substructure_bot = z_coc_center - r_coc_sub - 1.0
+
     # Tỷ lệ ước tính (dựa vào bề rộng)
     ty_le = max(50, int(bc * 8))
     ty_le = min(200, (ty_le // 25) * 25)
@@ -655,12 +800,12 @@ def ve_mat_cat_ngang_2d(d):
             x=0.5, font=dict(size=13)
         ),
         xaxis=dict(title="Bề rộng (m)", showgrid=True, gridcolor="#ecf0f1",
-                   range=[-bc/2 - 3.5, bc/2 + 4.5]),
+                   range=[-bc/2 - 3.5, bc/2 + 5.5]),
         yaxis=dict(title="Cao độ (m)", scaleanchor="x", scaleratio=1,
                    showgrid=True, gridcolor="#ecf0f1",
-                   range=[-t_ban - H_dam - 1.4, t_phu + H_lc + 0.6]),
-        height=560, template="plotly_white",
-        legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
+                   range=[z_substructure_bot, t_phu + H_lc + 0.6]),
+        height=700, template="plotly_white",
+        legend=dict(orientation="h", y=-0.15, font=dict(size=9)),
         margin=dict(l=70, r=80, t=90, b=100),
     )
     return fig
