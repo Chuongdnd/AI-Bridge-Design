@@ -671,8 +671,8 @@ def _classify_abutment(
     Bước 4 — Kích thước sơ bộ:
         L_tuong_canh = H_dap × 1.5 (taluy 1:1.5) hoặc × 2.0 (đất yếu)
         H_mo = cao_mat_cau_sb - Z_dinh_be_mo
-             = (Z_tu_nhien + H_dap) - (Z_tu_nhien ± delta_be) nếu có Z_tu_nhien
-             = H_dap + 0.5  (mặc định nếu thiếu Z_tu_nhien)
+             = (Z_tu_nhien + H_dap) - (Z_tu_nhien - 0.5)
+             = H_dap + 0.5  (cả khi có lẫn không có Z_tu_nhien)
 
     Returns
     -------
@@ -742,14 +742,9 @@ def _classify_abutment(
     taluy        = 2.0 if SPT_N < 5 else 1.5
     L_tuong_canh = round(H_dap * taluy, 2)
 
-    if Z_tu_nhien is not None:
-        # delta_be: chiều sâu (âm) hoặc chiều cao nhô (dương) của đỉnh bệ so với mặt đất
-        delta_be    = 0.25 if SPT_N < 5 else -0.5   # cọc nhô +0.25m | móng nông −0.5m
-        Z_dinh_be   = Z_tu_nhien + delta_be
-        cao_mat_sb  = Z_tu_nhien + H_dap             # cao độ mặt cầu sơ bộ
-        H_mo        = round(max(0.5, cao_mat_sb - Z_dinh_be), 2)
-    else:
-        H_mo = round(H_dap + 0.5, 2)
+    # Đỉnh bệ mố luôn chôn ~0.5m dưới đường tự nhiên
+    # H_mo = (Z_tu_nhien + H_dap) - (Z_tu_nhien - 0.5) = H_dap + 0.5
+    H_mo = round(H_dap + 0.5, 2)
 
     return {
         "loai_mo":      loai_mo,
