@@ -1389,7 +1389,11 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
     st.markdown("---")
 
     if not has_ai:
-        st.info("⚙️ Nhấn **KHAI BÁO SỐ LIỆU** trong thanh bên trái để nhập thông số và chạy AI.")
+        st.info(
+            "⚙️ Nhấn nút **⚙️ OPTIONS - KHAI BÁO SỐ LIỆU** ở góc trên trái, "
+            "điền đầy đủ thông số, sau đó nhấn **💾 OK - Áp dụng cấu hình và Chạy dự báo AI** "
+            "bên trong hộp thoại để hệ thống chạy AI pipeline và hiển thị kết quả tại đây."
+        )
     else:
         _df_geo  = st.session_state.get("df_geology", None)
         _df_tim  = st.session_state.get("df_tim_line", None)
