@@ -502,13 +502,15 @@ def render_comparison_tab(alternatives, st):
         local_score = _local_score.get(alt["loai_dam_key"], 60)
 
         vals = [cost_score, lh_score, tru_score, tgt_score, local_score, cost_score]
+        _h = alt["color"].lstrip("#")
+        _fill = f"rgba({int(_h[0:2],16)},{int(_h[2:4],16)},{int(_h[4:6],16)},0.20)"
         fig_radar.add_trace(go.Scatterpolar(
             r=vals,
             theta=categories + [categories[0]],
             fill="toself",
             name=alt["label"],
             line_color=alt["color"],
-            fillcolor=alt["color"] + "33",
+            fillcolor=_fill,
         ))
 
     fig_radar.update_layout(
