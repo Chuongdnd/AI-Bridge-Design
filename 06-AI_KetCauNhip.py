@@ -799,16 +799,33 @@ def _score_single_plan(pa, B_tk, goc, moi_truong):
     else:
         a1 = 0
 
-    # ── A2: Tỉ lệ L/H (10 điểm) ──────────────────────────────────────────
+    # ── A2: Tỉ lệ L/H theo TCVN 11823-2:2017 Bảng 2 (10 điểm) ──────────
+    # Dầm giản đơn, Bê tông dự ứng lực.
+    # H trong catalog là chiều cao dầm (chưa gồm bản mặt cầu ~0.18m),
+    # nên ngưỡng giới hạn được nới thêm biên độ +10% so với lý thuyết.
+    #   Nhóm Bản (H_min = 0.030L) → L/H_lý_thuyết ≤ 33.3 → cho phép ≤ 37
+    #   Nhóm Dầm I đúc sẵn (H_min = 0.045L) → L/H_lý_thuyết ≤ 22.2 → cho phép ≤ 25
+    #   T ngược: không có trong bảng, dùng tương tự Bản per TCVN
+    _BAN = {"Dầm bản", "Dầm bản rỗng", "T ngược"}   # H_min = 0.030L
     ratio = L / H if H > 0 else 0
-    if 17 <= ratio <= 22:
-        a2 = 10
-    elif (14 <= ratio < 17) or (22 < ratio <= 25):
-        a2 = 6
-    elif (12 <= ratio < 14) or (25 < ratio <= 28):
-        a2 = 3
-    else:
-        a2 = 0
+    if loai in _BAN:
+        if 20 <= ratio <= 33:
+            a2 = 10   # tối ưu — dầm bản hoạt động theo cơ chế bản, L/H cao là bình thường
+        elif (15 <= ratio < 20) or (33 < ratio <= 37):
+            a2 = 6    # chấp nhận (biên độ bù bản mặt cầu)
+        elif (12 <= ratio < 15) or (37 < ratio <= 42):
+            a2 = 3    # cần xem xét
+        else:
+            a2 = 0    # vi phạm TCVN hoặc quá dày
+    else:             # Dầm I, Super-T, Dầm T — H_min = 0.045L
+        if 15 <= ratio <= 22:
+            a2 = 10   # tối ưu
+        elif (12 <= ratio < 15) or (22 < ratio <= 25):
+            a2 = 6    # chấp nhận
+        elif (10 <= ratio < 12) or (25 < ratio <= 28):
+            a2 = 3    # cần xem xét
+        else:
+            a2 = 0    # vi phạm TCVN hoặc quá dày
 
     # ── A3: Số trụ giữa sông (15 điểm) ───────────────────────────────────
     n_tru   = n_nhip - 1
