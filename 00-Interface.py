@@ -655,13 +655,21 @@ def show_options_dialog():
                     kcn_models = None
                     res['_kcn_error'] = f"train: {_e_train}"
                 try:
-                    res['kcn_result'] = KCN.predict_kcn(
+                    _kcn_raw = KCN.predict_kcn(
                         B_tk=res['B'], H_tk=res.get('H', 3.5),
                         goc=goc_giao, B_cau=res['bc'],
                         moi_truong=moi_tr, L_cau_tong=L_cau,
                         models=kcn_models,
-                        method='auto' if kcn_models else 'rb'
                     )
+                    # predict_kcn v2 trả về {"pa1_chi_phi":{}, "pa2_my_quan":{}, "pa3_ai":{}}
+                    # Lấy pa1_chi_phi (tối ưu chi phí) làm kết quả chính
+                    if isinstance(_kcn_raw, dict) and "pa1_chi_phi" in _kcn_raw:
+                        _pa = dict(_kcn_raw["pa1_chi_phi"])
+                        _pa["do_tin_cay"] = 85 if kcn_models else 60
+                        res['kcn_result'] = _pa
+                        res['kcn_3_pa']   = _kcn_raw
+                    else:
+                        res['kcn_result'] = _kcn_raw  # format cũ tương thích
                 except Exception as _e_kcn:
                     res['kcn_result'] = None
                     res['_kcn_error'] = f"predict: {_e_kcn}"
