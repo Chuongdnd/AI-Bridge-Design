@@ -88,21 +88,23 @@ def _dim_v(fig, x, y0, y1, txt, color=None, dx=0.10, row=None, col=None, fs=7):
 
 def _spt_dims(H, kc):
     """
-    Tính kích thước dầm SPT dựa trên H (m) và kc (m).
-    Tham chiếu: SPT L=38.2m → H=1.750m, kc~2.4m.
-    Kích thước chuẩn (mm): cánh trong=1220, đáy=1020, dày cánh=200, haunch=150.
+    Kích thước dầm SPT — tham chiếu bản vẽ SPT L=38.2m, H=1750mm, kc=2200mm.
+    A-A (bụng): tổng 490+100+1020+100+490=2200mm, đáy 160+700+160=1020mm
+    Haunch: 75mm; web leg: 110mm; đáy flange: 225+50=275mm.
     """
-    k = H / 1.750   # hệ số tỷ lệ
+    k = H / 1.750
     return {
         "H": H, "kc": kc,
-        "tf_hw":  kc / 2,                             # nửa cánh trên NGOÀI = kc/2
-        "tin_hw": min(kc/2 - 0.05, 0.610 * k),        # nửa cánh trên TRONG (610mm ref)
-        "tf_h":   max(0.150, 0.200 * k),              # dày cánh trên (200mm ref)
-        "hau_h":  max(0.080, 0.150 * k),              # cao haunch (150mm ref)
-        "w_hw":   max(0.230, 0.350 * k),              # nửa rộng web song song (350mm ref)
-        "bt_h":   max(0.030, 0.050 * k),              # cao vùng mở rộng web→cánh đáy
-        "bf_hw":  max(0.380, 0.510 * k),              # nửa rộng cánh đáy (510mm ref)
-        "bf_h":   max(0.100, 0.150 * k),              # dày cánh đáy (150mm ref)
+        "tf_hw":  kc / 2,                              # nửa cánh ngoài = kc/2
+        "tin_hw": min(kc/2 - 0.05, 0.610 * k),         # nửa outer face web tại top (610mm = 490+100+10 ref)
+        "tf_h":   max(0.150, 0.150 * k),               # dày cánh trên: 150mm ref
+        "hau_h":  max(0.070, 0.075 * k),               # haunch: 75mm ref
+        "w_hw":   max(0.280, 0.405 * k),               # outer face web song song (405mm = (590+220)/2 ref)
+        "bt_h":   max(0.030, 0.050 * k),               # chuyển tiếp web→đáy: 50mm ref
+        "bf_hw":  max(0.380, 0.510 * k),               # nửa đáy: 510mm = 1020/2 ref
+        "bf_h":   max(0.150, 0.275 * k),               # dày đáy: 225+50=275mm ref
+        "wall_t_top": max(0.080, 0.100 * k),           # dày web ở cánh trên: 100mm ref
+        "wall_t_web": max(0.090, 0.110 * k),           # dày web song song: 110mm ref
     }
 
 
@@ -215,101 +217,184 @@ def _get_profile(loai_l, xc, z0, H, kc, at_end=False):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# 1. MẶT CẮT NGANG: ĐẦU DẦM + GIỮA DẦM (2 panel)
+# 1. MẶT CẮT NGANG: A-A (bụng) + B-B (mố) + C-C (trụ) — 3 panel
 # ─────────────────────────────────────────────────────────────────────────────
+
+def _draw_spt_void(fig, xc, z0, H, dd, row=None, col=None):
+    """Vẽ khoang rỗng bên trong dầm SPT (hình thang) cho mặt cắt A-A."""
+    k        = H / 1.750
+    tf_h     = dd["tf_h"]
+    bf_h     = dd["bf_h"]
+    bt_h     = dd["bt_h"]
+    wt       = dd["wall_t_top"]   # dày web ở cánh trên ~ 100mm
+    ww       = dd["wall_t_web"]   # dày web song song ~ 110mm
+    v_top    = dd["tin_hw"] - wt  # nửa void tại đỉnh  (510mm ref)
+    v_bot    = dd["w_hw"] - ww    # nửa void tại đáy   (295mm ref)
+    z_vt     = z0 - tf_h
+    z_vb     = z0 - H + bf_h + bt_h
+    xs = [xc - v_top, xc + v_top, xc + v_bot, xc - v_bot]
+    ys = [z_vt,       z_vt,       z_vb,       z_vb      ]
+    kw = dict(x=xs + [xs[0]], y=ys + [ys[0]],
+              fill="toself", fillcolor="rgba(210,220,232,0.80)",
+              line=dict(color=_C["btong_dk"], width=1.0, dash="dot"),
+              mode="lines", name="Khoang rỗng", showlegend=False, hoverinfo="skip")
+    if row:
+        fig.add_trace(go.Scatter(**kw), row=row, col=col)
+    else:
+        fig.add_trace(go.Scatter(**kw))
+
 
 def ve_chi_tiet_mcn(d):
     """
-    Hai panel: MCN đầu dầm (A-A) và MCN giữa dầm (B-B).
-    Theo tỷ lệ chuẩn 1:30 của bản vẽ SPT.
+    Ba panel — A-A (bụng dầm), B-B (đầu dầm/mố), C-C (đầu dầm/trụ).
+    Tỷ lệ chuẩn 1:25 theo bản vẽ SPT tham chiếu.
     """
-    kcn  = d.get("kcn_result") or d.get("ai_result", {})
-    loai = str(kcn.get("loai_dam", "Super-T"))
-    ll   = loai.lower()
-    H    = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
-    kc   = float(kcn.get("khoang_cach_dam", 2.2))
+    kcn   = d.get("kcn_result") or d.get("ai_result", {})
+    loai  = str(kcn.get("loai_dam", "Super-T"))
+    ll    = loai.lower()
+    H     = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+    kc    = float(kcn.get("khoang_cach_dam", 2.2))
     t_ban = float(d.get("t_ban_mm", 200)) / 1000.0
+    is_spt = "super" in ll
+    dd     = _spt_dims(H, kc) if is_spt else None
+    hw     = kc / 2   # nửa rộng cánh ngoài
 
-    fig = make_subplots(
-        rows=1, cols=2,
-        subplot_titles=[
-            f"MẶT CẮT A-A — Đầu dầm (gối) TỶ LỆ 1:30",
-            f"MẶT CẮT B-B — Giữa dầm (nhịp) TỶ LỆ 1:30",
-        ],
-        horizontal_spacing=0.10,
-    )
+    # SPT: 3 panel; các loại khác: 2 panel (A-A đầu + B-B giữa)
+    if is_spt:
+        n_cols   = 3
+        subtitles = [
+            "MẶT CẮT A-A — Bụng dầm  TL 1:25",
+            "MẶT CẮT B-B — Đầu dầm/Mố  TL 1:25",
+            "MẶT CẮT C-C — Đầu dầm/Trụ  TL 1:25",
+        ]
+    else:
+        n_cols   = 2
+        subtitles = [
+            "MẶT CẮT A-A — Đầu dầm (gối)  TL 1:30",
+            "MẶT CẮT B-B — Giữa nhịp  TL 1:30",
+        ]
 
-    # Vẽ mỗi panel
-    for col_idx, at_end in [(1, True), (2, False)]:
-        z0 = 0.0  # đỉnh dầm
+    fig = make_subplots(rows=1, cols=n_cols,
+                        subplot_titles=subtitles,
+                        horizontal_spacing=0.08)
 
-        # Bản mặt cầu (phía trên)
-        hw = kc / 2
+    # ── Panel chung: helper vẽ bản + profile dầm ─────────────────────────────
+    def _panel_base(col_idx, at_end=False, show_legend=(True,)):
         _poly(fig, [-hw, hw, hw, -hw], [t_ban, t_ban, 0, 0],
-              _C["ban"], _C["btong_dk"], "Bản mặt cầu" if col_idx == 1 else "",
-              sl=(col_idx == 1), row=1, col=col_idx)
+              _C["ban"], _C["btong_dk"],
+              "Bản mặt cầu" if col_idx == 1 else "", sl=(col_idx == 1), row=1, col=col_idx)
+        xs_, ys_ = _get_profile(ll, 0.0, 0.0, H, kc, at_end)
+        _poly(fig, xs_, ys_, _C["dam"], _C["dam_dk"],
+              f"Dầm {loai}" if col_idx == 1 else "", sl=(col_idx == 1), row=1, col=col_idx, lw=2.0)
+        fig.add_shape(type="line", x0=0, y0=-H-0.12, x1=0, y1=t_ban+0.08,
+                      line=dict(color=_C["axis"], width=1, dash="dashdot"), row=1, col=col_idx)
+        _dim_h(fig, -H-0.28, -hw, hw, f"kc={kc*1000:.0f}mm", row=1, col=col_idx)
+        _dim_v(fig, hw+0.06, 0.0, -H, f"H={H*1000:.0f}mm", row=1, col=col_idx)
 
-        # Profile dầm
-        xs, ys = _get_profile(ll, 0.0, z0, H, kc, at_end)
-        _poly(fig, xs, ys, _C["dam"], _C["dam_dk"],
-              f"Dầm {loai}" if col_idx == 1 else "",
-              sl=(col_idx == 1), row=1, col=col_idx, lw=2.0)
-
-        # Đường tim
-        fig.add_shape(type="line", x0=0, y0=-H - 0.15, x1=0, y1=t_ban + 0.10,
-                      line=dict(color=_C["axis"], width=1, dash="dashdot"),
-                      row=1, col=col_idx)
-        fig.add_annotation(x=0, y=t_ban + 0.12, text="TIM DẦM",
-                           showarrow=False, font=dict(size=7, color=_C["axis"]),
-                           row=1, col=col_idx)
-
-        # Dimensions
-        d_info = _spt_dims(H, kc) if "super" in ll else (
-            _tngược_dims(H, kc) if ("t ngược" in ll or "tngược" in ll) else _dami_dims(H, kc)
+    if is_spt:
+        # ── A-A: Bụng dầm — profile mid-span + khoang rỗng ──────────────────
+        _poly(fig, [-hw, hw, hw, -hw], [t_ban, t_ban, 0, 0],
+              _C["ban"], _C["btong_dk"], "Bản mặt cầu", sl=True, row=1, col=1)
+        xs_aa, ys_aa = _get_profile(ll, 0.0, 0.0, H, kc, at_end=False)
+        _poly(fig, xs_aa, ys_aa, _C["dam"], _C["dam_dk"],
+              f"Dầm {loai}", sl=True, row=1, col=1, lw=2.0)
+        _draw_spt_void(fig, 0.0, 0.0, H, dd, row=1, col=1)
+        fig.add_shape(type="line", x0=0, y0=-H-0.12, x1=0, y1=t_ban+0.08,
+                      line=dict(color=_C["axis"], width=1, dash="dashdot"), row=1, col=1)
+        _dim_h(fig, -H-0.30, -hw, hw, f"kc={kc*1000:.0f}mm", row=1, col=1)
+        _dim_v(fig, hw+0.06, 0.0, -H, f"H={H*1000:.0f}mm", row=1, col=1)
+        _dim_h(fig, -H-0.48, -dd["bf_hw"], dd["bf_hw"],
+               f"{dd['bf_hw']*2000:.0f}mm (đáy)", color="#27ae60", row=1, col=1)
+        _dim_h(fig, -H-0.62, -dd["tin_hw"], dd["tin_hw"],
+               f"{dd['tin_hw']*2000:.0f}mm (cánh trong)", color="#8e44ad", row=1, col=1)
+        # Web thickness dim
+        fig.add_annotation(
+            x=dd["tin_hw"] - dd["wall_t_top"]/2, y=-dd["tf_h"] - dd["hau_h"]*0.5,
+            text=f"t={dd['wall_t_web']*1000:.0f}mm",
+            showarrow=True, arrowhead=2, ax=20, ay=0,
+            font=dict(size=6, color=_C["dim"]), row=1, col=1,
         )
 
-        _dim_h(fig, -H - 0.25, -kc/2, kc/2, f"kc = {kc*1000:.0f}mm", row=1, col=col_idx)
-        _dim_v(fig, kc/2 + 0.05, 0, -H, f"H={H*1000:.0f}mm", row=1, col=col_idx)
-        _dim_v(fig, kc/2 + 0.05, 0, t_ban, f"t_bản={int(t_ban*1000)}mm",
-               color="#c0392b", row=1, col=col_idx)
+        # ── B-B: Đầu dầm / Mố — solid full-width block ──────────────────────
+        _poly(fig, [-hw, hw, hw, -hw], [t_ban, t_ban, 0, 0],
+              _C["ban"], _C["btong_dk"], "", sl=False, row=1, col=2)
+        _poly(fig, [-hw, hw, hw, -hw], [0, 0, -H, -H],
+              _C["dam"], _C["dam_dk"], "", sl=False, row=1, col=2, lw=2.0)
+        # Ống PVC D49
+        _pvc_r = 0.0245
+        _th    = np.linspace(0, 2*np.pi, 32)
+        _pzc   = -H + 0.15
+        _px    = list(_pvc_r * np.cos(_th));  _pz = list(_pzc + _pvc_r * np.sin(_th))
+        fig.add_trace(go.Scatter(
+            x=_px+[_px[0]], y=_pz+[_pz[0]],
+            fill="toself", fillcolor="rgba(41,128,185,0.25)",
+            line=dict(color="#2980b9", width=1.5),
+            mode="lines", name="Ống PVC D49", showlegend=True, hoverinfo="skip",
+        ), row=1, col=2)
+        fig.add_shape(type="line", x0=0, y0=-H-0.12, x1=0, y1=t_ban+0.08,
+                      line=dict(color=_C["axis"], width=1, dash="dashdot"), row=1, col=2)
+        _dim_h(fig, -H-0.30, -hw, hw, f"kc={kc*1000:.0f}mm (tổng rộng)", row=1, col=2)
+        _dim_v(fig, hw+0.06, 0.0, -H, f"H={H*1000:.0f}mm", row=1, col=2)
+        fig.add_annotation(
+            x=hw-0.12, y=-H+0.12, text="Vát góc\n20×20mm",
+            showarrow=True, arrowhead=2, ax=30, ay=-20,
+            font=dict(size=6, color=_C["dim"]),
+            bgcolor="rgba(255,255,255,0.8)", row=1, col=2,
+        )
 
-        if "super" in ll:
-            tin = d_info["tin_hw"]
-            w   = d_info["w_hw"] * (1.30 if at_end else 1.0)
-            w   = min(w, d_info["bf_hw"])
-            bf  = d_info["bf_hw"]
-            _dim_h(fig, -H - 0.45, -tin, tin, f"{tin*2000:.0f}mm (cánh trong)",
-                   color="#8e44ad", row=1, col=col_idx)
-            _dim_h(fig, -H - 0.60, -bf, bf, f"{bf*2000:.0f}mm (đáy dầm)",
-                   color="#27ae60", row=1, col=col_idx)
-            _dim_h(fig, -H - 0.75, -w, w,
-                   f"{w*2000:.0f}mm (web {'đầu' if at_end else 'giữa'})",
-                   color="#e67e22", row=1, col=col_idx)
-        elif "t ngược" in ll or "tngược" in ll:
-            bf = d_info["bf_hw"]
-            _dim_h(fig, -H - 0.45, -bf, bf, f"{bf*2000:.0f}mm (cánh đáy)",
-                   color="#27ae60", row=1, col=col_idx)
-        else:
-            fw = d_info["fw"]
-            _dim_h(fig, -H - 0.45, -fw, fw, f"{fw*2000:.0f}mm (cánh)",
-                   color="#27ae60", row=1, col=col_idx)
+        # ── C-C: Đầu dầm / Trụ — hẹp hơn (cánh trong) ──────────────────────
+        cc_hw = dd["tin_hw"]   # = 610mm ref → tổng 1220mm
+        _poly(fig, [-cc_hw, cc_hw, cc_hw, -cc_hw], [0, 0, -H, -H],
+              _C["dam"], _C["dam_dk"], "", sl=False, row=1, col=3, lw=2.0)
+        fig.add_shape(type="line", x0=0, y0=-H-0.12, x1=0, y1=0.08,
+                      line=dict(color=_C["axis"], width=1, dash="dashdot"), row=1, col=3)
+        _dim_h(fig, -H-0.30, -cc_hw, cc_hw, f"{cc_hw*2000:.0f}mm", row=1, col=3)
+        _dim_v(fig, cc_hw+0.06, 0.0, -H, f"H={H*1000:.0f}mm", row=1, col=3)
+        # Breakdown
+        _wall = dd["wall_t_top"]
+        _inn  = (cc_hw - _wall) * 2
+        fig.add_annotation(
+            x=0, y=-H-0.48,
+            text=f"{_wall*1000:.0f} + {_inn*1000:.0f} + {_wall*1000:.0f} = {cc_hw*2000:.0f}mm",
+            showarrow=False, font=dict(size=7, color=_C["dim"]),
+            bgcolor="rgba(255,255,255,0.85)", row=1, col=3,
+        )
 
-    margin = H * 0.3
-    fig.update_xaxes(
-        showgrid=True, gridcolor="#ecf0f1",
-        range=[-kc/2 - 0.35, kc/2 + 0.55],
-        scaleanchor="y", scaleratio=1,
-    )
-    fig.update_yaxes(
-        showgrid=True, gridcolor="#ecf0f1",
-        range=[-H - margin, t_ban + 0.4],
-    )
+        # Axes
+        margin = H * 0.40
+        for ci in [1, 2]:
+            fig.update_xaxes(range=[-hw-0.30, hw+0.60], showgrid=True,
+                             gridcolor="#ecf0f1", row=1, col=ci)
+            fig.update_yaxes(range=[-H-margin, t_ban+0.35], showgrid=True,
+                             gridcolor="#ecf0f1", row=1, col=ci)
+        fig.update_xaxes(range=[-cc_hw-0.25, cc_hw+0.55], showgrid=True,
+                         gridcolor="#ecf0f1", row=1, col=3)
+        fig.update_yaxes(range=[-H-margin, t_ban+0.35], showgrid=True,
+                         gridcolor="#ecf0f1", row=1, col=3)
+
+    else:
+        # Non-SPT: 2-panel layout (đầu dầm + giữa nhịp)
+        d_info = _tngược_dims(H, kc) if ("t ngược" in ll or "tngược" in ll) else _dami_dims(H, kc)
+        for col_idx, at_end in [(1, True), (2, False)]:
+            _panel_base(col_idx, at_end)
+            if "t ngược" in ll or "tngược" in ll:
+                bf = d_info["bf_hw"]
+                _dim_h(fig, -H-0.45, -bf, bf, f"{bf*2000:.0f}mm (cánh đáy)",
+                       color="#27ae60", row=1, col=col_idx)
+            else:
+                fw = d_info["fw"]
+                _dim_h(fig, -H-0.45, -fw, fw, f"{fw*2000:.0f}mm (cánh)",
+                       color="#27ae60", row=1, col=col_idx)
+        margin = H * 0.35
+        fig.update_xaxes(range=[-hw-0.30, hw+0.55], showgrid=True, gridcolor="#ecf0f1")
+        fig.update_yaxes(range=[-H-margin, t_ban+0.35], showgrid=True, gridcolor="#ecf0f1")
+
     fig.update_layout(
-        height=520, template="plotly_white",
+        height=610, template="plotly_white",
         legend=dict(orientation="h", y=-0.12, font=dict(size=9)),
-        margin=dict(l=50, r=30, t=70, b=90),
+        margin=dict(l=50, r=30, t=90, b=120),
         title=dict(
-            text=(f"CHI TIẾT MẶT CẮT NGANG — DẦM {loai.upper()}<br>"
+            text=(f"CHI TIẾT MẶT CẮT NGANG — DẦM {loai.upper()}  TỶ LỆ 1:25<br>"
                   f"<span style='font-size:10px'>"
                   f"H={H*1000:.0f}mm | kc={kc*1000:.0f}mm | t_bản={int(t_ban*1000)}mm"
                   f"</span>"),
@@ -611,95 +696,127 @@ def _extrude_profile(xs_2d, ys_2d, x_start, x_end, color, name, opacity=1.0,
     return [mesh, edges]
 
 
+def _box3d_simple(x0, y0, z0, x1, y1, z1,
+                  color="#8da3b0", opacity=0.94, name="", sl=True):
+    """Box Mesh3d đơn giản (8 đỉnh, 12 tam giác)."""
+    vx = [x0,x1,x1,x0, x0,x1,x1,x0]
+    vy = [y0,y0,y1,y1, y0,y0,y1,y1]
+    vz = [z0,z0,z0,z0, z1,z1,z1,z1]
+    ii = [0,0, 4,4, 0,0, 3,3, 0,0, 1,1]
+    jj = [1,2, 5,6, 1,5, 2,6, 3,7, 2,6]
+    kk = [2,3, 6,7, 5,4, 6,7, 7,4, 6,5]
+    return go.Mesh3d(
+        x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
+        color=color, opacity=opacity,
+        name=name, showlegend=sl and bool(name), flatshading=True,
+        lighting=dict(ambient=0.65, diffuse=0.85, specular=0.22),
+        hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
+    )
+
+
 def ve_chi_tiet_3d(d):
     """
-    Mô hình 3D một nhịp dầm với profile chính xác theo loại dầm.
-    x-axis = chiều dài dầm
-    y-axis = bề rộng ngang
-    z-axis = chiều cao
+    Mô hình 3D dầm — BỐ TRÍ CHUNG (1 dầm đơn) + khối đầu dầm tại mố/trụ.
+    x = chiều dài, y = bề rộng ngang, z = chiều cao.
     """
-    kcn  = d.get("kcn_result") or d.get("ai_result", {})
-    loai = str(kcn.get("loai_dam", "Super-T"))
-    ll   = loai.lower()
-    H    = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
-    L    = float(kcn.get("chieu_dai", 38.0))
-    kc   = float(kcn.get("khoang_cach_dam", 2.2))
+    kcn   = d.get("kcn_result") or d.get("ai_result", {})
+    loai  = str(kcn.get("loai_dam", "Super-T"))
+    ll    = loai.lower()
+    H     = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+    L     = float(kcn.get("chieu_dai", 38.0))
+    kc    = float(kcn.get("khoang_cach_dam", 2.2))
     n_dam = int(kcn.get("so_luong_dam") or 5)
-    oh   = float(kcn.get("overhang", 0.5))
-    bc   = float(d.get("bc", 12.0))
+    oh    = float(kcn.get("overhang", 0.5))
+    bc    = float(d.get("bc", 12.0))
     t_ban = float(d.get("t_ban_mm", 200)) / 1000.0
 
     traces = []
+    hw = kc / 2   # nửa rộng cánh dầm
 
-    # Vị trí tim các dầm
-    x_first = -bc/2 + oh
-    beam_positions = [x_first + i * kc for i in range(n_dam)]
+    # Vị trí tim dầm — hiển thị 1 dầm đơn đặt tại y=0 (thân dầm)
+    # Để thể hiện CẤU TẠO THÂN DẦM rõ nét
+    beam_positions = [0.0]   # 1 dầm tham chiếu
+    is_spt = "super" in ll
 
-    # Dầm — profile midspan (z0=0 = đỉnh dầm)
+    # ── Thân dầm chính (extrude profile mid-span) ────────────────────────────
+    L_end = min(0.75, L * 0.020)   # chiều dài khối đầu dầm
+    L_body_start = L_end
+    L_body_end   = L - L_end
+
     for i, yc in enumerate(beam_positions):
         sl = (i == 0)
-        xs_2d, zs_2d = _get_profile(ll, yc, 0.0, H, kc, at_end=False)
+        # Body: từ L_end đến L-L_end
+        xs_mid, zs_mid = _get_profile(ll, yc, 0.0, H, kc, at_end=False)
         traces += _extrude_profile(
-            xs_2d, zs_2d,
-            x_start=0.0, x_end=L,
+            xs_mid, zs_mid,
+            x_start=L_body_start, x_end=L_body_end,
             color=_C["dam"],
-            name=f"Dầm {loai}" if sl else "",
+            name=f"Thân dầm {loai} (A-A)" if sl else "",
             opacity=1.0,
         )
+        # Khối đầu dầm TẠI MỐ (x=0 đến L_end) — đầy đặc toàn tiết diện
+        traces.append(_box3d_simple(
+            0.0,      yc - hw, -H,
+            L_end,    yc + hw,  0.0,
+            color="#6c8498", opacity=0.97,
+            name="Khối đầu dầm/Mố (B-B)" if sl else "", sl=sl,
+        ))
+        # Khối đầu dầm TẠI TRỤ (x=L-L_end đến L)
+        traces.append(_box3d_simple(
+            L - L_end, yc - hw, -H,
+            L,         yc + hw,  0.0,
+            color="#7a96ac", opacity=0.97,
+            name="Khối đầu dầm/Trụ" if sl else "", sl=sl,
+        ))
 
-    # Bản mặt cầu (deck slab) — trong suốt vừa phải để thấy dầm
-    deck_xs = [-bc/2, bc/2, bc/2, -bc/2]
+    # ── Bản mặt cầu (semi-transparent) ──────────────────────────────────────
+    deck_ys = [-hw, hw, hw, -hw]
     deck_zs = [0.0, 0.0, t_ban, t_ban]
     traces += _extrude_profile(
-        deck_xs, deck_zs,
+        deck_ys, deck_zs,
         x_start=0.0, x_end=L,
         color="#bdc3c7",
-        name="Bản mặt cầu",
-        opacity=0.55,
+        name="Bản mặt cầu BTCT",
+        opacity=0.50,
         edge_color="#5d6d7e",
     )
 
-    # Gối dầm (bearing pads)
-    L_goi = min(0.75, L * 0.02)
+    # ── Gối dầm (bearing pads) ────────────────────────────────────────────────
+    goi_hw  = max(0.20, H * 0.18)
+    goi_t   = 0.06   # chiều dày gối
+    L_goi   = L_end  # vị trí gối trùng khối đầu dầm
     for i, yc in enumerate(beam_positions):
-        hw = max(0.20, H * 0.18)
         for xp in [0.0, L - L_goi]:
             sl_g = (i == 0 and xp == 0.0)
-            goi_x = [xp, xp+L_goi, xp+L_goi, xp, xp, xp+L_goi, xp+L_goi, xp]
-            goi_y = [yc-hw, yc-hw, yc+hw, yc+hw]*2
-            goi_z = [-H-0.06]*4 + [-H]*4
-            traces.append(go.Mesh3d(
-                x=goi_x, y=goi_y, z=goi_z,
-                i=[0,0,4,4,0,0,3,3,0,0,1,1],
-                j=[1,2,5,6,1,5,2,6,3,7,2,6],
-                k=[2,3,6,7,5,4,6,7,7,4,6,5],
+            traces.append(_box3d_simple(
+                xp, yc - goi_hw, -H - goi_t,
+                xp + L_goi, yc + goi_hw, -H,
                 color="#b7950b", opacity=1.0,
-                flatshading=True,
-                lighting=dict(ambient=0.6, diffuse=0.85, specular=0.2),
-                name="Gối dầm" if sl_g else "",
-                showlegend=sl_g,
+                name="Gối dầm" if sl_g else "", sl=sl_g,
             ))
 
     fig = go.Figure(data=traces)
     fig.update_layout(
         title=dict(
-            text=f"MÔ HÌNH 3D — {n_dam} DẦM {loai.upper()} | L={L:.1f}m | B={bc:.1f}m",
-            x=0.5, font=dict(size=12)
+            text=(f"BỐ TRÍ CHUNG DẦM {loai.upper()} — L={L:.1f}m | H={H*1000:.0f}mm | kc={kc*1000:.0f}mm<br>"
+                  f"<span style='font-size:10px'>Thân dầm (A-A) · Khối đầu/Mố (B-B) · Khối đầu/Trụ (C-C)</span>"),
+            x=0.5, font=dict(size=12),
         ),
         scene=dict(
-            xaxis=dict(title="Chiều dài (m)", backgroundcolor="#f0f0f0",
-                       gridcolor="#cccccc", showbackground=True),
-            yaxis=dict(title="Bề rộng ngang (m)", backgroundcolor="#e8e8e8",
-                       gridcolor="#cccccc", showbackground=True),
-            zaxis=dict(title="Chiều cao (m)", backgroundcolor="#e0e0e0",
-                       gridcolor="#cccccc", showbackground=True),
+            xaxis=dict(title="Chiều dài (m)", backgroundcolor="#f0f3f4",
+                       gridcolor="#d0d3d4", showbackground=True),
+            yaxis=dict(title="Bề rộng (m)", backgroundcolor="#eaf2f8",
+                       gridcolor="#d0d8e0", showbackground=True),
+            zaxis=dict(title="Chiều cao (m)", backgroundcolor="#eafaf1",
+                       gridcolor="#c8dfd4", showbackground=True),
             aspectmode="data",
-            camera=dict(eye=dict(x=-1.8, y=-2.2, z=0.9)),
+            camera=dict(eye=dict(x=-2.2, y=-1.8, z=1.1)),
             bgcolor="white",
         ),
-        height=580,
-        margin=dict(l=0, r=0, t=55, b=0),
-        legend=dict(font=dict(size=9), x=0.01, y=0.98),
+        height=620,
+        margin=dict(l=0, r=0, t=65, b=0),
+        legend=dict(font=dict(size=9), x=0.01, y=0.98,
+                    bgcolor="rgba(255,255,255,0.85)", borderwidth=0.5),
         paper_bgcolor="white",
     )
     return fig
@@ -859,8 +976,11 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix=""):
     )
     _render_param_table(d_loai, st)
 
-    # ① MCN A-A + B-B
-    st.markdown("**① Mặt cắt ngang — A-A (đầu dầm) và B-B (giữa dầm)**")
+    # ① MCN A-A + B-B + C-C
+    _mcn_label = ("**① Mặt cắt ngang — A-A (bụng dầm), B-B (đầu dầm/mố), C-C (đầu dầm/trụ)**"
+                  if "super" in loai_fixed.lower()
+                  else "**① Mặt cắt ngang — A-A (đầu dầm/gối) và B-B (giữa nhịp)**")
+    st.markdown(_mcn_label)
     try:
         fig_mcn = ve_chi_tiet_mcn(d_loai)
         st.plotly_chart(fig_mcn, use_container_width=True,

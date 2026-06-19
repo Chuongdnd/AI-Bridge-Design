@@ -746,18 +746,18 @@ def _beam_poly(fig, xc, H, loai, kc, t_ban):
         _poly(fig, xs, ys, _C["dam"], _C["dam_dk"], showlegend=False)
 
     elif "super" in ll:
-        # Dầm Super-T (SPT) — 14 điểm theo chi tiết bản vẽ SPT (PDF tham chiếu):
-        # Ref: H=1750mm → cánh trong=1220mm (225+770+225), đáy=1020mm (160+700+160)
-        # Tỷ lệ chuẩn hóa theo H (H/1.750):
+        # Dầm Super-T — ref H=1750mm, kc=2200mm:
+        # A-A: 490+100+1020+100+490=2200mm; đáy=160+700+160=1020mm
+        # haunch=75mm, web leg=110mm, đáy flange=225+50=275mm
         k      = H / 1.750
-        tf_hw  = kc / 2                              # cánh trên NGOÀI = toàn kc
-        tin_hw = min(kc/2 - 0.05, 0.610 * k)        # cánh trong = 1220/2 mm (ref)
-        tf_h   = max(0.150, 0.200 * k)              # dày cánh trên (200mm ref)
-        hau_h  = max(0.080, 0.150 * k)              # cao haunch (150mm ref)
-        w_hw   = max(0.230, 0.350 * k)              # nửa web song song (350mm ref)
-        bt_h   = max(0.030, 0.050 * k)              # vùng mở rộng web→cánh đáy
-        bf_hw  = max(0.380, 0.510 * k)              # nửa cánh đáy (510mm ref)
-        bf_h   = max(0.100, 0.150 * k)              # dày cánh đáy (150mm ref)
+        tf_hw  = kc / 2
+        tin_hw = min(kc/2 - 0.05, 0.610 * k)
+        tf_h   = max(0.150, 0.150 * k)
+        hau_h  = max(0.070, 0.075 * k)
+        w_hw   = max(0.280, 0.405 * k)
+        bt_h   = max(0.030, 0.050 * k)
+        bf_hw  = max(0.380, 0.510 * k)
+        bf_h   = max(0.150, 0.275 * k)
         xs = [
             xc-tf_hw, xc+tf_hw,        # 1,2 : đỉnh cánh ngoài (=kc, rộng)
             xc+tf_hw, xc+tin_hw,       # 3,4 : phải ngoài → haunch phải bắt đầu
@@ -1139,12 +1139,12 @@ def _spt_profile_yz(yd, z_top, H, kc):
     k      = H / 1.750
     tf_hw  = kc / 2
     tin_hw = min(kc/2 - 0.05, 0.610 * k)
-    tf_h   = max(0.150, 0.200 * k)
-    hau_h  = max(0.080, 0.150 * k)
-    w_hw   = max(0.230, 0.350 * k)
+    tf_h   = max(0.150, 0.150 * k)
+    hau_h  = max(0.070, 0.075 * k)
+    w_hw   = max(0.280, 0.405 * k)
     bt_h   = max(0.030, 0.050 * k)
     bf_hw  = max(0.380, 0.510 * k)
-    bf_h   = max(0.100, 0.150 * k)
+    bf_h   = max(0.150, 0.275 * k)
     z0 = z_top
     ys = [
         yd-tf_hw, yd+tf_hw,
