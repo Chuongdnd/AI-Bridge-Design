@@ -5,7 +5,11 @@ import os
 import importlib
 import google.generativeai as genai
 import fitz
-from streamlit_option_menu import option_menu
+try:
+    from streamlit_option_menu import option_menu
+    _HAS_OPTION_MENU = True
+except ImportError:
+    _HAS_OPTION_MENU = False
 import plotly.graph_objects as go
 
 # --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
@@ -774,37 +778,172 @@ def show_options_dialog():
                 )
 
 # =========================================================================
-# BỌC VÙNG ĐIỀU KHIỂN VÀO KHUNG HTML GHIM CỨNG
+# TRẠNG THÁI TAB & RIBBON TÙY CHỈNH
 # =========================================================================
-st.markdown('<div id="custom-ribbon-container">', unsafe_allow_html=True)
 
-ribbon_options = ["THUYẾT MINH", "BẢN VẼ KỸ THUẬT", "SO SÁNH PHƯƠNG ÁN"]
-# Map old tab names về mới
+# Map tên tab cũ về mới
 if st.session_state.current_tab == "BẢN VẼ KẾT CẤU":
     st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
-default_idx = ribbon_options.index(st.session_state.current_tab) if st.session_state.current_tab in ribbon_options else 1
 
-selected_ribbon = option_menu(
-    menu_title=None,
-    options=ribbon_options,
-    icons=["house", "rulers", "bar-chart-line"],
-    menu_icon="cast",
-    default_index=default_idx,
-    orientation="horizontal",
-    styles={
-        "container": {"padding": "0!important", "background-color": "#1e1e1e", "border-radius": "0px"},
-        "icon": {"color": "#f39c12", "font-size": "14px"},
-        "nav-link": {
-            "font-size": "13px", "text-align": "center", "margin": "0px", "color": "white",
-            "font-weight": "bold", "border-radius": "0px", "--hover-color": "#333333"
-        },
-        "nav-link-selected": {"background-color": "#007acc"},
-    }
-)
-st.session_state.current_tab = selected_ribbon
-st.markdown("<hr style='margin-top: 0px; margin-bottom: 10px; border-color: #007acc;'>", unsafe_allow_html=True)
 
-# Hàng nút bấm OPTIONS + thông số hiện hành
+def _get_tab_states(d: dict) -> dict:
+    """Trả về dict trạng thái 'done' | 'partial' | 'locked' cho 3 tab."""
+    has_kcn  = bool(d.get('kcn_result'))
+    has_tru  = bool(d.get('tru_result'))
+    has_mong = bool(d.get('mong_result'))
+    has_basic = bool(d.get('day_dam')) or bool(d.get('bc'))
+
+    # Tab 0 — THUYẾT MINH
+    if has_kcn and has_tru and has_mong:
+        tab0 = 'done'
+    elif has_basic:
+        tab0 = 'partial'
+    else:
+        tab0 = 'locked'
+
+    # Tab 1 — BẢN VẼ KỸ THUẬT
+    if has_kcn and has_tru:
+        tab1 = 'done'
+    elif has_kcn:
+        tab1 = 'partial'
+    else:
+        tab1 = 'locked'
+
+    # Tab 2 — SO SÁNH PHƯƠNG ÁN
+    alts = st.session_state.get('alternatives')
+    if alts is not None:
+        tab2 = 'done'
+    elif has_kcn:
+        tab2 = 'partial'
+    else:
+        tab2 = 'locked'
+
+    return {'tab0': tab0, 'tab1': tab1, 'tab2': tab2}
+
+
+tab_states = _get_tab_states(st.session_state.design_data)
+
+_STATE_STYLE = {
+    'done':    {'bg': '#0d3d1f', 'border': '#2ecc71', 'badge_bg': '#2ecc71',
+                'badge_text': '#0d3d1f', 'text': '#e0ffe8', 'icon': '✓'},
+    'partial': {'bg': '#3a2c00', 'border': '#f39c12', 'badge_bg': '#f39c12',
+                'badge_text': '#1a1000', 'text': '#fff3cc', 'icon': '⏳'},
+    'locked':  {'bg': '#1a1a2a', 'border': '#444466', 'badge_bg': '#333355',
+                'badge_text': '#9999bb', 'text': '#888899', 'icon': '○'},
+}
+_STATE_LABEL = {
+    'done':    'Hoàn tất',
+    'partial': 'Đang tính',
+    'locked':  'Chưa có dữ liệu',
+}
+_TAB_META = [
+    {
+        'key':      'THUYẾT MINH',
+        'icon':     '📋',
+        'state':    tab_states['tab0'],
+        'tip':      'Kết quả tính toán tổng hợp',
+        'lock_msg': 'Nhấn OPTIONS → OK để chạy tính toán',
+    },
+    {
+        'key':      'BẢN VẼ KỸ THUẬT',
+        'icon':     '📐',
+        'state':    tab_states['tab1'],
+        'tip':      'Bản vẽ 2D/3D kết cấu cầu',
+        'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
+    },
+    {
+        'key':      'SO SÁNH PHƯƠNG ÁN',
+        'icon':     '📊',
+        'state':    tab_states['tab2'],
+        'tip':      'So sánh 3 phương án loại dầm',
+        'lock_msg': 'Cần chạy tính toán nhịp trước',
+    },
+]
+
+# ── CSS ribbon ──────────────────────────────────────────────────────────────
+st.markdown("""
+<style>
+.ribbon-wrap {
+    display: flex; gap: 6px;
+    background: #141420; padding: 8px 8px 0 8px;
+    border-bottom: 2px solid #007acc; margin-bottom: 10px;
+}
+.ribbon-tab {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; gap: 3px;
+    padding: 8px 4px 6px; border-radius: 8px 8px 0 0;
+    border: 1px solid transparent; border-bottom: none;
+    transition: background 0.15s; text-decoration: none;
+}
+.ribbon-tab:hover { filter: brightness(1.2); }
+.ribbon-tab.active { border-color: var(--tab-border); background: var(--tab-bg) !important; }
+.ribbon-tab.locked { opacity: 0.65; }
+.tab-icon  { font-size: 18px; line-height: 1; }
+.tab-label { font-size: 12px; font-weight: 600; letter-spacing: 0.4px; }
+.tab-badge { font-size: 10px; font-weight: 600; padding: 1px 7px;
+             border-radius: 10px; margin-top: 1px; }
+.tab-tip   { font-size: 10px; opacity: 0.7; margin-top: 1px; }
+</style>
+""", unsafe_allow_html=True)
+
+# ── HTML ribbon (hiển thị trực quan) ────────────────────────────────────────
+_cur_tab = st.session_state.get('current_tab', 'THUYẾT MINH')
+_tabs_html = '<div class="ribbon-wrap">'
+for _m in _TAB_META:
+    _sc       = _STATE_STYLE[_m['state']]
+    _is_act   = (_cur_tab == _m['key'])
+    _cls      = ('active ' if _is_act else '') + ('locked' if _m['state'] == 'locked' else '')
+    _tabs_html += (
+        f'<div class="ribbon-tab {_cls}"'
+        f' style="background:{"#1e2a3a" if _is_act else "#1a1a2a"};'
+        f'--tab-bg:{_sc["bg"]};--tab-border:{_sc["border"]}">'
+        f'<span class="tab-icon">{_m["icon"]}</span>'
+        f'<span class="tab-label" style="color:{_sc["text"]}">{_m["key"]}</span>'
+        f'<span class="tab-badge" style="background:{_sc["badge_bg"]};color:{_sc["badge_text"]}">'
+        f'{_sc["icon"]} {_STATE_LABEL[_m["state"]]}</span>'
+        f'<span class="tab-tip" style="color:{_sc["text"]}">{_m["tip"]}</span>'
+        f'</div>'
+    )
+_tabs_html += '</div>'
+st.markdown(_tabs_html, unsafe_allow_html=True)
+
+# ── Nút điều hướng thực (ẩn visual, giữ click) ──────────────────────────────
+_col_tabs = st.columns(3)
+for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
+    with _col:
+        if _m['state'] == 'locked':
+            st.button(
+                f"{_m['icon']} {_m['key']}",
+                disabled=True,
+                use_container_width=True,
+                help=f"🔒 {_m['lock_msg']}",
+                key=f"ribbonbtn_{_ci}",
+            )
+        else:
+            if st.button(
+                f"{_m['icon']} {_m['key']}",
+                use_container_width=True,
+                type="primary" if (_cur_tab == _m['key']) else "secondary",
+                key=f"ribbonbtn_{_ci}",
+            ):
+                st.session_state.current_tab = _m['key']
+                st.rerun()
+
+# CSS thu nhỏ nút thật về 1px để HTML ribbon nổi
+st.markdown("""
+<style>
+div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) button {
+    opacity: 0 !important;
+    height: 1px !important;
+    min-height: 1px !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    pointer-events: auto !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
+# ── Hàng nút OPTIONS + thông số hiện hành ───────────────────────────────────
 ctrl_col1, ctrl_col2 = st.columns([1, 4])
 with ctrl_col1:
     _has_result = st.session_state.design_data.get('kcn_result') is not None
@@ -829,8 +968,6 @@ with ctrl_col2:
             f"</div>",
             unsafe_allow_html=True
         )
-
-st.markdown('</div>', unsafe_allow_html=True)
 
 # --- THANH SIDEBAR TRÁI (giữ nguyên như ban đầu) ---
 with st.sidebar:
@@ -882,6 +1019,8 @@ with st.sidebar:
 # =========================================================================
 # VÙNG HIỂN THỊ CHÍNH
 # =========================================================================
+selected_ribbon = st.session_state.get('current_tab', 'THUYẾT MINH')
+
 if selected_ribbon == "THUYẾT MINH":
     d = st.session_state.design_data
     kcn  = d.get('kcn_result')
@@ -1425,6 +1564,12 @@ if selected_ribbon == "THUYẾT MINH":
     st.caption("Kết quả mang tính tham khảo sơ bộ. Cần kiểm tra và điều chỉnh theo tiêu chuẩn TCVN hiện hành.")
 
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
+    _s1 = tab_states['tab1']
+    if _s1 == 'done':
+        st.success("✅ Dữ liệu đầy đủ — bản vẽ hiển thị kết quả tính toán mới nhất.")
+    elif _s1 == 'partial':
+        st.warning("⏳ Kết cấu nhịp đã có nhưng chưa tính xong trụ — một số bản vẽ có thể chưa đầy đủ.")
+
     d   = st.session_state.design_data
     kcn = d.get("kcn_result") or d.get("ai_result")
     tru = d.get("tru_result")
@@ -1911,6 +2056,12 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
 # SO SÁNH PHƯƠNG ÁN
 # =========================================================================
 elif selected_ribbon == "SO SÁNH PHƯƠNG ÁN":
+    _s2 = tab_states['tab2']
+    if _s2 == 'done':
+        st.success("✅ Đã có 3 phương án — đang hiển thị kết quả so sánh.")
+    elif _s2 == 'partial':
+        st.warning("⏳ Đã có kết quả nhịp — nhấn 'Tạo phương án' để sinh so sánh 3 loại dầm.")
+
     alts = st.session_state.get("alternatives", None)
     if alts is None:
         st.title("📊 So sánh 3 Phương án Loại Dầm")
