@@ -217,10 +217,10 @@ def _select_pile_size(pile_type, tai_trong, duong_kinh_tru=None):
 # ═══════════════════════════════════════════════════════════════════════════════
 # HÀM CHÍNH
 # ═══════════════════════════════════════════════════════════════════════════════
-def predict_foundation(dac_trung_dia_chat, tai_trong_dau_coc,
-                       loai_tru=None, duong_kinh_tru=None,
-                       is_urban=False, is_river=False,
-                       cao_do_dau_coc=None):
+def predict_foundation_geo(dac_trung_dia_chat, tai_trong_dau_coc,
+                           loai_tru=None, duong_kinh_tru=None,
+                           is_urban=False, is_river=False,
+                           cao_do_dau_coc=None):
     """
     Tư vấn móng cọc theo Rule-Based — TCVN 11823:2017 + TCVN 10304:2014.
 
@@ -399,6 +399,148 @@ def format_mong_report(res):
         for w in res["warnings"]:
             lines.append(f"  {w}")
     return "\n".join(lines)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# API TƯƠNG THÍCH — cho 00-Interface.py và 09-So_Sanh_PA.py
+# ═══════════════════════════════════════════════════════════════════════════════
+
+# Bảng tra đường kính cọc theo cấp sông
+_CAP_SONG_D_MM = {
+    "I": 1200, "II": 1000, "III": 1000, "IV": 800, "V": 800, "VI": 600,
+    1: 1200, 2: 1000, 3: 1000, 4: 800, 5: 800, 6: 600,
+}
+# Bảng tra tải trọng trục / m lane theo vtk
+_VTK_KN_M = {
+    "HL93": 14.0, "HS20": 12.0, "HS25": 14.5, "H30": 14.0,
+    "XB80": 8.0, "13.5T": 6.0, "30T": 14.0,
+    80: 14.0, 30: 14.0, 13.5: 6.0,
+}
+# Sức chịu tải thiết kế 1 cọc theo D(mm)
+_Q_TK_KN = {200: 250, 250: 400, 300: 600, 350: 900, 400: 1200, 450: 1500,
+             600: 800, 800: 1500, 1000: 2500, 1200: 4000, 1500: 6000}
+
+
+def train_foundation_ai(v3_path=None):
+    """Stub — module dùng rule-based, không cần file train."""
+    return None
+
+
+def predict_foundation(H_tru=None, loai_tru=None, is_river=False, cap_song="VI",
+                       B_cau=12.0, vtk=None, L_nhip=40.0, is_urban=False,
+                       foundation_models=None,
+                       dac_trung_dia_chat=None, tai_trong_dau_coc=None,
+                       duong_kinh_tru=None, cao_do_dau_coc=None):
+    """
+    Tư vấn móng cọc — Rule-Based (TCVN 11823:2017 / TCVN 10304:2014).
+
+    Hỗ trợ 2 chế độ gọi:
+    • Bridge-params (từ Interface + So_Sanh_PA):
+        predict_foundation(H_tru=…, B_cau=…, cap_song=…, vtk=…, L_nhip=…, …)
+    • Geo-data (từ Module 08 trực tiếp):
+        predict_foundation(dac_trung_dia_chat=…, tai_trong_dau_coc=…, …)
+    """
+    # ── Chế độ geo-data: ủy thác cho hàm chi tiết ────────────────────────────
+    if dac_trung_dia_chat is not None:
+        return predict_foundation_geo(
+            dac_trung_dia_chat, tai_trong_dau_coc or 800.0,
+            loai_tru=loai_tru, duong_kinh_tru=duong_kinh_tru,
+            is_urban=bool(is_urban), is_river=bool(is_river),
+            cao_do_dau_coc=cao_do_dau_coc,
+        )
+
+    # ── Chế độ bridge-params: ước tính từ thông số cầu ───────────────────────
+    H   = float(H_tru  or 5.0)
+    L   = float(L_nhip or 40.0)
+    B   = float(B_cau  or 12.0)
+    cap = str(cap_song).upper() if not isinstance(cap_song, (int, float)) else cap_song
+
+    # Đường kính cọc
+    D_mm = _CAP_SONG_D_MM.get(cap, 800)
+    if H > 12:  D_mm = max(D_mm, 1000)
+    if L > 60:  D_mm = max(D_mm, 1200)
+
+    # Loại cọc
+    _river = bool(is_river)
+    _urban = bool(is_urban)
+    if _river and cap in ("I", "II", 1, 2):
+        loai_coc = "Cọc khoan nhồi BTCT"
+        D_txt    = f"D{D_mm}mm"
+        pp_tc    = "Khoan nhồi"
+    elif _urban:
+        loai_coc = "Cọc ép BTCT DƯL"
+        D_txt    = f"Ø{D_mm}mm"
+        pp_tc    = "Ép thuỷ lực"
+    else:
+        loai_coc = "Cọc đóng BTCT DƯL"
+        D_txt    = f"Ø{D_mm}mm"
+        pp_tc    = "Đóng búa diesel"
+
+    # Chiều dài cọc (ước tính từ H_tru + cấp sông)
+    _depth_extra = {
+        "I": 20, "II": 16, "III": 12, "IV": 10, "V": 8, "VI": 6,
+        1: 20, 2: 16, 3: 12, 4: 10, 5: 8, 6: 6,
+    }.get(cap, 8)
+    L_est = max(20.0, H * 3.2 + _depth_extra)
+    L_tu  = int(L_est * 0.85)
+    L_den = int(L_est * 1.20)
+
+    # Tải trọng bệ → số cọc
+    _q   = _VTK_KN_M.get(vtk, 12.0)
+    P_be = max(500.0, L * B * _q * 0.35)
+    Q_tk = _Q_TK_KN.get(D_mm, 800)
+    So_coc  = max(4, math.ceil(P_be / (Q_tk * 0.7)))
+    n_cols  = math.ceil(math.sqrt(So_coc))
+    So_tu   = max(4, (round(So_coc * 0.80 / 2) * 2))
+    So_den  = max(So_tu + 2, (round(So_coc * 1.25 / 2) * 2))
+
+    # Bệ cọc
+    D_m    = D_mm / 1000.0
+    kt_tim = round(3.0 * D_m, 2)
+    kt_mep = round(1.5 * D_m, 2)
+    Be_W   = round((n_cols - 1) * kt_tim + 2 * kt_mep, 1)
+    Be_H   = round(max(1.0, 1.5 * D_m), 1)
+    be_txt = f"{Be_W}m × {Be_W}m × {Be_H}m"
+
+    return {
+        # ── Keys tương thích cũ (00-Interface, 09-So_Sanh_PA) ────────────────
+        "loai_mong":            loai_coc,
+        "D_coc_chon_txt":       D_txt,
+        "D_coc_mm":             D_mm,
+        "L_coc_tu":             L_tu,
+        "L_coc_den":            L_den,
+        "So_coc_tu":            So_tu,
+        "So_coc_den":           So_den,
+        "kich_thuoc_be_goi_y":  be_txt,
+        "phuong_phap_thi_cong": pp_tc,
+        # ── Keys mới (11-BanVe_KetCau) ────────────────────────────────────────
+        "chieu_dai_coc":        L_tu,
+        "so_coc_be":            So_coc,
+        "kich_thuoc_mm":        D_mm,
+        "Be_ngang":             Be_W,
+        "Be_doc":               Be_W,
+        "Be_cao":               Be_H,
+        "kich_thuoc_be":        be_txt,
+        "khoang_cach_tim_coc":  kt_tim,
+        "khoang_cach_mep_be":   kt_mep,
+        "n_cols_be":            n_cols,
+        "n_rows_be":            n_cols,
+        "Q_1coc_tk_kN":         Q_tk,
+        "tai_trong_be_kN":      round(P_be),
+        "phuong_phap":          "Rule-Based — ước tính từ thông số cầu",
+        "warnings": [
+            "📌 Chưa có dữ liệu địa chất thực tế — thông số cọc là ước tính "
+            "theo kinh nghiệm từ cap_song, H_tru, L_nhip. "
+            "Khai báo địa chất tại trang 01-Địa Chất để có kết quả chính xác hơn."
+        ],
+        "ly_do_chon": [
+            f"cap_song={cap_song}, H_tru={H:.1f}m, B_cau={B:.1f}m, L_nhip={L:.1f}m"
+        ],
+        "ghi_chu": (
+            f"{loai_coc} {D_txt}, L≈{L_tu}–{L_den}m, "
+            f"{So_tu}–{So_den}cọc/bệ (ước tính từ thông số cầu)."
+        ),
+    }
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
