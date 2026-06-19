@@ -24,6 +24,10 @@ st.markdown("""
 .stDeployButton                   { display: none !important; }
 #MainMenu                         { display: none !important; }
 footer                            { display: none !important; }
+[data-testid="stMetric"] {
+    background: #1a1a2a; border: 1px solid #333355; border-radius: 8px; padding: 8px 12px;
+}
+[data-testid="stMetricValue"] { font-size: 16px !important; color: #4fc3f7 !important; }
 </style>
 """, unsafe_allow_html=True)
 
@@ -124,90 +128,228 @@ if 'alternatives' not in st.session_state:
 if 'current_tab' not in st.session_state:
     st.session_state.current_tab = "THUYẾT MINH"
 
-# =========================================================================
-# ⚙️ HỘP THOẠI KHAI BÁO SỐ LIỆU
-# =========================================================================
-@st.dialog("⚙️ HỘP THOẠI KHAI BÁO THÔNG SỐ TUYẾN & THỦY VĂN", width="large")
-def show_options_dialog():
-    st.markdown("### 📥 Nhập các thông số hình học đầu vào công trình")
-    sec_in1, sec_in2, sec_in3 = st.columns(3)
-    
-    with sec_in1:
-        st.info("🌊 Phạm vi đề tài: Cầu vượt sông/kênh cấp IV–VI (TCVN 8818)")
-        goc_giao = st.number_input("Góc giao chéo (độ):", min_value=30.0, max_value=90.0, value=st.session_state.design_data.get('goc_giao', 90.0), step=1.0)
-        mien  = st.selectbox("Khu vực miền:", ["1", "2"], format_func=lambda x: "Miền Bắc" if x=="1" else "Miền Nam")
-        cap_s = st.selectbox("Cấp sông ĐTNĐ:", ["4", "5", "6", "3", "2", "1"],
-                             format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}")
-        loai_h = st.selectbox("Loại hình thủy văn:", ["1", "2"], format_func=lambda x: "Kênh đào" if x=="1" else "Sông tự nhiên")
-        st.markdown("**Điều kiện khu vực**")
-        is_urban_chk = st.checkbox("Khu vực đông dân cư (hạn chế tiếng ồn/rung)",
-                                   value=bool(st.session_state.design_data.get('is_urban', 0)),
-                                   help="Ảnh hưởng đến lựa chọn loại cọc: khu đông dân → ưu tiên cọc ép")
+if 'wizard_step' not in st.session_state:
+    st.session_state.wizard_step = 1
 
-    with sec_in2:
-        st.markdown("**Số liệu cao độ thủy văn (m)**")
-        # Gợi ý từ terrain đã nạp (nếu có)
-        _lt_min = _lt_max = None
-        if 'df_tim_line' in st.session_state and st.session_state.df_tim_line is not None:
-            _tl = st.session_state.df_tim_line
-            _lt_col = next((c for c in _tl.columns if 'ý trình' in c or c.lower()=='ly_trinh'), None)
-            if _lt_col:
-                _lt_min = float(_tl[_lt_col].min())
-                _lt_max = float(_tl[_lt_col].max())
-                _suggest = (_lt_min + _lt_max) / 2
-                st.info(f"🗺️ Địa hình: Lý trình {_lt_min:.1f} → {_lt_max:.1f}m  |  Gợi ý tim cầu ≈ **{_suggest:.1f}m**")
-        x_tim_clearance = st.number_input(
-            "📍 Lý trình tim tĩnh không (m)",
-            value=float(st.session_state.design_data.get('x_tim_clearance', 0.0)),
-            step=1.0, format="%.2f", key="x_tim_clearance",
-            help="Lý trình điểm tim cầu vượt qua sông/kênh. Phải nằm trong phạm vi lý trình file khảo sát."
-        )
-        # Cao độ tự nhiên: lấy THỰC theo từng điểm từ dữ liệu địa hình đã nạp
-        # (h_tn_tb chỉ còn dùng làm giá trị trung bình hiển thị / dự phòng khi
-        #  ngoài phạm vi khảo sát hoặc chưa nạp địa hình).
-        _df_tl = st.session_state.get('df_tim_line', None)
-        lt_diahinh_arr = None
-        z_diahinh_arr = None
-        if _df_tl is not None and not _df_tl.empty:
-            _lt_col_t = next((c for c in _df_tl.columns if 'ý trình' in c or c.lower()=='ly_trinh'), None)
-            _z_col_t  = next((c for c in _df_tl.columns if c.upper() == 'Z'), None)
-            if _lt_col_t and _z_col_t:
-                _mask_t = (
-                    (_df_tl[_lt_col_t] >= x_tim_clearance - 80) &
-                    (_df_tl[_lt_col_t] <= x_tim_clearance + 80)
+if 'wizard_draft' not in st.session_state:
+    st.session_state.wizard_draft = {}
+
+if 'wizard_errors' not in st.session_state:
+    st.session_state.wizard_errors = {}
+
+# =========================================================================
+# ⚙️ WIZARD KHAI BÁO SỐ LIỆU — 3 BƯỚC
+# =========================================================================
+def _render_wizard_progress(current: int, steps: list):
+    cols = st.columns(len(steps))
+    for i, (col, label) in enumerate(zip(cols, steps), 1):
+        with col:
+            if i < current:
+                st.markdown(
+                    f"<div style='text-align:center;padding:8px 4px;"
+                    f"background:#0d3d1f;border:1px solid #2ecc71;border-radius:8px'>"
+                    f"<div style='font-size:16px'>✅</div>"
+                    f"<div style='font-size:11px;color:#2ecc71;font-weight:600'>Bước {i}</div>"
+                    f"<div style='font-size:10px;color:#aaa'>{label}</div></div>",
+                    unsafe_allow_html=True,
                 )
-                _sub_t = _df_tl[_mask_t]
-                h_tn_tb = float(_sub_t[_z_col_t].mean()) if not _sub_t.empty else float(_df_tl[_z_col_t].mean())
-                lt_diahinh_arr = _df_tl[_lt_col_t].to_numpy()
-                z_diahinh_arr  = _df_tl[_z_col_t].to_numpy()
-                st.success(
-                    f"📐 Cao độ tự nhiên TB (từ địa hình ±80m): **{h_tn_tb:.3f} m** — "
-                    f"tính toán vị trí điểm đầu/cuối cầu sẽ dùng cao độ THỰC theo từng điểm."
+            elif i == current:
+                st.markdown(
+                    f"<div style='text-align:center;padding:8px 4px;"
+                    f"background:#1a2d45;border:2px solid #007acc;border-radius:8px'>"
+                    f"<div style='font-size:16px'>▶️</div>"
+                    f"<div style='font-size:11px;color:#4fc3f7;font-weight:700'>Bước {i} — Hiện tại</div>"
+                    f"<div style='font-size:10px;color:#ccc'>{label}</div></div>",
+                    unsafe_allow_html=True,
                 )
             else:
-                h_tn_tb = st.session_state.design_data.get('h_tn_tb', 0.0)
-                st.warning("⚠️ Không tìm thấy cột cao độ Z trong dữ liệu địa hình.")
-        else:
-            h_tn_tb = st.session_state.design_data.get('h_tn_tb', 0.0)
-            st.warning("⚠️ Chưa nạp file địa hình (.NTD). Nạp file để tính cao độ tự nhiên chính xác.")
-        h1  = st.number_input("Cao độ MNCN (H1%):",  value=st.session_state.design_data.get('MNCN', 3.50), format="%.3f")
-        h5  = st.number_input("Cao độ MNTT (H5%):",  value=st.session_state.design_data.get('MNTT', 2.00), format="%.3f")
-        h10 = st.number_input("Cao độ MNTC (H10%):", value=st.session_state.design_data.get('MNTC', 1.50), format="%.3f")
-        h98 = st.number_input("Cao độ MNTN (H98%):", value=st.session_state.design_data.get('MNTN', 0.50), format="%.3f")
-        st.markdown("**Bản mặt cầu**")
-        t_ban_mm = st.number_input(
-            "Chiều dày bản mặt cầu (mm):",
-            min_value=175, max_value=350,
-            value=int(st.session_state.design_data.get('t_ban_mm', 200)),
-            step=5,
-            help="Tối thiểu 175 mm theo TCVN 11823-2017 Điều 9.7.1.1"
+                st.markdown(
+                    f"<div style='text-align:center;padding:8px 4px;"
+                    f"background:#1a1a2a;border:1px solid #333355;border-radius:8px;opacity:0.6'>"
+                    f"<div style='font-size:16px'>○</div>"
+                    f"<div style='font-size:11px;color:#888'>Bước {i}</div>"
+                    f"<div style='font-size:10px;color:#666'>{label}</div></div>",
+                    unsafe_allow_html=True,
+                )
+    st.markdown("<hr style='margin:12px 0 16px;border-color:#333'>", unsafe_allow_html=True)
+
+
+def _validate_step1(draft: dict) -> dict:
+    errs = {}
+    h1  = draft.get('h1',  0.0)
+    h5  = draft.get('h5',  0.0)
+    h10 = draft.get('h10', 0.0)
+    h98 = draft.get('h98', 0.0)
+    if h1 <= h5:
+        errs['h1']  = f"MNCN ({h1}) phải LỚN HƠN MNTT ({h5})"
+    if h5 <= h10:
+        errs['h5']  = f"MNTT ({h5}) phải LỚN HƠN MNTC ({h10})"
+    if h10 <= h98:
+        errs['h10'] = f"MNTC ({h10}) phải LỚN HƠN MNTN ({h98})"
+    if draft.get('x_tim_clearance', 0) == 0:
+        errs['x_tim'] = "Lý trình tim cầu chưa được nhập"
+    return errs
+
+
+def _validate_step2(draft: dict) -> dict:
+    errs = {}
+    vtk = draft.get('vtk', 0)
+    if vtk <= 0:
+        errs['vtk'] = "Vận tốc thiết kế phải lớn hơn 0"
+    bc = draft.get('bc', 0.0)
+    if bc < 3.5:
+        errs['bc'] = f"Chiều rộng cầu {bc}m có vẻ quá nhỏ (thông thường ≥ 7m)"
+    return errs
+
+
+@st.dialog("⚙️ KHAI BÁO THÔNG SỐ THIẾT KẾ", width="large")
+def show_options_dialog():
+    STEP_LABELS = ["Thủy văn & Vị trí", "Hình học tuyến", "Xem lại & Chạy AI"]
+    step  = st.session_state.wizard_step
+    draft = st.session_state.wizard_draft
+
+    _render_wizard_progress(step, STEP_LABELS)
+
+    # ═══════════════════════════════════════════════════════════════════
+    # BƯỚC 1 — THỦY VĂN & VỊ TRÍ
+    # ═══════════════════════════════════════════════════════════════════
+    if step == 1:
+        st.markdown("### 🌊 Thông số thủy văn & vị trí cầu")
+        st.info("📌 Phạm vi đề tài: Cầu vượt sông/kênh cấp IV–VI (TCVN 8818:2022)")
+
+        col_a, col_b = st.columns(2)
+        with col_a:
+            st.markdown("**📍 Vị trí & phân loại**")
+            mien = st.selectbox(
+                "Khu vực miền:",
+                ["1", "2"],
+                index=0 if draft.get('mien', '2') == '1' else 1,
+                format_func=lambda x: "Miền Bắc" if x == "1" else "Miền Nam",
+                key="wz_mien",
+            )
+            cap_s = st.selectbox(
+                "Cấp sông ĐTNĐ:",
+                ["4", "5", "6", "3", "2", "1"],
+                index=["4","5","6","3","2","1"].index(str(draft.get('cap_s', '4'))),
+                format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}",
+                key="wz_caps",
+            )
+            loai_h = st.selectbox(
+                "Loại hình thủy văn:",
+                ["1", "2"],
+                index=0 if draft.get('loai_h', '2') == '1' else 1,
+                format_func=lambda x: "Kênh đào" if x == "1" else "Sông tự nhiên",
+                key="wz_loaih",
+            )
+            goc_giao = st.number_input(
+                "Góc giao chéo (độ):",
+                min_value=30.0, max_value=90.0,
+                value=float(draft.get('goc_giao', st.session_state.design_data.get('goc_giao', 90.0))),
+                step=1.0, key="wz_goc",
+                help="90° = vuông góc. Cầu xiên < 75° cần kiểm tra thêm.",
+            )
+
+        with col_b:
+            st.markdown("**📏 Cao độ thủy văn (m)**")
+            st.caption("Thứ tự bắt buộc: MNCN > MNTT > MNTC > MNTN")
+
+            if 'df_tim_line' in st.session_state and st.session_state.df_tim_line is not None:
+                _tl = st.session_state.df_tim_line
+                _lt_col = next((c for c in _tl.columns if 'ý trình' in c or c.lower()=='ly_trinh'), None)
+                if _lt_col:
+                    _lt_min = float(_tl[_lt_col].min())
+                    _lt_max = float(_tl[_lt_col].max())
+                    st.info(f"🗺️ Địa hình: Lý trình {_lt_min:.1f} → {_lt_max:.1f}m  |  Gợi ý tim cầu ≈ **{(_lt_min+_lt_max)/2:.1f}m**")
+
+            x_tim_clearance = st.number_input(
+                "📍 Lý trình tim tĩnh không (m):",
+                value=float(draft.get('x_tim_clearance', st.session_state.design_data.get('x_tim_clearance', 0.0))),
+                step=1.0, format="%.2f", key="wz_xtim",
+                help="Lý trình điểm tim cầu vượt qua sông/kênh.",
+            )
+
+            _d = st.session_state.design_data
+            h1 = st.number_input(
+                "🔴 MNCN — Mực nước cao nhất H1% (m):",
+                value=float(draft.get('h1', _d.get('MNCN', 3.50))),
+                format="%.3f", key="wz_h1",
+                help="Mực nước cao nhất tần suất 1% — dùng tính an toàn va tàu",
+            )
+            h5 = st.number_input(
+                "🟠 MNTT — Mực nước thông thuyền H5% (m):",
+                value=float(draft.get('h5', _d.get('MNTT', 2.00))),
+                format="%.3f", key="wz_h5",
+                help="Mực nước thông thuyền — dùng tính chiều cao tĩnh không H",
+            )
+            h10 = st.number_input(
+                "🟡 MNTC — Mực nước thi công H10% (m):",
+                value=float(draft.get('h10', _d.get('MNTC', 1.50))),
+                format="%.3f", key="wz_h10",
+                help="Mực nước thi công tần suất 10%",
+            )
+            h98 = st.number_input(
+                "🔵 MNTN — Mực nước thấp nhất H98% (m):",
+                value=float(draft.get('h98', _d.get('MNTN', 0.50))),
+                format="%.3f", key="wz_h98",
+                help="Mực nước kiệt tần suất 98% — dùng ước tính chiều cao trụ",
+            )
+            if h1 and h5 and h10 and h98:
+                if h1 > h5 > h10 > h98:
+                    st.success(f"✅ Logic hợp lệ: {h1:.2f} > {h5:.2f} > {h10:.2f} > {h98:.2f}")
+                else:
+                    st.error("❌ Thứ tự cao độ sai — yêu cầu MNCN > MNTT > MNTC > MNTN")
+
+            st.markdown("**🏗️ Bản mặt cầu**")
+            t_ban_mm = st.number_input(
+                "Chiều dày bản mặt cầu (mm):",
+                min_value=175, max_value=350,
+                value=int(draft.get('t_ban_mm', _d.get('t_ban_mm', 200))),
+                step=5, key="wz_tban",
+                help="Tối thiểu 175mm theo TCVN 11823-2017 Điều 9.7.1.1",
+            )
+
+        errs1 = st.session_state.wizard_errors.get('step1', {})
+        if errs1:
+            for msg in errs1.values():
+                st.error(f"⚠️ {msg}")
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        _, btn_col = st.columns([3, 1])
+        with btn_col:
+            if st.button("Tiếp theo ▶", use_container_width=True, type="primary", key="wz_next1"):
+                st.session_state.wizard_draft.update({
+                    'mien': mien, 'cap_s': cap_s, 'loai_h': loai_h,
+                    'goc_giao': goc_giao, 'x_tim_clearance': x_tim_clearance,
+                    'h1': h1, 'h5': h5, 'h10': h10, 'h98': h98,
+                    't_ban_mm': t_ban_mm,
+                })
+                errs = _validate_step1(st.session_state.wizard_draft)
+                st.session_state.wizard_errors['step1'] = errs
+                if not errs:
+                    st.session_state.wizard_step = 2
+                    st.rerun()
+
+    # ═══════════════════════════════════════════════════════════════════
+    # BƯỚC 2 — HÌNH HỌC TUYẾN
+    # ═══════════════════════════════════════════════════════════════════
+    elif step == 2:
+        st.markdown("### 🛣️ Tiêu chuẩn hình học tuyến đường")
+
+        # Khởi tạo defaults — sẽ được ghi đè trong từng nhánh
+        v_hinhhoc     = draft.get('v_hinhhoc', 60)
+        d_hinhhoc     = draft.get('d_hinhhoc', '1')
+        input_tra_cuu = draft.get('input_tra_cuu', 60)
+        mcn_oto_override = {}
+        r_final_calc  = draft.get('r_final_calc', 5000)
+        i_final_calc  = draft.get('i_final_calc', 4.0)
+        res_geo       = {}
+
+        _lh_opts = ["Cao tốc", "O to", "Do thi"]
+        l_hinhhoc = st.selectbox(
+            "Loại đường thiết kế:",
+            _lh_opts,
+            index=_lh_opts.index(draft.get('l_hinhhoc', 'Do thi')),
         )
-
-    with sec_in3:
-        st.markdown("**Tiêu chuẩn hình học trắc dọc tuyến**")
-        l_hinhhoc = st.selectbox("Loại đường thiết kế:", ["Cao tốc", "O to", "Do thi"])
-
-        mcn_oto_override = {}   # chỉ có nội dung khi l_hinhhoc == "O to"
 
         if l_hinhhoc == "Cao tốc":
             d_hinhhoc = st.radio("Địa hình:", options=["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Khó khăn")
@@ -215,7 +357,6 @@ def show_options_dialog():
             v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list)
             input_tra_cuu = v_hinhhoc
 
-            # ── MCN cao tốc theo TCVN 5729:2012 Bảng 1 ──────────────────────
             _dpc_ct_labels = {
                 "co_lop_phu_khong_tru": "Có lớp phủ, không bố trí trụ công trình",
                 "co_lop_phu_co_tru":    "Có lớp phủ, có bố trí trụ công trình",
@@ -292,7 +433,6 @@ def show_options_dialog():
             d_hinhhoc = st.radio("Địa hình vùng:", ["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi")
             input_tra_cuu = cap_duong_oto
 
-            # ── MCN tối thiểu theo TCVN 4054:2005 (Bảng 6/7) + khai báo tùy chỉnh ──
             dia_hinh_mcn = "dong_bang" if d_hinhhoc == "1" else "nui"
             tra_mcn = YTHH.tra_cuu_mcn_oto(cap_duong_oto, dia_hinh_mcn)
             if tra_mcn.get("status") == "success":
@@ -332,7 +472,6 @@ def show_options_dialog():
                         help=f"Tối thiểu {tra_mcn['w_dpc_min']:g}m theo TCVN 4054:2005"
                              + (" (cấp này không bắt buộc có dải phân cách)." if tra_mcn['w_dpc_min'] == 0 else ".")
                     )
-                # ── Dải phân cách giữa (Bảng 8) — chỉ hiện khi có DPC ──
                 _dpc_labels = {
                     "be_tong_duc_san": "BT đúc sẵn, bó vỉa có lớp phủ (không có trụ)",
                     "co_tru_cot":      "Xây bó vỉa, có lớp phủ, có bố trí trụ công trình",
@@ -359,9 +498,8 @@ def show_options_dialog():
                             f"Bảng 8 ({_b8['w_toi_thieu']:g}m) cho loại '{_dpc_labels[loai_dpc_oto]}'."
                         )
                 else:
-                    loai_dpc_oto = "be_tong_duc_san"  # mặc định, không hiển thị
+                    loai_dpc_oto = "be_tong_duc_san"
 
-                # ── Độ dốc ngang mặt đường (Bảng 9) ──
                 _mat_labels = {
                     "btxm_bthua":    "Bê tông xi măng / bê tông nhựa (1.5–2.0%)",
                     "lat_da_tot":    "Mặt đường lát đá tốt, phẳng (2.0–3.0%)",
@@ -388,7 +526,6 @@ def show_options_dialog():
                     step=0.5, format="%.1f",
                     help=f"TCVN 4054:2005 Bảng 9: {_b9['i_min']:g}% – {_b9['i_max']:g}% cho loại mặt đường này."
                 )
-
                 mcn_oto_override = {
                     "cap_duong": cap_duong_oto, "dia_hinh": dia_hinh_mcn,
                     "so_lan": so_lan_oto, "w_lan": w_lan_oto,
@@ -401,7 +538,7 @@ def show_options_dialog():
             else:
                 st.warning(f"⚠️ {tra_mcn.get('message','Không tra được MCN tối thiểu.')}")
                 mcn_oto_override = {"cap_duong": cap_duong_oto, "dia_hinh": dia_hinh_mcn}
-        else:
+        else:  # Do thi
             loai_dt = st.selectbox("Phân loại đường đô thị:", ["Trục chính đô thị", "Đường chính đô thị", "Đường khu vực", "Đường nội bộ"])
             cap_dt = st.selectbox("Cấp kỹ thuật kỹ sư:", ["Đặc biệt", "Cấp I", "Cấp II"] if loai_dt == "Trục chính đô thị" else ["Cấp I", "Cấp II"])
             list_vtk = YTHH.get_vtk_goi_y_dothi(loai_dt, cap_dt)
@@ -409,7 +546,6 @@ def show_options_dialog():
             d_hinhhoc = st.radio("Địa hình đô thị:", ["1", "2"], format_func=lambda x: "Bằng phẳng" if x == "1" else "Khó khăn")
             input_tra_cuu = v_hinhhoc
 
-            # ── MCN đường đô thị — Bảng 10, 12, 13 TCVN 13592:2022 ────────────
             _dt_labels = {
                 "cao_toc_do_thi":   "Đường cao tốc đô thị",
                 "pho_chinh_chu_yeu":"Đường phố chính chủ yếu",
@@ -436,7 +572,6 @@ def show_options_dialog():
             tra_dt = YTHH.tra_cuu_mcn_do_thi(v_hinhhoc, loai_dt_mcn, dieu_kien_xd)
 
             if tra_dt.get("status") == "success":
-                # ── Hiển thị tra cứu ─────────────────────────────────────────
                 st.caption(
                     f"📐 **Bảng 10** — {tra_dt['mo_ta']} | VTK {v_hinhhoc} km/h | "
                     f"Làn tối thiểu: **{tra_dt['w_lan_min']:.2f}m** | "
@@ -462,7 +597,6 @@ def show_options_dialog():
                         f"**{tra_dt['he_min']:.1f}m**"
                     )
 
-                # ── Phần xe chạy ──────────────────────────────────────────────
                 st.markdown("**Phần xe chạy (Bảng 10):**")
                 _c1, _c2 = st.columns(2)
                 with _c1:
@@ -485,7 +619,6 @@ def show_options_dialog():
                         step=0.25, format="%.2f", key="w_le_dt",
                     )
 
-                # ── Dải phân cách (Bảng 14) ───────────────────────────────────
                 st.markdown("**Dải phân cách giữa (Bảng 14):**")
                 if tra_dt["co_dpc"] and tra_dt["dpc_min"] is not None:
                     w_dpc_dt = st.number_input(
@@ -504,7 +637,6 @@ def show_options_dialog():
                         min_value=0.0, value=0.0, step=0.5, format="%.2f", key="w_dpc_dt",
                     )
 
-                # ── Hè đường (Bảng 15) ────────────────────────────────────────
                 st.markdown("**Hè đường / Dải bên đường (Bảng 15):**")
                 _he_min_val = tra_dt["he_min"] if tra_dt["he_min"] is not None else 0.0
                 if _he_min_val > 0:
@@ -520,7 +652,6 @@ def show_options_dialog():
                         min_value=0.0, value=0.0, step=0.5, format="%.1f", key="w_he_dt",
                     )
 
-                # ── Dải trồng cây (Bảng 16 — tham khảo) ─────────────────────
                 with st.expander("📋 Bảng 16 — Kích thước tối thiểu dải trồng cây (tham khảo)"):
                     _tc_ref = tra_dt.get("trong_cay_ref", {})
                     _tc_labels = {
@@ -535,7 +666,6 @@ def show_options_dialog():
                         "Chiều rộng tối thiểu (m)": list(_tc_ref.values()),
                     }))
 
-                # ── Mặt đường và độ dốc ngang (Bảng 12) ─────────────────────
                 st.markdown("**Độ dốc ngang (Bảng 12):**")
                 _loai_mat_dt_labels = {
                     "btxm_bthua":      "Bê tông xi măng / bê tông nhựa",
@@ -572,7 +702,12 @@ def show_options_dialog():
                 st.warning(f"⚠️ {tra_dt.get('message','Không tra được MCN đô thị.')}")
                 mcn_oto_override = {"loai_dt": loai_dt_mcn, "dieu_kien_xd": dieu_kien_xd}
 
-        b_cau = st.number_input("Bề rộng Bc mặt cắt cầu (m):", min_value=6.0, value=st.session_state.design_data.get('bc', 12.0), step=0.5)
+        b_cau = st.number_input(
+            "Bề rộng Bc mặt cắt cầu (m):",
+            min_value=6.0,
+            value=float(draft.get('b_cau', st.session_state.design_data.get('bc', 12.0))),
+            step=0.5,
+        )
 
         res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
         r_final_calc = 5000
@@ -590,8 +725,7 @@ def show_options_dialog():
             r_final_calc = st.number_input(
                 "Bán kính đường cong đứng lồi R thiết kế (m):",
                 min_value=r_gh, value=max(r_tt, r_gh), step=100.0, format="%.0f",
-                help=f"Có thể chọn lớn hơn giá trị khuyến nghị, nhưng không được nhỏ hơn "
-                     f"giá trị giới hạn tối thiểu {r_gh:,.0f} m theo {res_geo['tieu_chuan']}."
+                help=f"Không được nhỏ hơn giá trị giới hạn tối thiểu {r_gh:,.0f} m theo {res_geo['tieu_chuan']}."
             )
 
             st.markdown("**Độ dốc dọc**")
@@ -605,179 +739,336 @@ def show_options_dialog():
             st.error(
                 f"❌ Không tra được yếu tố hình học cho loại đường **{l_hinhhoc}**: "
                 f"{res_geo.get('message', 'Lỗi không xác định')}. "
-                "Khi nhấn **OK**, hệ thống sẽ **không** chạy được AI pipeline."
+                "Khi nhấn **Tiếp theo**, hệ thống sẽ **không** chạy được AI pipeline."
             )
 
-    st.markdown("---")
-    
-    if st.button("💾 OK - Áp dụng cấu hình và Chạy dự báo AI", use_container_width=True, type="primary"):
-        with st.spinner("⚡ Đang chạy toàn bộ AI pipeline..."):
-            is_urban_val = 1 if is_urban_chk else 0
-            # ── Bước 1: Tĩnh không ───────────────────────────────────────────
-            res = TK.tra_cuu_tinh_khong_bridge(
-                mien=mien, cap_num=cap_s, loai_hinh=loai_h,
-                h1=h1, h5=h5, h10=h10, h98=h98, h_tn_tb=h_tn_tb
-            )
-            alpha_rad = np.radians(goc_giao)
-            res['B'] = round(res.get('B', 0) / np.sin(alpha_rad), 2) if goc_giao < 90 else res.get('B', 0)
-            res['goc_giao'] = goc_giao
-            res['h_tn_tb'] = h_tn_tb
-            res['MNCN'], res['MNTT'], res['MNTC'], res['MNTN'] = h1, h5, h10, h98
-            res['cap_song'] = cap_s
-            res['loai_doi_tuong_vuot'] = "Vượt sông"
-            res['t_ban_mm'] = t_ban_mm
-            res['is_urban'] = is_urban_val
-            res['x_tim_clearance'] = x_tim_clearance  # lưu để hiển thị lại lần sau
-            res['mcn_oto_input'] = mcn_oto_override   # khai báo MCN đường ô tô (nếu có)
+        # Lưu draft trên mỗi rerun của bước 2
+        _vtk_from_geo = (res_geo.get('v_thiet_ke', 60)
+                         if res_geo.get('status') == 'success'
+                         else draft.get('vtk', 60))
+        st.session_state.wizard_draft.update({
+            'l_hinhhoc': l_hinhhoc, 'v_hinhhoc': v_hinhhoc,
+            'd_hinhhoc': d_hinhhoc, 'input_tra_cuu': input_tra_cuu,
+            'mcn_oto_override': mcn_oto_override,
+            'b_cau': b_cau, 'bc': b_cau,
+            'r_final_calc': r_final_calc, 'i_final_calc': i_final_calc,
+            'vtk': _vtk_from_geo,
+            'res_geo_ok': res_geo.get('status') == 'success',
+        })
 
-            if res_geo.get("status") == "success":
-                # ── Bước 2: Hình học ─────────────────────────────────────────
-                res['R_hinh_hoc'] = r_final_calc
-                res['i_max_hinh_hoc'] = i_final_calc
-                res['geo_logic']  = YTHH.tinh_toan_geo_logic(
-                    res, h_tn_tb,
-                    res.get('day_dam', 0.0), x_tim_clearance=x_tim_clearance,
-                    lt_diahinh=lt_diahinh_arr, z_diahinh=z_diahinh_arr
-                )
-                res['bc']         = b_cau
-                res['loai_duong'] = l_hinhhoc
-                res['vtk']        = res_geo.get("v_thiet_ke", 60)
-
-                L_cau    = res['geo_logic'].get('L_cau', None)
-                moi_tr   = "Vượt sông"
-                v3_path  = os.path.join(os.path.dirname(__file__), "Data", "Bridge_Train_Dataset_v3.xlsx")
-
-                # ── Bước 3 (legacy GRD module — bo qua neu khong co file) ────
-                res['ai_result'] = None
-
-                # ── Bước 4: AI Kết cấu nhịp ──────────────────────────────────
-                try:
-                    kcn_models = KCN.train_kcn_ai(v3_path=v3_path)
-                except TypeError:
-                    kcn_models = KCN.train_kcn_ai()
-                except Exception as _e_train:
-                    kcn_models = None
-                    res['_kcn_error'] = f"train: {_e_train}"
-                try:
-                    _kcn_raw = KCN.predict_kcn(
-                        B_tk=res['B'], H_tk=res.get('H', 3.5),
-                        goc=goc_giao, B_cau=res['bc'],
-                        moi_truong=moi_tr, L_cau_tong=L_cau,
-                        models=kcn_models,
-                    )
-                    # predict_kcn v2 trả về {"pa1_chi_phi":{}, "pa2_my_quan":{}, "pa3_ai":{}}
-                    # Lấy pa1_chi_phi (tối ưu chi phí) làm kết quả chính
-                    if isinstance(_kcn_raw, dict) and "pa1_chi_phi" in _kcn_raw:
-                        _pa = dict(_kcn_raw["pa1_chi_phi"])
-                        _pa["do_tin_cay"] = 85 if kcn_models else 60
-                        res['kcn_result'] = _pa
-                        res['kcn_3_pa']   = _kcn_raw
-                    else:
-                        res['kcn_result'] = _kcn_raw  # format cũ tương thích
-                except Exception as _e_kcn:
-                    res['kcn_result'] = None
-                    res['_kcn_error'] = f"predict: {_e_kcn}"
-
-                # ── Bước 5: AI Mố – Trụ ──────────────────────────────────────
-                try:
-                    pier_models = MOT.train_pier_ai(v3_path=v3_path)
-                except TypeError:
-                    pier_models = MOT.train_pier_ai()
-                except Exception:
-                    pier_models = None
-                loai_dam_cho_tru = (
-                    res['kcn_result']['loai_dam'] if res.get('kcn_result')
-                    else (res.get('ai_result') or {}).get('loai_dam', 'Super-T')
-                )
-                H_dam_est = (
-                    res['kcn_result']['chieu_cao_dam'] if res.get('kcn_result')
-                    else (res.get('ai_result') or {}).get('chieu_cao', 1.75)
-                )
-                # Ước tính chiều cao trụ từ cao độ
-                _ph = MOT.estimate_pier_height(
-                    MNCN=h1, H_tinh_khong=res.get('H', 3.5),
-                    H_dam=H_dam_est, MNTN=h98
-                )
-                H_tru_est  = _ph['H_than_tru']
-                cao_day_dam = _ph['cao_day_dam']
-                cao_mat_cau = _ph['cao_mat_cau']
-                res['H_tru_est']  = H_tru_est
-                res['cao_day_dam'] = cao_day_dam
-                res['cao_mat_cau'] = cao_mat_cau
-
-                is_urban  = is_urban_val
-                is_river  = 1   # đề tài chỉ vượt sông
-                _n_nhip = res.get('kcn_result', {}).get('tong_so_nhip', 1) if res.get('kcn_result') else 1
-                res['tru_result'] = MOT.predict_pier(
-                    vtk=res['vtk'], B_cau=res['bc'],
-                    H_tru=H_tru_est, is_urban=is_urban,
-                    is_river=is_river, cap_song=res['cap_song'],
-                    loai_dam=loai_dam_cho_tru, n_nhip=_n_nhip,
-                    models=pier_models
-                )
-
-                # ── Bước 6: Móng cầu (AI + RB) ───────────────────────────────
-                loai_tru_str = (
-                    res['tru_result']['loai_tru'] if res.get('tru_result')
-                    else 'Thân cột 2 trụ'
-                )
-                fnd_models = MONG.train_foundation_ai(v3_path=v3_path)
-                res['mong_result'] = MONG.predict_foundation(
-                    H_tru=H_tru_est, loai_tru=loai_tru_str,
-                    is_river=is_river, cap_song=res['cap_song'],
-                    B_cau=res['bc'], vtk=res['vtk'],
-                    L_nhip=res.get('kcn_result', {}).get('chieu_dai') if res.get('kcn_result') else None,
-                    is_urban=is_urban_val,
-                    foundation_models=fnd_models
-                )
-
-                # ── Bước 7: Lớp phủ mặt cầu ──────────────────────────────────
-                res['lop_phu_result'] = LPC.tu_van_lop_phu(
-                    vtk=res['vtk'],
-                    loai_duong=res.get('loai_duong', 'Do thi'),
-                    L_nhip=res.get('kcn_result', {}).get('chieu_dai', 40) if res.get('kcn_result') else 40,
-                    moi_truong="Vượt sông"
-                )
-
-                st.session_state.design_data = res
-
-                # ── Bước 8: Sinh 3 phương án so sánh ──────────────────────
-                try:
-                    st.session_state.alternatives = SSP.generate_3_alternatives(
-                        B_tk=res['B'], H_tk=res.get('H', 3.5), goc=goc_giao,
-                        B_cau=res['bc'], moi_truong=moi_tr, L_cau=L_cau,
-                        kcn_models=kcn_models, pier_models=pier_models,
-                        fnd_models=fnd_models,
-                        MNCN=h1, H_tk_nhip=res.get('H', 3.5), h98=h98,
-                        cap_song=res['cap_song'], is_urban=is_urban_val,
-                        is_river=1, vtk=res['vtk'],
-                        pa1_kcn=res.get('kcn_result'),
-                        pa1_tru=res.get('tru_result'),
-                        pa1_mong=res.get('mong_result'),
-                    )
-                except Exception as _alt_err:
-                    st.session_state.alternatives = None
-                    st.warning(f"Không sinh được phương án so sánh: {_alt_err}")
-
-                kcn = res.get('kcn_result') or (res.get('ai_result') or {})
-                st.session_state.chatbot_context = (
-                    f"Vtk={res['vtk']}km/h | "
-                    f"LoaiDam={kcn.get('loai_dam','?')} | "
-                    f"L_nhip={kcn.get('chieu_dai','?')}m | "
-                    f"L_cau={res['geo_logic']['L_cau']:.1f}m | "
-                    f"LoaiTru={res.get('tru_result',{}).get('loai_tru','?')} | "
-                    f"LoaiMong={res.get('mong_result',{}).get('loai_mong','?')}"
-                )
-                st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
+        st.markdown("<br>", unsafe_allow_html=True)
+        btn_b, btn_f = st.columns([1, 1])
+        with btn_b:
+            if st.button("◀ Quay lại", use_container_width=True, key="wz_back2"):
+                st.session_state.wizard_step = 1
                 st.rerun()
-            else:
-                st.error(
-                    f"❌ Không tính được yếu tố hình học tuyến: "
-                    f"{res_geo.get('message', 'Lỗi không xác định')}. "
-                    "Kiểm tra lại **Loại đường**, **Vận tốc thiết kế** và **Địa hình** đã chọn."
-                )
+        with btn_f:
+            if st.button("Tiếp theo ▶", use_container_width=True, type="primary", key="wz_next2"):
+                errs = _validate_step2(st.session_state.wizard_draft)
+                st.session_state.wizard_errors['step2'] = errs
+                if not errs:
+                    st.session_state.wizard_step = 3
+                    st.rerun()
+                else:
+                    for msg in errs.values():
+                        st.error(f"⚠️ {msg}")
 
-# =========================================================================
+    # ═══════════════════════════════════════════════════════════════════
+    # BƯỚC 3 — XEM LẠI & CHẠY AI
+    # ═══════════════════════════════════════════════════════════════════
+    elif step == 3:
+        st.markdown("### ✅ Xem lại thông số & Chạy tính toán")
+        st.caption("Kiểm tra lại toàn bộ trước khi chạy pipeline AI.")
+
+        draft = st.session_state.wizard_draft
+
+        with st.expander("🌊 Thủy văn & Vị trí", expanded=True):
+            s1a, s1b, s1c = st.columns(3)
+            s1a.metric("Khu vực", "Miền Bắc" if draft.get('mien') == '1' else "Miền Nam")
+            s1b.metric("Cấp sông", f"Cấp {['I','II','III','IV','V','VI'][int(draft.get('cap_s',4))-1]}")
+            s1c.metric("Loại hình", "Kênh đào" if draft.get('loai_h') == '1' else "Sông tự nhiên")
+            s2a, s2b, s2c, s2d = st.columns(4)
+            s2a.metric("MNCN (H1%)", f"{draft.get('h1', 0):.3f} m")
+            s2b.metric("MNTT (H5%)", f"{draft.get('h5', 0):.3f} m")
+            s2c.metric("MNTC (H10%)", f"{draft.get('h10', 0):.3f} m")
+            s2d.metric("MNTN (H98%)", f"{draft.get('h98', 0):.3f} m")
+            st.caption(
+                f"📍 Tim cầu: **{draft.get('x_tim_clearance', 0):.2f} m** | "
+                f"Góc giao: **{draft.get('goc_giao', 90):.0f}°** | "
+                f"Bản mặt cầu: **{draft.get('t_ban_mm', 200)} mm**"
+            )
+
+        with st.expander("🛣️ Hình học tuyến", expanded=True):
+            _loai_map = {"Cao tốc": "🛣️ Cao tốc", "O to": "🚗 Ô tô", "Do thi": "🏙️ Đô thị"}
+            st.markdown(
+                f"Loại đường: **{_loai_map.get(draft.get('l_hinhhoc',''), '—')}** | "
+                f"Vtk: **{draft.get('vtk', '—')} km/h** | "
+                f"Địa hình: **{'Đồng bằng' if draft.get('d_hinhhoc')=='1' else 'Núi/Khó khăn'}**"
+            )
+            _mcn = draft.get('mcn_oto_override', {})
+            if _mcn:
+                st.caption(
+                    f"Số làn: {_mcn.get('so_lan', _mcn.get('n_lan_moi_chieu', '—'))} | "
+                    f"Rộng làn: {_mcn.get('w_lan', '—')} m | "
+                    f"Lề: {_mcn.get('w_le', _mcn.get('w_le_dat', '—'))} m"
+                )
+            st.caption(
+                f"Bc = **{draft.get('b_cau', 0):.1f} m** | "
+                f"R = **{draft.get('r_final_calc', 0):.0f} m** | "
+                f"i = **{draft.get('i_final_calc', 0):.1f} %**"
+            )
+
+        ed1, ed2, _ = st.columns([1, 1, 2])
+        with ed1:
+            if st.button("✏️ Sửa thủy văn", key="wz_edit1", use_container_width=True):
+                st.session_state.wizard_step = 1
+                st.rerun()
+        with ed2:
+            if st.button("✏️ Sửa hình học", key="wz_edit2", use_container_width=True):
+                st.session_state.wizard_step = 2
+                st.rerun()
+
+        st.markdown("---")
+        st.markdown("**🏘️ Điều kiện địa phương**")
+        is_urban_chk = st.checkbox(
+            "Khu vực đông dân cư (hạn chế tiếng ồn/rung)",
+            value=bool(draft.get('is_urban', st.session_state.design_data.get('is_urban', 0))),
+            help="Ảnh hưởng đến lựa chọn loại cọc: khu đông dân → ưu tiên cọc ép",
+            key="wz_urban",
+        )
+        st.session_state.wizard_draft['is_urban'] = int(is_urban_chk)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        back_col, run_col = st.columns([1, 2])
+        with back_col:
+            if st.button("◀ Quay lại", use_container_width=True, key="wz_back3"):
+                st.session_state.wizard_step = 2
+                st.rerun()
+        with run_col:
+            st.markdown(
+                "<p style='font-size:11px;color:#888;margin-bottom:4px'>"
+                "🤖 Pipeline AI: TK → Hình học → KCN → Trụ → Móng → Lớp phủ → Bản vẽ → So sánh PA</p>",
+                unsafe_allow_html=True,
+            )
+            submitted = st.button(
+                "🚀 CHẠY TÍNH TOÁN AI",
+                use_container_width=True,
+                type="primary",
+                key="wz_submit",
+            )
+
+        if submitted:
+            st.session_state.wizard_step   = 1
+            st.session_state.wizard_errors = {}
+
+            d = st.session_state.wizard_draft
+            mien             = d['mien']
+            cap_s            = d['cap_s']
+            loai_h           = d['loai_h']
+            goc_giao         = d['goc_giao']
+            h1               = d['h1']
+            h5               = d['h5']
+            h10              = d['h10']
+            h98              = d['h98']
+            t_ban_mm         = d['t_ban_mm']
+            x_tim_clearance  = d['x_tim_clearance']
+            l_hinhhoc        = d['l_hinhhoc']
+            v_hinhhoc        = d.get('v_hinhhoc', 60)
+            d_hinhhoc        = d.get('d_hinhhoc', '1')
+            input_tra_cuu    = d.get('input_tra_cuu', v_hinhhoc)
+            mcn_oto_override = d.get('mcn_oto_override', {})
+            b_cau            = d.get('b_cau', 12.0)
+            r_final_calc     = d.get('r_final_calc', 5000)
+            i_final_calc     = d.get('i_final_calc', 4.0)
+            is_urban_val     = d.get('is_urban', 0)
+
+            # Re-compute terrain data từ session state
+            _df_tl = st.session_state.get('df_tim_line', None)
+            lt_diahinh_arr = None
+            z_diahinh_arr  = None
+            h_tn_tb = st.session_state.design_data.get('h_tn_tb', 0.0)
+            if _df_tl is not None and not _df_tl.empty:
+                _lt_col_t = next((c for c in _df_tl.columns if 'ý trình' in c or c.lower()=='ly_trinh'), None)
+                _z_col_t  = next((c for c in _df_tl.columns if c.upper() == 'Z'), None)
+                if _lt_col_t and _z_col_t:
+                    _mask_t = ((_df_tl[_lt_col_t] >= x_tim_clearance - 80) &
+                               (_df_tl[_lt_col_t] <= x_tim_clearance + 80))
+                    _sub_t = _df_tl[_mask_t]
+                    h_tn_tb = float(_sub_t[_z_col_t].mean()) if not _sub_t.empty else float(_df_tl[_z_col_t].mean())
+                    lt_diahinh_arr = _df_tl[_lt_col_t].to_numpy()
+                    z_diahinh_arr  = _df_tl[_z_col_t].to_numpy()
+
+            # Re-call res_geo
+            res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
+
+            with st.spinner("⚡ Đang chạy toàn bộ AI pipeline..."):
+                # ── Bước 1: Tĩnh không ─────────────────────────────────────────
+                res = TK.tra_cuu_tinh_khong_bridge(
+                    mien=mien, cap_num=cap_s, loai_hinh=loai_h,
+                    h1=h1, h5=h5, h10=h10, h98=h98, h_tn_tb=h_tn_tb
+                )
+                alpha_rad = np.radians(goc_giao)
+                res['B'] = round(res.get('B', 0) / np.sin(alpha_rad), 2) if goc_giao < 90 else res.get('B', 0)
+                res['goc_giao'] = goc_giao
+                res['h_tn_tb'] = h_tn_tb
+                res['MNCN'], res['MNTT'], res['MNTC'], res['MNTN'] = h1, h5, h10, h98
+                res['cap_song'] = cap_s
+                res['loai_doi_tuong_vuot'] = "Vượt sông"
+                res['t_ban_mm'] = t_ban_mm
+                res['is_urban'] = is_urban_val
+                res['x_tim_clearance'] = x_tim_clearance
+                res['mcn_oto_input'] = mcn_oto_override
+
+                if res_geo.get("status") == "success":
+                    # ── Bước 2: Hình học ───────────────────────────────────────
+                    res['R_hinh_hoc'] = r_final_calc
+                    res['i_max_hinh_hoc'] = i_final_calc
+                    res['geo_logic']  = YTHH.tinh_toan_geo_logic(
+                        res, h_tn_tb,
+                        res.get('day_dam', 0.0), x_tim_clearance=x_tim_clearance,
+                        lt_diahinh=lt_diahinh_arr, z_diahinh=z_diahinh_arr
+                    )
+                    res['bc']         = b_cau
+                    res['loai_duong'] = l_hinhhoc
+                    res['vtk']        = res_geo.get("v_thiet_ke", 60)
+
+                    L_cau  = res['geo_logic'].get('L_cau', None)
+                    moi_tr = "Vượt sông"
+                    v3_path = os.path.join(os.path.dirname(__file__), "Data", "Bridge_Train_Dataset_v3.xlsx")
+
+                    # ── Bước 3 (legacy GRD — bỏ qua nếu không có file) ─────────
+                    res['ai_result'] = None
+
+                    # ── Bước 4: AI Kết cấu nhịp ────────────────────────────────
+                    try:
+                        kcn_models = KCN.train_kcn_ai(v3_path=v3_path)
+                    except TypeError:
+                        kcn_models = KCN.train_kcn_ai()
+                    except Exception as _e_train:
+                        kcn_models = None
+                        res['_kcn_error'] = f"train: {_e_train}"
+                    try:
+                        _kcn_raw = KCN.predict_kcn(
+                            B_tk=res['B'], H_tk=res.get('H', 3.5),
+                            goc=goc_giao, B_cau=res['bc'],
+                            moi_truong=moi_tr, L_cau_tong=L_cau,
+                            models=kcn_models,
+                        )
+                        if isinstance(_kcn_raw, dict) and "pa1_chi_phi" in _kcn_raw:
+                            _pa = dict(_kcn_raw["pa1_chi_phi"])
+                            _pa["do_tin_cay"] = 85 if kcn_models else 60
+                            res['kcn_result'] = _pa
+                            res['kcn_3_pa']   = _kcn_raw
+                        else:
+                            res['kcn_result'] = _kcn_raw
+                    except Exception as _e_kcn:
+                        res['kcn_result'] = None
+                        res['_kcn_error'] = f"predict: {_e_kcn}"
+
+                    # ── Bước 5: AI Mố – Trụ ────────────────────────────────────
+                    try:
+                        pier_models = MOT.train_pier_ai(v3_path=v3_path)
+                    except TypeError:
+                        pier_models = MOT.train_pier_ai()
+                    except Exception:
+                        pier_models = None
+                    loai_dam_cho_tru = (
+                        res['kcn_result']['loai_dam'] if res.get('kcn_result')
+                        else (res.get('ai_result') or {}).get('loai_dam', 'Super-T')
+                    )
+                    H_dam_est = (
+                        res['kcn_result']['chieu_cao_dam'] if res.get('kcn_result')
+                        else (res.get('ai_result') or {}).get('chieu_cao', 1.75)
+                    )
+                    _ph = MOT.estimate_pier_height(
+                        MNCN=h1, H_tinh_khong=res.get('H', 3.5),
+                        H_dam=H_dam_est, MNTN=h98
+                    )
+                    H_tru_est  = _ph['H_than_tru']
+                    cao_day_dam = _ph['cao_day_dam']
+                    cao_mat_cau = _ph['cao_mat_cau']
+                    res['H_tru_est']   = H_tru_est
+                    res['cao_day_dam'] = cao_day_dam
+                    res['cao_mat_cau'] = cao_mat_cau
+
+                    is_urban = is_urban_val
+                    is_river = 1
+                    _n_nhip = res.get('kcn_result', {}).get('tong_so_nhip', 1) if res.get('kcn_result') else 1
+                    res['tru_result'] = MOT.predict_pier(
+                        vtk=res['vtk'], B_cau=res['bc'],
+                        H_tru=H_tru_est, is_urban=is_urban,
+                        is_river=is_river, cap_song=res['cap_song'],
+                        loai_dam=loai_dam_cho_tru, n_nhip=_n_nhip,
+                        models=pier_models
+                    )
+
+                    # ── Bước 6: Móng cầu ───────────────────────────────────────
+                    loai_tru_str = (
+                        res['tru_result']['loai_tru'] if res.get('tru_result')
+                        else 'Thân cột 2 trụ'
+                    )
+                    fnd_models = MONG.train_foundation_ai(v3_path=v3_path)
+                    res['mong_result'] = MONG.predict_foundation(
+                        H_tru=H_tru_est, loai_tru=loai_tru_str,
+                        is_river=is_river, cap_song=res['cap_song'],
+                        B_cau=res['bc'], vtk=res['vtk'],
+                        L_nhip=res.get('kcn_result', {}).get('chieu_dai') if res.get('kcn_result') else None,
+                        is_urban=is_urban_val,
+                        foundation_models=fnd_models
+                    )
+
+                    # ── Bước 7: Lớp phủ mặt cầu ────────────────────────────────
+                    res['lop_phu_result'] = LPC.tu_van_lop_phu(
+                        vtk=res['vtk'],
+                        loai_duong=res.get('loai_duong', 'Do thi'),
+                        L_nhip=res.get('kcn_result', {}).get('chieu_dai', 40) if res.get('kcn_result') else 40,
+                        moi_truong="Vượt sông"
+                    )
+
+                    st.session_state.design_data = res
+
+                    # ── Bước 8: Sinh 3 phương án so sánh ──────────────────────
+                    try:
+                        st.session_state.alternatives = SSP.generate_3_alternatives(
+                            B_tk=res['B'], H_tk=res.get('H', 3.5), goc=goc_giao,
+                            B_cau=res['bc'], moi_truong=moi_tr, L_cau=L_cau,
+                            kcn_models=kcn_models, pier_models=pier_models,
+                            fnd_models=fnd_models,
+                            MNCN=h1, H_tk_nhip=res.get('H', 3.5), h98=h98,
+                            cap_song=res['cap_song'], is_urban=is_urban_val,
+                            is_river=1, vtk=res['vtk'],
+                            pa1_kcn=res.get('kcn_result'),
+                            pa1_tru=res.get('tru_result'),
+                            pa1_mong=res.get('mong_result'),
+                        )
+                    except Exception as _alt_err:
+                        st.session_state.alternatives = None
+                        st.warning(f"Không sinh được phương án so sánh: {_alt_err}")
+
+                    kcn = res.get('kcn_result') or (res.get('ai_result') or {})
+                    st.session_state.chatbot_context = (
+                        f"Vtk={res['vtk']}km/h | "
+                        f"LoaiDam={kcn.get('loai_dam','?')} | "
+                        f"L_nhip={kcn.get('chieu_dai','?')}m | "
+                        f"L_cau={res['geo_logic']['L_cau']:.1f}m | "
+                        f"LoaiTru={res.get('tru_result',{}).get('loai_tru','?')} | "
+                        f"LoaiMong={res.get('mong_result',{}).get('loai_mong','?')}"
+                    )
+                    st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
+                    st.rerun()
+                else:
+                    st.error(
+                        f"❌ Không tính được yếu tố hình học tuyến: "
+                        f"{res_geo.get('message', 'Lỗi không xác định')}. "
+                        "Kiểm tra lại **Loại đường**, **Vận tốc thiết kế** và **Địa hình** đã chọn."
+                    )
+
+    # ── Fallback: step ngoài phạm vi → reset ───────────────────────────────
+    else:
+        st.session_state.wizard_step = 1
+        st.rerun()
+
+
 # TRẠNG THÁI TAB & RIBBON TÙY CHỈNH
 # =========================================================================
 
@@ -946,13 +1237,17 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
 # ── Hàng nút OPTIONS + thông số hiện hành ───────────────────────────────────
 ctrl_col1, ctrl_col2 = st.columns([1, 4])
 with ctrl_col1:
-    _has_result = st.session_state.design_data.get('kcn_result') is not None
+    _has_result = bool(st.session_state.design_data.get('kcn_result'))
+    _btn_label  = "⚙️ CHỈNH SỬA SỐ LIỆU" if _has_result else "⚙️ OPTIONS — KHAI BÁO SỐ LIỆU"
     if st.button(
-        "⚙️ OPTIONS - KHAI BÁO SỐ LIỆU",
+        _btn_label,
         use_container_width=True,
         type="secondary" if _has_result else "primary",
         help="Nhấn để mở hộp thoại nhập thông số — bắt buộc trước khi tính toán",
+        key="btn_options_main",
     ):
+        if not st.session_state.wizard_draft:
+            st.session_state.wizard_step = 1
         show_options_dialog()
 with ctrl_col2:
     if st.session_state.design_data.get('kcn_result') or (st.session_state.design_data.get('ai_result') or {}).get('loai_dam'):
