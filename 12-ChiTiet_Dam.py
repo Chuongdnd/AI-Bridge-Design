@@ -130,39 +130,104 @@ def _dami_dims(H, kc):
     }
 
 
-def _spt_profile(xc, z0, H, kc, at_end=False):
+def _spt_key_coords(H, kc):
     """
-    Profile 14 điểm dầm SPT (Super-T).
-    z0 = cao độ đỉnh dầm (= đáy bản mặt cầu).
-    at_end=True → web rộng hơn tại đầu dầm (vùng gối).
+    Tính các tọa độ chính xác từ bản vẽ tham chiếu SPT L38.2m.
+    H=1750mm, kc=2200mm: 490+100+1020+100+490=2200, đáy 160+700+160=1020.
+    Chia đứng: 150 + 75 + 75 + 875 + 300 + 225 + 50 = 1750mm.
     """
-    d = _spt_dims(H, kc)
-    # Tại đầu dầm: web rộng hơn (thêm 30% để tạo vùng gối chắc)
-    w = d["w_hw"] * (1.30 if at_end else 1.0)
-    w = min(w, d["bf_hw"])
+    k  = H / 1.750
+    ks = kc / 2.200
+    return dict(
+        p_out  = kc / 2,           # 1100mm — cạnh ngoài cánh trên
+        p_wing = 0.610 * ks,       # 610mm  — cạnh trong cánh ngoài (490+100+10 adj)
+        p_wot  = 0.405 * ks,       # 405mm  — mặt ngoài web song song
+        p_wit  = 0.295 * ks,       # 295mm  — mặt trong web (= 405-110)
+        p_vt   = 0.510 * ks,       # 510mm  — mép khoang rỗng tại đỉnh (= 1020/2)
+        p_bf   = 0.510 * ks,       # 510mm  — nửa đáy (= 1020/2)
+        p_cham = 0.510*ks - 0.020, # 490mm  — vát góc 20mm
+        # Z levels (mét từ đỉnh, âm = xuống)
+        z_tf  = -0.150 * k,        # -150mm: đáy cánh trên
+        z_s1  = -0.225 * k,        # -225mm: vai (shoulder, 75mm dưới)
+        z_h   = -0.300 * k,        # -300mm: đỉnh web song song (=haunch xong)
+        z_wb  = -1.175 * k,        # -1175mm: đáy web song song (875mm)
+        z_spl = -1.475 * k,        # -1475mm: đỉnh cánh đáy (sau splay 300mm)
+        z_bfm = -1.700 * k,        # -1700mm: giữa cánh đáy (225mm)
+        z_bot = -H,                # -1750mm: đáy tuyệt đối (50mm + chamfer)
+    )
 
+
+def _spt_profile(xc, z0, H, kc, at_end=False, cc_mode=False):
+    """
+    Profile dầm SPT chính xác từ bản vẽ tham chiếu.
+    at_end=True : B-B — hình chữ nhật đặc (full kc × H)
+    cc_mode=True: C-C — tiết diện trong 1220mm (± p_wing từ tâm)
+    Mặc định     : A-A — 18 điểm Π-profile tại bụng dầm
+    """
+    c  = _spt_key_coords(H, kc)
+    z0f = z0   # đỉnh dầm
+
+    # Levels tuyệt đối
+    z_tf  = z0f + c["z_tf"]
+    z_s1  = z0f + c["z_s1"]
+    z_h   = z0f + c["z_h"]
+    z_wb  = z0f + c["z_wb"]
+    z_spl = z0f + c["z_spl"]
+    z_bfm = z0f + c["z_bfm"]
+    z_bot = z0f + c["z_bot"]
+
+    if at_end:
+        # B-B: solid rectangle full kc × H (đầu dầm/mố)
+        return ([xc-c["p_out"], xc+c["p_out"], xc+c["p_out"], xc-c["p_out"]],
+                [z0f,           z0f,            z_bot,         z_bot        ])
+
+    # ── A-A / C-C: 18/16-point Π-profile ────────────────────────────────────
+    # Outer boundary x
+    po = c["p_wing"] if cc_mode else c["p_out"]   # top-outer half-width
     xs = [
-        xc - d["tf_hw"], xc + d["tf_hw"],    # 1,2: đỉnh cánh ngoài (=kc)
-        xc + d["tf_hw"], xc + d["tin_hw"],   # 3,4: phải ngoài → haunch phải
-        xc + w,                               # 5: cuối haunch phải (đỉnh web)
-        xc + w,                               # 6: đáy web phải
-        xc + d["bf_hw"], xc + d["bf_hw"],    # 7,8: cánh đáy phải
-        xc - d["bf_hw"], xc - d["bf_hw"],    # 9,10: cánh đáy trái
-        xc - w,                               # 11: đáy web trái
-        xc - w,                               # 12: đỉnh web trái
-        xc - d["tin_hw"], xc - d["tf_hw"],   # 13,14: haunch trái → ngoài trái
+        xc-po,           xc+po,            # 1,2 : top outer corners
+        xc+po,           xc+c["p_wing"],   # 3,4 : right outer step (skip if C-C)
+        xc+c["p_wing"],                    # 5   : right shoulder top
+        xc+c["p_wot"],                     # 6   : right haunch bottom → web start
+        xc+c["p_wot"],                     # 7   : right web bottom (parallel)
+        xc+c["p_bf"],                      # 8   : right splay end → flange outer
+        xc+c["p_bf"],                      # 9   : right flange mid
+        xc+c["p_cham"],                    # 10  : right chamfer bottom
+        xc-c["p_cham"],                    # 11  : left chamfer bottom
+        xc-c["p_bf"],                      # 12  : left flange mid
+        xc-c["p_bf"],                      # 13  : left splay end
+        xc-c["p_wot"],                     # 14  : left web bottom
+        xc-c["p_wot"],                     # 15  : left web top
+        xc-c["p_wing"],                    # 16  : left haunch bottom / shoulder bottom
+        xc-c["p_wing"],                    # 17  : left shoulder top
+        xc-po,                             # 18  : left outer step (skip if C-C)
     ]
     ys = [
-        z0, z0,                                           # 1,2
-        z0 - d["tf_h"], z0 - d["tf_h"],                  # 3,4: đáy cánh trên
-        z0 - d["tf_h"] - d["hau_h"],                     # 5: cuối haunch (đỉnh web)
-        z0 - H + d["bf_h"] + d["bt_h"],                  # 6: đáy web
-        z0 - H + d["bf_h"], z0 - H,                      # 7,8: cánh đáy phải
-        z0 - H, z0 - H + d["bf_h"],                      # 9,10: cánh đáy trái
-        z0 - H + d["bf_h"] + d["bt_h"],                  # 11: đáy web trái
-        z0 - d["tf_h"] - d["hau_h"],                     # 12: đỉnh web trái
-        z0 - d["tf_h"], z0 - d["tf_h"],                  # 13,14: đáy cánh trên trái
+        z0f,  z0f,     # 1,2 : đỉnh
+        z_tf, z_tf,    # 3,4 : step (đáy cánh ngoài)
+        z_s1,          # 5   : shoulder (75mm xuống)
+        z_h,           # 6   : haunch xong, đỉnh web
+        z_wb,          # 7   : đáy web song song
+        z_spl,         # 8   : sau splay, đỉnh cánh đáy
+        z_bfm,         # 9   : giữa cánh đáy
+        z_bot,         # 10  : đáy (chamfer)
+        z_bot,         # 11  : đáy trái
+        z_bfm,         # 12
+        z_spl,         # 13
+        z_wb,          # 14
+        z_h,           # 15
+        z_s1,          # 16  : shoulder bottom trái
+        z_tf,          # 17  : shoulder top trái (=step level)
+        z_tf,          # 18  : outer step trái
     ]
+
+    if cc_mode:
+        # C-C: bỏ 2 điểm outer step (3,4 và 17,18 trùng với 1,2 và 15,16)
+        # → chỉ giữ 14 điểm: bỏ index 2,3 và 15,16 (0-based: 2,3 and 15,16)
+        xs_cc = xs[:2] + xs[4:15] + xs[16:]
+        ys_cc = ys[:2] + ys[4:15] + ys[16:]
+        return xs_cc, ys_cc
+
     return xs, ys
 
 
@@ -206,10 +271,10 @@ def _dami_profile(xc, z0, H, kc):
     return xs, ys
 
 
-def _get_profile(loai_l, xc, z0, H, kc, at_end=False):
+def _get_profile(loai_l, xc, z0, H, kc, at_end=False, cc_mode=False):
     """Dispatcher → trả về (xs, ys) theo loại dầm."""
     if "super" in loai_l:
-        return _spt_profile(xc, z0, H, kc, at_end)
+        return _spt_profile(xc, z0, H, kc, at_end, cc_mode)
     elif "t ngược" in loai_l or "tngược" in loai_l or "t-ngược" in loai_l:
         return _tngược_profile(xc, z0, H, kc)
     else:
@@ -221,22 +286,23 @@ def _get_profile(loai_l, xc, z0, H, kc, at_end=False):
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _draw_spt_void(fig, xc, z0, H, dd, row=None, col=None):
-    """Vẽ khoang rỗng bên trong dầm SPT (hình thang) cho mặt cắt A-A."""
-    k        = H / 1.750
-    tf_h     = dd["tf_h"]
-    bf_h     = dd["bf_h"]
-    bt_h     = dd["bt_h"]
-    wt       = dd["wall_t_top"]   # dày web ở cánh trên ~ 100mm
-    ww       = dd["wall_t_web"]   # dày web song song ~ 110mm
-    v_top    = dd["tin_hw"] - wt  # nửa void tại đỉnh  (510mm ref)
-    v_bot    = dd["w_hw"] - ww    # nửa void tại đáy   (295mm ref)
-    z_vt     = z0 - tf_h
-    z_vb     = z0 - H + bf_h + bt_h
-    xs = [xc - v_top, xc + v_top, xc + v_bot, xc - v_bot]
-    ys = [z_vt,       z_vt,       z_vb,       z_vb      ]
-    kw = dict(x=xs + [xs[0]], y=ys + [ys[0]],
-              fill="toself", fillcolor="rgba(210,220,232,0.80)",
-              line=dict(color=_C["btong_dk"], width=1.0, dash="dot"),
+    """
+    Khoang rỗng bên trong dầm SPT — 8 điểm chính xác.
+    Tạo hình thang thu hẹp từ ±510mm tại đỉnh xuống ±295mm tại đáy web.
+    """
+    c  = _spt_key_coords(H, dd.get("kc", 2.2))
+    z_tf  = z0 + c["z_tf"]
+    z_s1  = z0 + c["z_s1"]
+    z_h   = z0 + c["z_h"]
+    z_wb  = z0 + c["z_wb"]
+    p_vt  = c["p_vt"]   # 510mm
+    p_wit = c["p_wit"]  # 295mm
+
+    xs_v = [xc-p_vt, xc+p_vt, xc+p_vt, xc+p_wit, xc+p_wit, xc-p_wit, xc-p_wit, xc-p_vt]
+    ys_v = [z_tf,    z_tf,    z_s1,    z_h,       z_wb,     z_wb,     z_h,      z_s1    ]
+    kw = dict(x=xs_v+[xs_v[0]], y=ys_v+[ys_v[0]],
+              fill="toself", fillcolor="rgba(210,222,235,0.82)",
+              line=dict(color=_C["btong_dk"], width=0.8, dash="dot"),
               mode="lines", name="Khoang rỗng", showlegend=False, hoverinfo="skip")
     if row:
         fig.add_trace(go.Scatter(**kw), row=row, col=col)
@@ -257,6 +323,8 @@ def ve_chi_tiet_mcn(d):
     t_ban = float(d.get("t_ban_mm", 200)) / 1000.0
     is_spt = "super" in ll
     dd     = _spt_dims(H, kc) if is_spt else None
+    if is_spt and dd is not None:
+        dd["kc"] = kc   # used in _draw_spt_void → _spt_key_coords
     hw     = kc / 2   # nửa rộng cánh ngoài
 
     # SPT: 3 panel; các loại khác: 2 panel (A-A đầu + B-B giữa)
@@ -301,17 +369,25 @@ def ve_chi_tiet_mcn(d):
         _draw_spt_void(fig, 0.0, 0.0, H, dd, row=1, col=1)
         fig.add_shape(type="line", x0=0, y0=-H-0.12, x1=0, y1=t_ban+0.08,
                       line=dict(color=_C["axis"], width=1, dash="dashdot"), row=1, col=1)
-        _dim_h(fig, -H-0.30, -hw, hw, f"kc={kc*1000:.0f}mm", row=1, col=1)
-        _dim_v(fig, hw+0.06, 0.0, -H, f"H={H*1000:.0f}mm", row=1, col=1)
-        _dim_h(fig, -H-0.48, -dd["bf_hw"], dd["bf_hw"],
-               f"{dd['bf_hw']*2000:.0f}mm (đáy)", color="#27ae60", row=1, col=1)
-        _dim_h(fig, -H-0.62, -dd["tin_hw"], dd["tin_hw"],
-               f"{dd['tin_hw']*2000:.0f}mm (cánh trong)", color="#8e44ad", row=1, col=1)
-        # Web thickness dim
+        c_aa = _spt_key_coords(H, kc)
+        _dim_h(fig, -H-0.30, -hw, hw, f"490+100+1020+100+490 = {kc*1000:.0f}mm", row=1, col=1)
+        _dim_v(fig, hw+0.06, 0.0,       c_aa["z_tf"],        f"150mm", color=_C["dim"], row=1, col=1)
+        _dim_v(fig, hw+0.06, c_aa["z_tf"], c_aa["z_h"],      f"150mm", color=_C["dim"], row=1, col=1)
+        _dim_v(fig, hw+0.06, c_aa["z_h"],  c_aa["z_wb"],     f"875mm", color="#e67e22",  row=1, col=1)
+        _dim_v(fig, hw+0.06, c_aa["z_wb"], c_aa["z_spl"],    f"300mm", color=_C["dim"], row=1, col=1)
+        _dim_v(fig, hw+0.06, c_aa["z_spl"], c_aa["z_bfm"],   f"225mm", color="#8e44ad",  row=1, col=1)
+        _dim_v(fig, hw+0.06, c_aa["z_bfm"], -H,              f"50mm",  color=_C["dim"], row=1, col=1)
+        # Bottom dims
+        _dim_h(fig, -H-0.48, -c_aa["p_bf"], c_aa["p_bf"],
+               f"160+700+160 = {c_aa['p_bf']*2000:.0f}mm (đáy)", color="#27ae60", row=1, col=1)
+        _dim_h(fig, -H-0.62, -c_aa["p_wit"], c_aa["p_wit"],
+               f"80+215+215+80 = {c_aa['p_wit']*2000:.0f}mm (void đáy web)", color="#8e44ad", row=1, col=1)
+        # Web thickness annotation (p_wot-p_wit = 110mm)
+        _web_t = c_aa["p_wot"] - c_aa["p_wit"]
         fig.add_annotation(
-            x=dd["tin_hw"] - dd["wall_t_top"]/2, y=-dd["tf_h"] - dd["hau_h"]*0.5,
-            text=f"t={dd['wall_t_web']*1000:.0f}mm",
-            showarrow=True, arrowhead=2, ax=20, ay=0,
+            x=c_aa["p_wit"] + _web_t / 2,
+            y=c_aa["z_h"] - (c_aa["z_wb"] - c_aa["z_h"]) * 0.45,
+            text=f"{_web_t*1000:.0f}mm", showarrow=True, arrowhead=2, ax=22, ay=0,
             font=dict(size=6, color=_C["dim"]), row=1, col=1,
         )
 
@@ -342,23 +418,34 @@ def ve_chi_tiet_mcn(d):
             bgcolor="rgba(255,255,255,0.8)", row=1, col=2,
         )
 
-        # ── C-C: Đầu dầm / Trụ — hẹp hơn (cánh trong) ──────────────────────
-        cc_hw = dd["tin_hw"]   # = 610mm ref → tổng 1220mm
-        _poly(fig, [-cc_hw, cc_hw, cc_hw, -cc_hw], [0, 0, -H, -H],
-              _C["dam"], _C["dam_dk"], "", sl=False, row=1, col=3, lw=2.0)
+        # ── C-C: Đầu dầm / Trụ — tiết diện trong 1220mm (Π-profile) ───────────
+        c_cc  = _spt_key_coords(H, kc)
+        cc_hw = c_cc["p_wing"]   # 610mm ref → tổng 1220mm
+        xs_cc, ys_cc = _spt_profile(0.0, 0.0, H, kc, cc_mode=True)
+        _poly(fig, xs_cc, ys_cc, _C["dam"], _C["dam_dk"],
+              "", sl=False, row=1, col=3, lw=2.0)
+        _draw_spt_void(fig, 0.0, 0.0, H, dd, row=1, col=3)
         fig.add_shape(type="line", x0=0, y0=-H-0.12, x1=0, y1=0.08,
                       line=dict(color=_C["axis"], width=1, dash="dashdot"), row=1, col=3)
+        # Dimensions
         _dim_h(fig, -H-0.30, -cc_hw, cc_hw, f"{cc_hw*2000:.0f}mm", row=1, col=3)
         _dim_v(fig, cc_hw+0.06, 0.0, -H, f"H={H*1000:.0f}mm", row=1, col=3)
-        # Breakdown
-        _wall = dd["wall_t_top"]
-        _inn  = (cc_hw - _wall) * 2
-        fig.add_annotation(
-            x=0, y=-H-0.48,
-            text=f"{_wall*1000:.0f} + {_inn*1000:.0f} + {_wall*1000:.0f} = {cc_hw*2000:.0f}mm",
-            showarrow=False, font=dict(size=7, color=_C["dim"]),
-            bgcolor="rgba(255,255,255,0.85)", row=1, col=3,
-        )
+        # Kích thước đáy — z_spl=-1.475 (absolute, vì z0=0.0)
+        _p_bf = c_cc["p_bf"]   # 510mm
+        _cen  = _p_bf * 2      # 1020mm center
+        _dim_h(fig, c_cc["z_spl"] - 0.10, -_p_bf, _p_bf,
+               f"{_cen*1000:.0f}mm (đáy)", color="#27ae60", row=1, col=3)
+        _dim_h(fig, c_cc["z_spl"] - 0.22, -cc_hw, cc_hw,
+               f"100+{int(_cen*1000)}+100={cc_hw*2000:.0f}mm",
+               color=_C["dim"], row=1, col=3)
+        # Heights in C-C: 300 (top zone) + 800 + 650 = 1750mm
+        _z_mid = c_cc["z_h"] - 0.800   # -0.300 - 0.800 = -1.100
+        _dim_v(fig, -cc_hw - 0.12, 0.0,         c_cc["z_h"], f"300mm",
+               color="#8e44ad", dx=-0.04, row=1, col=3)
+        _dim_v(fig, -cc_hw - 0.12, c_cc["z_h"], _z_mid,      f"800mm",
+               color="#e67e22",  dx=-0.04, row=1, col=3)
+        _dim_v(fig, -cc_hw - 0.12, _z_mid,       -H,          f"650mm",
+               color="#27ae60",  dx=-0.04, row=1, col=3)
 
         # Axes
         margin = H * 0.40
