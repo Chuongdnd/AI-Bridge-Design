@@ -1,0 +1,77 @@
+HƯỚNG DẪN CHUNG — ÁP DỤNG CHO TẤT CẢ PROMPT
+===============================================
+1. Chỉ trích xuất thông tin CÓ TRONG tài liệu — KHÔNG suy đoán, KHÔNG tính toán
+2. Không tìm thấy → ghi: null
+3. Trả về JSON thuần túy — không có markdown, không có giải thích ngoài JSON
+4. Nếu hồ sơ có NHIỀU CẦU → trả về mảng JSON: [{...}, {...}]
+5. Quy đổi đơn vị về đúng yêu cầu: cm → m, kN/m² → kPa
+6. Categorical: chỉ chọn 1 trong các giá trị hợp lệ liệt kê, giữ nguyên tiếng Việt
+7. Confidence đánh giá TOÀN BỘ bản ghi:
+   - high  = hầu hết trường tìm thấy rõ ràng trong tài liệu
+   - medium = một số trường phải suy luận từ context
+   - low   = nhiều trường phải ước đoán
+8. Trường ten_cau là KHÓA NỐI giữa các sheet — phải nhất quán chính xác
+
+
+============================================================
+
+PROMPT TRÍCH XUẤT DỮ LIỆU — SHEET 02_Tổng thể
+============================================================
+Mục tiêu: Thu thập đặc trưng hình học tổng thể, tải trọng và mặt cắt ngang cầu
+
+VAI TRÒ
+-------
+Bạn là chuyên gia đọc hồ sơ thiết kế cầu đường bộ Việt Nam.
+Đọc tài liệu được cung cấp và trích xuất chính xác các trường JSON sau.
+
+DANH SÁCH TRƯỜNG CẦN TRÍCH XUẤT
+---------------------------------
+| JSON key | Đơn vị | Ưu tiên | Giá trị hợp lệ / Mô tả |
+|----------|--------|---------|--------------------------|
+| ten_cau | Text | ◇ Tùy chọn | FK → 01_Thông_tin_DA — khớp chính xác tên cầu |
+| vung_dia_ly | Categorical | ● Bắt buộc | ĐBSCL | Đông Nam Bộ | Bắc Bộ | Trung Bộ | Tây Nguyên |
+| loai_vuot | Categorical | ● Bắt buộc | Sông | Kênh | Đường bộ | Đường sắt | Thung lũng |
+| loai_duong | Categorical | ● Bắt buộc | Cao tốc | Quốc lộ | Tỉnh lộ | Đô thị | Nội bộ |
+| cap_ky_thuat | Categorical | ● Bắt buộc | Cấp I | Cấp II | Cấp III | Cấp IV | Cấp V | Cấp VI | Đặc biệt |
+| vtk | km/h | ● Bắt buộc | 40 | 60 | 80 | 100 | 120 |
+| i_doc | % | ◆ Quan trọng | Độ dốc dọc cầu: ≤4% thường | ≤8% đặc biệt |
+| ban_kinh_dc | m | ◆ Quan trọng | Bán kính đường cong đứng: Lồi (+) / Lõm (−) |
+| tai_trong_tk | Categorical | ● Bắt buộc | HL-93 | H30-XB80 | H13-X60 | Xe thô sơ |
+| loai_cau_kc | Categorical | ◆ Quan trọng | Dầm | Dây văng | Treo | Vòm | Khung |
+| so_do_nhip | Text | ◆ Quan trọng | Ví dụ: 3×33m | 1×40m+2×33m | 9×38.2m |
+| tong_so_nhip | nhịp | ● Bắt buộc | Tổng số nhịp (số nguyên) |
+| l_cau | m | ● Bắt buộc | Chiều dài toàn cầu tính từ đuôi mố đến đuôi mố |
+| goc_xien | độ | ● Bắt buộc | Góc xiên (góc giao): 30–90° (90° = vuông góc) |
+| b_cau | m | ● Bắt buộc | Bề rộng toàn cầu tính ngoài lan can |
+| don_nguyen | đơn nguyên | ◆ Quan trọng | Số đơn nguyên cầu (1 với cầu thông thường) |
+| bc | m | ● Bắt buộc | Tổng bề rộng xe chạy (Bc = khổ cầu) |
+| so_lan_xe_ct | làn | ● Bắt buộc | Số làn xe: 2 | 4 | 6 |
+| rong_1_lan | m/làn | ● Bắt buộc | Bề rộng 1 làn xe: 3.0 | 3.5 | 3.75 |
+
+ĐỊNH DẠNG OUTPUT
+----------------
+Trả về JSON thuần túy — không markdown, không giải thích.
+Nếu nhiều cầu trong 1 hồ sơ → trả về mảng [...].
+
+Template 1 cầu:
+{
+  "ten_cau": null,
+  "vung_dia_ly": null,  ← bắt buộc
+  "loai_vuot": null,  ← bắt buộc
+  "loai_duong": null,  ← bắt buộc
+  "cap_ky_thuat": null,  ← bắt buộc
+  "vtk": null,  ← bắt buộc
+  "i_doc": null,
+  "ban_kinh_dc": null,
+  "tai_trong_tk": null,  ← bắt buộc
+  "loai_cau_kc": null,
+  "so_do_nhip": null,
+  "tong_so_nhip": null,  ← bắt buộc
+  "l_cau": null,  ← bắt buộc
+  "goc_xien": null,  ← bắt buộc
+  "b_cau": null,  ← bắt buộc
+  "don_nguyen": null,
+  "bc": null,  ← bắt buộc
+  "so_lan_xe_ct": null,  ← bắt buộc
+  "rong_1_lan": null,  ← bắt buộc
+}

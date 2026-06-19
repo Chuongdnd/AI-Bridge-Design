@@ -1,0 +1,70 @@
+HƯỚNG DẪN CHUNG — ÁP DỤNG CHO TẤT CẢ PROMPT
+===============================================
+1. Chỉ trích xuất thông tin CÓ TRONG tài liệu — KHÔNG suy đoán, KHÔNG tính toán
+2. Không tìm thấy → ghi: null
+3. Trả về JSON thuần túy — không có markdown, không có giải thích ngoài JSON
+4. Nếu hồ sơ có NHIỀU CẦU → trả về mảng JSON: [{...}, {...}]
+5. Quy đổi đơn vị về đúng yêu cầu: cm → m, kN/m² → kPa
+6. Categorical: chỉ chọn 1 trong các giá trị hợp lệ liệt kê, giữ nguyên tiếng Việt
+7. Confidence đánh giá TOÀN BỘ bản ghi:
+   - high  = hầu hết trường tìm thấy rõ ràng trong tài liệu
+   - medium = một số trường phải suy luận từ context
+   - low   = nhiều trường phải ước đoán
+8. Trường ten_cau là KHÓA NỐI giữa các sheet — phải nhất quán chính xác
+
+
+============================================================
+
+PROMPT TRÍCH XUẤT DỮ LIỆU — SHEET 05_Móng
+============================================================
+Mục tiêu: Dự báo LOẠI MÓNG và thu thập kích thước cọc / bệ móng
+
+NHÃN DỰ BÁO (⚑ LABEL)
+======================
+Trường quan trọng nhất: **loai_mong**
+Các giá trị hợp lệ (chọn đúng 1):
+  Cọc khoan nhồi | Cọc đóng BTCT | Cọc ép | Móng nông | Cọc barrette
+
+Lưu ý: Đây là nhãn model sẽ học — phải trích xuất chính xác nhất có thể.
+Nếu hồ sơ ghi "cọc ly tâm D600" → loại_mong = "Cọc đóng BTCT"
+Nếu hồ sơ ghi "khoan nhồi D1000" → loại_mong = "Cọc khoan nhồi"
+
+VAI TRÒ
+-------
+Bạn là chuyên gia đọc hồ sơ thiết kế cầu đường bộ Việt Nam.
+Đọc tài liệu được cung cấp và trích xuất chính xác các trường JSON sau.
+
+DANH SÁCH TRƯỜNG CẦN TRÍCH XUẤT
+---------------------------------
+| JSON key | Đơn vị | Ưu tiên | Giá trị hợp lệ / Mô tả |
+|----------|--------|---------|--------------------------|
+| ten_cau | Text | ◇ Tùy chọn | FK → 01_Thông_tin_DA |
+| loai_mong | Categorical | ⚑ LABEL | ⚑ Cọc khoan nhồi | Cọc đóng BTCT | Cọc ép | Móng nông | Cọc barrette |
+| so_coc | Số nguyên | ● Bắt buộc | Số lượng cọc trong 1 bệ: 4 | 6 | 8 | 9 | 12 |
+| chieu_dai_coc | m | ● Bắt buộc | Chiều dài toàn bộ cọc: 20–60m |
+| duong_kinh_coc | mm | ● Bắt buộc | Đường kính cọc: 400 | 600 | 800 | 1000 | 1200 | 1500 |
+| cao_do_mat_be | m | ◆ Quan trọng | Cao độ mặt trên bệ cọc — thường dưới MNTN 0.5m |
+| kt_be_coc | m × m × m | ◆ Quan trọng | Kích thước bệ cọc: Dài × Rộng × Cao |
+| cap_bt_coc | MPa | ◆ Quan trọng | Cấp bê tông cọc: C30 | C35 | C40 | C50 | C60 |
+| pp_tc_coc | Categorical | ◆ Quan trọng | Phương pháp thi công cọc: Khoan nhồi bùn khoan | Casing | Đóng búa | Ép tĩnh |
+| sct_coc | kN | ○ Nâng cao | Sức chịu tải thiết kế / cọc — theo TCVN 10304 |
+
+
+ĐỊNH DẠNG OUTPUT
+----------------
+Trả về JSON thuần túy — không markdown, không giải thích.
+Nếu nhiều cầu trong 1 hồ sơ → trả về mảng [...].
+
+Template 1 cầu:
+{
+  "ten_cau": null,
+  "loai_mong": null,  ← NHÃN DỰ BÁO CHÍNH
+  "so_coc": null,  ← bắt buộc
+  "chieu_dai_coc": null,  ← bắt buộc
+  "duong_kinh_coc": null,  ← bắt buộc
+  "cao_do_mat_be": null,
+  "kt_be_coc": null,
+  "cap_bt_coc": null,
+  "pp_tc_coc": null,
+  "sct_coc": null
+}

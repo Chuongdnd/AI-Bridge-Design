@@ -1,0 +1,63 @@
+HƯỚNG DẪN CHUNG — ÁP DỤNG CHO TẤT CẢ PROMPT
+===============================================
+1. Chỉ trích xuất thông tin CÓ TRONG tài liệu — KHÔNG suy đoán, KHÔNG tính toán
+2. Không tìm thấy → ghi: null
+3. Trả về JSON thuần túy — không có markdown, không có giải thích ngoài JSON
+4. Nếu hồ sơ có NHIỀU CẦU → trả về mảng JSON: [{...}, {...}]
+5. Quy đổi đơn vị về đúng yêu cầu: cm → m, kN/m² → kPa
+6. Categorical: chỉ chọn 1 trong các giá trị hợp lệ liệt kê, giữ nguyên tiếng Việt
+7. Confidence đánh giá TOÀN BỘ bản ghi:
+   - high  = hầu hết trường tìm thấy rõ ràng trong tài liệu
+   - medium = một số trường phải suy luận từ context
+   - low   = nhiều trường phải ước đoán
+8. Trường ten_cau là KHÓA NỐI giữa các sheet — phải nhất quán chính xác
+
+
+============================================================
+
+PROMPT TRÍCH XUẤT DỮ LIỆU — SHEET 01_Thông_tin_DA
+============================================================
+Mục tiêu: Thu thập metadata dự án, nguồn dữ liệu và thông tin kiểm định
+
+VAI TRÒ
+-------
+Bạn là chuyên gia đọc hồ sơ thiết kế cầu đường bộ Việt Nam.
+Đọc tài liệu được cung cấp và trích xuất chính xác các trường JSON sau.
+
+DANH SÁCH TRƯỜNG CẦN TRÍCH XUẤT
+---------------------------------
+| JSON key | Đơn vị | Ưu tiên | Giá trị hợp lệ / Mô tả |
+|----------|--------|---------|--------------------------|
+| ten_cau | Text | ● Bắt buộc | Tên đầy đủ của cầu (vd: Cầu Rạch Chiếc, Cầu Mười Thước) |
+| ly_trinh | Text | ◇ Tùy chọn | Lý trình vị trí cầu (vd: Km35+862) |
+| tinh_thanh_pho | Text | ◆ Quan trọng | Tỉnh / Thành phố xây dựng cầu |
+| nam_xay_dung | yyyy | ◆ Quan trọng | Năm hoàn thành xây dựng hoặc đưa vào khai thác |
+| chu_dau_tu | Text | ◇ Tùy chọn | Chủ đầu tư: Bộ GTVT | UBND tỉnh | PMU… |
+| don_vi_tu_van | Text | ◇ Tùy chọn | Đơn vị tư vấn thiết kế: TEDI | CDPM | Tư nhân… |
+| tieu_chuan_tk | Categorical | ◆ Quan trọng | TCVN 11823:2017 | 22TCN 272:05 | AASHTO LRFD |
+| tong_muc_dau_tu | Tỷ VNĐ | ◇ Tùy chọn | Tổng mức đầu tư phê duyệt |
+| trang_thai | Categorical | ◇ Tùy chọn | Đang khai thác | Đang xây dựng | Đã dỡ bỏ | Đang sửa chữa |
+| nguon_du_lieu | Categorical | ● Bắt buộc | NotebookLM | Build tay | API — điền tự động: NotebookLM |
+| confidence | H / M / L | ● Bắt buộc | high = tìm thấy rõ ràng | medium = suy luận từ context | low = ước đoán |
+| ngay_trich_xuat | dd/mm/yyyy | ◆ Quan trọng | Ngày thực hiện trích xuất dữ liệu này |
+
+ĐỊNH DẠNG OUTPUT
+----------------
+Trả về JSON thuần túy — không markdown, không giải thích.
+Nếu nhiều cầu trong 1 hồ sơ → trả về mảng [...].
+
+Template 1 cầu:
+{
+  "ten_cau": null,  ← bắt buộc
+  "ly_trinh": null,
+  "tinh_thanh_pho": null,
+  "nam_xay_dung": null,
+  "chu_dau_tu": null,
+  "don_vi_tu_van": null,
+  "tieu_chuan_tk": null,
+  "tong_muc_dau_tu": null,
+  "trang_thai": null,
+  "nguon_du_lieu": null,  ← bắt buộc
+  "confidence": null,  ← bắt buộc
+  "ngay_trich_xuat": null
+}

@@ -1,0 +1,80 @@
+HƯỚNG DẪN CHUNG — ÁP DỤNG CHO TẤT CẢ PROMPT
+===============================================
+1. Chỉ trích xuất thông tin CÓ TRONG tài liệu — KHÔNG suy đoán, KHÔNG tính toán
+2. Không tìm thấy → ghi: null
+3. Trả về JSON thuần túy — không có markdown, không có giải thích ngoài JSON
+4. Nếu hồ sơ có NHIỀU CẦU → trả về mảng JSON: [{...}, {...}]
+5. Quy đổi đơn vị về đúng yêu cầu: cm → m, kN/m² → kPa
+6. Categorical: chỉ chọn 1 trong các giá trị hợp lệ liệt kê, giữ nguyên tiếng Việt
+7. Confidence đánh giá TOÀN BỘ bản ghi:
+   - high  = hầu hết trường tìm thấy rõ ràng trong tài liệu
+   - medium = một số trường phải suy luận từ context
+   - low   = nhiều trường phải ước đoán
+8. Trường ten_cau là KHÓA NỐI giữa các sheet — phải nhất quán chính xác
+
+
+============================================================
+
+PROMPT TRÍCH XUẤT DỮ LIỆU — SHEET 07_Kết cấu nhịp
+============================================================
+Mục tiêu: Dự báo LOẠI DẦM và thu thập kích thước kết cấu nhịp
+
+NHÃN DỰ BÁO (⚑ LABEL)
+======================
+Trường quan trọng nhất: **loai_dam**
+Các giá trị hợp lệ (chọn đúng 1):
+  Super-T | Dầm I | T ngược | Dầm bản | Dầm hộp | Dầm thép liên hợp | Dây văng
+
+Lưu ý: Đây là nhãn model sẽ học — phải trích xuất chính xác nhất có thể.
+Nếu hồ sơ ghi "cọc ly tâm D600" → loại_mong = "Cọc đóng BTCT"
+Nếu hồ sơ ghi "khoan nhồi D1000" → loại_mong = "Cọc khoan nhồi"
+
+VAI TRÒ
+-------
+Bạn là chuyên gia đọc hồ sơ thiết kế cầu đường bộ Việt Nam.
+Đọc tài liệu được cung cấp và trích xuất chính xác các trường JSON sau.
+
+DANH SÁCH TRƯỜNG CẦN TRÍCH XUẤT
+---------------------------------
+| JSON key | Đơn vị | Ưu tiên | Giá trị hợp lệ / Mô tả |
+|----------|--------|---------|--------------------------|
+| ten_cau | Text | ◇ Tùy chọn | FK → 01_Thông_tin_DA |
+| loai_dam | Categorical | ⚑ LABEL | ⚑ Super-T | Dầm I | T ngược | Dầm bản | Dầm hộp | Dầm thép liên hợp | Dây văng |
+| vat_lieu_dam | Categorical | ● Bắt buộc | BTCT thường | DUL căng trước | DUL căng sau | Thép | Thép liên hợp |
+| pp_thi_cong | Categorical | ◆ Quan trọng | Đúc sẵn | Đúc tại chỗ | Đúc hẫng | Lắp hẫng | Đẩy dọc |
+| tinh_lien_tuc | Categorical | ● Bắt buộc | Đơn giản | Liên tục | Khung cứng |
+| cap_bt_dam | MPa | ◆ Quan trọng | Cấp bê tông dầm: C40 | C45 | C50 | C55 |
+| l_tt | m | ● Bắt buộc | Chiều dài nhịp tính toán: 15 | 18 | 24 | 25 | 30 | 33 | 38.2 | 40 |
+| l_dam | m | ● Bắt buộc | Chiều dài dầm = L_tt + đoạn gối (0.5–1.0m) |
+| h_dam | m | ● Bắt buộc | Chiều cao dầm: 0.55–1.75m tùy loại và nhịp |
+| b_dam | m | ◆ Quan trọng | Bề rộng dầm (cánh trên): Super-T ~1.6m | Dầm I ~0.6m |
+| ti_le_lh | — | ◆ Quan trọng | Tỉ lệ L/H = L_tt / H_dầm — tối ưu 17–22 |
+| so_dam | dầm | ● Bắt buộc | Số lượng dầm trên 1 mặt cắt ngang |
+| kc_tim_dam | m | ● Bắt buộc | Khoảng cách tim dầm: 1.75–2.4m |
+| hang_dau_dam | m | ◆ Quan trọng | Phần hẫng đầu dầm (overhang): 0.3–0.8m |
+| so_dam_ngang | Số nguyên | ◇ Tùy chọn | Số dầm ngang trên 1 nhịp: 3–7 |
+
+
+ĐỊNH DẠNG OUTPUT
+----------------
+Trả về JSON thuần túy — không markdown, không giải thích.
+Nếu nhiều cầu trong 1 hồ sơ → trả về mảng [...].
+
+Template 1 cầu:
+{
+  "ten_cau": null,
+  "loai_dam": null,  ← NHÃN DỰ BÁO CHÍNH
+  "vat_lieu_dam": null,  ← bắt buộc
+  "pp_thi_cong": null,
+  "tinh_lien_tuc": null,  ← bắt buộc
+  "cap_bt_dam": null,
+  "l_tt": null,  ← bắt buộc
+  "l_dam": null,  ← bắt buộc
+  "h_dam": null,  ← bắt buộc
+  "b_dam": null,
+  "ti_le_lh": null,
+  "so_dam": null,  ← bắt buộc
+  "kc_tim_dam": null,  ← bắt buộc
+  "hang_dau_dam": null,
+  "so_dam_ngang": null
+}

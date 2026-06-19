@@ -1,0 +1,87 @@
+HƯỚNG DẪN CHUNG — ÁP DỤNG CHO TẤT CẢ PROMPT
+===============================================
+1. Chỉ trích xuất thông tin CÓ TRONG tài liệu — KHÔNG suy đoán, KHÔNG tính toán
+2. Không tìm thấy → ghi: null
+3. Trả về JSON thuần túy — không có markdown, không có giải thích ngoài JSON
+4. Nếu hồ sơ có NHIỀU CẦU → trả về mảng JSON: [{...}, {...}]
+5. Quy đổi đơn vị về đúng yêu cầu: cm → m, kN/m² → kPa
+6. Categorical: chỉ chọn 1 trong các giá trị hợp lệ liệt kê, giữ nguyên tiếng Việt
+7. Confidence đánh giá TOÀN BỘ bản ghi:
+   - high  = hầu hết trường tìm thấy rõ ràng trong tài liệu
+   - medium = một số trường phải suy luận từ context
+   - low   = nhiều trường phải ước đoán
+8. Trường ten_cau là KHÓA NỐI giữa các sheet — phải nhất quán chính xác
+
+
+============================================================
+
+PROMPT TRÍCH XUẤT DỮ LIỆU — SHEET 06_Mố – Trụ
+============================================================
+Mục tiêu: Dự báo LOẠI TRỤ và thu thập kích thước mố trụ cầu
+
+NHÃN DỰ BÁO (⚑ LABEL)
+======================
+Trường quan trọng nhất: **loai_tru**
+Các giá trị hợp lệ (chọn đúng 1):
+  Trụ đặc | Khung 2 cột | Khung nhiều cột | Thân rỗng | Trụ tròn | Trụ hình V
+
+Lưu ý: Đây là nhãn model sẽ học — phải trích xuất chính xác nhất có thể.
+Nếu hồ sơ ghi "cọc ly tâm D600" → loại_mong = "Cọc đóng BTCT"
+Nếu hồ sơ ghi "khoan nhồi D1000" → loại_mong = "Cọc khoan nhồi"
+
+VAI TRÒ
+-------
+Bạn là chuyên gia đọc hồ sơ thiết kế cầu đường bộ Việt Nam.
+Đọc tài liệu được cung cấp và trích xuất chính xác các trường JSON sau.
+
+DANH SÁCH TRƯỜNG CẦN TRÍCH XUẤT
+---------------------------------
+| JSON key | Đơn vị | Ưu tiên | Giá trị hợp lệ / Mô tả |
+|----------|--------|---------|--------------------------|
+| ten_cau | Text | ◇ Tùy chọn | FK → 01_Thông_tin_DA |
+| loai_tru | Categorical | ⚑ LABEL | ⚑ Trụ đặc | Khung 2 cột | Khung nhiều cột | Thân rỗng | Trụ tròn | Trụ hình V |
+| h_tru | m | ● Bắt buộc | Chiều cao thân trụ từ đỉnh bệ đến đỉnh trụ: H<5m→đặc | 5–10m→khung | >10m→rỗng |
+| rong_tru | m | ◆ Quan trọng | Chiều rộng thân trụ theo phương dọc cầu: 1.0–3.0m |
+| dai_tru | m | ◆ Quan trọng | Chiều dài thân trụ theo phương ngang cầu: 2.0–8.0m |
+| so_cot | Số nguyên | ◆ Quan trọng | Số cột trong khung trụ: 1 | 2 | 3 | 4 |
+| hinh_dang_tru | Categorical | ◇ Tùy chọn | Chữ nhật | Elip | Tròn | Bản dẹt | Hình hộp |
+| xa_mu_tru | m × m | ◇ Tùy chọn | Kích thước xà mũ trụ: Dài × Cao |
+| cap_bt_tru | MPa | ◆ Quan trọng | Cấp bê tông trụ: C30 | C35 | C40 |
+| so_tru_giua | Số nguyên | ● Bắt buộc | Số trụ giữa = Tổng số nhịp − 1 |
+| kc_tim_tru | m | ● Bắt buộc | Khoảng cách tim trụ = Chiều dài nhịp tính toán |
+| loai_mo | Categorical | ◆ Quan trọng | Mố chữ U | Mố vùi | Mố cánh xiên | Mố khung | Mố chữ T |
+| h_mo | m | ◆ Quan trọng | Chiều cao mố từ đáy bệ đến đỉnh mố |
+| dai_than_mo | m | ◆ Quan trọng | Chiều dài thân mố theo phương ngang cầu ≥ B_cầu |
+| tuong_canh_mo | m | ◇ Tùy chọn | Kích thước tường cánh mố: Dài × Cao |
+| tuong_chan_dat | Categorical | ◇ Tùy chọn | Loại tường chắn đất sau mố: Tường cứng | Bản neo | Không có |
+| duong_dan | m | ◇ Tùy chọn | Chiều dài đường dẫn vào cầu (đoạn đắp đất tiếp cận) |
+| vi_tri | Categorical | ◆ Quan trọng | Vị trí mố/trụ: Trên bờ | Trong lòng sông | Đảo nhân tạo |
+| bao_ve_xoi | Categorical | ◇ Tùy chọn | Bảo vệ chống xói: Kè đá | Thảm đá | Cừ bản | Không có |
+
+ĐỊNH DẠNG OUTPUT
+----------------
+Trả về JSON thuần túy — không markdown, không giải thích.
+Nếu nhiều cầu trong 1 hồ sơ → trả về mảng [...].
+
+Template 1 cầu:
+{
+  "ten_cau": null,
+  "loai_tru": null,  ← NHÃN DỰ BÁO CHÍNH
+  "h_tru": null,  ← bắt buộc
+  "rong_tru": null,
+  "dai_tru": null,
+  "so_cot": null,
+  "hinh_dang_tru": null,
+  "xa_mu_tru": null,
+  "cap_bt_tru": null,
+  "so_tru_giua": null,  ← bắt buộc
+  "kc_tim_tru": null,  ← bắt buộc
+  "loai_mo": null,
+  "h_mo": null,
+  "dai_than_mo": null,
+  "tuong_canh_mo": null,
+  "tuong_chan_dat": null,
+  "duong_dan": null,
+  "vi_tri": null,
+  "bao_ve_xoi": null
+}
