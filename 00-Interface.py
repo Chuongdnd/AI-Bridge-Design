@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 import importlib
+import time
 import google.generativeai as genai
 import fitz
 try:
@@ -28,6 +29,27 @@ footer                            { display: none !important; }
     background: #1a1a2a; border: 1px solid #333355; border-radius: 8px; padding: 8px 12px;
 }
 [data-testid="stMetricValue"] { font-size: 16px !important; color: #4fc3f7 !important; }
+[data-testid="stSidebar"] { min-width: 300px !important; max-width: 300px !important; }
+[data-testid="stSidebar"] > div:first-child { padding: 12px 14px !important; }
+[data-testid="stSidebar"] button {
+    font-size: 12px !important; padding: 4px 8px !important;
+    height: auto !important; min-height: 32px !important;
+}
+[data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: 4px !important; }
+[data-testid="stSidebar"] [data-testid="stDownloadButton"] button {
+    background: #0d3d1f !important; border-color: #2ecc71 !important;
+    color: #2ecc71 !important; font-size: 11px !important;
+}
+[data-testid="stNumberInput"]:has(+ div div[style*="e74c3c"]) input {
+    border-color: #e74c3c !important;
+    box-shadow: 0 0 0 1px #e74c3c !important;
+}
+[data-testid="stNumberInput"]:has(+ div div[style*="2ecc71"]) input {
+    border-color: #2ecc71 !important;
+}
+[data-testid="stNumberInput"]:has(+ div div[style*="ffc947"]) input {
+    border-color: #f39c12 !important;
+}
 </style>
 """, unsafe_allow_html=True)
 
@@ -137,6 +159,359 @@ if 'wizard_draft' not in st.session_state:
 if 'wizard_errors' not in st.session_state:
     st.session_state.wizard_errors = {}
 
+if 'field_touched' not in st.session_state:
+    st.session_state.field_touched = set()
+
+if 'field_errors' not in st.session_state:
+    st.session_state.field_errors = {}
+
+if 'field_warnings' not in st.session_state:
+    st.session_state.field_warnings = {}
+
+# ── Metadata 8 bước pipeline AI ──────────────────────────────────────────────
+PIPELINE_STEPS = [
+    {"id": "TK",   "label": "Tĩnh không ĐTNĐ",    "desc": "Tra cứu tĩnh không thông thuyền theo TCVN 8818:2022",         "icon": "🌊", "weight": 5},
+    {"id": "YTHH", "label": "Yếu tố hình học",     "desc": "Tính MCN, chiều rộng cầu, độ dốc dọc ngang",                  "icon": "📐", "weight": 10},
+    {"id": "KCN",  "label": "AI kết cấu nhịp",     "desc": "Dự báo loại dầm, số nhịp, chiều dài, chiều cao",              "icon": "🤖", "weight": 20},
+    {"id": "MOT",  "label": "AI mố – trụ",         "desc": "Dự báo loại trụ, kích thước thân trụ, loại mố",               "icon": "🏛️", "weight": 20},
+    {"id": "MONG", "label": "AI móng cầu",          "desc": "Dự báo loại móng, đường kính cọc, chiều sâu",                 "icon": "⚙️", "weight": 20},
+    {"id": "LPC",  "label": "Lớp phủ mặt cầu",     "desc": "Tư vấn cấu tạo lớp phủ theo TCVN 8819:2011",                 "icon": "🛣️", "weight": 5},
+    {"id": "BVK",  "label": "Bản vẽ kết cấu",      "desc": "Sinh bản vẽ trắc dọc, mặt cắt ngang, mố trụ",                "icon": "📋", "weight": 10},
+    {"id": "SSP",  "label": "So sánh phương án",   "desc": "Sinh và đánh giá 3 phương án loại dầm",                       "icon": "📊", "weight": 10},
+]
+assert sum(s["weight"] for s in PIPELINE_STEPS) == 100
+
+
+class PipelineTracker:
+    """Quản lý trạng thái và hiển thị tiến trình pipeline AI."""
+
+    STATUS_WAIT    = "wait"
+    STATUS_RUNNING = "running"
+    STATUS_DONE    = "done"
+    STATUS_ERROR   = "error"
+    STATUS_SKIP    = "skip"
+
+    _COLORS = {
+        "wait":    ("#333355", "#888899", "○"),
+        "running": ("#1a2d45", "#4fc3f7", "⟳"),
+        "done":    ("#0d3d1f", "#2ecc71", "✓"),
+        "error":   ("#2d0a0a", "#e74c3c", "✗"),
+        "skip":    ("#1a1a1a", "#555555", "—"),
+    }
+
+    def __init__(self, steps: list):
+        self.steps    = steps
+        self.statuses = {s["id"]: self.STATUS_WAIT for s in steps}
+        self.messages = {s["id"]: "" for s in steps}
+        self.timings  = {s["id"]: 0.0 for s in steps}
+        self._starts  = {}
+        self._pct     = 0.0
+        self._ph_bar  = None
+        self._ph_label = None
+        self._ph_grid  = None
+
+    def setup(self):
+        st.markdown(
+            "<div style='background:#141420;border:1px solid #333366;"
+            "border-radius:12px;padding:16px;margin:8px 0'>",
+            unsafe_allow_html=True,
+        )
+        st.markdown(
+            "<p style='font-size:13px;font-weight:600;color:#4fc3f7;"
+            "margin:0 0 8px'>🤖 Pipeline AI đang chạy...</p>",
+            unsafe_allow_html=True,
+        )
+        self._ph_label = st.empty()
+        self._ph_bar   = st.empty()
+        self._ph_grid  = st.empty()
+        st.markdown("</div>", unsafe_allow_html=True)
+        self._render()
+
+    def start(self, step_id: str):
+        self.statuses[step_id] = self.STATUS_RUNNING
+        self._starts[step_id]  = time.time()
+        self._render()
+
+    def done(self, step_id: str, msg: str = ""):
+        elapsed = time.time() - self._starts.get(step_id, time.time())
+        self.statuses[step_id] = self.STATUS_DONE
+        self.messages[step_id] = msg
+        self.timings[step_id]  = elapsed
+        step = next(s for s in self.steps if s["id"] == step_id)
+        self._pct = min(100.0, self._pct + step["weight"])
+        self._render()
+
+    def error(self, step_id: str, err_msg: str):
+        elapsed = time.time() - self._starts.get(step_id, time.time())
+        self.statuses[step_id] = self.STATUS_ERROR
+        self.messages[step_id] = err_msg
+        self.timings[step_id]  = elapsed
+        self._render()
+
+    def skip(self, step_id: str):
+        self.statuses[step_id] = self.STATUS_SKIP
+        self.messages[step_id] = "Bỏ qua do bước trước thất bại"
+        self._render()
+
+    def finish(self, success: bool):
+        self._pct = 100.0 if success else self._pct
+        self._render()
+
+    def render_timing_summary(self):
+        total = sum(self.timings.values())
+        rows  = []
+        for s in self.steps:
+            sid = s["id"]
+            t   = self.timings[sid]
+            if t > 0:
+                pct_time = t / total * 100 if total > 0 else 0
+                rows.append(
+                    f"<tr>"
+                    f"<td style='padding:3px 8px;color:#aaa'>{s['icon']} {s['label']}</td>"
+                    f"<td style='padding:3px 8px;color:#4fc3f7;text-align:right'>{t:.2f}s</td>"
+                    f"<td style='padding:3px 8px;color:#888;text-align:right'>{pct_time:.0f}%</td>"
+                    f"</tr>"
+                )
+        if rows:
+            st.markdown(
+                f"<details style='margin-top:8px'>"
+                f"<summary style='font-size:11px;color:#666;cursor:pointer'>⏱ Thời gian chi tiết</summary>"
+                f"<table style='width:100%;font-size:11px;border-collapse:collapse;margin-top:6px'>"
+                f"{''.join(rows)}"
+                f"<tr style='border-top:1px solid #333'>"
+                f"<td style='padding:4px 8px;color:#fff;font-weight:600'>Tổng cộng</td>"
+                f"<td style='padding:4px 8px;color:#2ecc71;text-align:right;font-weight:600'>{total:.2f}s</td>"
+                f"<td></td></tr>"
+                f"</table></details>",
+                unsafe_allow_html=True,
+            )
+
+    def _render(self):
+        running_id = next(
+            (sid for sid, st_ in self.statuses.items() if st_ == self.STATUS_RUNNING), None
+        )
+        if running_id:
+            meta = next(s for s in self.steps if s["id"] == running_id)
+            self._ph_label.markdown(
+                f"<p style='font-size:12px;color:#aaa;margin:0 0 4px'>"
+                f"{meta['icon']} <b style='color:#fff'>{meta['label']}</b>"
+                f" — {meta['desc']}</p>",
+                unsafe_allow_html=True,
+            )
+        elif self._pct >= 100:
+            self._ph_label.markdown(
+                "<p style='font-size:12px;color:#2ecc71;margin:0 0 4px'>"
+                "✅ Hoàn tất tất cả các bước</p>",
+                unsafe_allow_html=True,
+            )
+
+        pct = int(self._pct)
+        self._ph_bar.markdown(
+            f"<div style='background:#1e1e2e;border-radius:6px;height:10px;"
+            f"overflow:hidden;margin-bottom:12px'>"
+            f"<div style='width:{pct}%;height:100%;"
+            f"background:linear-gradient(90deg,#007acc,#2ecc71);"
+            f"border-radius:6px;transition:width 0.3s'></div></div>"
+            f"<p style='font-size:11px;color:#888;margin:-8px 0 8px;"
+            f"text-align:right'>{pct}%</p>",
+            unsafe_allow_html=True,
+        )
+
+        rows_html = ""
+        for s in self.steps:
+            sid    = s["id"]
+            status = self.statuses[sid]
+            bg, color, badge = self._COLORS[status]
+            msg    = self.messages[sid]
+            timing = self.timings[sid]
+
+            timing_str = (
+                f"<span style='color:#555;font-size:10px'> {timing:.1f}s</span>"
+                if timing > 0 else ""
+            )
+            msg_html = ""
+            if status == self.STATUS_ERROR and msg:
+                msg_html = (
+                    f"<div style='font-size:10px;color:#ff8a80;margin-top:2px;"
+                    f"padding-left:4px;border-left:2px solid #e74c3c'>{msg}</div>"
+                )
+            elif status == self.STATUS_DONE and msg:
+                msg_html = (
+                    f"<div style='font-size:10px;color:#555;margin-top:2px'>{msg}</div>"
+                )
+
+            rows_html += (
+                f"<div style='display:flex;align-items:flex-start;gap:8px;"
+                f"padding:6px 10px;background:{bg};border-radius:6px;margin-bottom:4px'>"
+                f"<span style='font-size:13px;min-width:20px;color:{color};"
+                f"font-weight:700;line-height:1.4'>{badge}</span>"
+                f"<div style='flex:1'>"
+                f"<span style='font-size:12px;color:#ddd'>{s['icon']} {s['label']}</span>"
+                f"{timing_str}{msg_html}"
+                f"</div></div>"
+            )
+
+        self._ph_grid.markdown(
+            f"<div style='margin-top:4px'>{rows_html}</div>",
+            unsafe_allow_html=True,
+        )
+
+
+# ── Design System ────────────────────────────────────────────────────────────
+import importlib.util as _dsutil
+_dsspec = _dsutil.spec_from_file_location(
+    "ds00",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-DesignSystem.py")
+)
+DS = _dsutil.module_from_spec(_dsspec)
+_dsspec.loader.exec_module(DS)
+st.markdown(DS.GLOBAL_CSS, unsafe_allow_html=True)
+
+# ── Import module validation ──────────────────────────────────────────────────
+import importlib.util as _vutil
+_vspec = _vutil.spec_from_file_location(
+    "val00",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-Validation.py")
+)
+VAL = _vutil.module_from_spec(_vspec)
+_vspec.loader.exec_module(VAL)
+
+
+def _field_with_feedback(
+    label: str,
+    value: float,
+    key: str,
+    check_fn,
+    check_args: tuple,
+    fmt: str = "%.3f",
+    min_val: float = None,
+    max_val: float = None,
+    step: float = 0.001,
+    help_txt: str = "",
+    unit: str = "m",
+) -> float:
+    """number_input bọc thêm icon trạng thái và feedback dưới ô."""
+    touched  = key in st.session_state.field_touched
+    prev_err = st.session_state.field_errors.get(key)
+    label_display = (
+        f"🔴 {label}" if (touched and prev_err)
+        else f"✅ {label}" if touched
+        else label
+    )
+
+    kwargs = dict(
+        label=label_display,
+        value=value,
+        format=fmt,
+        step=step,
+        key=key,
+        help=help_txt,
+    )
+    if min_val is not None:
+        kwargs['min_value'] = min_val
+    if max_val is not None:
+        kwargs['max_value'] = max_val
+
+    new_val = st.number_input(**kwargs)
+
+    if new_val != value:
+        st.session_state.field_touched.add(key)
+
+    if key in st.session_state.field_touched:
+        result = check_fn(new_val, *check_args)
+
+        if result.error:
+            st.session_state.field_errors[key] = result.error
+            st.markdown(
+                f"<div style='margin-top:-12px;margin-bottom:8px;"
+                f"padding:6px 10px;background:#2d0a0a;"
+                f"border-left:3px solid #e74c3c;"
+                f"border-radius:0 6px 6px 0;font-size:12px;"
+                f"color:#ff8a80'>❌ {result.error}</div>",
+                unsafe_allow_html=True,
+            )
+            if result.hint:
+                st.markdown(
+                    f"<div style='margin-top:-4px;margin-bottom:8px;"
+                    f"padding:4px 10px;background:#1a2000;"
+                    f"border-left:3px solid #f39c12;"
+                    f"border-radius:0 6px 6px 0;font-size:11px;"
+                    f"color:#ffc947'>💡 {result.hint}</div>",
+                    unsafe_allow_html=True,
+                )
+        elif result.warning:
+            st.session_state.field_errors.pop(key, None)
+            st.session_state.field_warnings[key] = result.warning
+            st.markdown(
+                f"<div style='margin-top:-12px;margin-bottom:8px;"
+                f"padding:6px 10px;background:#1f1600;"
+                f"border-left:3px solid #f39c12;"
+                f"border-radius:0 6px 6px 0;font-size:12px;"
+                f"color:#ffc947'>⚠️ {result.warning}</div>",
+                unsafe_allow_html=True,
+            )
+        else:
+            st.session_state.field_errors.pop(key, None)
+            st.session_state.field_warnings.pop(key, None)
+            st.markdown(
+                f"<div style='margin-top:-12px;margin-bottom:8px;"
+                f"padding:4px 10px;font-size:11px;"
+                f"color:#2ecc71'>✅ Hợp lệ</div>",
+                unsafe_allow_html=True,
+            )
+
+    return new_val
+
+
+def _render_step_status_banner(errors: dict, warnings: dict,
+                                n_fields_total: int):
+    """Banner tổng hợp trạng thái bước hiện tại — hiện ở đầu form."""
+    n_err  = len(errors)
+    n_warn = len(warnings)
+    n_ok   = n_fields_total - n_err - n_warn
+
+    if n_err == 0 and n_warn == 0 and n_ok == 0:
+        return
+
+    err_pct  = n_err  / n_fields_total * 100
+    warn_pct = n_warn / n_fields_total * 100
+    ok_pct   = n_ok   / n_fields_total * 100
+
+    bar_html = (
+        f"<div style='display:flex;height:6px;border-radius:3px;"
+        f"overflow:hidden;margin-bottom:8px'>"
+        f"<div style='width:{ok_pct:.0f}%;background:#2ecc71'></div>"
+        f"<div style='width:{warn_pct:.0f}%;background:#f39c12'></div>"
+        f"<div style='width:{err_pct:.0f}%;background:#e74c3c'></div>"
+        f"</div>"
+    )
+
+    if n_err > 0:
+        msg_color = "#ff8a80"
+        msg_bg    = "#2d0a0a"
+        msg_icon  = "❌"
+        msg_text  = (f"{n_err} lỗi cần sửa trước khi tiếp tục"
+                     + (f" · {n_warn} cảnh báo" if n_warn else ""))
+    elif n_warn > 0:
+        msg_color = "#ffc947"
+        msg_bg    = "#1f1600"
+        msg_icon  = "⚠️"
+        msg_text  = f"{n_warn} cảnh báo — có thể tiếp tục nhưng nên kiểm tra lại"
+    else:
+        msg_color = "#2ecc71"
+        msg_bg    = "#0d1f0d"
+        msg_icon  = "✅"
+        msg_text  = "Tất cả trường hợp lệ — có thể tiếp tục"
+
+    st.markdown(
+        f"{bar_html}"
+        f"<div style='padding:8px 12px;background:{msg_bg};"
+        f"border-radius:6px;font-size:12px;color:{msg_color};"
+        f"margin-bottom:12px'>{msg_icon} {msg_text}</div>",
+        unsafe_allow_html=True,
+    )
+
+
 # =========================================================================
 # ⚙️ WIZARD KHAI BÁO SỐ LIỆU — 3 BƯỚC
 # =========================================================================
@@ -214,8 +589,27 @@ def show_options_dialog():
     # BƯỚC 1 — THỦY VĂN & VỊ TRÍ
     # ═══════════════════════════════════════════════════════════════════
     if step == 1:
-        st.markdown("### 🌊 Thông số thủy văn & vị trí cầu")
-        st.info("📌 Phạm vi đề tài: Cầu vượt sông/kênh cấp IV–VI (TCVN 8818:2022)")
+        st.markdown(
+            DS.section_header(
+                title = "Thông số thủy văn & vị trí cầu",
+                icon  = "🌊",
+                sub   = "Phạm vi đề tài: Cầu vượt sông/kênh cấp IV–VI (TCVN 8818:2022)",
+            ),
+            unsafe_allow_html=True,
+        )
+
+        # Banner tổng hợp (chỉ hiện sau lần touched đầu tiên)
+        _touched_step1 = st.session_state.field_touched & {
+            'wz_h1', 'wz_h5', 'wz_h10', 'wz_h98', 'wz_xtim', 'wz_goc', 'wz_tban'
+        }
+        if _touched_step1:
+            _render_step_status_banner(
+                errors={k: v for k, v in st.session_state.field_errors.items()
+                        if k.startswith('wz_')},
+                warnings={k: v for k, v in st.session_state.field_warnings.items()
+                          if k.startswith('wz_')},
+                n_fields_total=7,
+            )
 
         col_a, col_b = st.columns(2)
         with col_a:
@@ -241,99 +635,130 @@ def show_options_dialog():
                 format_func=lambda x: "Kênh đào" if x == "1" else "Sông tự nhiên",
                 key="wz_loaih",
             )
-            goc_giao = st.number_input(
-                "Góc giao chéo (độ):",
-                min_value=30.0, max_value=90.0,
-                value=float(draft.get('goc_giao', st.session_state.design_data.get('goc_giao', 90.0))),
-                step=1.0, key="wz_goc",
-                help="90° = vuông góc. Cầu xiên < 75° cần kiểm tra thêm.",
+            goc_giao = _field_with_feedback(
+                label     = "Góc giao chéo (độ)",
+                value     = float(draft.get('goc_giao', st.session_state.design_data.get('goc_giao', 90.0))),
+                key       = "wz_goc",
+                check_fn  = VAL.check_goc_giao,
+                check_args= (),
+                fmt       = "%.1f",
+                min_val   = 30.0,
+                max_val   = 90.0,
+                step      = 1.0,
+                help_txt  = "90° = vuông góc. Cầu xiên < 75° cần kiểm tra thêm.",
             )
 
         with col_b:
             st.markdown("**📏 Cao độ thủy văn (m)**")
             st.caption("Thứ tự bắt buộc: MNCN > MNTT > MNTC > MNTN")
 
+            _lt_min = _lt_max = None
             if 'df_tim_line' in st.session_state and st.session_state.df_tim_line is not None:
                 _tl = st.session_state.df_tim_line
-                _lt_col = next((c for c in _tl.columns if 'ý trình' in c or c.lower()=='ly_trinh'), None)
+                _lt_col = next((c for c in _tl.columns if 'ý trình' in c or c.lower() == 'ly_trinh'), None)
                 if _lt_col:
                     _lt_min = float(_tl[_lt_col].min())
                     _lt_max = float(_tl[_lt_col].max())
                     st.info(f"🗺️ Địa hình: Lý trình {_lt_min:.1f} → {_lt_max:.1f}m  |  Gợi ý tim cầu ≈ **{(_lt_min+_lt_max)/2:.1f}m**")
 
-            x_tim_clearance = st.number_input(
-                "📍 Lý trình tim tĩnh không (m):",
-                value=float(draft.get('x_tim_clearance', st.session_state.design_data.get('x_tim_clearance', 0.0))),
-                step=1.0, format="%.2f", key="wz_xtim",
-                help="Lý trình điểm tim cầu vượt qua sông/kênh.",
+            x_tim_clearance = _field_with_feedback(
+                label     = "📍 Lý trình tim tĩnh không (m)",
+                value     = float(draft.get('x_tim_clearance', st.session_state.design_data.get('x_tim_clearance', 0.0))),
+                key       = "wz_xtim",
+                check_fn  = VAL.check_x_tim,
+                check_args= (_lt_min, _lt_max),
+                fmt       = "%.2f",
+                step      = 1.0,
+                help_txt  = "Lý trình điểm tim cầu vượt qua sông/kênh.",
             )
 
             _d = st.session_state.design_data
-            h1 = st.number_input(
-                "🔴 MNCN — Mực nước cao nhất H1% (m):",
-                value=float(draft.get('h1', _d.get('MNCN', 3.50))),
-                format="%.3f", key="wz_h1",
-                help="Mực nước cao nhất tần suất 1% — dùng tính an toàn va tàu",
+            h1 = _field_with_feedback(
+                label     = "MNCN — Mực nước cao nhất H1% (m)",
+                value     = float(draft.get('h1', _d.get('MNCN', 3.50))),
+                key       = "wz_h1",
+                check_fn  = VAL.check_h1,
+                check_args= (float(draft.get('h5', _d.get('MNTT', 2.00))),),
+                help_txt  = "Mực nước cao nhất tần suất 1% — dùng tính an toàn va tàu",
             )
-            h5 = st.number_input(
-                "🟠 MNTT — Mực nước thông thuyền H5% (m):",
-                value=float(draft.get('h5', _d.get('MNTT', 2.00))),
-                format="%.3f", key="wz_h5",
-                help="Mực nước thông thuyền — dùng tính chiều cao tĩnh không H",
+            h5 = _field_with_feedback(
+                label     = "MNTT — Mực nước thông thuyền H5% (m)",
+                value     = float(draft.get('h5', _d.get('MNTT', 2.00))),
+                key       = "wz_h5",
+                check_fn  = VAL.check_h5,
+                check_args= (h1, float(draft.get('h10', _d.get('MNTC', 1.50)))),
+                help_txt  = "Mực nước thông thuyền — dùng tính chiều cao tĩnh không H",
             )
-            h10 = st.number_input(
-                "🟡 MNTC — Mực nước thi công H10% (m):",
-                value=float(draft.get('h10', _d.get('MNTC', 1.50))),
-                format="%.3f", key="wz_h10",
-                help="Mực nước thi công tần suất 10%",
+            h10 = _field_with_feedback(
+                label     = "MNTC — Mực nước thi công H10% (m)",
+                value     = float(draft.get('h10', _d.get('MNTC', 1.50))),
+                key       = "wz_h10",
+                check_fn  = VAL.check_h10,
+                check_args= (h5, float(draft.get('h98', _d.get('MNTN', 0.50)))),
+                help_txt  = "Mực nước thi công tần suất 10%",
             )
-            h98 = st.number_input(
-                "🔵 MNTN — Mực nước thấp nhất H98% (m):",
-                value=float(draft.get('h98', _d.get('MNTN', 0.50))),
-                format="%.3f", key="wz_h98",
-                help="Mực nước kiệt tần suất 98% — dùng ước tính chiều cao trụ",
+            h98 = _field_with_feedback(
+                label     = "MNTN — Mực nước thấp nhất H98% (m)",
+                value     = float(draft.get('h98', _d.get('MNTN', 0.50))),
+                key       = "wz_h98",
+                check_fn  = VAL.check_h98,
+                check_args= (h10,),
+                help_txt  = "Mực nước kiệt tần suất 98% — dùng ước tính chiều cao trụ",
             )
-            if h1 and h5 and h10 and h98:
-                if h1 > h5 > h10 > h98:
-                    st.success(f"✅ Logic hợp lệ: {h1:.2f} > {h5:.2f} > {h10:.2f} > {h98:.2f}")
-                else:
-                    st.error("❌ Thứ tự cao độ sai — yêu cầu MNCN > MNTT > MNTC > MNTN")
 
             st.markdown("**🏗️ Bản mặt cầu**")
-            t_ban_mm = st.number_input(
-                "Chiều dày bản mặt cầu (mm):",
-                min_value=175, max_value=350,
-                value=int(draft.get('t_ban_mm', _d.get('t_ban_mm', 200))),
-                step=5, key="wz_tban",
-                help="Tối thiểu 175mm theo TCVN 11823-2017 Điều 9.7.1.1",
+            t_ban_mm = _field_with_feedback(
+                label     = "Chiều dày bản mặt cầu (mm)",
+                value     = float(draft.get('t_ban_mm', _d.get('t_ban_mm', 200))),
+                key       = "wz_tban",
+                check_fn  = VAL.check_t_ban,
+                check_args= (),
+                fmt       = "%.0f",
+                min_val   = 150.0,
+                max_val   = 400.0,
+                step      = 5.0,
+                help_txt  = "Tối thiểu 175mm — TCVN 11823-2017 Điều 9.7.1.1",
+                unit      = "mm",
             )
 
-        errs1 = st.session_state.wizard_errors.get('step1', {})
-        if errs1:
-            for msg in errs1.values():
-                st.error(f"⚠️ {msg}")
+        # Disable nút Tiếp nếu còn lỗi cứng
+        _has_hard_errors = any(
+            k in st.session_state.field_errors
+            for k in ['wz_h1', 'wz_h5', 'wz_h10', 'wz_h98', 'wz_xtim', 'wz_goc', 'wz_tban']
+        )
 
         st.markdown("<br>", unsafe_allow_html=True)
         _, btn_col = st.columns([3, 1])
         with btn_col:
-            if st.button("Tiếp theo ▶", use_container_width=True, type="primary", key="wz_next1"):
+            if st.button(
+                "Tiếp theo ▶",
+                use_container_width=True,
+                type="primary",
+                disabled=_has_hard_errors,
+                key="wz_next1",
+                help="Sửa hết lỗi đỏ trước khi sang bước tiếp theo" if _has_hard_errors else "",
+            ):
                 st.session_state.wizard_draft.update({
                     'mien': mien, 'cap_s': cap_s, 'loai_h': loai_h,
                     'goc_giao': goc_giao, 'x_tim_clearance': x_tim_clearance,
                     'h1': h1, 'h5': h5, 'h10': h10, 'h98': h98,
-                    't_ban_mm': t_ban_mm,
+                    't_ban_mm': int(t_ban_mm),
                 })
-                errs = _validate_step1(st.session_state.wizard_draft)
-                st.session_state.wizard_errors['step1'] = errs
-                if not errs:
-                    st.session_state.wizard_step = 2
-                    st.rerun()
+                st.session_state.wizard_step = 2
+                st.rerun()
 
     # ═══════════════════════════════════════════════════════════════════
     # BƯỚC 2 — HÌNH HỌC TUYẾN
     # ═══════════════════════════════════════════════════════════════════
     elif step == 2:
-        st.markdown("### 🛣️ Tiêu chuẩn hình học tuyến đường")
+        st.markdown(
+            DS.section_header(
+                title = "Tiêu chuẩn hình học tuyến đường",
+                icon  = "🛣️",
+                sub   = "Chọn loại đường, vận tốc thiết kế và nhập bề rộng cầu",
+            ),
+            unsafe_allow_html=True,
+        )
 
         # Khởi tạo defaults — sẽ được ghi đè trong từng nhánh
         v_hinhhoc     = draft.get('v_hinhhoc', 60)
@@ -777,8 +1202,14 @@ def show_options_dialog():
     # BƯỚC 3 — XEM LẠI & CHẠY AI
     # ═══════════════════════════════════════════════════════════════════
     elif step == 3:
-        st.markdown("### ✅ Xem lại thông số & Chạy tính toán")
-        st.caption("Kiểm tra lại toàn bộ trước khi chạy pipeline AI.")
+        st.markdown(
+            DS.section_header(
+                title = "Xem lại thông số & Chạy tính toán",
+                icon  = "✅",
+                sub   = "Kiểm tra lại toàn bộ trước khi chạy pipeline AI",
+            ),
+            unsafe_allow_html=True,
+        )
 
         draft = st.session_state.wizard_draft
 
@@ -898,11 +1329,19 @@ def show_options_dialog():
                     lt_diahinh_arr = _df_tl[_lt_col_t].to_numpy()
                     z_diahinh_arr  = _df_tl[_z_col_t].to_numpy()
 
-            # Re-call res_geo
-            res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
+            # ── Khởi tạo tracker ─────────────────────────────────────────────────
+            tracker = PipelineTracker(PIPELINE_STEPS)
+            tracker.setup()
+            pipeline_ok = True
+            kcn_models  = None
+            pier_models = None
+            fnd_models  = None
 
-            with st.spinner("⚡ Đang chạy toàn bộ AI pipeline..."):
-                # ── Bước 1: Tĩnh không ─────────────────────────────────────────
+            # ══════════════════════════════════════════════════════════════════
+            # BƯỚC 1 — TĨNH KHÔNG
+            # ══════════════════════════════════════════════════════════════════
+            tracker.start("TK")
+            try:
                 res = TK.tra_cuu_tinh_khong_bridge(
                     mien=mien, cap_num=cap_s, loai_hinh=loai_h,
                     h1=h1, h5=h5, h10=h10, h98=h98, h_tn_tb=h_tn_tb
@@ -918,28 +1357,53 @@ def show_options_dialog():
                 res['is_urban'] = is_urban_val
                 res['x_tim_clearance'] = x_tim_clearance
                 res['mcn_oto_input'] = mcn_oto_override
+                tracker.done("TK", f"B={res.get('B',0)}m  H={res.get('H',0)}m  Đáy dầm≥{res.get('day_dam',0):.3f}m")
+            except Exception as _e:
+                tracker.error("TK", str(_e))
+                pipeline_ok = False
+                res = {}
 
-                if res_geo.get("status") == "success":
-                    # ── Bước 2: Hình học ───────────────────────────────────────
-                    res['R_hinh_hoc'] = r_final_calc
+            # ══════════════════════════════════════════════════════════════════
+            # BƯỚC 2 — YẾU TỐ HÌNH HỌC  (critical)
+            # ══════════════════════════════════════════════════════════════════
+            if pipeline_ok:
+                tracker.start("YTHH")
+                try:
+                    res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
+                    if res_geo.get("status") != "success":
+                        raise ValueError(
+                            f"Không tính được yếu tố hình học tuyến: "
+                            f"{res_geo.get('message', 'Lỗi không xác định')}. "
+                            "Kiểm tra lại Loại đường, Vận tốc thiết kế và Địa hình."
+                        )
+                    res['R_hinh_hoc']    = r_final_calc
                     res['i_max_hinh_hoc'] = i_final_calc
-                    res['geo_logic']  = YTHH.tinh_toan_geo_logic(
-                        res, h_tn_tb,
-                        res.get('day_dam', 0.0), x_tim_clearance=x_tim_clearance,
-                        lt_diahinh=lt_diahinh_arr, z_diahinh=z_diahinh_arr
+                    res['geo_logic'] = YTHH.tinh_toan_geo_logic(
+                        res, h_tn_tb, res.get('day_dam', 0.0),
+                        x_tim_clearance=x_tim_clearance,
+                        lt_diahinh=lt_diahinh_arr, z_diahinh=z_diahinh_arr,
                     )
                     res['bc']         = b_cau
                     res['loai_duong'] = l_hinhhoc
                     res['vtk']        = res_geo.get("v_thiet_ke", 60)
-
                     L_cau  = res['geo_logic'].get('L_cau', None)
                     moi_tr = "Vượt sông"
                     v3_path = os.path.join(os.path.dirname(__file__), "Data", "Bridge_Train_Dataset_v3.xlsx")
-
-                    # ── Bước 3 (legacy GRD — bỏ qua nếu không có file) ─────────
                     res['ai_result'] = None
+                    tracker.done("YTHH",
+                        f"L_cầu={L_cau:.1f}m  Bc={b_cau:.1f}m  Vtk={res['vtk']}km/h")
+                except Exception as _e:
+                    tracker.error("YTHH", str(_e))
+                    pipeline_ok = False
+            else:
+                tracker.skip("YTHH")
 
-                    # ── Bước 4: AI Kết cấu nhịp ────────────────────────────────
+            # ══════════════════════════════════════════════════════════════════
+            # BƯỚC 3 — AI KẾT CẤU NHỊP
+            # ══════════════════════════════════════════════════════════════════
+            if pipeline_ok:
+                tracker.start("KCN")
+                try:
                     try:
                         kcn_models = KCN.train_kcn_ai(v3_path=v3_path)
                     except TypeError:
@@ -947,25 +1411,35 @@ def show_options_dialog():
                     except Exception as _e_train:
                         kcn_models = None
                         res['_kcn_error'] = f"train: {_e_train}"
-                    try:
-                        _kcn_raw = KCN.predict_kcn(
-                            B_tk=res['B'], H_tk=res.get('H', 3.5),
-                            goc=goc_giao, B_cau=res['bc'],
-                            moi_truong=moi_tr, L_cau_tong=L_cau,
-                            models=kcn_models,
-                        )
-                        if isinstance(_kcn_raw, dict) and "pa1_chi_phi" in _kcn_raw:
-                            _pa = dict(_kcn_raw["pa1_chi_phi"])
-                            _pa["do_tin_cay"] = 85 if kcn_models else 60
-                            res['kcn_result'] = _pa
-                            res['kcn_3_pa']   = _kcn_raw
-                        else:
-                            res['kcn_result'] = _kcn_raw
-                    except Exception as _e_kcn:
-                        res['kcn_result'] = None
-                        res['_kcn_error'] = f"predict: {_e_kcn}"
+                    _kcn_raw = KCN.predict_kcn(
+                        B_tk=res['B'], H_tk=res.get('H', 3.5),
+                        goc=goc_giao, B_cau=res['bc'],
+                        moi_truong=moi_tr, L_cau_tong=L_cau,
+                        models=kcn_models,
+                    )
+                    if isinstance(_kcn_raw, dict) and "pa1_chi_phi" in _kcn_raw:
+                        _pa = dict(_kcn_raw["pa1_chi_phi"])
+                        _pa["do_tin_cay"] = 85 if kcn_models else 60
+                        res['kcn_result'] = _pa
+                        res['kcn_3_pa']   = _kcn_raw
+                    else:
+                        res['kcn_result'] = _kcn_raw
+                    _kr = res.get('kcn_result') or {}
+                    tracker.done("KCN",
+                        f"{_kr.get('tong_so_nhip','?')} nhịp × "
+                        f"{_kr.get('chieu_dai','?')}m ({_kr.get('loai_dam','?')})")
+                except Exception as _e:
+                    tracker.error("KCN", str(_e))
+                    res['kcn_result'] = None
+            else:
+                tracker.skip("KCN")
 
-                    # ── Bước 5: AI Mố – Trụ ────────────────────────────────────
+            # ══════════════════════════════════════════════════════════════════
+            # BƯỚC 4 — AI MỐ – TRỤ
+            # ══════════════════════════════════════════════════════════════════
+            if pipeline_ok:
+                tracker.start("MOT")
+                try:
                     try:
                         pier_models = MOT.train_pier_ai(v3_path=v3_path)
                     except TypeError:
@@ -982,86 +1456,165 @@ def show_options_dialog():
                     )
                     _ph = MOT.estimate_pier_height(
                         MNCN=h1, H_tinh_khong=res.get('H', 3.5),
-                        H_dam=H_dam_est, MNTN=h98
+                        H_dam=H_dam_est, MNTN=h98,
                     )
-                    H_tru_est  = _ph['H_than_tru']
+                    H_tru_est   = _ph['H_than_tru']
                     cao_day_dam = _ph['cao_day_dam']
                     cao_mat_cau = _ph['cao_mat_cau']
                     res['H_tru_est']   = H_tru_est
                     res['cao_day_dam'] = cao_day_dam
                     res['cao_mat_cau'] = cao_mat_cau
-
                     is_urban = is_urban_val
                     is_river = 1
-                    _n_nhip = res.get('kcn_result', {}).get('tong_so_nhip', 1) if res.get('kcn_result') else 1
+                    _n_nhip = (res.get('kcn_result', {}).get('tong_so_nhip', 1)
+                               if res.get('kcn_result') else 1)
                     res['tru_result'] = MOT.predict_pier(
                         vtk=res['vtk'], B_cau=res['bc'],
                         H_tru=H_tru_est, is_urban=is_urban,
                         is_river=is_river, cap_song=res['cap_song'],
                         loai_dam=loai_dam_cho_tru, n_nhip=_n_nhip,
-                        models=pier_models
+                        models=pier_models,
                     )
+                    _tr = res.get('tru_result') or {}
+                    tracker.done("MOT",
+                        f"{_tr.get('loai_tru','?')}  H_trụ≈{H_tru_est:.1f}m")
+                except Exception as _e:
+                    tracker.error("MOT", str(_e))
+                    res['tru_result'] = None
+                    H_tru_est = 8.0
+                    is_river  = 1
+            else:
+                tracker.skip("MOT")
 
-                    # ── Bước 6: Móng cầu ───────────────────────────────────────
+            # ══════════════════════════════════════════════════════════════════
+            # BƯỚC 5 — AI MÓNG CẦU
+            # ══════════════════════════════════════════════════════════════════
+            if pipeline_ok:
+                tracker.start("MONG")
+                try:
                     loai_tru_str = (
                         res['tru_result']['loai_tru'] if res.get('tru_result')
                         else 'Thân cột 2 trụ'
                     )
                     fnd_models = MONG.train_foundation_ai(v3_path=v3_path)
                     res['mong_result'] = MONG.predict_foundation(
-                        H_tru=H_tru_est, loai_tru=loai_tru_str,
+                        H_tru=res.get('H_tru_est', 8.0),
+                        loai_tru=loai_tru_str,
                         is_river=is_river, cap_song=res['cap_song'],
                         B_cau=res['bc'], vtk=res['vtk'],
-                        L_nhip=res.get('kcn_result', {}).get('chieu_dai') if res.get('kcn_result') else None,
+                        L_nhip=(res.get('kcn_result', {}).get('chieu_dai')
+                                if res.get('kcn_result') else None),
                         is_urban=is_urban_val,
-                        foundation_models=fnd_models
+                        foundation_models=fnd_models,
                     )
+                    _mg = res.get('mong_result') or {}
+                    tracker.done("MONG",
+                        f"{_mg.get('loai_mong','?')}  "
+                        f"D={_mg.get('duong_kinh_coc','?')}m  "
+                        f"L={_mg.get('chieu_dai_coc','?')}m")
+                except Exception as _e:
+                    tracker.error("MONG", str(_e))
+                    res['mong_result'] = None
+            else:
+                tracker.skip("MONG")
 
-                    # ── Bước 7: Lớp phủ mặt cầu ────────────────────────────────
-                    res['lop_phu_result'] = LPC.tu_van_lop_phu(
-                        vtk=res['vtk'],
-                        loai_duong=res.get('loai_duong', 'Do thi'),
-                        L_nhip=res.get('kcn_result', {}).get('chieu_dai', 40) if res.get('kcn_result') else 40,
-                        moi_truong="Vượt sông"
-                    )
+            # ══════════════════════════════════════════════════════════════════
+            # BƯỚC 6 — LỚP PHỦ MẶT CẦU
+            # ══════════════════════════════════════════════════════════════════
+            tracker.start("LPC")
+            try:
+                res['lop_phu_result'] = LPC.tu_van_lop_phu(
+                    vtk=res.get('vtk', 60),
+                    loai_duong=res.get('loai_duong', 'Do thi'),
+                    L_nhip=(res.get('kcn_result', {}).get('chieu_dai', 40)
+                            if res.get('kcn_result') else 40),
+                    moi_truong="Vượt sông",
+                )
+                _lp = res.get('lop_phu_result') or {}
+                _lp_pa = str(_lp.get('phuong_an', '?'))
+                tracker.done("LPC", (_lp_pa[:40] + "...") if len(_lp_pa) > 40 else _lp_pa)
+            except Exception as _e:
+                tracker.error("LPC", str(_e))
+                res['lop_phu_result'] = None
 
-                    st.session_state.design_data = res
+            # ══════════════════════════════════════════════════════════════════
+            # BƯỚC 7 — BẢN VẼ KẾT CẤU
+            # ══════════════════════════════════════════════════════════════════
+            tracker.start("BVK")
+            try:
+                importlib.reload(BVK)
+                importlib.reload(CTD)
+                tracker.done("BVK", "Bản vẽ 2D/3D đã sẵn sàng")
+            except Exception as _e:
+                tracker.error("BVK", str(_e))
 
-                    # ── Bước 8: Sinh 3 phương án so sánh ──────────────────────
-                    try:
-                        st.session_state.alternatives = SSP.generate_3_alternatives(
-                            B_tk=res['B'], H_tk=res.get('H', 3.5), goc=goc_giao,
-                            B_cau=res['bc'], moi_truong=moi_tr, L_cau=L_cau,
-                            kcn_models=kcn_models, pier_models=pier_models,
-                            fnd_models=fnd_models,
-                            MNCN=h1, H_tk_nhip=res.get('H', 3.5), h98=h98,
-                            cap_song=res['cap_song'], is_urban=is_urban_val,
-                            is_river=1, vtk=res['vtk'],
-                            pa1_kcn=res.get('kcn_result'),
-                            pa1_tru=res.get('tru_result'),
-                            pa1_mong=res.get('mong_result'),
-                        )
-                    except Exception as _alt_err:
-                        st.session_state.alternatives = None
-                        st.warning(f"Không sinh được phương án so sánh: {_alt_err}")
+            # Lưu design_data trước khi chạy SSP
+            if pipeline_ok:
+                st.session_state.design_data = res
 
-                    kcn = res.get('kcn_result') or (res.get('ai_result') or {})
-                    st.session_state.chatbot_context = (
-                        f"Vtk={res['vtk']}km/h | "
-                        f"LoaiDam={kcn.get('loai_dam','?')} | "
-                        f"L_nhip={kcn.get('chieu_dai','?')}m | "
-                        f"L_cau={res['geo_logic']['L_cau']:.1f}m | "
-                        f"LoaiTru={res.get('tru_result',{}).get('loai_tru','?')} | "
-                        f"LoaiMong={res.get('mong_result',{}).get('loai_mong','?')}"
-                    )
-                    st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
-                    st.rerun()
+            # ══════════════════════════════════════════════════════════════════
+            # BƯỚC 8 — SO SÁNH 3 PHƯƠNG ÁN
+            # ══════════════════════════════════════════════════════════════════
+            tracker.start("SSP")
+            try:
+                st.session_state.alternatives = SSP.generate_3_alternatives(
+                    B_tk=res.get('B', 20), H_tk=res.get('H', 3.5), goc=goc_giao,
+                    B_cau=res.get('bc', 12), moi_truong=moi_tr if pipeline_ok else "Vượt sông",
+                    L_cau=L_cau if pipeline_ok else None,
+                    kcn_models=kcn_models, pier_models=pier_models,
+                    fnd_models=fnd_models,
+                    MNCN=h1, H_tk_nhip=res.get('H', 3.5), h98=h98,
+                    cap_song=res.get('cap_song', cap_s), is_urban=is_urban_val,
+                    is_river=1, vtk=res.get('vtk', 60),
+                    pa1_kcn=res.get('kcn_result'),
+                    pa1_tru=res.get('tru_result'),
+                    pa1_mong=res.get('mong_result'),
+                )
+                tracker.done("SSP", "3 phương án đã được sinh và đánh giá")
+            except Exception as _e:
+                tracker.error("SSP", str(_e))
+                st.session_state.alternatives = None
+
+            # ══════════════════════════════════════════════════════════════════
+            # KẾT THÚC PIPELINE
+            # ══════════════════════════════════════════════════════════════════
+            n_errors = sum(
+                1 for s in PIPELINE_STEPS
+                if tracker.statuses[s["id"]] == PipelineTracker.STATUS_ERROR
+            )
+            n_critical_errors = sum(
+                1 for sid in ["TK", "YTHH"]
+                if tracker.statuses[sid] == PipelineTracker.STATUS_ERROR
+            )
+            tracker.finish(success=(n_critical_errors == 0))
+            tracker.render_timing_summary()
+
+            if pipeline_ok and res.get('kcn_result'):
+                kcn = res.get('kcn_result') or (res.get('ai_result') or {})
+                st.session_state.chatbot_context = (
+                    f"Vtk={res['vtk']}km/h | "
+                    f"LoaiDam={kcn.get('loai_dam','?')} | "
+                    f"L_nhip={kcn.get('chieu_dai','?')}m | "
+                    f"L_cau={res['geo_logic']['L_cau']:.1f}m | "
+                    f"LoaiTru={res.get('tru_result',{}).get('loai_tru','?')} | "
+                    f"LoaiMong={res.get('mong_result',{}).get('loai_mong','?')}"
+                )
+                time.sleep(1.2)
+                if n_errors == 0:
+                    st.success("✅ Pipeline hoàn tất — chuyển sang Bản vẽ kỹ thuật")
                 else:
-                    st.error(
-                        f"❌ Không tính được yếu tố hình học tuyến: "
-                        f"{res_geo.get('message', 'Lỗi không xác định')}. "
-                        "Kiểm tra lại **Loại đường**, **Vận tốc thiết kế** và **Địa hình** đã chọn."
+                    st.warning(
+                        f"⚠️ Pipeline hoàn tất với {n_errors} bước có cảnh báo. "
+                        "Kết quả vẫn được lưu — xem chi tiết ở trên."
                     )
+                time.sleep(0.8)
+                st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
+                st.rerun()
+            elif n_critical_errors > 0:
+                st.error(
+                    f"❌ {n_critical_errors} bước quan trọng thất bại. "
+                    "Kiểm tra lại số liệu đầu vào và thử lại."
+                )
 
     # ── Fallback: step ngoài phạm vi → reset ───────────────────────────────
     else:
@@ -1246,6 +1799,10 @@ with ctrl_col1:
         help="Nhấn để mở hộp thoại nhập thông số — bắt buộc trước khi tính toán",
         key="btn_options_main",
     ):
+        # Reset validation state để tránh lỗi cũ hiện lại
+        st.session_state.field_touched  = set()
+        st.session_state.field_errors   = {}
+        st.session_state.field_warnings = {}
         if not st.session_state.wizard_draft:
             st.session_state.wizard_step = 1
         show_options_dialog()
@@ -1264,37 +1821,254 @@ with ctrl_col2:
             unsafe_allow_html=True
         )
 
-# --- THANH SIDEBAR TRÁI (giữ nguyên như ban đầu) ---
+# --- THANH SIDEBAR TRÁI ---
 with st.sidebar:
+
+    # ── VÙNG A: Thông tin dự án ──────────────────────────────────────────
     current_dir = os.path.dirname(os.path.abspath(__file__))
-    logo_path = os.path.join(current_dir, "Images", "UTH.jpg")
+    logo_path   = os.path.join(current_dir, "Images", "UTH.jpg")
     if os.path.exists(logo_path):
-        st.image(logo_path, width=280)
+        st.image(logo_path, width=260)
 
-    st.write("👤 **SVTH:** Chương DND")
-    st.write("👨‍🏫 **GVHD:** T.S Nguyễn Văn Hiển")
-    st.caption("🎓 *Đề tài:* Tích hợp AI và BIM tự động hóa thiết kế cầu đường bộ")
+    st.markdown(
+        "<div style='background:#1e1e2e;border:1px solid #2a2a3a;"
+        "border-radius:8px;padding:10px 12px;margin:6px 0'>"
+        "<div style='font-size:11px;color:#555;margin-bottom:6px;"
+        "text-transform:uppercase;letter-spacing:0.4px'>Đề tài</div>"
+        "<div style='font-size:12px;color:#ccc;line-height:1.5'>"
+        "Tích hợp AI và BIM tự động hóa<br>thiết kế cầu đường bộ</div>"
+        "<hr style='border-color:#2a2a3a;margin:8px 0'>"
+        "<div style='font-size:11px;color:#888'>"
+        "👤 <b style='color:#aaa'>SVTH:</b> Chương DND<br>"
+        "👨‍🏫 <b style='color:#aaa'>GVHD:</b> T.S Nguyễn Văn Hiển"
+        "</div></div>",
+        unsafe_allow_html=True,
+    )
 
-    st.markdown("---")
-
-    # ── Thông tin tài khoản & đăng xuất ─────────────────────────────────
     _u = AUTH.current_user()
-    st.caption(f"🔑 Đăng nhập: **{_u.get('name', _u.get('username',''))}** ({_u.get('role','')})")
-    _col1, _col2 = st.columns(2)
-    with _col1:
+    st.markdown(
+        f"<div style='display:flex;align-items:center;gap:8px;padding:6px 0'>"
+        f"<span style='font-size:18px'>{'👑' if AUTH.is_admin() else '👤'}</span>"
+        f"<div>"
+        f"<div style='font-size:12px;color:#ddd;font-weight:600'>"
+        f"{_u.get('name', _u.get('username',''))}</div>"
+        f"<div style='font-size:10px;color:#666'>{_u.get('role','').upper()}</div>"
+        f"</div></div>",
+        unsafe_allow_html=True,
+    )
+
+    _col_lo, _col_acc = st.columns(2)
+    with _col_lo:
         if st.button("🚪 Đăng xuất", use_container_width=True, key="btn_logout"):
             AUTH.logout()
             st.rerun()
-    with _col2:
-        _show_acct = st.button("👥 Tài khoản", use_container_width=True, key="btn_acct",
-                               disabled=not AUTH.is_admin(),
-                               help="Quản lý tài khoản (chỉ admin)")
-    if _show_acct and AUTH.is_admin():
+    with _col_acc:
+        if AUTH.is_admin():
+            if st.button("👥 Tài khoản", use_container_width=True, key="btn_account"):
+                st.session_state['show_account'] = not st.session_state.get('show_account', False)
+
+    if st.session_state.get('show_account') and AUTH.is_admin():
         with st.expander("👥 Quản lý tài khoản", expanded=True):
             AUTH.show_account_panel()
+            if st.button("✕ Đóng", key="btn_close_acc"):
+                st.session_state['show_account'] = False
+                st.rerun()
 
-    st.markdown("---")
-    st.subheader("🤖 Bridge AI Assistant")
+    # ── VÙNG B: Thông số hiện hành ───────────────────────────────────────
+    st.markdown(
+        "<hr style='border-color:#2a2a3a;margin:10px 0'>"
+        "<p style='font-size:10px;color:#555;margin:0 0 6px;"
+        "text-transform:uppercase;letter-spacing:0.4px'>"
+        "📊 Thông số hiện hành</p>",
+        unsafe_allow_html=True,
+    )
+
+    _sd  = st.session_state.design_data
+    _kcn = _sd.get('kcn_result') or _sd.get('ai_result') or {}
+    _geo = _sd.get('geo_logic')  or {}
+    _tru = _sd.get('tru_result') or {}
+    _mng = _sd.get('mong_result') or {}
+    _has_data = bool(_kcn.get('loai_dam'))
+
+    if not _has_data:
+        st.markdown(
+            "<div style='padding:10px;background:#141420;"
+            "border:1px dashed #333355;border-radius:8px;text-align:center'>"
+            "<div style='font-size:20px;margin-bottom:4px'>○</div>"
+            "<div style='font-size:11px;color:#555'>"
+            "Chưa có kết quả<br>Nhấn OPTIONS để bắt đầu</div>"
+            "</div>",
+            unsafe_allow_html=True,
+        )
+    else:
+        def _sb_row(label: str, value: str, color: str = "#4fc3f7") -> str:
+            return (
+                f"<div style='display:flex;justify-content:space-between;"
+                f"align-items:center;padding:4px 0;"
+                f"border-bottom:1px solid #1e1e2e'>"
+                f"<span style='font-size:10px;color:#666'>{label}</span>"
+                f"<span style='font-size:11px;font-weight:600;"
+                f"color:{color}'>{value}</span></div>"
+            )
+
+        _L_cau    = _geo.get('L_cau', 0)
+        _loai_dam = _kcn.get('loai_dam', '—')
+        _t_nhip   = _kcn.get('tong_so_nhip', '—')
+        _L_nhip   = _kcn.get('chieu_dai', '—')
+        _bc       = _sd.get('bc', 0)
+        _vtk      = _sd.get('vtk', 0)
+        _loai_tru = _tru.get('loai_tru', '—')
+        _loai_mng = _mng.get('loai_mong', '—')
+        _d_coc    = _mng.get('duong_kinh_coc', '—')
+        _H_tru    = _sd.get('H_tru_est', '—')
+        _cap_song = _sd.get('cap_song', '—')
+
+        _dam_colors = {"Super-T": "#4fc3f7", "Dầm I": "#2ecc71", "T ngược": "#f39c12"}
+        _dc = _dam_colors.get(_loai_dam, "#9b59b6")
+
+        _rows_html = "".join([
+            _sb_row("Dầm",      _loai_dam, _dc),
+            _sb_row("Sơ đồ",    f"{_t_nhip}×{_L_nhip}m"),
+            _sb_row("L cầu",    f"{_L_cau:.1f}m"),
+            _sb_row("Bc",       f"{_bc:.1f}m"),
+            _sb_row("Vtk",      f"{_vtk} km/h"),
+            _sb_row("Trụ",      str(_loai_tru)[:20], "#c39bd3"),
+            _sb_row("H trụ",    f"{_H_tru:.1f}m" if isinstance(_H_tru, float) else str(_H_tru)),
+            _sb_row("Móng",     str(_loai_mng)[:18], "#f0a500"),
+            _sb_row("D cọc",    f"{_d_coc}m"),
+            _sb_row("Cấp sông", f"Cấp {_cap_song}"),
+        ])
+
+        st.markdown(
+            f"<div style='background:#141420;border:1px solid #2a2a3a;"
+            f"border-radius:8px;padding:8px 10px'>{_rows_html}</div>",
+            unsafe_allow_html=True,
+        )
+
+        _steps_done = sum([
+            bool(_sd.get('kcn_result')),
+            bool(_sd.get('tru_result')),
+            bool(_sd.get('mong_result')),
+            bool(_sd.get('lop_phu_result')),
+            bool(st.session_state.get('alternatives')),
+        ])
+        _pct_sb = int(_steps_done / 5 * 100)
+        st.markdown(
+            f"<div style='margin-top:6px'>"
+            f"<div style='display:flex;justify-content:space-between;"
+            f"font-size:10px;color:#555;margin-bottom:3px'>"
+            f"<span>Hoàn thành pipeline</span>"
+            f"<span style='color:#4fc3f7'>{_pct_sb}%</span></div>"
+            f"<div style='background:#1e1e2e;border-radius:4px;"
+            f"height:5px;overflow:hidden'>"
+            f"<div style='width:{_pct_sb}%;height:100%;"
+            f"background:linear-gradient(90deg,#007acc,#2ecc71)'>"
+            f"</div></div></div>",
+            unsafe_allow_html=True,
+        )
+
+    # ── VÙNG C: Trung tâm xuất file ──────────────────────────────────────
+    st.markdown(
+        "<hr style='border-color:#2a2a3a;margin:10px 0'>"
+        "<p style='font-size:10px;color:#555;margin:0 0 8px;"
+        "text-transform:uppercase;letter-spacing:0.4px'>"
+        "⬇️ Xuất file</p>",
+        unsafe_allow_html=True,
+    )
+
+    _export_ready = bool(_sd.get('kcn_result'))
+
+    if not _export_ready:
+        st.markdown(
+            "<p style='font-size:11px;color:#444;text-align:center;"
+            "padding:8px'>Chạy tính toán để mở khóa xuất file</p>",
+            unsafe_allow_html=True,
+        )
+    else:
+        st.markdown(
+            "<p style='font-size:10px;color:#888;margin:0 0 4px'>"
+            "📁 Bản vẽ CAD (DXF)</p>",
+            unsafe_allow_html=True,
+        )
+        _ecol1, _ecol2 = st.columns(2)
+        with _ecol1:
+            if st.button("Trắc dọc", use_container_width=True, key="sb_dxf_td"):
+                try:
+                    _b = EXP.export_trac_doc_dxf(_sd)
+                    st.download_button(
+                        "💾 Tải DXF", _b, "trac_doc.dxf",
+                        mime="application/octet-stream",
+                        key="sb_dl_td", use_container_width=True,
+                    )
+                except Exception as _ex:
+                    st.error(f"Lỗi: {_ex}")
+        with _ecol2:
+            if st.button("Mặt cắt", use_container_width=True, key="sb_dxf_mc"):
+                try:
+                    _b = EXP.export_mcn_dxf(_sd)
+                    st.download_button(
+                        "💾 Tải DXF", _b, "mat_cat_ngang.dxf",
+                        mime="application/octet-stream",
+                        key="sb_dl_mc", use_container_width=True,
+                    )
+                except Exception as _ex:
+                    st.error(f"Lỗi: {_ex}")
+
+        st.markdown(
+            "<p style='font-size:10px;color:#888;margin:8px 0 4px'>"
+            "🏗️ Mô hình BIM (IFC)</p>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Xuất IFC kết cấu cầu", use_container_width=True, key="sb_ifc_bridge"):
+            try:
+                _b = EXP.export_bridge_ifc(_sd)
+                st.download_button(
+                    "💾 Tải IFC", _b, "bridge.ifc",
+                    mime="application/octet-stream",
+                    key="sb_dl_ifc", use_container_width=True,
+                )
+            except Exception as _ex:
+                st.error(f"Lỗi: {_ex}")
+
+        _df_geo_sb = st.session_state.get('gdf_terrain') or st.session_state.get('df_geo')
+        if _df_geo_sb is not None:
+            if st.button("Xuất IFC địa hình", use_container_width=True, key="sb_ifc_terrain"):
+                with st.spinner("Đang xuất..."):
+                    try:
+                        _, mx, my, mz = TV.ve_dia_hinh_3d(
+                            _df_geo_sb, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3)
+                        _ifc_path = "terrain_output.ifc"
+                        _ok = TV.export_terrain_to_ifc(mx, my, mz, _ifc_path, "DiaHinh_KhaoSat")
+                        if _ok:
+                            with open(_ifc_path, "rb") as _fh:
+                                st.download_button(
+                                    "💾 Tải IFC địa hình", _fh, "terrain.ifc",
+                                    mime="application/octet-stream",
+                                    key="sb_dl_terrifc", use_container_width=True,
+                                )
+                    except Exception as _ex:
+                        st.error(f"Lỗi: {_ex}")
+
+        st.markdown(
+            "<p style='font-size:10px;color:#888;margin:8px 0 4px'>"
+            "📄 Báo cáo (PDF)</p>",
+            unsafe_allow_html=True,
+        )
+        if st.button("Xuất thuyết minh PDF", use_container_width=True, key="sb_pdf"):
+            st.info(
+                "💡 Tính năng xuất PDF đang phát triển. "
+                "Dùng Ctrl+P để in từ trình duyệt tạm thời."
+            )
+
+    # ── VÙNG D: Chatbot AI ───────────────────────────────────────────────
+    st.markdown(
+        "<hr style='border-color:#2a2a3a;margin:10px 0'>"
+        "<p style='font-size:10px;color:#555;margin:0 0 8px;"
+        "text-transform:uppercase;letter-spacing:0.4px'>"
+        "🤖 Hỏi AI về kết quả</p>",
+        unsafe_allow_html=True,
+    )
+
     chat_container = st.container(height=220, border=True)
     with chat_container:
         for msg in st.session_state.messages:
@@ -1861,9 +2635,35 @@ if selected_ribbon == "THUYẾT MINH":
 elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
     _s1 = tab_states['tab1']
     if _s1 == 'done':
-        st.success("✅ Dữ liệu đầy đủ — bản vẽ hiển thị kết quả tính toán mới nhất.")
+        st.markdown(
+            DS.banner("success", "Dữ liệu đầy đủ — bản vẽ hiển thị kết quả tính toán mới nhất."),
+            unsafe_allow_html=True,
+        )
     elif _s1 == 'partial':
-        st.warning("⏳ Kết cấu nhịp đã có nhưng chưa tính xong trụ — một số bản vẽ có thể chưa đầy đủ.")
+        st.markdown(
+            DS.banner("warning",
+                      "Kết cấu nhịp đã có nhưng chưa tính xong trụ",
+                      "Một số bản vẽ có thể chưa đầy đủ"),
+            unsafe_allow_html=True,
+        )
+    elif _s1 == 'locked':
+        _es = DS.empty_state(
+            icon      = "📐",
+            title     = "Bản vẽ chưa sẵn sàng",
+            desc      = ("Pipeline AI cần chạy thành công để sinh "
+                         "bản vẽ trắc dọc, mặt cắt ngang và mố trụ."),
+            cta_label = "⚙️ Mở OPTIONS",
+            cta_key   = "es_open_opts_bv",
+            variant   = "locked",
+        )
+        st.markdown(_es["html"], unsafe_allow_html=True)
+        if _es["show_cta"]:
+            _, _mc, _ = st.columns([1.5, 1, 1.5])
+            with _mc:
+                if st.button(_es["cta_label"], key=_es["cta_key"],
+                             use_container_width=True, type="secondary"):
+                    show_options_dialog()
+        st.stop()
 
     d   = st.session_state.design_data
     kcn = d.get("kcn_result") or d.get("ai_result")
@@ -2302,50 +3102,20 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
         # ── TAB: Xuất bản vẽ ───────────────────────────────────────────
         with tab_export:
             st.subheader("📤 Xuất bản vẽ kỹ thuật")
-            exp_cols = st.columns(3)
-            with exp_cols[0]:
-                if st.button("⬇️ DXF Trắc dọc", use_container_width=True, key="xdxftd"):
-                    try:
-                        _b = EXP.export_trac_doc_dxf(d)
-                        st.download_button("💾 DXF", _b, "trac_doc.dxf",
-                                           mime="application/octet-stream", key="dl_td2")
-                    except Exception as _ex:
-                        st.error(f"Lỗi: {_ex}")
-            with exp_cols[1]:
-                if st.button("⬇️ DXF Mặt cắt ngang", use_container_width=True, key="xdxfmcn"):
-                    try:
-                        _b = EXP.export_mcn_dxf(d)
-                        st.download_button("💾 DXF", _b, "mat_cat_ngang.dxf",
-                                           mime="application/octet-stream", key="dl_mcn2")
-                    except Exception as _ex:
-                        st.error(f"Lỗi: {_ex}")
-            with exp_cols[2]:
-                if st.button("⬇️ IFC kết cấu cầu", use_container_width=True, key="xifcbr"):
-                    try:
-                        _b = EXP.export_bridge_ifc(d)
-                        st.download_button("💾 IFC", _b, "bridge.ifc",
-                                           mime="application/octet-stream", key="dl_brifc2")
-                    except Exception as _ex:
-                        st.error(f"Lỗi: {_ex}")
-            if has_terr:
-                st.markdown("---")
-                if st.button("📤 Xuất địa hình IFC", key="xifcter"):
-                    with st.spinner("Đang xuất..."):
-                        try:
-                            _fig_ex, mx, my, mz = TV.ve_dia_hinh_3d(
-                                _df_geo, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3)
-                            ifc_path = "terrain_output.ifc"
-                            ok = TV.export_terrain_to_ifc(mx, my, mz, ifc_path, "DiaHinh_KhaoSat")
-                            if ok:
-                                with open(ifc_path, "rb") as _fh:
-                                    st.download_button("⬇️ Tải IFC địa hình", _fh,
-                                                       "terrain.ifc", mime="application/octet-stream",
-                                                       key="dl_terrifc2")
-                                st.success("Xuất IFC địa hình thành công!")
-                            else:
-                                st.error("Xuất thất bại.")
-                        except Exception as _ex:
-                            st.error(f"Lỗi: {_ex}")
+            st.markdown(
+                "<div style='background:#141420;border:1px solid #2a2a3a;"
+                "border-radius:8px;padding:12px 14px;"
+                "display:flex;align-items:center;gap:10px'>"
+                "<span style='font-size:20px'>⬇️</span>"
+                "<div>"
+                "<div style='font-size:12px;color:#ccc;font-weight:600'>"
+                "Xuất DXF / IFC / PDF</div>"
+                "<div style='font-size:11px;color:#666;margin-top:2px'>"
+                "Tất cả tùy chọn xuất file nằm trong "
+                "<b style='color:#4fc3f7'>thanh bên trái ↖</b></div>"
+                "</div></div>",
+                unsafe_allow_html=True,
+            )
 
 # =========================================================================
 # SO SÁNH PHƯƠNG ÁN
@@ -2353,17 +3123,52 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
 elif selected_ribbon == "SO SÁNH PHƯƠNG ÁN":
     _s2 = tab_states['tab2']
     if _s2 == 'done':
-        st.success("✅ Đã có 3 phương án — đang hiển thị kết quả so sánh.")
+        st.markdown(
+            DS.banner("success", "Đã có 3 phương án — đang hiển thị kết quả so sánh."),
+            unsafe_allow_html=True,
+        )
     elif _s2 == 'partial':
-        st.warning("⏳ Đã có kết quả nhịp — nhấn 'Tạo phương án' để sinh so sánh 3 loại dầm.")
+        st.markdown(
+            DS.banner("warning",
+                      "Đã có kết quả kết cấu nhịp",
+                      "Chạy lại pipeline đầy đủ để sinh so sánh 3 phương án"),
+            unsafe_allow_html=True,
+        )
 
     alts = st.session_state.get("alternatives", None)
     if alts is None:
-        st.title("📊 So sánh 3 Phương án Loại Dầm")
-        st.info("👆 Nhấn **⚙️ OPTIONS** → điền thông số → **OK** để AI tự sinh 3 phương án cho công trình cụ thể của bạn.")
-        st.markdown("---")
-        st.markdown("### Giới thiệu 3 phương án so sánh")
-        st.caption("Hệ thống sẽ tính toán cùng một cầu với 3 loại dầm khác nhau, sau đó so sánh kỹ thuật + kinh tế để hỗ trợ chọn phương án tối ưu.")
+        st.markdown(
+            DS.section_header(
+                title = "So sánh 3 Phương án Loại Dầm",
+                icon  = "📊",
+                sub   = "Hệ thống sẽ tính toán cùng một cầu với 3 loại dầm, so sánh kỹ thuật + kinh tế",
+            ),
+            unsafe_allow_html=True,
+        )
+        _es = DS.empty_state(
+            icon      = "📊",
+            title     = "Chưa có dữ liệu so sánh",
+            desc      = ("Nhấn <b>⚙️ OPTIONS</b> → điền thông số → "
+                         "<b>🚀 Chạy AI</b> để sinh 3 phương án tự động."),
+            cta_label = "⚙️ Mở OPTIONS",
+            cta_key   = "es_open_opts_ss",
+            variant   = "locked",
+        )
+        st.markdown(_es["html"], unsafe_allow_html=True)
+        if _es["show_cta"]:
+            _, _mc, _ = st.columns([1.5, 1, 1.5])
+            with _mc:
+                if st.button(_es["cta_label"], key=_es["cta_key"],
+                             use_container_width=True, type="secondary"):
+                    show_options_dialog()
+        st.markdown(
+            DS.section_header(
+                title = "Giới thiệu 3 phương án so sánh",
+                icon  = "ℹ️",
+            ),
+            unsafe_allow_html=True,
+        )
+        st.caption("Sau khi pipeline chạy xong, hệ thống hiển thị bảng so sánh kỹ thuật, radar chart và phân tích chi phí.")
 
         # Thẻ thông tin 3 loai dam
         _c1, _c2, _c3 = st.columns(3)
@@ -2463,3 +3268,22 @@ elif selected_ribbon == "SO SÁNH PHƯƠNG ÁN":
             st.error(f"Lỗi render so sánh phương án: {_ssp_err}")
             import traceback
             st.code(traceback.format_exc())
+
+# ── Debug Design System panel (bỏ checkbox trước khi deploy) ─────────────────
+if st.sidebar.checkbox("🔧 Debug DS", value=False, key="ds_debug_toggle"):
+    import inspect
+    with st.expander("🎨 Design System Token Preview", expanded=True):
+        st.caption("Tất cả token màu sắc trong DS.Color — dùng để kiểm tra visual consistency.")
+        _dc_cols = st.columns(2)
+        _dc_items = [(n, v) for n, v in inspect.getmembers(DS.Color)
+                     if not n.startswith('_') and isinstance(v, str) and v.startswith('#')]
+        for i, (name, val) in enumerate(_dc_items):
+            with _dc_cols[i % 2]:
+                st.markdown(
+                    f"<div style='display:flex;gap:8px;align-items:center;padding:3px 0'>"
+                    f"<div style='width:20px;height:20px;background:{val};"
+                    f"border-radius:4px;border:1px solid #333;flex-shrink:0'></div>"
+                    f"<code style='font-size:11px'>Color.{name} = {val}</code>"
+                    f"</div>",
+                    unsafe_allow_html=True,
+                )
