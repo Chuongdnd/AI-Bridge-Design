@@ -1736,6 +1736,43 @@ elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
                         _cap_parts.append(f"🔩 SPT: {len(df_spt)} dòng")
                     if _cap_parts:
                         st.caption(" · ".join(_cap_parts))
+                    # ── Lưu vào session_state để trắc dọc dùng được ──────────
+                    try:
+                        _hk_list_ss = []
+                        for _, _hkr in df_hk.iterrows():
+                            _ten_hk = str(_hkr.get("Ho_Khoan", f"HK{_}")).strip().upper()
+                            _z_m    = float(_hkr.get("Z_Mieng", 0) or 0)
+                            _lop_dat_ss = []
+                            _prev_z = _z_m
+                            if df_layers is not None and not df_layers.empty:
+                                _hk_lops = df_layers[df_layers["Ho_Khoan"] == _ten_hk]
+                                for _, _lr in _hk_lops.iterrows():
+                                    _z_day = float(_lr.get("Cao_Do_Day", _prev_z - 2) or _prev_z - 2)
+                                    _lop_dat_ss.append({
+                                        "ten_lop":    str(_lr.get("Ten_Lop", "?")).strip(),
+                                        "cao_do_dinh": round(_prev_z, 3),
+                                        "cao_do_day":  round(_z_day, 3),
+                                        "chieu_day":   round(_prev_z - _z_day, 2),
+                                        "mo_ta": "", "loai_dat": "",
+                                    })
+                                    _prev_z = _z_day
+                            _hk_list_ss.append({
+                                "ten": _ten_hk,
+                                "X": float(_hkr.get("X_VN2000", 0) or 0),
+                                "Y": float(_hkr.get("Y_VN2000", 0) or 0),
+                                "Z": _z_m,
+                                "ly_trinh": None,
+                                "lop_dat":  _lop_dat_ss,
+                                "spt":      [],
+                            })
+                        st.session_state["dia_chat_data"] = {
+                            "ho_khoan_list":      _hk_list_ss,
+                            "validation_errors":  [],
+                            "dac_trung_tong_hop": {},
+                        }
+                        st.caption(f"💾 Đã lưu {len(_hk_list_ss)} hố khoan vào bộ nhớ phiên — trắc dọc sẽ hiển thị địa chất.")
+                    except Exception as _e_ss:
+                        st.caption(f"⚠️ Lưu session_state thất bại: {_e_ss}")
                     if has_terr:
                         cdc1, cdc2, cdc3 = st.columns(3)
                         with cdc1:

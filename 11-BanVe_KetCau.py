@@ -458,10 +458,10 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None):
     mg = max(20, L_cau * 0.15)
     fig = go.Figure()
 
-    # ── Overlay địa chất (vẽ trước để nằm dưới địa hình + kết cấu) ──────
-    _draw_dia_chat_trac_doc(fig, dia_chat_data, x0, x_end, h_tn, z_min, mg=mg)
-
     # ── Đường địa hình từ khảo sát (nếu có) ─────────────────────────────
+    # Khi có dữ liệu địa chất, fill đất mờ hơn để địa chất hiện rõ
+    _terr_fill_alpha = "0.12" if dia_chat_data else "0.35"
+    _dat_fill = f"rgba(169,120,74,{_terr_fill_alpha})"
     if df_tim_line is not None and not df_tim_line.empty:
         lt_col = next((c for c in df_tim_line.columns if 'ý trình' in c or 'ly_trinh' in c.lower() or c.lower() == 'x'), None)
         z_col  = next((c for c in df_tim_line.columns if c.upper() in ['Z', 'CAO_DO', 'H', 'ELEVATION']), None)
@@ -471,28 +471,34 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None):
                 (df_tim_line[lt_col] <= x_end + mg)
             ].sort_values(lt_col)
             if not df_v.empty:
-                fig.add_trace(go.Scatter(
-                    x=df_v[lt_col], y=df_v[z_col],
-                    mode="lines", name="Địa hình TN (khảo sát)",
-                    line=dict(color=_C["dia_hinh"], width=2.5),
-                    hovertemplate="Lý trình: %{x:.1f}m<br>Cao độ: %{y:.3f}m<extra>Địa hình</extra>"
-                ))
-                # Fill dưới đường địa hình
+                # Fill trước (nền), đường địa hình vẽ lại sau overlay địa chất
                 fig.add_trace(go.Scatter(
                     x=list(df_v[lt_col]) + list(df_v[lt_col])[::-1],
                     y=list(df_v[z_col]) + [z_min]*len(df_v),
-                    fill="toself", fillcolor=_C["dat"],
+                    fill="toself", fillcolor=_dat_fill,
                     line=dict(color="rgba(0,0,0,0)"),
                     mode="lines", showlegend=False, hoverinfo="skip"
                 ))
     else:
-        # Không có khảo sát → hiển thị đường địa hình ước tính (h_tn_tb)
-        _hline(fig, h_tn, x0-mg, x_end+mg,
-               f"CĐTN trung bình ≈ {h_tn:.2f}m", "#27ae60", dash="dash")
         _poly(fig,
             [x0-mg, x_end+mg, x_end+mg, x0-mg],
             [h_tn, h_tn, z_min-0.2, z_min-0.2],
-            _C["dat"], "rgba(0,0,0,0)", "", showlegend=False)
+            _dat_fill, "rgba(0,0,0,0)", "", showlegend=False)
+
+    # ── Overlay địa chất (vẽ SAU fill đất để hiện lên trên) ─────────────
+    _draw_dia_chat_trac_doc(fig, dia_chat_data, x0, x_end, h_tn, z_min, mg=mg)
+
+    # ── Đường địa hình (vẽ lại lên trên cùng để rõ nét) ─────────────────
+    if df_tim_line is not None and not df_tim_line.empty and lt_col and z_col and not df_v.empty:
+        fig.add_trace(go.Scatter(
+            x=df_v[lt_col], y=df_v[z_col],
+            mode="lines", name="Địa hình TN (khảo sát)",
+            line=dict(color=_C["dia_hinh"], width=2.5),
+            hovertemplate="Lý trình: %{x:.1f}m<br>Cao độ: %{y:.3f}m<extra>Địa hình</extra>"
+        ))
+    else:
+        _hline(fig, h_tn, x0-mg, x_end+mg,
+               f"CĐTN trung bình ≈ {h_tn:.2f}m", "#27ae60", dash="dash")
 
     # ── Mực nước ─────────────────────────────────────────────────────────
     _poly(fig,
@@ -1933,7 +1939,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 # 7. BÌNH ĐỒ CẦU (MẶT BẰNG — nhìn từ trên xuống)
 # ===========================================================================
 def ve_binh_do_2d(d, df_tim_line=None):
-    """Bình đồ cầu: mặt bằng nhìn từ trên, bao gồm dầm, mố, trụ, TK."""
+    """Bình đồ cầu: mặt bằng nhìn từ trên, bao gồm dầm, mố, trụ, TK, góc xiên."""
     kcn  = d.get("kcn_result") or d.get("ai_result", {})
     geo  = d.get("geo_logic", {})
     L_cau  = float(geo.get("L_cau", 120))
@@ -1947,15 +1953,21 @@ def ve_binh_do_2d(d, df_tim_line=None):
     cap_W  = max(2.0, bc * 0.18 + 1.0)
     mo_W   = 3.5
 
+    # ── Góc xiên ─────────────────────────────────────────────────────────
+    goc = float(d.get("goc_giao", 90.0))
+    alpha  = np.radians(max(30.0, min(89.9, goc)))  # clamp 30°–89.9°
+    # Độ lệch ngang (theo x) tại y = ±(bc/2): dương ở y=+bc/2
+    # Mố & cầu xiên khi goc < 90°
+    skew_dx = (bc / 2) / np.tan(alpha)          # tại mép bc/2
+    mo_dx   = (bc / 2 + 0.6) / np.tan(alpha)    # tại mép mố (rộng hơn bc 0.6m)
+
+    def _sx(y):
+        """x-offset cho điểm có tọa độ ngang y (do góc xiên)."""
+        return y / np.tan(alpha)
+
     fig = go.Figure()
 
-    # Lớp đất / sông nền
-    _lt_col = _z_col = None
-    if df_tim_line is not None and not df_tim_line.empty:
-        _lt_col = next((c for c in df_tim_line.columns if 'ý trình' in c or c.lower()=='ly_trinh'), None)
-        _z_col  = next((c for c in df_tim_line.columns if c.upper()=='Z'), None)
-
-    # Vùng sông (tĩnh không)
+    # Vùng sông (tĩnh không) — không bị ảnh hưởng góc xiên
     fig.add_shape(type="rect",
         x0=x_tim - B_tk / 2, x1=x_tim + B_tk / 2,
         y0=-B_tk * 0.7, y1=B_tk * 0.7,
@@ -1964,54 +1976,77 @@ def ve_binh_do_2d(d, df_tim_line=None):
         text=f"Sông/Kênh<br>B={B_tk:.1f}m", showarrow=False,
         font=dict(size=9, color="#2980b9"), bgcolor="rgba(255,255,255,0.7)")
 
-    # Mặt cầu (fill nhạt)
+    # ── Mặt cầu — hình bình hành theo góc xiên ───────────────────────────
+    # Các góc: (x0+sx(-bc/2), -bc/2) → (x_end+sx(-bc/2), -bc/2)
+    #          → (x_end+sx(+bc/2), +bc/2) → (x0+sx(+bc/2), +bc/2)
+    _x_deck = [
+        x0  + _sx(-bc/2), x_end + _sx(-bc/2),
+        x_end + _sx(+bc/2), x0  + _sx(+bc/2),
+        x0  + _sx(-bc/2),
+    ]
+    _y_deck = [-bc/2, -bc/2, bc/2, bc/2, -bc/2]
     fig.add_trace(go.Scatter(
-        x=[x0, x_end, x_end, x0, x0],
-        y=[-bc/2, -bc/2, bc/2, bc/2, -bc/2],
+        x=_x_deck, y=_y_deck,
         fill="toself", fillcolor="rgba(213,216,220,0.55)",
         line=dict(color="#2c3e50", width=2),
         name="Mặt cầu", mode="lines",
-        hovertemplate=f"Mặt cầu B={bc:.1f}m<extra></extra>"
+        hovertemplate=f"Mặt cầu B={bc:.1f}m, Góc={goc:.0f}°<extra></extra>"
     ))
 
-    # Lan can (đường đậm 2 bên)
+    # Lan can (đường đậm 2 bên dọc cầu)
     for sy in [-1, 1]:
-        fig.add_shape(type="line",
-            x0=x0, y0=sy * bc/2, x1=x_end, y1=sy * bc/2,
-            line=dict(color="#2c3e50", width=3))
+        fig.add_trace(go.Scatter(
+            x=[x0 + _sx(sy*bc/2), x_end + _sx(sy*bc/2)],
+            y=[sy * bc/2, sy * bc/2],
+            mode="lines", line=dict(color="#2c3e50", width=3), showlegend=False,
+        ))
 
-    # Tim cầu (dashdot)
+    # Tim cầu (dashdot dọc)
     fig.add_shape(type="line",
         x0=x0 - 8, y0=0, x1=x_end + 8, y1=0,
         line=dict(color="#e74c3c", width=1, dash="dashdot"))
 
-    # Mố
+    # ── Mố — xiên theo góc giao ───────────────────────────────────────────
     for xm, lbl in [(x0, "Mố trái"), (x_end, "Mố phải")]:
         sign = 1 if xm == x0 else -1
+        bm   = bc / 2 + 0.6   # bán chiều rộng mố (rộng hơn lan can 0.6m)
+        # Mặt trước mố (tiếp xúc nhịp): từ (xm+sx(-bm), -bm) → (xm+sx(+bm), +bm)
+        # Mặt sau mố (back wall): cộng thêm sign*mo_W
+        xf_bot = xm + _sx(-bm)
+        xf_top = xm + _sx(+bm)
+        xb_bot = xf_bot + sign * mo_W
+        xb_top = xf_top + sign * mo_W
         fig.add_trace(go.Scatter(
-            x=[xm, xm + sign * mo_W, xm + sign * mo_W, xm, xm],
-            y=[-bc/2 - 0.6, -bc/2 - 0.6, bc/2 + 0.6, bc/2 + 0.6, -bc/2 - 0.6],
+            x=[xf_bot, xb_bot, xb_top, xf_top, xf_bot],
+            y=[-bm, -bm, bm, bm, -bm],
             fill="toself", fillcolor="rgba(192,160,107,0.65)",
             line=dict(color="#7d6608", width=2),
             name=lbl, mode="lines",
         ))
-        # Tường cánh
+        # Tường cánh (xiên theo mố)
         for sy in [-1, 1]:
-            yw_end = sy * (bc/2 + 0.6 + mo_W * 0.8)
+            wing_y = sy * (bm + mo_W * 0.8)
             fig.add_trace(go.Scatter(
-                x=[xm + sign * 0.3, xm + sign * mo_W * 1.6],
-                y=[sy * (bc/2 + 0.6), yw_end],
-                mode="lines", line=dict(color="#7d6608", width=1.5),
-                showlegend=False
+                x=[xf_bot if sy < 0 else xf_top,
+                   (xf_bot if sy < 0 else xf_top) + sign * mo_W * 1.4 + _sx(sy * mo_W * 0.8)],
+                y=[sy * bm, wing_y],
+                mode="lines", line=dict(color="#7d6608", width=1.5), showlegend=False,
             ))
 
-    # Trụ
+    # ── Trụ — xà mũ xiên theo góc ────────────────────────────────────────
     tru_L_half = 0.8
     for i, xt in enumerate(piers):
+        # Xà mũ xiên: từ (xt-L+sx(-cap_W), -cap_W) → (xt+L+sx(-cap_W), -cap_W)
+        #             → (xt+L+sx(+cap_W), +cap_W) → (xt-L+sx(+cap_W), +cap_W)
+        _xt_x = [
+            xt - tru_L_half + _sx(-cap_W),
+            xt + tru_L_half + _sx(-cap_W),
+            xt + tru_L_half + _sx(+cap_W),
+            xt - tru_L_half + _sx(+cap_W),
+            xt - tru_L_half + _sx(-cap_W),
+        ]
         fig.add_trace(go.Scatter(
-            x=[xt - tru_L_half, xt + tru_L_half, xt + tru_L_half,
-               xt - tru_L_half, xt - tru_L_half],
-            y=[-cap_W, -cap_W, cap_W, cap_W, -cap_W],
+            x=_xt_x, y=[-cap_W, -cap_W, cap_W, cap_W, -cap_W],
             fill="toself", fillcolor="rgba(133,146,158,0.75)",
             line=dict(color="#566573", width=1.5),
             name=f"Trụ T{i+1}", mode="lines",
@@ -2020,25 +2055,37 @@ def ve_binh_do_2d(d, df_tim_line=None):
             showarrow=False, font=dict(size=8, color="white"),
             bgcolor="rgba(86,101,115,0.85)")
 
-    # Khung tĩnh không (mặt bằng)
+    # Khung tĩnh không (mặt bằng — vuông góc với dòng chảy)
     fig.add_shape(type="rect",
         x0=x_tim - B_tk/2, x1=x_tim + B_tk/2,
         y0=-B_tk/2 - 0.3, y1=B_tk/2 + 0.3,
         line=dict(color="#e74c3c", width=2.5, dash="dash"),
         fillcolor="rgba(231,76,60,0.04)")
 
+    # ── Chú thích góc xiên ────────────────────────────────────────────────
+    if goc < 89.0:
+        fig.add_annotation(
+            x=x0 + _sx(bc/2) + 2, y=bc/2 + 0.5,
+            text=f"<b>Góc giao chéo α = {goc:.0f}°</b>",
+            showarrow=True, arrowhead=2, arrowcolor="#e67e22",
+            ax=-40, ay=-20,
+            font=dict(size=10, color="#e67e22"),
+            bgcolor="rgba(255,255,255,0.85)",
+        )
+
     # Dimensions
-    _dim_h(fig, bc/2 + 2.5, x0, x_end, f"L_cầu = {L_cau:.1f} m", dy=0)
+    _dim_h(fig, bc/2 + 2.5, x0, x_end, f"L_cầu = {L_cau:.1f} m (dọc cầu)", dy=0)
     if piers:
         _dim_h(fig, -bc/2 - 2.5, piers[0], piers[-1] if len(piers) > 1 else x_end,
                f"Khoảng TT = {(piers[-1] if len(piers)>1 else x_end) - piers[0]:.1f} m", dy=0)
-    _dim_v(fig, x_end + mo_W + 1.5, -bc/2, bc/2, f"B_c = {bc:.1f} m", dx=0.5)
+    _dim_v(fig, x_end + _sx(bc/2) + mo_W + 1.5, -bc/2, bc/2, f"B_c = {bc:.1f} m", dx=0.5)
     _dim_v(fig, x_tim + B_tk/2 + 1.2, -B_tk/2, B_tk/2, f"B_tk = {B_tk:.1f} m",
            color="#e74c3c", dx=0.5)
 
     fig.update_layout(
         title=dict(
-            text=f"BÌNH ĐỒ CẦU — {n_nhip} nhịp | L={L_cau:.1f}m | B_c={bc:.1f}m",
+            text=(f"BÌNH ĐỒ CẦU — {n_nhip} nhịp | L={L_cau:.1f}m | B_c={bc:.1f}m"
+                  + (f" | Góc xiên α={goc:.0f}°" if goc < 89.0 else "")),
             x=0.5, font=dict(size=12)
         ),
         xaxis=dict(title="Lý trình (m)", showgrid=True, gridcolor="#ecf0f1",
