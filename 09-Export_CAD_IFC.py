@@ -737,6 +737,503 @@ def export_bridge_ifc(design_data) -> bytes:
 
 
 # ===========================================================================
+# 6. DXF — BẢN VẼ CHI TIẾT DẦM TỪ BEAM_PARAMS
+# ===========================================================================
+
+def _setup_doc_mm(title: str = "BEAM DRAWING"):
+    """Tạo DXF document đơn vị mm với các layer cho bản vẽ chi tiết dầm."""
+    if not _HAS_EZDXF:
+        raise RuntimeError("Thiếu thư viện ezdxf")
+    doc = ezdxf.new("R2010", setup=True)
+    doc.header["$INSUNITS"]   = 4      # mm
+    doc.header["$MEASUREMENT"] = 1     # metric
+
+    _BEAM_LAYERS = {
+        "DAM":        {"color": 5,   "lw": 50},   # xanh dương — đường viền dầm
+        "KHOANG_RONG":{"color": 6,   "lw": 35},   # magenta    — khoang rỗng
+        "CAP_DUL":    {"color": 1,   "lw": 15},   # đỏ         — cáp DUL
+        "KICH_THUOC": {"color": 2,   "lw": 13},   # vàng       — kích thước
+        "GHI_CHU":    {"color": 7,   "lw": 9},    # trắng      — ghi chú
+        "KHUNG_TEN":  {"color": 3,   "lw": 25},   # xanh lá    — khung tên
+        "HATCHING":   {"color": 8,   "lw": 9},    # xám        — gạch nền BT
+    }
+    for name, cfg in _BEAM_LAYERS.items():
+        if name not in doc.layers:
+            lay = doc.layers.new(name=name)
+            lay.color     = cfg["color"]
+            lay.lineweight = cfg["lw"]
+    return doc
+
+
+def _dim_mm(msp, x1, y1, x2, y2, offset, text="", layer="KICH_THUOC", vert=False):
+    """Vẽ đường kích thước thủ công (mm coords)."""
+    lw = {"layer": layer}
+    th = 60   # text height mm
+    aw = 40   # arrow size mm
+
+    if vert:
+        # Chiều đứng: x1,y1 - x2,y2 theo Y; offset theo X
+        xe = max(x1, x2) + offset
+        msp.add_line((x1, y1), (xe, y1), dxfattribs=lw)
+        msp.add_line((x2, y2), (xe, y2), dxfattribs=lw)
+        msp.add_line((xe, y1), (xe, y2), dxfattribs=lw)
+        ym = (y1 + y2) / 2
+        label = text or f"{abs(y2 - y1):.0f}"
+        msp.add_text(label, dxfattribs={**lw, "height": th}).set_placement(
+            (xe + th * 0.3, ym), align=TextEntityAlignment.MIDDLE_LEFT)
+        # Mũi tên
+        for ya in [y1, y2]:
+            sgn = 1 if ya == y1 else -1
+            msp.add_line((xe, ya), (xe, ya + sgn * aw), dxfattribs=lw)
+    else:
+        # Chiều ngang: x1,y1 - x2,y2 theo X; offset theo Y
+        ye = min(y1, y2) - offset
+        msp.add_line((x1, y1), (x1, ye), dxfattribs=lw)
+        msp.add_line((x2, y2), (x2, ye), dxfattribs=lw)
+        msp.add_line((x1, ye), (x2, ye), dxfattribs=lw)
+        xm = (x1 + x2) / 2
+        label = text or f"{abs(x2 - x1):.0f}"
+        msp.add_text(label, dxfattribs={**lw, "height": th}).set_placement(
+            (xm, ye - th * 1.3), align=TextEntityAlignment.TOP_CENTER)
+        for xa in [x1, x2]:
+            sgn = 1 if xa == x2 else -1
+            msp.add_line((xa, ye), (xa + sgn * aw, ye), dxfattribs=lw)
+
+
+def _title_block_mm(msp, title, subtitle, scale, note,
+                    x0=0, y0=0, width=4000):
+    """Vẽ khung tên bản vẽ (đơn vị mm)."""
+    h1, h2 = 200, 130
+    bx = [(x0, y0), (x0 + width, y0), (x0 + width, y0 - 700), (x0, y0 - 700)]
+    msp.add_lwpolyline(bx + [bx[0]], close=True, dxfattribs={"layer": "KHUNG_TEN", "lineweight": 25})
+    msp.add_text(title,    dxfattribs={"layer": "KHUNG_TEN", "height": h1}).set_placement((x0 + 80,  y0 - 160))
+    msp.add_text(subtitle, dxfattribs={"layer": "KHUNG_TEN", "height": h2}).set_placement((x0 + 80,  y0 - 360))
+    msp.add_text(f"Tỷ lệ: {scale}", dxfattribs={"layer": "KHUNG_TEN", "height": h2}).set_placement((x0 + 80,  y0 - 490))
+    msp.add_text(note,     dxfattribs={"layer": "KHUNG_TEN", "height": h2 * 0.8}).set_placement((x0 + 80,  y0 - 610))
+
+
+def _draw_section_polygon(msp, outer_pts, void_pts=None, ox=0, oy=0):
+    """Vẽ đường viền tiết diện và gạch nền bê tông."""
+    shifted_outer = [(x + ox, y + oy) for x, y in outer_pts]
+    msp.add_lwpolyline(shifted_outer + [shifted_outer[0]], close=True,
+                       dxfattribs={"layer": "DAM", "lineweight": 50})
+
+    try:
+        hatch = msp.add_hatch(dxfattribs={"layer": "HATCHING"})
+        hatch.paths.add_polyline_path([(x, y) for x, y in shifted_outer])
+        if void_pts:
+            shifted_void = [(x + ox, y + oy) for x, y in void_pts]
+            hatch.paths.add_polyline_path([(x, y) for x, y in shifted_void], flags=1)
+        hatch.set_pattern_fill("ANSI31", scale=25.0)
+    except Exception:
+        pass
+
+    if void_pts:
+        shifted_void = [(x + ox, y + oy) for x, y in void_pts]
+        msp.add_lwpolyline(shifted_void + [shifted_void[0]], close=True,
+                           dxfattribs={"layer": "KHOANG_RONG", "lineweight": 35})
+
+
+def _supert_outer_pts(mc, H):
+    wo   = mc.get("web_out_hw", mc.get("B_canh_duoi", 2440) / 2 - mc.get("B_rong_tren", 950) / 2 - mc.get("B_bung_top", 110))
+    haw  = mc.get("B_vat_canh_tren", 100)
+    hf   = mc.get("B_canh_tren", 2200) / 2
+    Hct  = mc.get("H_canh_tren", 150)
+    Hvct = mc.get("H_vat_canh_tren", 75)
+    ywt  = H - Hct - Hvct
+    ytb  = H - Hct
+    return [(wo, 0), (wo, ywt), (wo + haw, ytb), (hf, ytb), (hf, H),
+            (-hf, H), (-hf, ytb), (-(wo + haw), ytb), (-wo, ywt), (-wo, 0)]
+
+
+def _supert_void_pts(mc, H):
+    vit  = mc.get("B_rong_tren", 950) / 2
+    vib  = mc.get("B_rong_duoi", 800) / 2
+    Hcd  = mc.get("H_canh_duoi", 200)
+    Hvcd = mc.get("H_vat_canh_duoi", 100)
+    Hct  = mc.get("H_canh_tren", 150)
+    Hvct = mc.get("H_vat_canh_tren", 75)
+    yvb  = Hcd + Hvcd
+    yvt  = H - Hct - Hvct
+    return [(-vit, yvt), (vit, yvt), (vib, yvb), (-vib, yvb)]
+
+
+def _dam_I_outer_pts(mc, H):
+    Bct  = mc.get("B_canh_tren", 600) / 2
+    Hct  = mc.get("H_canh_tren", 130)
+    Hvct = mc.get("H_vat_canh_tren", 50)
+    bw   = mc.get("B_bung", 200) / 2
+    Bcd  = mc.get("B_canh_duoi", 500) / 2
+    Hcd  = mc.get("H_canh_duoi", 130)
+    Hvcd = mc.get("H_vat_canh_duoi", 50)
+    return [(-Bcd, 0), (Bcd, 0),
+            (Bcd, Hcd - Hvcd), (Bcd - Hvcd * 2, Hcd),
+            (bw, Hcd), (bw, H - Hct - Hvct),
+            (Bct - Hvct * 2, H - Hct), (Bct, H - Hct),
+            (Bct, H), (-Bct, H),
+            (-Bct, H - Hct), (-(Bct - Hvct * 2), H - Hct),
+            (-bw, H - Hct - Hvct), (-bw, Hcd),
+            (-(Bcd - Hvcd * 2), Hcd), (-Bcd, Hcd - Hvcd)]
+
+
+def generate_dxf_from_beam_params(geo: dict, loai_dam: str,
+                                   cong_nghe: str = "DUL_sau") -> bytes:
+    """
+    Xuất bản vẽ chi tiết dầm ra DXF (đơn vị mm, tỷ lệ ghi chú).
+
+    4 bản vẽ trong 1 file:
+      1. Mặt đứng dọc tổng thể
+      2. Mặt cắt A-A (giữa nhịp)
+      3. Mặt cắt B-B (đầu dầm)
+      4. Mặt cắt C-C (tại trụ, chỉ Super-T)
+
+    Parameters
+    ----------
+    geo      : dict — beam_params_final từ session state
+    loai_dam : str
+    cong_nghe: str
+    """
+    if not _HAS_EZDXF:
+        raise RuntimeError("Thiếu thư viện ezdxf")
+
+    mc     = geo.get("MC_AA", {})
+    mc_bb  = geo.get("MC_BB", {})
+    L      = geo.get("L", 38200)
+    H      = geo.get("H", 1750)
+    B      = geo.get("B", 2440)
+    cap    = geo.get("cap_DUL", {})
+    Ld     = mc_bb.get("L_dau_dac", 750)
+    S      = geo.get("S", 2200)
+
+    doc = _setup_doc_mm(f"CHI TIẾT DẦM {loai_dam}")
+    msp = doc.modelspace()
+
+    # ── BẢNG ĐIỀU KHIỂN MÀU ──
+    # Chuẩn bị đường viền mặt cắt
+    if loai_dam == "Super-T":
+        outer_aa = _supert_outer_pts(mc, H)
+        void_aa  = _supert_void_pts(mc, H)
+    elif loai_dam in ("Dầm I", "T ngược", "Dầm T"):
+        outer_aa = _dam_I_outer_pts(mc, H)
+        void_aa  = None
+    else:
+        w = B / 2
+        outer_aa = [(-w, 0), (w, 0), (w, H), (-w, H)]
+        void_aa  = None
+
+    # ── BẢN VẼ 1: MẶT ĐỨNG DỌC ──
+    # Vẽ hộp chữ nhật đại diện + đường tim + marker A-A, B-B
+    msp.add_lwpolyline(
+        [(0, 0), (L, 0), (L, H), (0, H), (0, 0)],
+        dxfattribs={"layer": "DAM", "lineweight": 50})
+
+    # Gạch nền bê tông mặt đứng
+    try:
+        htch = msp.add_hatch(dxfattribs={"layer": "HATCHING"})
+        htch.paths.add_polyline_path([(0, 0), (L, 0), (L, H), (0, H)])
+        htch.set_pattern_fill("ANSI31", scale=50.0)
+    except Exception:
+        pass
+
+    # Đoạn đặc đầu dầm
+    msp.add_line((Ld, 0), (Ld, H),     dxfattribs={"layer": "KICH_THUOC"})
+    msp.add_line((L - Ld, 0), (L - Ld, H), dxfattribs={"layer": "KICH_THUOC"})
+
+    # Đường tim
+    msp.add_line((-200, H / 2), (L + 200, H / 2),
+                 dxfattribs={"layer": "KICH_THUOC"})
+
+    # Marker mặt cắt A-A
+    xaa = L / 2
+    for sgn in [1, -1]:
+        msp.add_circle((xaa, H / 2 + sgn * (H * 0.55)), 120,
+                       dxfattribs={"layer": "GHI_CHU"})
+    msp.add_text("A", dxfattribs={"layer": "GHI_CHU", "height": 180}).set_placement((xaa - 60, H + 250))
+    msp.add_text("A", dxfattribs={"layer": "GHI_CHU", "height": 180}).set_placement((xaa - 60, -350))
+
+    # Marker B-B
+    xbb = Ld / 2
+    msp.add_text("B", dxfattribs={"layer": "GHI_CHU", "height": 180}).set_placement((xbb - 60, H + 250))
+    msp.add_text("B", dxfattribs={"layer": "GHI_CHU", "height": 180}).set_placement((xbb - 60, -350))
+
+    # Cáp DUL parabol (mặt đứng)
+    so_ong = cap.get("so_ong", 0)
+    if so_ong > 0:
+        Hcd_mm = mc.get("H_canh_duoi", 200)
+        cy_mid = Hcd_mm + cap.get("ong_PVC_D", 49) * 0.5
+        cy_end = H * 0.5
+        sag    = (cy_end - cy_mid) * 4
+        N_pts  = 40
+        for i_c in range(min(so_ong, 4)):
+            pts_cap = []
+            for k in range(N_pts + 1):
+                t = k / N_pts
+                xc = t * L
+                yc = cy_mid + sag * t * (1 - t)
+                pts_cap.append((xc, yc))
+            msp.add_lwpolyline(pts_cap, dxfattribs={"layer": "CAP_DUL", "lineweight": 15})
+
+    # Kích thước mặt đứng
+    _dim_mm(msp, 0, 0, L, 0, 400, f"L = {L}mm", vert=False)
+    _dim_mm(msp, 0, 0, Ld, 0, 800, f"{Ld}", vert=False)
+    _dim_mm(msp, L - Ld, 0, L, 0, 800, f"{Ld}", vert=False)
+    _dim_mm(msp, L, 0, L, H, 400, f"H = {H}mm", vert=True)
+
+    # ── BẢN VẼ 2: MẶT CẮT A-A (giữa nhịp) ──
+    ox2 = L + 2500
+    _draw_section_polygon(msp, outer_aa, void_aa, ox=ox2, oy=0)
+
+    # Vẽ cáp DUL trên mặt cắt
+    so_ong = cap.get("so_ong", 0)
+    ong_r  = cap.get("ong_PVC_D", 49) / 2
+    if so_ong > 0:
+        Hcd_mm = mc.get("H_canh_duoi", 200)
+        cols   = max(1, min(so_ong, 4))
+        rows   = math.ceil(so_ong / cols)
+        Bcd_mm = mc.get("B_canh_duoi", mc.get("B_bung", 200))
+        idx    = 0
+        for r in range(rows):
+            for c in range(cols):
+                if idx >= so_ong:
+                    break
+                cx = (c - (cols - 1) / 2) * (Bcd_mm * 0.3 / max(cols, 1))
+                cy = Hcd_mm + ong_r * 2 + r * ong_r * 4
+                msp.add_circle((ox2 + cx, cy), ong_r,
+                               dxfattribs={"layer": "CAP_DUL", "lineweight": 15})
+                idx += 1
+
+    # Kích thước mặt cắt A-A
+    Bct_aa = mc.get("B_canh_tren", B) / 2 if loai_dam != "Super-T" else mc.get("B_canh_tren", 2200) / 2
+    _dim_mm(msp, ox2 - Bct_aa, H, ox2 + Bct_aa, H, 350,
+            f"B_ct = {int(Bct_aa * 2)}mm", vert=False)
+    _dim_mm(msp, ox2 + Bct_aa, 0, ox2 + Bct_aa, H, 450,
+            f"H = {H}mm", vert=True)
+
+    msp.add_text("MẶT CẮT A-A  (Giữa nhịp)",
+                 dxfattribs={"layer": "GHI_CHU", "height": 150}).set_placement(
+        (ox2 - Bct_aa, H + 600))
+
+    # ── BẢN VẼ 3: MẶT CẮT B-B (đầu dầm — tiết diện đặc) ──
+    ox3 = ox2 + B + 2500
+    if loai_dam == "Super-T":
+        outer_bb = _supert_outer_pts(mc_bb if mc_bb else mc, H)
+        void_bb  = None  # đặc
+    else:
+        outer_bb = outer_aa
+        void_bb  = None
+
+    _draw_section_polygon(msp, outer_bb, void_bb, ox=ox3, oy=0)
+    msp.add_text("MẶT CẮT B-B  (Đầu dầm — đặc)",
+                 dxfattribs={"layer": "GHI_CHU", "height": 150}).set_placement(
+        (ox3 - Bct_aa, H + 600))
+    _dim_mm(msp, ox3 - Bct_aa, H, ox3 + Bct_aa, H, 350,
+            f"B = {int(Bct_aa * 2)}mm", vert=False)
+
+    # ── BẢN VẼ 4: MẶT CẮT C-C (tại trụ, chỉ Super-T) ──
+    if loai_dam == "Super-T":
+        mc_cc  = geo.get("MC_CC", mc)
+        H_cc   = mc_cc.get("H", H)
+        ox4    = ox3 + B + 2500
+        outer_cc = _supert_outer_pts(mc_cc, H_cc)
+        void_cc  = _supert_void_pts(mc_cc, H_cc)
+        _draw_section_polygon(msp, outer_cc, void_cc, ox=ox4, oy=0)
+        msp.add_text("MẶT CẮT C-C  (Tại gối)",
+                     dxfattribs={"layer": "GHI_CHU", "height": 150}).set_placement(
+            (ox4 - Bct_aa, H_cc + 600))
+
+    # ── GHI CHÚ KỸ THUẬT ──
+    notes = [
+        f"Loại dầm: {loai_dam}",
+        f"Công nghệ: {cong_nghe}",
+        f"L = {L}mm  |  H = {H}mm  |  S = {S}mm",
+        "Bê tông: f'c = 50 MPa (C50)",
+        f"Cáp DUL: {so_ong} ống Ø{cap.get('ong_PVC_D', 49)}mm",
+        "Tiêu chuẩn: TCVN 11823:2017",
+        "ĐH Giao thông Vận tải TP.HCM (UTH) — AI Bridge Design",
+    ]
+    yn_note = -600
+    for i, note in enumerate(notes):
+        msp.add_text(note, dxfattribs={"layer": "GHI_CHU", "height": 120}).set_placement(
+            (0, yn_note - i * 200))
+
+    # ── KHUNG TÊN ──
+    _title_block_mm(
+        msp,
+        title=f"BẢN VẼ CHI TIẾT DẦM — {loai_dam}",
+        subtitle=f"L = {L/1000:.1f}m  |  H = {H}mm  |  Cáp: {so_ong} ống Ø{cap.get('ong_PVC_D',49)}mm",
+        scale="1:25 (mặt cắt), 1:110 (tổng thể)",
+        note="TCVN 11823:2017  —  Bê tông C50  —  AI Bridge Design",
+        x0=0, y0=-1800, width=min(ox3 + B + 500, 50000),
+    )
+
+    buf = io.StringIO()
+    doc.write(buf)
+    return buf.getvalue().encode("utf-8")
+
+
+# ===========================================================================
+# 7. IFC — BIM DẦMBÊTÔNG TỪ BEAM_PARAMS (IFC4)
+# ===========================================================================
+
+def _ifc_poly_points(ifc, pts_mm: list[tuple[float, float]]):
+    """Tạo IfcCartesianPoint2D từ danh sách tọa độ mm (→ m)."""
+    return [ifc.createIfcCartesianPoint([float(x) * 0.001, float(y) * 0.001])
+            for x, y in pts_mm]
+
+
+def _ifc_arbitrary_profile(ifc, outer_pts_mm: list[tuple],
+                            void_pts_mm: list[tuple] | None = None,
+                            name: str = "BeamProfile"):
+    """
+    Tạo IfcArbitraryClosedProfileDef hoặc IfcArbitraryProfileDefWithVoids.
+    Tọa độ đầu vào tính bằng mm; IFC lưu bằng m.
+    """
+    outer_ifc = ifc.createIfcPolyline(_ifc_poly_points(ifc, outer_pts_mm + [outer_pts_mm[0]]))
+    if void_pts_mm:
+        void_pts_closed = void_pts_mm + [void_pts_mm[0]]
+        void_ifc = ifc.createIfcPolyline(_ifc_poly_points(ifc, void_pts_closed))
+        return ifc.createIfcArbitraryProfileDefWithVoids("AREA", name, outer_ifc, [void_ifc])
+    return ifc.createIfcArbitraryClosedProfileDef("AREA", name, outer_ifc)
+
+
+def _ifc_pset(ifc, element, pset_name: str, props: dict):
+    """Tạo IfcPropertySet và gán vào element."""
+    pset_props = []
+    for k, v in props.items():
+        if isinstance(v, bool):
+            # ifcopenshell 0.8+: IfcBoolean wraps Python bool directly
+            val = ifc.createIfcPropertySingleValue(k, None,
+                      ifc.createIfcBoolean(v), None)
+        elif isinstance(v, (int, float)):
+            val = ifc.createIfcPropertySingleValue(k, None,
+                      ifc.createIfcReal(float(v)), None)
+        else:
+            val = ifc.createIfcPropertySingleValue(k, None,
+                      ifc.createIfcLabel(str(v)), None)
+        pset_props.append(val)
+
+    pset = ifc.createIfcPropertySet(
+        ifcopenshell.guid.new(), None, pset_name, None, pset_props)
+    ifc.createIfcRelDefinesByProperties(
+        ifcopenshell.guid.new(), None, None, None, [element], pset)
+
+
+def generate_ifc_from_beam_params(geo: dict, loai_dam: str,
+                                   cong_nghe: str = "DUL_sau") -> bytes:
+    """
+    Xuất IfcBeam chi tiết từ beam_params sang IFC4.
+
+    IfcBeam với IfcArbitraryProfileDefWithVoids (Super-T) hoặc
+    IfcArbitraryClosedProfileDef (các loại khác).
+    Kèm PropertySets: Pset_BeamCommon + Custom_Pset_DamBTCT.
+
+    Parameters
+    ----------
+    geo      : dict — beam_params_final
+    loai_dam : str
+    cong_nghe: str
+
+    Returns
+    -------
+    bytes — nội dung file IFC
+    """
+    if not _HAS_IFC:
+        raise RuntimeError("Thiếu thư viện ifcopenshell")
+
+    mc    = geo.get("MC_AA", {})
+    L_mm  = geo.get("L", 38200)
+    H_mm  = geo.get("H", 1750)
+    S_mm  = geo.get("S", 2200)
+    cap   = geo.get("cap_DUL", {})
+    L_m   = L_mm * 0.001
+
+    # Lấy polygon theo loại dầm
+    if loai_dam == "Super-T":
+        outer_pts = _supert_outer_pts(mc, H_mm)
+        void_pts  = _supert_void_pts(mc, H_mm)
+    elif loai_dam in ("Dầm I", "T ngược", "Dầm T"):
+        outer_pts = _dam_I_outer_pts(mc, H_mm)
+        void_pts  = None
+    else:
+        w = geo.get("B", 2440) / 2
+        outer_pts = [(-w, 0), (w, 0), (w, H_mm), (-w, H_mm)]
+        void_pts  = None
+
+    ifc, storey, body_ctx = _new_ifc()
+    oh = ifc.by_type("IfcOwnerHistory")[0]
+
+    # ── Profile ──
+    profile = _ifc_arbitrary_profile(ifc, outer_pts, void_pts,
+                                      name=f"{loai_dam}_Profile")
+
+    # ── Extrusion (dọc cầu = trục Z trong IFC) ──
+    z_dir   = ifc.createIfcDirection([0.0, 0.0, 1.0])
+    origin3 = ifc.createIfcCartesianPoint([0.0, 0.0, 0.0])
+    ax3d    = ifc.createIfcAxis2Placement3D(origin3, None, None)
+    solid   = ifc.createIfcExtrudedAreaSolid(profile, ax3d, z_dir, L_m)
+
+    shape   = ifc.createIfcShapeRepresentation(body_ctx, "Body", "SweptSolid", [solid])
+    prod_rep = ifc.createIfcProductDefinitionShape(None, None, [shape])
+
+    # ── Placement: tim dầm tại gốc ──
+    ploc  = ifc.createIfcCartesianPoint([0.0, 0.0, 0.0])
+    pax3d = ifc.createIfcAxis2Placement3D(
+        ploc,
+        ifc.createIfcDirection([0.0, 0.0, 1.0]),
+        ifc.createIfcDirection([1.0, 0.0, 0.0])
+    )
+    placement = ifc.createIfcLocalPlacement(None, pax3d)
+
+    # ── IfcBeam entity ──
+    beam = ifc.createIfcBeam(
+        ifcopenshell.guid.new(), oh,
+        f"{loai_dam} L={L_mm}mm",
+        f"Dầm BTCT DUL — {loai_dam}",
+        None, placement, prod_rep, None, "BEAM",
+    )
+
+    ifc.createIfcRelContainedInSpatialStructure(
+        ifcopenshell.guid.new(), oh, None, None, [beam], storey)
+
+    # ── Vật liệu ──
+    conc_grade = mc.get("mac_BT", "C50")
+    mat = ifc.createIfcMaterial(f"Bê tông {conc_grade}")
+    ifc.createIfcRelAssociatesMaterial(
+        ifcopenshell.guid.new(), oh, None, None, [beam], mat)
+
+    # ── PropertySet 1: Pset_BeamCommon ──
+    _ifc_pset(ifc, beam, "Pset_BeamCommon", {
+        "Span"  : L_m,
+        "Slope" : 0.0,
+        "Roll"  : 0.0,
+        "IsExternal": True,
+        "LoadBearing": True,
+    })
+
+    # ── PropertySet 2: Custom_Pset_DamBTCT ──
+    _ifc_pset(ifc, beam, "Custom_Pset_DamBTCT", {
+        "LoaiDam"        : loai_dam,
+        "CongNgheDUL"    : cong_nghe,
+        "CuongDoBeTong"  : conc_grade,
+        "ChieuDai_mm"    : L_mm,
+        "ChieuCao_mm"    : H_mm,
+        "KhoangCachDam_mm": S_mm,
+        "SoOngCap"       : cap.get("so_ong", 0),
+        "DuongKinhOng_mm": cap.get("ong_PVC_D", 49),
+        "LucCangCap_kN"  : cap.get("luc_can_thiet", 0),
+        "TieuChuan"      : "TCVN 11823:2017",
+    })
+
+    import tempfile, os as _os
+    with tempfile.NamedTemporaryFile(suffix=".ifc", delete=False) as tf:
+        tmp_path = tf.name
+    ifc.write(tmp_path)
+    data = open(tmp_path, "rb").read()
+    _os.unlink(tmp_path)
+    return data
+
+
+# ===========================================================================
 # KIỂM TRA TRẠNG THÁI THƯ VIỆN
 # ===========================================================================
 def check_libs():

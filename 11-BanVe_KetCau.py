@@ -794,14 +794,24 @@ def _beam_poly(fig, xc, H, loai, kc, t_ban):
         _poly(fig, xs, ys, _C["dam"], _C["dam_dk"], showlegend=False)
 
 
-def ve_mat_cat_ngang_2d(d):
-    """MCN điển hình: bản, lớp phủ, dầm, lan can, kích thước, chú thích lớp."""
+def ve_mat_cat_ngang_2d(d, beam_params=None):
+    """MCN điển hình: bản, lớp phủ, dầm, lan can, kích thước, chú thích lớp.
+
+    beam_params : dict | None — nếu có, ưu tiên dùng giá trị từ beam_params_final
+                                thay cho kcn_result (từ AI/catalog).
+    """
     kcn   = d.get("kcn_result") or d.get("ai_result", {})
     bc    = float(d.get("bc", 12.0))
-    loai  = str(kcn.get("loai_dam", "Dầm I"))
+    # Override từ beam_params nếu người dùng đã tinh chỉnh
+    if beam_params is not None:
+        loai  = str(beam_params.get("loai_dam", kcn.get("loai_dam", "Dầm I")))
+        H_dam = float(beam_params.get("H", kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))) / 1000.0
+        kc    = float(beam_params.get("S", kcn.get("khoang_cach_dam", 2.2) * 1000)) / 1000.0
+    else:
+        loai  = str(kcn.get("loai_dam", "Dầm I"))
+        H_dam = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+        kc    = float(kcn.get("khoang_cach_dam", 2.2))
     n_dam = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
-    kc    = float(kcn.get("khoang_cach_dam", 2.2))
-    H_dam = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
     oh    = float(kcn.get("overhang", 0.5))
     t_ban = float(d.get("t_ban_mm", 200)) / 1000.0
     loai_l = loai.lower()
@@ -1260,19 +1270,26 @@ def _beam_mesh3d(yd, z_top, x_start, x_end, H, kc, loai, color, name="", sl=True
 # ===========================================================================
 # 4. MÔ HÌNH 3D — Kết cấu + địa hình (nếu có df_tim_line)
 # ===========================================================================
-def ve_cau_3d(d, df_tim_line=None):
+def ve_cau_3d(d, df_tim_line=None, beam_params=None):
     """
     Mô hình 3D kết cấu cầu với trụ đặt đúng ngoài tĩnh không.
     Nếu có df_tim_line: thêm surface địa hình dọc cầu.
+
+    beam_params : dict | None — nếu có, ưu tiên dùng giá trị từ beam_params_final.
     """
     kcn    = d.get("kcn_result") or d.get("ai_result", {})
     geo    = d.get("geo_logic", {})
 
     n_nhip = int(kcn.get("tong_so_nhip", 3))
     L_nhip = float(kcn.get("chieu_dai", 40))
-    H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
     n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
-    kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
+    # Override từ beam_params nếu người dùng đã tinh chỉnh
+    if beam_params is not None:
+        H_dam  = float(beam_params.get("H", kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))) / 1000.0
+        kc_dam = float(beam_params.get("S", kcn.get("khoang_cach_dam", 2.2) * 1000)) / 1000.0
+    else:
+        H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+        kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
     oh     = float(kcn.get("overhang", 0.5))
     L_cau  = float(geo.get("L_cau", n_nhip * L_nhip))
     bc     = float(d.get("bc", 12.0))
@@ -1367,7 +1384,10 @@ def ve_cau_3d(d, df_tim_line=None):
                              color="#d5dbdb", name="Xà mũ" if sl else "", sl=sl))
 
     # ── Dầm chính theo từng nhịp — profile 3D chính xác ─────────────────────
-    loai_dam = str(kcn.get("loai_dam", "Super-T"))
+    if beam_params is not None:
+        loai_dam = str(beam_params.get("loai_dam", kcn.get("loai_dam", "Super-T")))
+    else:
+        loai_dam = str(kcn.get("loai_dam", "Super-T"))
     y_first  = -bc/2 + oh
     for i_nhip, (xs, xe) in enumerate(spans):
         sl = (i_nhip == 0)
