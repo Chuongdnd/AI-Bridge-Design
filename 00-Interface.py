@@ -807,7 +807,13 @@ st.markdown("<hr style='margin-top: 0px; margin-bottom: 10px; border-color: #007
 # Hàng nút bấm OPTIONS + thông số hiện hành
 ctrl_col1, ctrl_col2 = st.columns([1, 4])
 with ctrl_col1:
-    if st.button("⚙️ OPTIONS - KHAI BÁO SỐ LIỆU", use_container_width=True, type="secondary"):
+    _has_result = st.session_state.design_data.get('kcn_result') is not None
+    if st.button(
+        "⚙️ OPTIONS - KHAI BÁO SỐ LIỆU",
+        use_container_width=True,
+        type="secondary" if _has_result else "primary",
+        help="Nhấn để mở hộp thoại nhập thông số — bắt buộc trước khi tính toán",
+    ):
         show_options_dialog()
 with ctrl_col2:
     if st.session_state.design_data.get('kcn_result') or (st.session_state.design_data.get('ai_result') or {}).get('loai_dam'):
@@ -882,19 +888,58 @@ if selected_ribbon == "THUYẾT MINH":
     tru  = d.get('tru_result')
     mong = d.get('mong_result')
 
-    # Nếu chưa chạy AI, hiển thị hướng dẫn
-    if kcn is None and tru is None:
-        st.title("🏗️ Hệ thống Tự động hóa Thiết kế và Tối ưu hóa Kết cấu Cầu")
-        st.info("👆 Nhấn **BẢN VẼ KỸ THUẬT** → **⚙️ OPTIONS** → điền thông số và nhấn **OK** để chạy toàn bộ AI pipeline.")
+    # Nếu chưa chạy AI → Welcome / Onboarding screen
+    if kcn is None:
         st.markdown("""
-**Luồng tính toán:**
-1. 📐 **Tĩnh không** — tra cứu theo cấp sông / loại đường bị vượt (TCVN 8818)
-2. 📏 **Hình học trắc dọc** — độ dốc, bán kính đường cong (TCVN 4054 / 5729 / 13592)
-3. 🛣️ **Mặt cắt ngang** — bề rộng, số làn, lề bộ hành
-4. 🤖 **AI Kết cấu nhịp** — loại dầm, nhịp, chiều cao dầm, bố trí dầm ngang
-5. 🤖 **AI Trụ cầu** — phân loại trụ theo Vtk, B_cầu, H_trụ, môi trường
-6. 📋 **Móng cầu** — gợi ý loại cọc, đường kính, chiều dài theo TCVN 10304
-        """)
+<div style='text-align:center; padding: 32px 0 16px'>
+  <div style='font-size:48px'>🏗️</div>
+  <h2 style='color:#f0f0f0; margin:8px 0 4px'>Chào mừng đến Hệ thống Thiết kế Cầu AI</h2>
+  <p style='color:#888; font-size:14px'>UTH — Tích hợp AI và BIM tự động hóa thiết kế cầu đường bộ</p>
+</div>
+""", unsafe_allow_html=True)
+
+        def _step_card(icon, title, desc, color):
+            return (
+                f"<div style='background:#1e1e2e; border:1px solid {color}; "
+                f"border-top:3px solid {color}; border-radius:12px; padding:20px; "
+                f"height:100%; text-align:center;'>"
+                f"<div style='font-size:36px; margin-bottom:12px'>{icon}</div>"
+                f"<h4 style='color:{color}; margin:0 0 10px'>{title}</h4>"
+                f"<p style='color:#aaa; font-size:13px; line-height:1.6; margin:0'>{desc}</p>"
+                f"</div>"
+            )
+
+        wc1, wc2, wc3 = st.columns(3)
+        with wc1:
+            st.markdown(_step_card(
+                "⚙️", "Bước 1 — Khai báo số liệu",
+                "Nhập thông số thủy văn, hình học tuyến và điều kiện địa phương qua hộp thoại OPTIONS",
+                "#007acc",
+            ), unsafe_allow_html=True)
+        with wc2:
+            st.markdown(_step_card(
+                "🤖", "Bước 2 — Chạy AI tính toán",
+                "AI tự động tính toán kết cấu nhịp, mố trụ, móng cọc và lớp phủ mặt cầu theo TCVN",
+                "#f39c12",
+            ), unsafe_allow_html=True)
+        with wc3:
+            st.markdown(_step_card(
+                "📐", "Bước 3 — Xem kết quả & xuất file",
+                "Đọc thuyết minh, xem bản vẽ kỹ thuật 2D/3D, so sánh phương án và xuất DXF/IFC",
+                "#2ecc71",
+            ), unsafe_allow_html=True)
+
+        st.markdown("<br>", unsafe_allow_html=True)
+        _, _mid, _ = st.columns([1.5, 1, 1.5])
+        with _mid:
+            if st.button(
+                "⚙️ BẮT ĐẦU — Khai báo số liệu",
+                use_container_width=True,
+                type="primary",
+                key="welcome_start_btn",
+            ):
+                show_options_dialog()
+        st.caption("💡 Sau khi điền đầy đủ thông số và nhấn OK, hệ thống sẽ tự động chạy toàn bộ pipeline AI.")
         st.stop()
 
     st.title("📄 Thuyết minh Tính toán Thiết kế Cầu")
