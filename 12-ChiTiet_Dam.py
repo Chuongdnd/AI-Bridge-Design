@@ -298,6 +298,154 @@ def _draw_spt_void(fig, xc, z0, H, dd, row=None, col=None):
         fig.add_trace(go.Scatter(**kw))
 
 
+def ve_spt_aa_detail(d=None):
+    """
+    MẶT CẮT A-A dầm Super-T 2200mm — máng hở — polygon 18 đỉnh chính xác.
+    Phong cách nền tối, kích thước đầy đủ theo bản vẽ kỹ thuật.
+    Trục X(ngang,m) × Z(đứng,m); đỉnh cánh Z=0, đáy Z=-1.750; tỷ lệ 1:1.
+    """
+    # ── 18-point concrete polygon (single closed shape incl. void boundary) ──
+    xs_c = [-1.100, -0.510, -0.510, -0.295,  0.295,  0.510,  0.510,  1.100,
+             1.100,  0.610,  0.510,  0.510,  0.490, -0.490, -0.510, -0.510,
+            -0.610, -1.100]
+    ys_c = [ 0.000,  0.000, -0.275, -1.175, -1.175, -0.275,  0.000,  0.000,
+            -0.075, -0.150, -1.175, -1.730, -1.750, -1.750, -1.730, -1.175,
+            -0.150, -0.075]
+
+    fig = go.Figure()
+
+    # ── Concrete polygon ──────────────────────────────────────────────────────
+    fig.add_trace(go.Scatter(
+        x=xs_c + [xs_c[0]], y=ys_c + [ys_c[0]],
+        fill="toself",
+        fillcolor="rgba(108,120,130,0.88)",
+        line=dict(color="#c0ccd6", width=2.0),
+        mode="lines",
+        name="Bê tông",
+        showlegend=False,
+        hovertemplate="x=%{x:.3f}m  z=%{y:.3f}m<extra></extra>",
+    ))
+
+    # ── Trục đối xứng ────────────────────────────────────────────────────────
+    fig.add_shape(type="line", x0=0, y0=0.30, x1=0, y1=-1.85,
+                  line=dict(color="#5dade2", width=1.2, dash="dashdot"))
+
+    dc = "#e0e8f0"   # dim colour
+    ac = "#f0c050"   # accent colour
+    vc = "#87ceeb"   # void colour
+
+    # ── Kích thước ngang (trên đỉnh): 490|100|1020|100|490 = 2200 ───────────
+    y_td = 0.115
+    for x0, x1, txt, lc in [
+        (-1.100, -0.610, "490", dc),
+        (-0.610, -0.510, "100", dc),
+        (-0.510,  0.510, "1020", vc),
+        ( 0.510,  0.610, "100", dc),
+        ( 0.610,  1.100, "490", dc),
+    ]:
+        _dim_h(fig, y_td, x0, x1, txt, color=lc, fs=7)
+    _dim_h(fig, y_td + 0.110, -1.100, 1.100, "= 2200mm (S dầm)", color=ac, fs=8)
+
+    # ── Kích thước đứng bên trái: 75|75|150|875|300|50|225 = 1750 ───────────
+    xv = -1.340
+    segs = [
+        (0.000, -0.075, "75",  dc),
+        (-0.075, -0.150, "75",  dc),
+        (-0.150, -0.300, "150", vc),
+        (-0.300, -1.175, "875", dc),
+        (-1.175, -1.475, "300", dc),
+        (-1.475, -1.525, "50",  dc),
+        (-1.525, -1.750, "225", "#a3e4a3"),
+    ]
+    for z0, z1, txt, lc in segs:
+        _dim_v(fig, xv, z0, z1, txt, color=lc, dx=-0.06, fs=7)
+    fig.add_annotation(
+        x=xv - 0.20, y=-0.875, text="H = 1750mm",
+        showarrow=False, textangle=-90,
+        font=dict(size=8, color=ac),
+    )
+
+    # ── Kích thước khoang rỗng ───────────────────────────────────────────────
+    # Miệng khoang (z=0): ±510mm → 1020mm
+    _dim_h(fig, -0.035, -0.510, 0.510, "1020 (miệng khoang)", color=vc, fs=7)
+    # Đáy khoang (z=-1.175): ±295mm → 590mm
+    _dim_h(fig, -1.215, -0.295, 0.295, "590 (đáy khoang)", color=vc, fs=7)
+    # Bề dày sườn tại đáy khoang: 0.510-0.295=215mm
+    for xsign in [1, -1]:
+        _dim_h(fig, -1.215, xsign * 0.295, xsign * 0.510,
+               "215" if xsign > 0 else "215", color=vc, fs=6)
+
+    # ── Bầu đáy: 160+700+160 = 1020 ─────────────────────────────────────────
+    _dim_h(fig, -1.820, -0.490, 0.490, "160+700+160 = 1020mm (bầu đáy)", color="#a3e4a3", fs=7)
+
+    # ── Bề dày sườn tại đỉnh: 100mm (outer 610 − inner 510) ─────────────────
+    fig.add_annotation(
+        x=0.560, y=-0.165, text="100mm",
+        showarrow=True, arrowhead=2, arrowsize=0.8,
+        ax=40, ay=0, arrowcolor=dc,
+        font=dict(size=7, color=dc),
+        bgcolor="rgba(20,28,36,0.85)",
+    )
+    # ── Độ dốc sườn 1:10 ─────────────────────────────────────────────────────
+    fig.add_annotation(
+        x=0.560, y=-0.650, text="1:10",
+        showarrow=False,
+        font=dict(size=8, color=ac),
+        bgcolor="rgba(20,28,36,0.85)",
+    )
+
+    # ── VÁT GÓC 20×20MM ──────────────────────────────────────────────────────
+    fig.add_annotation(
+        x=0.490, y=-1.748, text="VÁT GÓC 20×20MM",
+        showarrow=True, arrowhead=2, arrowsize=0.8,
+        ax=65, ay=-15, arrowcolor=dc,
+        font=dict(size=7, color=dc),
+        bgcolor="rgba(20,28,36,0.85)",
+    )
+
+    # ── CHI TIẾT D (mép trong cánh) ──────────────────────────────────────────
+    fig.add_annotation(
+        x=0.510, y=-0.010, text="CHI TIẾT D",
+        showarrow=True, arrowhead=2, arrowsize=0.8,
+        ax=55, ay=-25, arrowcolor=ac,
+        font=dict(size=7, color=ac, family="Arial Black"),
+        bgcolor="rgba(20,28,36,0.85)",
+    )
+    # ── dim 590 phụ dọc cạnh bên ─────────────────────────────────────────────
+    for xsign in [1, -1]:
+        fig.add_annotation(
+            x=xsign * 1.115, y=-0.075,
+            text="590" if xsign > 0 else "590",
+            showarrow=True, arrowhead=2, arrowsize=0.6,
+            ax=xsign * 28, ay=-8, arrowcolor=dc,
+            font=dict(size=6, color=dc),
+        )
+
+    fig.update_layout(
+        template="plotly_dark",
+        height=700,
+        title=dict(
+            text="MẶT CẮT A-A — TL 1:25  |  Dầm Super-T S=2200mm, H=1750mm",
+            x=0.5, font=dict(size=13, color="#dde3ea"),
+        ),
+        xaxis=dict(
+            range=[-1.60, 1.60], title="X (m)",
+            showgrid=True, gridcolor="#2a3a4a", dtick=0.1,
+            zeroline=True, zerolinecolor="#5dade2", zerolinewidth=1.5,
+            scaleanchor="y", scaleratio=1,
+        ),
+        yaxis=dict(
+            range=[-2.00, 0.38], title="Z (m)",
+            showgrid=True, gridcolor="#2a3a4a", dtick=0.1,
+            zeroline=True, zerolinecolor="#5dade2", zerolinewidth=1.5,
+        ),
+        margin=dict(l=90, r=50, t=70, b=80),
+        paper_bgcolor="#1a232d",
+        plot_bgcolor="#1a232d",
+    )
+    return fig
+
+
 def ve_chi_tiet_mcn(d):
     """
     Ba panel — A-A (bụng dầm), B-B (đầu dầm/mố), C-C (đầu dầm/trụ).
@@ -1050,8 +1198,22 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix=""):
     )
     _render_param_table(d_loai, st)
 
-    # ① MCN A-A + B-B + C-C
-    _mcn_label = ("**① Mặt cắt ngang — A-A (đầu dầm đặc), B-B (giữa nhịp hở), C-C (mặt đầu/trụ)**"
+    # ① MCN A-A chi tiết (Super-T máng hở)
+    if "super" in loai_fixed.lower():
+        st.markdown("**① Mặt cắt A-A — Dầm Super-T (máng hở, có khoang rỗng)**")
+        try:
+            fig_aa = ve_spt_aa_detail(d_loai)
+            st.plotly_chart(fig_aa, use_container_width=True,
+                            config={"scrollZoom": True, "displayModeBar": True},
+                            key=f"{key_prefix}_aa_detail")
+        except Exception as e:
+            import traceback
+            st.error(f"Lỗi A-A chi tiết: {e}")
+            with st.expander("Chi tiết"):
+                st.code(traceback.format_exc())
+
+    # ① MCN A-A + B-B + C-C (tổng quan 3 panel)
+    _mcn_label = ("**① Mặt cắt ngang tổng quan — A-A (đặc), B-B (hở), C-C (trụ)**"
                   if "super" in loai_fixed.lower()
                   else "**① Mặt cắt ngang — A-A (đầu dầm/gối) và B-B (giữa nhịp)**")
     st.markdown(_mcn_label)
