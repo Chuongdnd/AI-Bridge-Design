@@ -162,9 +162,11 @@ try:
     BVK  = importlib.import_module("11-BanVe_KetCau")   # Bản vẽ kết cấu 2D/3D
     SSP  = importlib.import_module("09-So_Sanh_PA")     # So sánh 3 phương án
     CTD  = importlib.import_module("12-ChiTiet_Dam")    # Chi tiết dầm
+    BDE  = importlib.import_module("06d-BeamDimEditor") # Chỉnh sửa kích thước dầm
     importlib.reload(PLOT)
     importlib.reload(BVK)
     importlib.reload(CTD)
+    importlib.reload(BDE)
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
     st.stop()
@@ -2390,6 +2392,15 @@ with _col_main:
             else:
                 st.warning("Chưa có kết quả AI kết cấu nhịp.")
     
+        # ── II.b CHỈNH SỬA KÍCH THƯỚC CHI TIẾT DẦM ──────────────────────────
+        with st.expander("**✏️ II.b CHỈNH SỬA KÍCH THƯỚC CHI TIẾT DẦM**", expanded=False):
+            try:
+                BDE.render_beam_dim_editor(d, st)
+            except Exception as _bde_err:
+                st.error(f"Lỗi module chỉnh sửa dầm: {_bde_err}")
+                import traceback as _tb
+                st.code(_tb.format_exc())
+
         # ── III. TRỤ CẦU (AI) ────────────────────────────────────────────────
         with st.expander("**III. TRỤ CẦU — Phân loại & kích thước (AI v2)**", expanded=True):
             if tru:
