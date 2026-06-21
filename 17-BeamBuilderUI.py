@@ -805,10 +805,13 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
 
         uploaded = st.file_uploader(
             "Chọn file DXF",
-            type=["dxf"],
+            type=["dxf", "dwg"],
             key=f"{pfx}_dxf_{active_sec}",
-            help="Vẽ đường biên mặt cắt bằng lệnh PLINE trong AutoCAD (đơn vị mm). "
-                 "Có thể vẽ ở bất kỳ vị trí nào — webapp tự căn về gốc toạ độ.",
+            help=(
+                "Upload file DXF từ AutoCAD (đơn vị mm).\n"
+                "Nếu có file DWG: mở AutoCAD → File → Save As → chọn DXF (*.dxf).\n"
+                "Vẽ mặt cắt ở bất kỳ vị trí nào — webapp tự căn về gốc toạ độ."
+            ),
             label_visibility="collapsed",
         )
 
@@ -823,6 +826,10 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                 _res = bb.parse_dxf_bytes(_raw)
                 if "error" in _res:
                     st.error(_res["error"])
+                    # Gợi ý entity đã đọc được (nếu có)
+                    _ents = _res.get("entities")
+                    if _ents:
+                        st.caption(f"Entity trong file: {', '.join(_ents)}")
                 else:
                     _cad_push_undo(pfx, bb)
                     sec.outer = _res["outer"]
@@ -832,10 +839,11 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                     cad_state["current_poly"] = []
                     _w = _res.get("width_mm", 0)
                     _h = _res.get("height_mm", 0)
+                    _ent_info = (", ".join(_res.get("entities", [])) or "?")
                     hist.append((
                         f"DXF: {uploaded.name}",
-                        f"✓ {_res['raw_count']} polyline | outer {len(sec.outer)} đỉnh"
-                        f" | {_w:.0f}×{_h:.0f} mm",
+                        f"✓ {_res['raw_count']} vòng kín | outer {len(sec.outer)} đỉnh"
+                        f" | {_w:.0f}×{_h:.0f} mm | {_ent_info}",
                     ))
                     st.rerun()
             else:

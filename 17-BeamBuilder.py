@@ -932,41 +932,134 @@ def process_cad_command(cmd_raw: str, sec: "CrossSection",
 # 11. DXF IMPORT
 # ═══════════════════════════════════════════════════════════════════════════════
 
+def _chain_lines_to_polys(
+    lines: list[tuple[tuple[float, float], tuple[float, float]]],
+    tol: float = 0.5,
+) -> list[list[tuple[float, float]]]:
+    """
+    Ghép các đoạn LINE thành danh sách vòng kín.
+    lines: list of ((x1,y1),(x2,y2))
+    tol  : khoảng cách tối đa để coi hai endpoint là trùng nhau (mm)
+    """
+    if not lines:
+        return []
+
+    # Map endpoint → list of (line_idx, other_endpoint)
+    from collections import defaultdict
+    adj: dict[int, list[tuple[int, int]]] = defaultdict(list)
+    nodes: list[tuple[float, float]] = []
+    node_map: dict[tuple[int, int], int] = {}
+
+    def _node(pt: tuple[float, float]) -> int:
+        key = (round(pt[0] / tol), round(pt[1] / tol))
+        if key not in node_map:
+            node_map[key] = len(nodes)
+            nodes.append(pt)
+        return node_map[key]
+
+    for li, (p1, p2) in enumerate(lines):
+        n1, n2 = _node(p1), _node(p2)
+        if n1 != n2:
+            adj[n1].append((n2, li))
+            adj[n2].append((n1, li))
+
+    used_edges: set[int] = set()
+    loops: list[list[tuple[float, float]]] = []
+
+    for start in list(adj.keys()):
+        for nbr, eid in list(adj[start]):
+            if eid in used_edges:
+                continue
+            path = [start]
+            used_edges.add(eid)
+            cur = nbr
+            # Follow the chain
+            while cur != start and len(path) < len(nodes) + 1:
+                path.append(cur)
+                found = False
+                for nxt, neid in adj[cur]:
+                    if neid not in used_edges:
+                        used_edges.add(neid)
+                        cur = nxt
+                        found = True
+                        break
+                if not found:
+                    break
+            if cur == start and len(path) >= 3:
+                pts = [nodes[n] for n in path]
+                pts.append(pts[0])
+                loops.append(pts)
+    return loops
+
+
 def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
     """
     Đọc file DXF (bytes), trả về dict:
-      outer   — list [[x,z], ...] đường biên ngoài (lớn nhất)
-      holes   — list of list [[x,z], ...] khoang rỗng
-      raw_count — số polyline đọc được
+      outer      — list [[x,z], ...] đường biên ngoài (lớn nhất theo diện tích)
+      holes      — list of list [[x,z], ...] khoang rỗng
+      raw_count  — số polyline/loop đọc được
       width_mm, height_mm — kích thước bounding box (mm)
-      error   — chuỗi lỗi nếu thất bại
+      entities   — list các loại entity đã tìm thấy (debug)
+      error      — chuỗi lỗi nếu thất bại
 
-    Quy tắc chuyển đổi toạ độ:
-      CAD X → MCN X (giữ nguyên)
-      CAD Y → MCN Z (giữ nguyên dấu: lên = dương)
-      Sau khi đọc: dịch chuyển sao cho X=0 tại tâm ngang,
-                   Z=0 tại mặt trên (y_max của outer → 0)
-    Đơn vị CAD được giữ nguyên (mặc định mm).
+    Hỗ trợ: LWPOLYLINE, POLYLINE, LINE (tự ghép thành vòng kín).
+    Toạ độ: CAD X→MCN X, CAD Y→MCN Z.
+    Sau đó dịch chuyển: X=0 tại tâm ngang, Z=0 tại mặt trên (y_max→0).
+    Đơn vị giữ nguyên (mặc định mm trong CAD).
     """
     try:
         import ezdxf
     except ImportError:
-        return {"error": "Thư viện ezdxf chưa được cài đặt.\n"
-                         "Chạy lệnh: pip install ezdxf"}
+        return {"error": "Thư viện ezdxf chưa được cài đặt.\nChạy: pip install ezdxf"}
 
     import io
+    import os
+    import tempfile
 
+    # Phát hiện DWG (binary) — magic bytes AC10xx
+    if dxf_bytes[:4] in (b"AC10", b"AC12", b"AC14"):
+        ver = dxf_bytes[:6].decode("ascii", "replace")
+        return {
+            "error": (
+                f"File là DWG ({ver}), không phải DXF.\n"
+                "Để upload được, hãy lưu lại dưới dạng DXF trong AutoCAD:\n"
+                "  File → Save As → Files of type: AutoCAD 2000/2004/2007 DXF (*.dxf)"
+            )
+        }
+
+    # Ghi ra file tạm → dùng ezdxf.readfile() để tránh vấn đề encoding/stream
+    tmp_path = None
     try:
-        doc = ezdxf.read(io.BytesIO(dxf_bytes))
+        with tempfile.NamedTemporaryFile(suffix=".dxf", delete=False, mode="wb") as tmp:
+            tmp.write(dxf_bytes)
+            tmp_path = tmp.name
+        doc = ezdxf.readfile(tmp_path)
     except Exception as exc:
-        return {"error": f"Không đọc được file DXF: {exc}"}
+        # Fallback: thử decode text rồi StringIO
+        try:
+            try:
+                _txt = dxf_bytes.decode("utf-8")
+            except UnicodeDecodeError:
+                _txt = dxf_bytes.decode("cp1252", errors="replace")
+            doc = ezdxf.read(io.StringIO(_txt))
+        except Exception as exc2:
+            return {"error": f"Không đọc được file DXF: {exc2}"}
+    finally:
+        if tmp_path and os.path.exists(tmp_path):
+            try:
+                os.unlink(tmp_path)
+            except OSError:
+                pass
 
     msp = doc.modelspace()
     polys: list[list[tuple[float, float]]] = []
+    raw_lines: list[tuple[tuple[float, float], tuple[float, float]]] = []
+    entity_types: set[str] = set()
 
     for entity in msp:
         etype = entity.dxftype()
-        pts: list[tuple[float, float]] | None = None
+        entity_types.add(etype)
+        pts: list[tuple[float, float]] = []
         closed = False
 
         if etype == "LWPOLYLINE":
@@ -983,23 +1076,49 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
                    for v in entity.vertices]
             closed = bool(entity.is_closed)
 
-        if not pts or len(pts) < 3:
+        elif etype == "LINE":
+            try:
+                raw_lines.append((
+                    (float(entity.dxf.start.x), float(entity.dxf.start.y)),
+                    (float(entity.dxf.end.x),   float(entity.dxf.end.y)),
+                ))
+            except Exception:
+                pass
             continue
 
-        # Force-close: nếu cờ closed hoặc điểm đầu/cuối gần nhau (< 1 mm)
+        elif etype == "INSERT":
+            # Block reference — bỏ qua (không expand block)
+            continue
+
+        if not pts or len(pts) < 2:
+            continue
+
+        # Force-close nếu flag closed hoặc đầu/cuối gần nhau (< 0.5 mm)
         if pts[0] != pts[-1]:
-            gap = ((pts[0][0] - pts[-1][0]) ** 2
-                   + (pts[0][1] - pts[-1][1]) ** 2) ** 0.5
-            if closed or gap < 1.0:
+            gap = ((pts[0][0] - pts[-1][0]) ** 2 +
+                   (pts[0][1] - pts[-1][1]) ** 2) ** 0.5
+            if closed or gap < 0.5:
                 pts = pts + [pts[0]]
 
-        polys.append(pts)
+        if len(pts) >= 3:
+            polys.append(pts)
+
+    # Nếu không có LWPOLYLINE/POLYLINE → thử ghép LINE thành vòng kín
+    if not polys and raw_lines:
+        polys = _chain_lines_to_polys(raw_lines)
 
     if not polys:
-        return {"error": "Không tìm thấy LWPOLYLINE / POLYLINE trong file.\n"
-                         "Vui lòng vẽ mặt cắt bằng lệnh PLINE trong CAD và lưu DXF."}
+        found = ", ".join(sorted(entity_types)) or "(trống)"
+        return {
+            "error": (
+                f"Không tìm thấy đường biên khép kín trong file.\n"
+                f"Entity đọc được: {found}\n"
+                f"Vui lòng vẽ mặt cắt bằng lệnh PLINE (Polyline) trong AutoCAD "
+                f"và lưu dưới dạng DXF (không phải DWG)."
+            )
+        }
 
-    # Tính diện tích để xác định outer (lớn nhất)
+    # Tính diện tích → outer = lớn nhất
     def _area(pts: list[tuple[float, float]]) -> float:
         n = len(pts) - 1 if pts[0] == pts[-1] else len(pts)
         a = 0.0
@@ -1018,11 +1137,11 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
     ys = [p[1] for p in outer_raw]
     xmin, xmax = min(xs), max(xs)
     ymin, ymax = min(ys), max(ys)
-    x_mid = (xmin + xmax) / 2.0
-    y_top = ymax  # mặt trên → z = 0
+    x_mid  = (xmin + xmax) / 2.0
+    y_top  = ymax   # mặt trên → Z = 0
 
     def _center(pts: list[tuple[float, float]]) -> list[list[float]]:
-        return [[p[0] - x_mid, p[1] - y_top] for p in pts]
+        return [[round(p[0] - x_mid, 3), round(p[1] - y_top, 3)] for p in pts]
 
     return {
         "outer":     _center(outer_raw),
@@ -1031,4 +1150,5 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
         "bbox_raw":  [xmin, xmax, ymin, ymax],
         "width_mm":  round(xmax - xmin, 1),
         "height_mm": round(ymax - ymin, 1),
+        "entities":  sorted(entity_types),
     }
