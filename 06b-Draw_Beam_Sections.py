@@ -195,52 +195,47 @@ def _supert_outer_polygon(mc):
 
 def _supert_outer_polygon_full(mc, H_total):
     """
-    Outer polygon của Super-T A-A — mặt ngoài tiết diện (không bao gồm khoang rỗng).
+    Outer polygon Super-T — 10 điểm chính xác theo bản vẽ tham chiếu.
+    Gốc: x=0 tim dầm, y=0 đáy dầm.
 
-    Mặt ngoài Super-T có hình dạng U mở lên:
-    - Đáy phẳng: B_canh_duoi rộng (= 2 × web_out_hw)
-    - Hai cạnh đứng song song (web outer face) đi thẳng lên đến chân vát cánh trên
-    - Vát chéo (haunch) nối web vào cánh trên
-    - Cánh trên phẳng mở rộng đến biên ngoài (= S/2)
-
-    Lưu ý: vát đáy cánh dưới (bottom haunch) nằm ở MẶT TRONG (void boundary),
-    không phải mặt ngoài — nên outer polygon chỉ có 10 điểm.
-
-    H_total : chiều cao tổng dầm (mm).
+    Web ngoài NGHIÊNG: ±510mm tại đáy (y=20) → ±610mm tại đỉnh web (y=y_web_top).
+    Slope ≈ 12.5:1 (100mm ngang / 1250mm đứng).
+    Vát góc 20×20mm tại góc đáy ngoài: (510, 20) → (490, 0).
     """
-    wo  = mc["web_out_hw"]        # outer half-width of web / bottom flange ≈510
-    haw = mc["B_vat_canh_tren"]   # top haunch width ≈100
-    hah = mc["H_vat_canh_tren"]   # top haunch height ≈75
-    ct  = mc["H_canh_tren"]       # top flange thickness ≈150
-    hf  = mc["B_canh_tren"] // 2  # top flange half-width ≈1100
+    wo    = mc["web_out_hw"]        # 510mm: outer half-width tại đáy (=B_canh_duoi/2)
+    haw   = mc["B_vat_canh_tren"]   # 100mm: haunch width; outer web top = wo+haw = 610mm
+    hah   = mc["H_vat_canh_tren"]   # 75mm : haunch height
+    ct    = mc["H_canh_tren"]       # 150mm: top flange thickness
+    hf    = mc["B_canh_tren"] // 2  # 1100mm: half-width top flange
+    CHAM  = 20                       # 20mm chamfer tại góc đáy ngoài
 
-    y_web_top = H_total - ct - hah   # base of top haunch = top of vertical web section
-    y_tf_bot  = H_total - ct         # bottom of top flange = top of haunch
+    wo_top    = wo + haw       # 610mm: outer web half-width tại đỉnh web zone
+    p_cham    = wo - CHAM      # 490mm: điểm chamfer ở đáy (20mm vào từ outer)
+    y_web_top = H_total - ct - hah   # 1525mm: đỉnh web zone
+    y_tf_bot  = H_total - ct         # 1600mm: đáy cánh trên
 
-    # Right half going up: bottom → web → haunch → cantilever → top
-    # Then mirror for left half going down
     xs = [
-         wo,          # P1: bottom-right corner
-         wo,          # P2: top of vertical web (haunch base)
-         wo + haw,    # P3: end of haunch → cantilever inner edge
-         hf,          # P4: cantilever outer edge (bottom)
-         hf,          # P5: cantilever outer edge (top)
-        -hf,          # P6: cantilever outer edge left (top)
-        -hf,          # P7: cantilever outer edge left (bottom)
-        -(wo + haw),  # P8: haunch left
-        -wo,          # P9: web left top
-        -wo,          # P10: bottom-left corner
+         p_cham,    # P1 : phải đáy, chamfer (490mm, y=0)
+         wo,        # P2 : phải web bắt đầu (510mm, y=CHAM)
+         wo_top,    # P3 : phải web đỉnh (610mm, y=y_web_top) ← slope P2→P3
+         hf,        # P4 : phải haunch cuối / cantilever trong (1100mm, y=y_tf_bot)
+         hf,        # P5 : phải đỉnh (1100mm, y=H)
+        -hf,        # P6 : trái đỉnh (-1100mm, y=H)
+        -hf,        # P7 : trái haunch cuối (-1100mm, y=y_tf_bot)
+        -wo_top,    # P8 : trái web đỉnh (-610mm, y=y_web_top)
+        -wo,        # P9 : trái web bắt đầu (-510mm, y=CHAM)
+        -p_cham,    # P10: trái đáy, chamfer (-490mm, y=0)
     ]
     ys = [
         0,            # P1
-        y_web_top,    # P2
-        y_tf_bot,     # P3
+        CHAM,         # P2
+        y_web_top,    # P3
         y_tf_bot,     # P4
         H_total,      # P5
         H_total,      # P6
         y_tf_bot,     # P7
-        y_tf_bot,     # P8
-        y_web_top,    # P9
+        y_web_top,    # P8
+        CHAM,         # P9
         0,            # P10
     ]
     return xs, ys
@@ -248,27 +243,25 @@ def _supert_outer_polygon_full(mc, H_total):
 
 def _supert_void_polygon(mc, H_total):
     """
-    Polygon khoang rỗng Super-T A-A — hình thang rộng ở trên, hẹp ở dưới.
-    Vẽ theo chiều ngược kim đồng hồ để "đục lỗ" khi kết hợp với outer polygon.
+    Polygon khoang rỗng Super-T B-B (giữa nhịp) — hình thang 4 điểm.
+    Đỉnh: ±(wo+haw-bt) tại y_void_top, đáy: ±(B_rong_duoi/2) tại y_void_bot.
+    Sử dụng inner face = outer web - wall thickness tại mỗi mức.
     """
-    A   = mc
-    wo  = A["web_out_hw"]          # ≈510
-    bt  = A["B_bung_top"]          # ≈110 web thickness at top
-    bb  = A["B_bung_bot"]          # ≈160 web thickness at bottom
-    cd  = A["H_canh_duoi"]         # ≈225
-    vdh = A["H_vat_canh_duoi"]     # ≈50
-    ct  = A["H_canh_tren"]         # ≈150
-    hah = A["H_vat_canh_tren"]     # ≈75
+    wo  = mc["web_out_hw"]        # 510mm: outer web tại đáy
+    haw = mc["B_vat_canh_tren"]   # 100mm: haunch width → outer web top = wo+haw
+    bt  = mc["B_bung_top"]        # 110mm: web thickness tại đỉnh
+    cd  = mc["H_canh_duoi"]       # 225mm: bottom flange height
+    vdh = mc["H_vat_canh_duoi"]   # 50mm : bottom haunch height
+    ct  = mc["H_canh_tren"]       # 150mm: top flange height
+    hah = mc["H_vat_canh_tren"]   # 75mm : top haunch height
 
-    # void inner half-widths
-    vi_top = wo - bt    # ≈400 at web top
-    vi_bot = wo - bb    # ≈350 at web bottom
+    vi_top = (wo + haw) - bt      # 610 - 110 = 500mm: inner void half-width tại đỉnh web
+    vi_bot = mc["B_rong_duoi"] // 2  # 350mm: inner void half-width tại đáy web (=700/2)
 
-    y_void_top = H_total - ct - hah   # top of void (base of haunch)
-    y_void_bot = cd + vdh             # bottom of void (top of bottom flange)
+    y_void_top = H_total - ct - hah   # 1525mm: đỉnh khoang rỗng (đáy haunch)
+    y_void_bot = cd + vdh             # 275mm : đáy khoang rỗng (đỉnh cánh đáy)
 
-    # Counterclockwise (top-left → top-right → bottom-right → bottom-left)
-    xs = [-vi_top,  vi_top,  vi_bot, -vi_bot]
+    xs = [-vi_top, vi_top,  vi_bot, -vi_bot]
     ys = [y_void_top, y_void_top, y_void_bot, y_void_bot]
     return xs, ys
 
