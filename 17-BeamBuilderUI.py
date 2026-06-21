@@ -876,9 +876,8 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                 continue
             _fig_sch.add_shape(
                 type="rect", x0=_x0, x1=_x0 + _zlen, y0=0, y1=1,
-                fillcolor=_zcol.replace("#", "").ljust(6, "0"),
-                line=dict(color="#fff", width=0.5),
                 fillcolor=f"rgba({int(_zcol[1:3],16)},{int(_zcol[3:5],16)},{int(_zcol[5:7],16)},0.55)",
+                line=dict(color="#fff", width=0.5),
             )
             if _zlen > L_half * 0.04:
                 _fig_sch.add_annotation(
