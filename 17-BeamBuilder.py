@@ -705,16 +705,25 @@ def preset_supert_model() -> BeamModel:
 # ═══════════════════════════════════════════════════════════════════════════════
 
 CAD_HELP = (
-    "PL / POLYLINE       — bắt đầu vẽ polyline\n"
+    "── Vẽ ──────────────────────────────────────────\n"
+    "PL / POLYLINE       — bắt đầu vẽ polyline (click lưới hoặc gõ toạ độ)\n"
     "L  / LINE           — bắt đầu vẽ line\n"
-    "x,z                 — tọa độ tuyệt đối (mm)\n"
+    "x,z                 — tọa độ tuyệt đối (mm) — gõ tay không snap\n"
     "@dx,dz              — tọa độ tương đối\n"
-    "C  / CLOSE          — đóng & lưu polyline → outer\n"
-    "M  / MIRROR         — gương qua X=0 rồi nối\n"
+    "C  / CLOSE          — đóng & lưu polyline → outer boundary\n"
+    "── Chỉnh sửa trực tiếp trên bản vẽ ─────────────\n"
+    "G  / GRIP           — chọn đỉnh (click vàng) rồi click điểm mới để dời\n"
+    "E  / ERASE          — click đỉnh (đỏ) để xoá từng điểm\n"
+    "DEL i               — xoá đỉnh thứ i theo số (vd: DEL 3)\n"
+    "ESC                 — thoát chế độ vẽ / grip / erase\n"
+    "── Biến đổi ────────────────────────────────────\n"
+    "M  / MIRROR         — gương qua X=0 rồi nối thành biên kín\n"
     "O  d / OFFSET d     — offset vào d mm → tạo lỗ void (mặc định 100)\n"
     "CHA cx,cz           — vát góc (mặc định 20,20)\n"
+    "── Cài đặt ─────────────────────────────────────\n"
     "OPEN / CLOSED       — đặt cờ máng hở / kín\n"
-    "SNAP g              — đặt snap grid (mm, 0=tắt)\n"
+    "SNAP g              — đặt snap grid (mm, 0=tắt) — ảnh hưởng lưới click\n"
+    "── Khác ────────────────────────────────────────\n"
     "EH i / ERASEH i     — xoá lỗ void thứ i\n"
     "CLEAR               — xoá toàn bộ mặt cắt\n"
     "PRESET AA/BB/CC     — nạp preset Super-T\n"
@@ -756,6 +765,36 @@ def process_cad_command(cmd_raw: str, sec: "CrossSection",
         cad_state["mode"] = "line"
         cad_state["current_poly"] = []
         return "LINE — nhập điểm đầu"
+
+    # ── GRIP MODE (click to select then move a vertex) ────────────────────
+    if verb in ("G", "GRIP"):
+        cad_state["mode"] = "grip"
+        cad_state["grip_selected"] = None
+        return "GRIP — click đỉnh (cam) để chọn, click điểm mới để dời"
+
+    # ── ERASE MODE (click a vertex to delete it) ───────────────────────────
+    if verb in ("E", "ERASE"):
+        cad_state["mode"] = "erase"
+        cad_state["grip_selected"] = None
+        return "ERASE — click đỉnh (đỏ) để xoá"
+
+    # ── DELETE VERTEX BY INDEX ─────────────────────────────────────────────
+    if verb in ("DEL", "DELETE"):
+        try:
+            idx = int(parts[1])
+            if 0 <= idx < len(sec.outer):
+                removed = sec.outer.pop(idx)
+                return f"✓ Xoá đỉnh #{idx} ({removed[0]:.0f},{removed[1]:.0f})"
+            return f"⚠ #{idx} ngoài phạm vi (có {len(sec.outer)} điểm)"
+        except (ValueError, IndexError):
+            return "Cú pháp: DEL <số_đỉnh>  (vd: DEL 3)"
+
+    # ── ESCAPE / NONE (exit any mode without committing) ──────────────────
+    if verb in ("ESC", "ESCAPE", "NONE"):
+        cad_state["mode"] = None
+        cad_state["grip_selected"] = None
+        cad_state["current_poly"] = []
+        return "Thoát chế độ vẽ"
 
     # ── CLOSE ─────────────────────────────────────────────────────────────
     if verb in ("C", "CLOSE"):

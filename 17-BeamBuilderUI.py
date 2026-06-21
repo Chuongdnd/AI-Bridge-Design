@@ -562,12 +562,14 @@ _SEC_PRESETS = {
 }
 
 _QUICK_CMDS = [
-    ("PL",       "Polyline",     "Bắt đầu vẽ polyline"),
-    ("C",        "Close",        "Đóng & lưu polyline"),
+    ("PL",       "Polyline",     "Bắt đầu vẽ polyline — click lưới để thêm điểm"),
+    ("G",        "Grip/Dời",    "Chọn đỉnh rồi click điểm mới để dời"),
+    ("E",        "Xoá đỉnh",   "Click đỉnh để xoá từng điểm"),
+    ("C",        "Close",        "Đóng & lưu polyline hiện tại"),
     ("M",        "Mirror X",     "Gương qua X=0"),
     ("O 100",    "Offset void",  "Offset vào 100mm (tạo khoang rỗng)"),
-    ("CHA 20,20","Vát 20×20",   "Chamfer góc 20×20mm"),
-    ("CLEAR",    "Xoá tất cả",  "Xoá mặt cắt hiện tại"),
+    ("CHA 20,20","Vát 20×20",  "Chamfer góc 20×20mm"),
+    ("CLEAR",    "Xoá tất cả", "Xoá mặt cắt hiện tại"),
 ]
 
 
@@ -589,7 +591,7 @@ def _cad_init(pfx: str, bb):
     if _cad_key(pfx, "state") not in st.session_state:
         st.session_state[_cad_key(pfx, "state")] = {
             "mode": None, "current_poly": [], "cursor": [0.0, 0.0],
-            "snap": 50.0,
+            "snap": 50.0, "grip_selected": None,
         }
     if _cad_key(pfx, "hist") not in st.session_state:
         st.session_state[_cad_key(pfx, "hist")] = []
@@ -624,56 +626,113 @@ def _cad_undo(pfx: str, bb):
     cs["current_poly"] = []; cs["mode"] = None
 
 
+def _find_nearest_vertex(outer: list, px: float, pz: float, snap: float) -> int:
+    """Trả về index đỉnh gần nhất trong threshold, hoặc -1 nếu không có."""
+    if not outer:
+        return -1
+    thresh = max(snap if snap > 0 else 50, 30) * 2.5
+    best_i, best_d2 = -1, thresh ** 2
+    for i, p in enumerate(outer):
+        d2 = (p[0] - px) ** 2 + (p[1] - pz) ** 2
+        if d2 < best_d2:
+            best_i, best_d2 = i, d2
+    return best_i
+
+
 def _canvas_fig(sec, cad_state: dict) -> "go.Figure":
-    """Canvas MCN: outer + in-progress polyline + cursor marker."""
-    bb = _get_bb()
-
+    """
+    Canvas MCN tương tác:
+    - Trace 0 (_grid): lưới điểm click được — thêm điểm / dời đỉnh
+    - Trace 1 (_outer_line): đường biên ngoài (không click)
+    - Trace 2 (_vertices): đỉnh có số thứ tự — click để grip/erase
+    - Trace 3+: holes, WIP, cursor
+    """
     outer = sec.outer if sec.outer else []
-    snap  = float(cad_state.get("snap", 0))
+    snap  = float(cad_state.get("snap", 50))
+    mode  = cad_state.get("mode")
+    grip_sel = cad_state.get("grip_selected")
 
-    # Axis ranges — auto-fit to section with margin
+    # Axis ranges — auto-fit with margin
     all_pts = list(outer) + cad_state.get("current_poly", [])
     if all_pts:
         xs_all = [p[0] for p in all_pts]
         zs_all = [p[1] for p in all_pts]
-        margin_x = max(200, (max(xs_all)-min(xs_all))*0.25)
-        margin_z = max(200, (max(zs_all)-min(zs_all))*0.25)
-        xr = [min(xs_all)-margin_x, max(xs_all)+margin_x]
-        zr = [min(zs_all)-margin_z, max(zs_all)+margin_z]
+        margin_x = max(200, (max(xs_all) - min(xs_all)) * 0.25)
+        margin_z = max(200, (max(zs_all) - min(zs_all)) * 0.25)
+        xr = [min(xs_all) - margin_x, max(xs_all) + margin_x]
+        zr = [min(zs_all) - margin_z, max(zs_all) + margin_z]
     else:
         xr, zr = [-1400, 1400], [-1900, 300]
 
     fig = go.Figure()
-    fig.update_layout(
-        template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
-        height=520, margin=dict(l=50, r=10, t=30, b=45),
-        xaxis=dict(range=xr, title="X (mm)", showgrid=True, gridcolor="#233040",
-                   dtick=100, zeroline=True, zerolinecolor="#4da6d9", zerolinewidth=1.5,
-                   scaleanchor="y", scaleratio=1),
-        yaxis=dict(range=zr, title="Z (mm)", showgrid=True, gridcolor="#233040",
-                   dtick=100, zeroline=True, zerolinecolor="#4da6d9", zerolinewidth=1.5),
-        showlegend=False,
-    )
 
-    # Committed outer
+    # ── Trace 0: snap grid (click target) ─────────────────────────────────
+    grid_res = max(snap, 20.0) if snap > 0 else 20.0
+    gx_arr = np.arange(xr[0], xr[1] + grid_res, grid_res)
+    gz_arr = np.arange(zr[0], zr[1] + grid_res, grid_res)
+    GX, GZ = np.meshgrid(gx_arr, gz_arr)
+    gx_flat = GX.flatten().tolist()
+    gz_flat = GZ.flatten().tolist()
+    # màu grid thay đổi theo mode để báo hiệu trạng thái
+    grid_color = {
+        "polyline": "rgba(70,180,100,0.35)",
+        "line":     "rgba(70,180,100,0.35)",
+        "grip":     "rgba(255,180,50,0.30)",
+        "erase":    "rgba(255,80,80,0.30)",
+        None:       "rgba(60,100,140,0.25)",
+    }.get(mode, "rgba(60,100,140,0.25)")
+
+    fig.add_trace(go.Scatter(
+        x=gx_flat, y=gz_flat,
+        mode="markers",
+        marker=dict(size=3, color=grid_color, symbol="circle"),
+        name="_grid",
+        showlegend=False,
+        hovertemplate="(%{x:.0f}, %{y:.0f})<extra>Click để thêm / dời điểm</extra>",
+        customdata=[["grid"]] * len(gx_flat),
+    ))
+
+    # ── Trace 1: outer polygon line (visual only, not selectable) ─────────
     if len(outer) >= 2:
         ox = [p[0] for p in outer] + [outer[0][0]]
         oz = [p[1] for p in outer] + [outer[0][1]]
         fig.add_trace(go.Scatter(
             x=ox, y=oz,
             fill="toself", fillcolor="rgba(90,145,190,0.18)",
-            line=dict(color="#78b8de", width=2), mode="lines+markers",
-            marker=dict(size=6, color="#66ee99", symbol="circle"),
-            hovertemplate="P%{pointNumber}: (%{x:.0f}, %{y:.0f})<extra></extra>",
+            line=dict(color="#78b8de", width=2), mode="lines",
+            showlegend=False, hoverinfo="none",
+            name="_outer_line",
         ))
-        # Đánh số đỉnh
-        for i, (px, pz) in enumerate(outer):
-            fig.add_annotation(x=px, y=pz, text=str(i), showarrow=False,
-                               font=dict(size=8, color="#66ee99"),
-                               bgcolor="rgba(0,0,0,0.6)", yshift=9,
-                               xanchor="center", yanchor="bottom")
 
-    # Holes
+    # ── Trace 2: vertex markers (numbered, selectable for grip/erase) ─────
+    if outer:
+        v_colors = []
+        v_sizes  = []
+        for i in range(len(outer)):
+            if i == grip_sel:
+                v_colors.append("#ff3333"); v_sizes.append(18)
+            elif mode == "grip":
+                v_colors.append("#ffaa22"); v_sizes.append(12)
+            elif mode == "erase":
+                v_colors.append("#ff5544"); v_sizes.append(12)
+            else:
+                v_colors.append("#66ee99"); v_sizes.append(10)
+
+        fig.add_trace(go.Scatter(
+            x=[p[0] for p in outer],
+            y=[p[1] for p in outer],
+            mode="markers+text",
+            marker=dict(size=v_sizes, color=v_colors, symbol="circle",
+                        line=dict(width=1.5, color="#ffffff")),
+            text=[str(i) for i in range(len(outer))],
+            textposition="top center",
+            textfont=dict(size=9, color="#b0e8c0"),
+            showlegend=False, name="_vertices",
+            hovertemplate="Đỉnh %{pointNumber}: (%{x:.0f}, %{y:.0f})<extra>Click để chọn</extra>",
+            customdata=[["vertex", i] for i in range(len(outer))],
+        ))
+
+    # ── Holes ─────────────────────────────────────────────────────────────
     for hi, hole in enumerate(sec.holes or []):
         if len(hole) < 2:
             continue
@@ -683,27 +742,60 @@ def _canvas_fig(sec, cad_state: dict) -> "go.Figure":
             x=hx, y=hz,
             fill="toself", fillcolor="rgba(180,60,60,0.22)",
             line=dict(color="#cc6666", width=1.5, dash="dot"),
-            mode="lines", name=f"Lỗ #{hi}",
+            mode="lines", name=f"Lỗ #{hi}", showlegend=False,
             hovertemplate=f"Lỗ #{hi} (%{{x:.0f}}, %{{y:.0f}})<extra></extra>",
         ))
 
-    # In-progress polyline (dashed, lighter)
+    # ── In-progress WIP polyline ──────────────────────────────────────────
     wip = cad_state.get("current_poly", [])
-    if len(wip) >= 2:
+    if wip:
         fig.add_trace(go.Scatter(
             x=[p[0] for p in wip], y=[p[1] for p in wip],
             mode="lines+markers",
             line=dict(color="#ffcc44", width=1.5, dash="dash"),
-            marker=dict(size=5, color="#ffcc44"),
+            marker=dict(size=6, color="#ffcc44"),
+            showlegend=False,
             hovertemplate="WIP (%{x:.0f}, %{y:.0f})<extra></extra>",
         ))
-    # Cursor marker
+
+    # ── Cursor marker ─────────────────────────────────────────────────────
     cur = cad_state.get("cursor", [0.0, 0.0])
     fig.add_trace(go.Scatter(
         x=[cur[0]], y=[cur[1]], mode="markers",
         marker=dict(size=10, color="#ff6644", symbol="cross"),
+        showlegend=False,
         hovertemplate=f"Cursor ({cur[0]:.0f}, {cur[1]:.0f})<extra></extra>",
     ))
+
+    # ── Mode hint annotation ───────────────────────────────────────────────
+    _hints = {
+        "polyline": "🖊 POLYLINE — click lưới để thêm điểm | C để đóng",
+        "line":     "📏 LINE — click lưới để thêm điểm | C để đóng",
+        "grip":     "✋ GRIP — click đỉnh (cam) để chọn, rồi click vị trí mới",
+        "erase":    "✂ ERASE — click đỉnh (đỏ) để xoá | ESC để thoát",
+        None:       "Gõ PL / G / E — hoặc click lưới (khi có mode)",
+    }
+    hint_color = "#ffcc44" if mode else "#607080"
+    fig.add_annotation(
+        x=0.01, y=0.99, xref="paper", yref="paper",
+        text=_hints.get(mode, ""),
+        showarrow=False,
+        font=dict(size=10, color=hint_color),
+        bgcolor="rgba(0,0,0,0.55)", borderpad=4,
+        xanchor="left", yanchor="top",
+    )
+
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
+        height=520, margin=dict(l=50, r=10, t=30, b=45),
+        xaxis=dict(range=xr, title="X (mm)", showgrid=True, gridcolor="#233040",
+                   dtick=100, zeroline=True, zerolinecolor="#4da6d9", zerolinewidth=1.5,
+                   scaleanchor="y", scaleratio=1),
+        yaxis=dict(range=zr, title="Z (mm)", showgrid=True, gridcolor="#233040",
+                   dtick=100, zeroline=True, zerolinecolor="#4da6d9", zerolinewidth=1.5),
+        showlegend=False,
+        clickmode="event+select",
+    )
 
     return fig
 
@@ -814,12 +906,19 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
         snap = cad_state.get("snap", 50.0)
         n_wip = len(cad_state.get("current_poly", []))
 
-        mode_text  = f"**{mode.upper()}**" if mode else "—"
+        grip_sel   = cad_state.get("grip_selected")
         snap_text  = f"{snap:.0f} mm" if snap > 0 else "Tắt"
+        _mode_colors = {"polyline": "#44dd88", "line": "#44dd88",
+                        "grip": "#ffaa22", "erase": "#ff5544"}
+        _mc = _mode_colors.get(mode, "#7090a0")
+        _mode_label = mode.upper() if mode else "—"
+        _grip_line = (f"<br><span style='color:#ffaa22'>Grip đỉnh:</span> #{grip_sel}"
+                      if grip_sel is not None else "")
         st.markdown(
             f"<div style='background:#111820;border:1px solid #2a4060;"
             f"border-radius:6px;padding:8px;font-size:12px;font-family:monospace'>"
-            f"<span style='color:#4da6d9'>Lệnh:</span> {mode_text}<br>"
+            f"<span style='color:#4da6d9'>Lệnh:</span> "
+            f"<span style='color:{_mc};font-weight:bold'>{_mode_label}</span>{_grip_line}<br>"
             f"<span style='color:#4da6d9'>Cursor:</span> ({cur[0]:.0f}, {cur[1]:.0f})<br>"
             f"<span style='color:#4da6d9'>WIP pts:</span> {n_wip}<br>"
             f"<span style='color:#4da6d9'>Snap:</span> {snap_text}"
@@ -886,10 +985,79 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     with col_canvas:
         st.markdown(f"**Mặt cắt {active_sec}** — Dầm Super-T S=2200mm")
         fig_canvas = _canvas_fig(sec, cad_state)
-        st.plotly_chart(fig_canvas, use_container_width=True,
-                        key=f"{pfx}_canvas_{active_sec}",
-                        config={"scrollZoom": True, "displayModeBar": True,
-                                "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
+        canvas_event = st.plotly_chart(
+            fig_canvas, use_container_width=True,
+            key=f"{pfx}_canvas_{active_sec}",
+            on_select="rerun",
+            selection_mode="points",
+            config={"scrollZoom": True, "displayModeBar": True,
+                    "modeBarButtonsToRemove": ["select2d", "lasso2d"]},
+        )
+
+        # ── Canvas click handler ────────────────────────────────────────
+        _sel = getattr(canvas_event, "selection", None)
+        _pts = getattr(_sel, "points", None) if _sel else None
+        if _pts:
+            pt0 = _pts[0]
+            # extract coordinates
+            _px = float(pt0.get("x") if hasattr(pt0, "get") else getattr(pt0, "x", 0))
+            _pz = float(pt0.get("y") if hasattr(pt0, "get") else getattr(pt0, "y", 0))
+            # extract customdata to know trace type
+            _cd = (pt0.get("customdata") if hasattr(pt0, "get")
+                   else getattr(pt0, "customdata", None))
+            _ctype = _cd[0] if _cd else "grid"
+            _cidx  = int(_cd[1]) if (_cd and len(_cd) > 1) else -1
+
+            _mode = cad_state.get("mode")
+
+            if _mode in ("polyline", "line"):
+                # Click anywhere on grid → add vertex to WIP
+                _cad_push_undo(pfx, bb)
+                cad_state["cursor"] = [_px, _pz]
+                cad_state.setdefault("current_poly", []).append([_px, _pz])
+                _n = len(cad_state["current_poly"])
+                hist.append((f"click ({_px:.0f},{_pz:.0f})", f"+ ({_px:.0f},{_pz:.0f}) #{_n}"))
+                st.rerun()
+
+            elif _mode == "grip":
+                _gsel = cad_state.get("grip_selected")
+                if _gsel is None:
+                    # First click: select nearest vertex
+                    if _ctype == "vertex" and 0 <= _cidx < len(sec.outer):
+                        target = _cidx
+                    else:
+                        target = _find_nearest_vertex(
+                            sec.outer, _px, _pz, cad_state.get("snap", 50))
+                    if target >= 0:
+                        cad_state["grip_selected"] = target
+                        _op = sec.outer[target]
+                        hist.append((f"grip ({_px:.0f},{_pz:.0f})",
+                                     f"Chọn đỉnh #{target} ({_op[0]:.0f},{_op[1]:.0f})"))
+                        st.rerun()
+                else:
+                    # Second click: move selected vertex
+                    _cad_push_undo(pfx, bb)
+                    _old = sec.outer[_gsel]
+                    sec.outer[_gsel] = [_px, _pz]
+                    cad_state["grip_selected"] = None
+                    cad_state["cursor"] = [_px, _pz]
+                    hist.append((f"move → ({_px:.0f},{_pz:.0f})",
+                                 f"#{_gsel} ({_old[0]:.0f},{_old[1]:.0f})→({_px:.0f},{_pz:.0f})"))
+                    st.rerun()
+
+            elif _mode == "erase":
+                # Click on/near a vertex → delete it
+                if _ctype == "vertex" and 0 <= _cidx < len(sec.outer):
+                    target = _cidx
+                else:
+                    target = _find_nearest_vertex(
+                        sec.outer, _px, _pz, cad_state.get("snap", 50))
+                if target >= 0:
+                    _cad_push_undo(pfx, bb)
+                    _removed = sec.outer.pop(target)
+                    hist.append((f"erase ({_px:.0f},{_pz:.0f})",
+                                 f"Xoá đỉnh #{target} ({_removed[0]:.0f},{_removed[1]:.0f})"))
+                    st.rerun()
 
         # Bảng tọa độ (nhỏ, collapsible)
         with st.expander(f"Bảng tọa độ ({len(sec.outer)} đỉnh)", expanded=False):
