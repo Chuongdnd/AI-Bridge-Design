@@ -195,71 +195,66 @@ def _supert_outer_polygon(mc):
 
 def _supert_outer_polygon_full(mc, H_total):
     """
-    Outer polygon Super-T — 10 điểm chính xác theo bản vẽ tham chiếu.
-    Gốc: x=0 tim dầm, y=0 đáy dầm.
+    Outer polygon Super-T S=2200mm — 12 điểm theo polygon chuẩn.
+    Gốc: x=0 tim dầm, y=0 đáy dầm (y tăng lên trên).
 
-    Web ngoài NGHIÊNG: ±510mm tại đáy (y=20) → ±610mm tại đỉnh web (y=y_web_top).
-    Slope ≈ 12.5:1 (100mm ngang / 1250mm đứng).
-    Vát góc 20×20mm tại góc đáy ngoài: (510, 20) → (490, 0).
+    Nửa phải: (490,0)→(510,20)→(510,250)→(610,1600)→(1100,1675)→(1100,1750)
+    Sườn nghiêng: ±510 tại y=250 → ±610 tại y=1600.
+    Cánh hẫng VUỐT: đáy từ y=1600 (gốc, dày 150mm) đến y=1675 (mép, dày 75mm).
     """
-    wo    = mc["web_out_hw"]        # 510mm: outer half-width tại đáy (=B_canh_duoi/2)
-    haw   = mc["B_vat_canh_tren"]   # 100mm: haunch width; outer web top = wo+haw = 610mm
-    hah   = mc["H_vat_canh_tren"]   # 75mm : haunch height
-    ct    = mc["H_canh_tren"]       # 150mm: top flange thickness
-    hf    = mc["B_canh_tren"] // 2  # 1100mm: half-width top flange
-    CHAM  = 20                       # 20mm chamfer tại góc đáy ngoài
-
-    wo_top    = wo + haw       # 610mm: outer web half-width tại đỉnh web zone
-    p_cham    = wo - CHAM      # 490mm: điểm chamfer ở đáy (20mm vào từ outer)
-    y_web_top = H_total - ct - hah   # 1525mm: đỉnh web zone
-    y_tf_bot  = H_total - ct         # 1600mm: đáy cánh trên
+    k           = H_total / 1750
+    hf          = mc["B_canh_tren"] // 2  # 1100mm: nửa bề rộng cánh
+    CHAM        = round(20 * k)
+    y_cham      = CHAM                    # y sau vát góc
+    y_web_bot   = round(250 * k)          # 250mm: chân sườn / đỉnh bầu đáy
+    y_web_top   = round(1600 * k)         # 1600mm: đỉnh sườn / gốc cánh (150mm từ đỉnh)
+    y_tf_outer  = round(1675 * k)         # 1675mm: đáy mép cánh (75mm từ đỉnh, vuốt)
+    wo          = round(510 * k)          # 510mm: sườn ngoài tại đáy
+    wo_top      = round(610 * k)          # 610mm: sườn ngoài tại đỉnh
+    p_cham      = wo - CHAM               # 490mm
 
     xs = [
-         p_cham,    # P1 : phải đáy, chamfer (490mm, y=0)
-         wo,        # P2 : phải web bắt đầu (510mm, y=CHAM)
-         wo_top,    # P3 : phải web đỉnh (610mm, y=y_web_top) ← slope P2→P3
-         hf,        # P4 : phải haunch cuối / cantilever trong (1100mm, y=y_tf_bot)
-         hf,        # P5 : phải đỉnh (1100mm, y=H)
-        -hf,        # P6 : trái đỉnh (-1100mm, y=H)
-        -hf,        # P7 : trái haunch cuối (-1100mm, y=y_tf_bot)
-        -wo_top,    # P8 : trái web đỉnh (-610mm, y=y_web_top)
-        -wo,        # P9 : trái web bắt đầu (-510mm, y=CHAM)
-        -p_cham,    # P10: trái đáy, chamfer (-490mm, y=0)
+         p_cham,    # P1 : chamfer đáy phải (490mm, y=0)
+         wo,        # P2 : sau chamfer (510mm, y=20)
+         wo,        # P3 : chân sườn ngoài (510mm, y=250)
+         wo_top,    # P4 : đỉnh sườn ngoài (610mm, y=1600) ← slope P3→P4
+         hf,        # P5 : mép cánh đáy (1100mm, y=1675) ← vuốt P4→P5
+         hf,        # P6 : mép cánh đỉnh (1100mm, y=H)
+        -hf,        # P7 : trái đỉnh
+        -hf,        # P8 : trái mép cánh đáy
+        -wo_top,    # P9 : trái đỉnh sườn
+        -wo,        # P10: trái chân sườn
+        -wo,        # P11: trái sau chamfer
+        -p_cham,    # P12: trái chamfer
     ]
     ys = [
-        0,            # P1
-        CHAM,         # P2
-        y_web_top,    # P3
-        y_tf_bot,     # P4
-        H_total,      # P5
-        H_total,      # P6
-        y_tf_bot,     # P7
-        y_web_top,    # P8
-        CHAM,         # P9
-        0,            # P10
+        0,             # P1
+        y_cham,        # P2
+        y_web_bot,     # P3
+        y_web_top,     # P4
+        y_tf_outer,    # P5
+        H_total,       # P6
+        H_total,       # P7
+        y_tf_outer,    # P8
+        y_web_top,     # P9
+        y_web_bot,     # P10
+        y_cham,        # P11
+        0,             # P12
     ]
     return xs, ys
 
 
 def _supert_void_polygon(mc, H_total):
     """
-    Polygon khoang rỗng Super-T B-B (giữa nhịp) — hình thang 4 điểm.
-    Đỉnh: ±(wo+haw-bt) tại y_void_top, đáy: ±(B_rong_duoi/2) tại y_void_bot.
-    Sử dụng inner face = outer web - wall thickness tại mỗi mức.
+    Polygon khoang rỗng Super-T — hình thang 4 điểm.
+    Đỉnh: ±510mm tại y=1600mm (đỉnh sườn / gốc cánh).
+    Đáy : ±350mm tại y=250mm  (chân sườn / đỉnh bầu đáy).
     """
-    wo  = mc["web_out_hw"]        # 510mm: outer web tại đáy
-    haw = mc["B_vat_canh_tren"]   # 100mm: haunch width → outer web top = wo+haw
-    bt  = mc["B_bung_top"]        # 110mm: web thickness tại đỉnh
-    cd  = mc["H_canh_duoi"]       # 225mm: bottom flange height
-    vdh = mc["H_vat_canh_duoi"]   # 50mm : bottom haunch height
-    ct  = mc["H_canh_tren"]       # 150mm: top flange height
-    hah = mc["H_vat_canh_tren"]   # 75mm : top haunch height
-
-    vi_top = (wo + haw) - bt      # 610 - 110 = 500mm: inner void half-width tại đỉnh web
-    vi_bot = mc["B_rong_duoi"] // 2  # 350mm: inner void half-width tại đáy web (=700/2)
-
-    y_void_top = H_total - ct - hah   # 1525mm: đỉnh khoang rỗng (đáy haunch)
-    y_void_bot = cd + vdh             # 275mm : đáy khoang rỗng (đỉnh cánh đáy)
+    k           = H_total / 1750
+    vi_top      = round(510 * k)              # 510mm: mặt trong tại đỉnh
+    vi_bot      = mc["B_rong_duoi"] // 2      # 350mm: mặt trong tại đáy (700/2)
+    y_void_top  = round(1600 * k)             # 1600mm
+    y_void_bot  = round(250 * k)              # 250mm
 
     xs = [-vi_top, vi_top,  vi_bot, -vi_bot]
     ys = [y_void_top, y_void_top, y_void_bot, y_void_bot]
