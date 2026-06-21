@@ -167,6 +167,21 @@ try:
     importlib.reload(BVK)
     importlib.reload(CTD)
     importlib.reload(BDE)
+
+    # ── Section Sketcher + Beam Builder (module nạp bằng spec vì tên có số) ──
+    _bb_dir  = os.path.dirname(os.path.abspath(__file__))
+    _bb_espec = _iutil.spec_from_file_location(
+        "BeamBuilder", os.path.join(_bb_dir, "17-BeamBuilder.py"))
+    _BB_ENGINE = _iutil.module_from_spec(_bb_espec)
+    import sys as _sys
+    _sys.modules["BeamBuilder"] = _BB_ENGINE
+    _bb_espec.loader.exec_module(_BB_ENGINE)
+
+    _bb_uspec = _iutil.spec_from_file_location(
+        "BeamBuilderUI", os.path.join(_bb_dir, "17-BeamBuilderUI.py"))
+    BBUI = _iutil.module_from_spec(_bb_uspec)
+    _bb_uspec.loader.exec_module(BBUI)
+
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
     st.stop()
@@ -1709,7 +1724,7 @@ def _get_tab_states(d: dict) -> dict:
     else:
         tab2 = 'locked'
 
-    return {'tab0': tab0, 'tab1': tab1, 'tab2': tab2}
+    return {'tab0': tab0, 'tab1': tab1, 'tab2': tab2, 'tab3': 'done'}
 
 
 tab_states = _get_tab_states(st.session_state.design_data)
@@ -1748,6 +1763,13 @@ _TAB_META = [
         'state':    tab_states['tab2'],
         'tip':      'So sánh 3 phương án loại dầm',
         'lock_msg': 'Cần chạy tính toán nhịp trước',
+    },
+    {
+        'key':      'VẼ CHI TIẾT DẦM',
+        'icon':     '📐',
+        'state':    tab_states['tab3'],
+        'tip':      'Section Sketcher + Beam Builder 3D',
+        'lock_msg': '',
     },
 ]
 
@@ -1930,7 +1952,7 @@ def _render_statusbar(d: dict) -> None:
 _cur_tab = st.session_state.get('current_tab', 'THUYẾT MINH')
 _render_topbar(st.session_state.design_data, _cur_tab)
 
-_col_tabs = st.columns(3)
+_col_tabs = st.columns(4)
 for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
     with _col:
         if _m['state'] == 'locked':
@@ -3448,6 +3470,14 @@ with _col_main:
                 st.error(f"Lỗi render so sánh phương án: {_ssp_err}")
                 import traceback
                 st.code(traceback.format_exc())
+
+    elif selected_ribbon == "VẼ CHI TIẾT DẦM":
+        try:
+            BBUI.render_tab()
+        except Exception as _bb_err:
+            st.error(f"Lỗi Section Sketcher: {_bb_err}")
+            import traceback
+            st.code(traceback.format_exc())
 
 _render_statusbar(st.session_state.design_data)
 
