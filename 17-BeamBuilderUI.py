@@ -626,83 +626,60 @@ def _cad_undo(pfx: str, bb):
     cs["current_poly"] = []; cs["mode"] = None
 
 
-def _canvas_fig(sec, cad_state: dict) -> "go.Figure":
-    """Canvas hiển thị mặt cắt ngang (sau khi import từ DXF hoặc dùng preset)."""
+def _section_fig(sec, height: int = 220, title: str = "") -> "go.Figure":
+    """Hiển thị mặt cắt ngang — đường viền sạch, không có điểm đánh dấu."""
     outer = sec.outer if sec.outer else []
-
-    # Axis ranges — auto-fit with margin
-    if outer:
-        xs_all = [p[0] for p in outer]
-        zs_all = [p[1] for p in outer]
-        margin_x = max(150, (max(xs_all) - min(xs_all)) * 0.20)
-        margin_z = max(150, (max(zs_all) - min(zs_all)) * 0.20)
-        xr = [min(xs_all) - margin_x, max(xs_all) + margin_x]
-        zr = [min(zs_all) - margin_z, max(zs_all) + margin_z]
-    else:
-        xr, zr = [-1400, 1400], [-1900, 300]
-
     fig = go.Figure()
 
-    # Outer polygon — filled
     if len(outer) >= 2:
         ox = [p[0] for p in outer] + [outer[0][0]]
         oz = [p[1] for p in outer] + [outer[0][1]]
         fig.add_trace(go.Scatter(
             x=ox, y=oz,
-            fill="toself", fillcolor="rgba(90,145,190,0.20)",
-            line=dict(color="#78b8de", width=2.5),
-            mode="lines+markers",
-            marker=dict(size=7, color="#66ee99", symbol="circle",
-                        line=dict(width=1, color="#fff")),
-            showlegend=False,
-            hovertemplate="(%{x:.1f}, %{y:.1f})<extra>Đỉnh %{pointNumber}</extra>",
+            fill="toself", fillcolor="rgba(90,145,190,0.22)",
+            line=dict(color="#78b8de", width=2),
+            mode="lines", showlegend=False,
+            hovertemplate="(%{x:.1f}, %{y:.1f})<extra></extra>",
         ))
-        # Vertex labels
-        for i, (px, pz) in enumerate(outer):
-            fig.add_annotation(
-                x=px, y=pz, text=str(i), showarrow=False,
-                font=dict(size=8, color="#b0e8c0"),
-                bgcolor="rgba(0,0,0,0.55)", borderpad=2,
-                yshift=10, xanchor="center", yanchor="bottom",
-            )
 
-    # Holes
-    for hi, hole in enumerate(sec.holes or []):
+    for hole in (sec.holes or []):
         if len(hole) < 2:
             continue
         hx = [p[0] for p in hole] + [hole[0][0]]
         hz = [p[1] for p in hole] + [hole[0][1]]
         fig.add_trace(go.Scatter(
             x=hx, y=hz,
-            fill="toself", fillcolor="rgba(20,30,45,0.90)",
-            line=dict(color="#cc8866", width=1.5, dash="dot"),
-            mode="lines", showlegend=False,
-            hovertemplate=f"Lỗ #{hi} (%{{x:.1f}}, %{{y:.1f}})<extra></extra>",
+            fill="toself", fillcolor="rgba(15,22,35,0.95)",
+            line=dict(color="#cc8866", width=1.5),
+            mode="lines", showlegend=False, hoverinfo="none",
         ))
 
-    # Dimension annotation: width + height
     if outer:
-        xs_o = [p[0] for p in outer]
-        zs_o = [p[1] for p in outer]
-        w_mm = max(xs_o) - min(xs_o)
-        h_mm = max(zs_o) - min(zs_o)
+        xs_o = [p[0] for p in outer]; zs_o = [p[1] for p in outer]
+        w = max(xs_o) - min(xs_o); h = abs(min(zs_o))
+        mx = max(abs(min(xs_o)), abs(max(xs_o)))
+        xr = [-mx * 1.18, mx * 1.18]
+        zr = [-h * 1.15, h * 0.12]
         fig.add_annotation(
-            x=0.99, y=0.02, xref="paper", yref="paper",
-            text=f"B={w_mm:.0f} mm  H={h_mm:.0f} mm  N={len(outer)} đỉnh",
-            showarrow=False,
-            font=dict(size=10, color="#7ab8d9"),
-            bgcolor="rgba(0,0,0,0.50)", borderpad=4,
-            xanchor="right", yanchor="bottom",
+            x=0.5, y=0.04, xref="paper", yref="paper",
+            text=f"B={w:.0f}  H={h:.0f} mm",
+            showarrow=False, font=dict(size=9, color="#7ab8d9"),
+            bgcolor="rgba(0,0,0,0.45)", borderpad=3,
+            xanchor="center", yanchor="bottom",
         )
+    else:
+        xr, zr = [-1300, 1300], [-1900, 200]
 
     fig.update_layout(
         template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
-        height=520, margin=dict(l=50, r=10, t=30, b=45),
-        xaxis=dict(range=xr, title="X (mm)", showgrid=True, gridcolor="#233040",
-                   dtick=100, zeroline=True, zerolinecolor="#4da6d9", zerolinewidth=1.5,
-                   scaleanchor="y", scaleratio=1),
-        yaxis=dict(range=zr, title="Z (mm)", showgrid=True, gridcolor="#233040",
-                   dtick=100, zeroline=True, zerolinecolor="#4da6d9", zerolinewidth=1.5),
+        height=height, margin=dict(l=30, r=10, t=28 if title else 12, b=28),
+        title=dict(text=title, font=dict(size=12, color="#9ac8e8"), x=0.5) if title else {},
+        xaxis=dict(range=xr, showgrid=True, gridcolor="#233040", dtick=200,
+                   zeroline=True, zerolinecolor="#3a5a7a", zerolinewidth=1,
+                   scaleanchor="y", scaleratio=1, showticklabels=False),
+        yaxis=dict(range=zr, showgrid=True, gridcolor="#233040", dtick=200,
+                   zeroline=True, zerolinecolor="#3a5a7a", zerolinewidth=1,
+                   showticklabels=False),
         showlegend=False,
     )
     return fig
@@ -754,216 +731,245 @@ def _side_3d_fig(m) -> "go.Figure":
         return fig
 
 
+def _dxf_upload_card(pfx: str, bb, secs: dict, cad_state: dict,
+                     hist: list, sec_name: str) -> None:
+    """Upload card gọn cho một mặt cắt — không có nút chỉnh sửa."""
+    sec = secs[sec_name]
+    has_data = bool(sec.outer)
+    dot = "●" if has_data else "○"
+    dot_color = "#44dd88" if has_data else "#607080"
+    st.markdown(
+        f"<div style='text-align:center;font-size:13px;font-weight:bold;"
+        f"color:{dot_color};margin-bottom:4px'>{dot} Mặt cắt {sec_name}</div>",
+        unsafe_allow_html=True,
+    )
+
+    # Miniature section preview
+    fig_mini = _section_fig(sec, height=170, title="")
+    st.plotly_chart(fig_mini, use_container_width=True,
+                    key=f"{pfx}_mini_{sec_name}",
+                    config={"displayModeBar": False})
+
+    # File uploader
+    uploaded = st.file_uploader(
+        f"DXF {sec_name}", type=["dxf", "dwg"],
+        key=f"{pfx}_dxf_{sec_name}",
+        label_visibility="collapsed",
+        help="File → Save As → DXF trong AutoCAD (đơn vị mm). Vẽ ở bất kỳ vị trí nào.",
+    )
+    if uploaded is not None:
+        _fp = f"{uploaded.name}_{uploaded.size}"
+        _fp_key = f"_dxf_fp_{pfx}_{sec_name}"
+        if cad_state.get(_fp_key) != _fp:
+            _res = bb.parse_dxf_bytes(uploaded.read())
+            if "error" in _res:
+                st.error(_res["error"])
+                _ents = _res.get("entities")
+                if _ents:
+                    st.caption(f"Entities: {', '.join(_ents)}")
+            else:
+                sec.outer = _res["outer"]
+                sec.holes = _res["holes"]
+                cad_state[_fp_key] = _fp
+                _w = _res.get("width_mm", 0)
+                _h = _res.get("height_mm", 0)
+                hist.append((f"DXF {sec_name}: {uploaded.name}",
+                             f"✓ {len(sec.outer)} đỉnh | {_w:.0f}×{_h:.0f}mm"))
+                st.rerun()
+        else:
+            if has_data:
+                _ox = [p[0] for p in sec.outer]; _oz = [p[1] for p in sec.outer]
+                st.caption(
+                    f"✔ {uploaded.name}  \n"
+                    f"B={max(_ox)-min(_ox):.0f} H={abs(min(_oz)):.0f} mm | "
+                    f"{len(sec.outer)} đỉnh"
+                )
+    else:
+        if not has_data:
+            st.caption("Chưa có DXF")
+
+
 def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     """
-    Tab chi tiết dầm Super-T — import mặt cắt ngang từ file DXF.
+    Tab chi tiết dầm Super-T — import mặt cắt ngang từ DXF.
+    Layout: 3 upload card (A-A / B-B / C-C) + [vị trí mặt cắt | 3D lớn].
     d   : design_data dict từ session_state
     pfx : prefix tránh collision session-state key
     """
     bb = _get_bb()
     _cad_init(pfx, bb)
 
-    secs       = st.session_state[_cad_key(pfx, "sections")]
-    active_sec = st.session_state[_cad_key(pfx, "active")]
-    cad_state  = st.session_state[_cad_key(pfx, "state")]
-    hist       = st.session_state[_cad_key(pfx, "hist")]
-    sec        = secs.get(active_sec)
+    secs      = st.session_state[_cad_key(pfx, "sections")]
+    cad_state = st.session_state[_cad_key(pfx, "state")]
+    hist      = st.session_state[_cad_key(pfx, "hist")]
 
     kcn = d.get("kcn_result") or d.get("ai_result") or {}
     H   = float(kcn.get("chieu_cao_dam", 1.75)) * 1000
-    L   = float(kcn.get("chieu_dai", 38.0))
+    L_m = float(kcn.get("chieu_dai", 38.0))
     kc  = float(kcn.get("khoang_cach_dam", 2.2)) * 1000
+    L_half = L_m * 1000 / 2  # nửa dầm (mm), dùng mirror=True
 
-    # ── Header ───────────────────────────────────────────────────────────────
-    hc1, hc2, hc3 = st.columns([3, 2, 1])
-    with hc1:
-        st.markdown(f"**Super-T** — L={L:.1f}m | H={H:.0f}mm | S={kc:.0f}mm")
-    with hc2:
-        new_active = st.radio(
-            "Mặt cắt", list(secs.keys()),
-            index=list(secs.keys()).index(active_sec),
-            horizontal=True, key=f"{pfx}_sec_radio",
-            label_visibility="collapsed",
-        )
-        if new_active != active_sec:
-            st.session_state[_cad_key(pfx, "active")] = new_active
-            cad_state["mode"] = None
-            cad_state["current_poly"] = []
-            st.rerun()
-    with hc3:
-        if st.button("↩ Undo", key=f"{pfx}_undo_hdr",
-                     disabled=not st.session_state[_cad_key(pfx, "undo")]):
-            _cad_undo(pfx, bb)
-            st.rerun()
+    st.markdown(
+        f"<div style='font-size:13px;color:#9ac8e8;margin-bottom:6px'>"
+        f"Dầm Super-T — L={L_m:.1f}m | H={H:.0f}mm | S={kc:.0f}mm | "
+        f"Upload DXF mặt cắt ngang từ AutoCAD (đơn vị mm)</div>",
+        unsafe_allow_html=True,
+    )
 
-    # ── 3 cột chính ──────────────────────────────────────────────────────────
-    col_upload, col_canvas, col_views = st.columns([1, 3, 1])
+    # ═══ Hàng 1: 3 upload card ════════════════════════════════════════════════
+    c_aa, c_bb, c_cc = st.columns(3)
+    for col, sname in [(c_aa, "A-A"), (c_bb, "B-B"), (c_cc, "C-C")]:
+        with col:
+            _dxf_upload_card(pfx, bb, secs, cad_state, hist, sname)
 
-    # ── Cột trái: Upload DXF + chỉnh sửa ───────────────────────────────────
-    with col_upload:
-        st.markdown(f"**Upload DXF — mặt cắt {active_sec}**")
+    st.divider()
 
-        uploaded = st.file_uploader(
-            "Chọn file DXF",
-            type=["dxf", "dwg"],
-            key=f"{pfx}_dxf_{active_sec}",
-            help=(
-                "Upload file DXF từ AutoCAD (đơn vị mm).\n"
-                "Nếu có file DWG: mở AutoCAD → File → Save As → chọn DXF (*.dxf).\n"
-                "Vẽ mặt cắt ở bất kỳ vị trí nào — webapp tự căn về gốc toạ độ."
-            ),
-            label_visibility="collapsed",
-        )
+    # ═══ Hàng 2: Vị trí mặt cắt | 3D lớn ════════════════════════════════════
+    col_pos, col_3d = st.columns([1, 3])
 
-        if uploaded is not None:
-            # Fingerprint = tên + kích thước để phát hiện file mới
-            _fp = f"{uploaded.name}_{uploaded.size}"
-            _fp_key = f"_dxf_fp_{pfx}_{active_sec}"
+    # ── Cột trái: vị trí mặt cắt trên trắc dọc ──────────────────────────────
+    with col_pos:
+        st.markdown("**Vị trí mặt cắt trên trắc dọc**")
+        st.caption(f"(Nhập chiều dài từng đoạn, đơn vị mm. L/2 = {L_half:.0f} mm)")
 
-            if cad_state.get(_fp_key) != _fp:
-                # File mới → tự động import
-                _raw = uploaded.read()
-                _res = bb.parse_dxf_bytes(_raw)
-                if "error" in _res:
-                    st.error(_res["error"])
-                    # Gợi ý entity đã đọc được (nếu có)
-                    _ents = _res.get("entities")
-                    if _ents:
-                        st.caption(f"Entity trong file: {', '.join(_ents)}")
-                else:
-                    _cad_push_undo(pfx, bb)
-                    sec.outer = _res["outer"]
-                    sec.holes = _res["holes"]
-                    cad_state[_fp_key] = _fp
-                    cad_state["mode"] = None
-                    cad_state["current_poly"] = []
-                    _w = _res.get("width_mm", 0)
-                    _h = _res.get("height_mm", 0)
-                    _ent_info = (", ".join(_res.get("entities", [])) or "?")
-                    hist.append((
-                        f"DXF: {uploaded.name}",
-                        f"✓ {_res['raw_count']} vòng kín | outer {len(sec.outer)} đỉnh"
-                        f" | {_w:.0f}×{_h:.0f} mm | {_ent_info}",
-                    ))
-                    st.rerun()
-            else:
-                # Đã import — hiển thị thông tin nhanh
-                if sec.outer:
-                    _ox = [p[0] for p in sec.outer]
-                    _oz = [p[1] for p in sec.outer]
-                    _wi = max(_ox) - min(_ox)
-                    _hi = abs(min(_oz))
-                    st.success(
-                        f"✔ **{uploaded.name}**  \n"
-                        f"B={_wi:.0f} mm | H={_hi:.0f} mm | {len(sec.outer)} đỉnh",
-                    )
-        else:
-            if not sec.outer:
-                st.info("Upload file DXF hoặc dùng **Preset** bên dưới.", icon="ℹ")
+        # Defaults lần đầu
+        cad_state.setdefault("seg_L1", min(300.0,  L_half * 0.02))
+        cad_state.setdefault("seg_L2", min(900.0,  L_half * 0.12))
+        cad_state.setdefault("seg_L3", 0.0)
+        cad_state.setdefault("seg_L4", min(1200.0, L_half * 0.16))
 
-        # ── Chỉnh sửa sau import ─────────────────────────────────────────
-        st.divider()
-        st.caption("Chỉnh sửa sau import:")
-
-        _edit_cmds = [
-            ("M",          "↔ Mirror X",    "Gương qua X=0 → tạo biên đối xứng"),
-            ("O 100",      "Offset void",   "Tạo khoang rỗng offset vào 100mm"),
-            ("CHA 20,20",  "Vát góc 20×20", "Chamfer 20×20mm tất cả góc"),
+        _seg_defs = [
+            ("seg_L1", "L1 — C-C đầu dầm (mm)",   "Đoạn hộp đầu, mặt cắt C-C giữ nguyên"),
+            ("seg_L2", "L2 — Vút C-C → A-A (mm)",  "Đoạn haunch, loft từ C-C sang A-A"),
+            ("seg_L3", "L3 — A-A giữa (mm)",       "Đoạn A-A giữ nguyên (0 = bỏ qua)"),
+            ("seg_L4", "L4 — Vút A-A → B-B (mm)",  "Đoạn haunch loft từ A-A sang B-B"),
         ]
-        for _qc, _ql, _qt in _edit_cmds:
-            if st.button(_ql, key=f"{pfx}_edit_{_qc.replace(' ','_')}",
-                         help=_qt, use_container_width=True):
-                _cad_push_undo(pfx, bb)
-                _r = bb.process_cad_command(_qc, sec, cad_state)
-                hist.append((_qc, _r))
-                st.rerun()
+        for _sk, _slabel, _shelp in _seg_defs:
+            _val = st.number_input(
+                _slabel, min_value=0, max_value=int(L_half),
+                value=int(cad_state[_sk]), step=50,
+                key=f"{pfx}_{_sk}", help=_shelp,
+            )
+            cad_state[_sk] = float(_val)
 
-        if st.button("Xoá tất cả", key=f"{pfx}_clear_btn",
-                     use_container_width=True):
-            _cad_push_undo(pfx, bb)
-            bb.process_cad_command("CLEAR", sec, cad_state)
-            hist.append(("CLEAR", "✓ Đã xoá"))
-            st.rerun()
+        L1 = cad_state["seg_L1"]; L2 = cad_state["seg_L2"]
+        L3 = cad_state["seg_L3"]; L4 = cad_state["seg_L4"]
+        L_fill = L_half - L1 - L2 - L3 - L4
 
-        # ── Preset fallback ──────────────────────────────────────────────
-        st.divider()
-        st.caption("Không có DXF — dùng Preset:")
-        _pmap = {"A-A": "AA", "B-B": "BB", "C-C": "CC"}
-        _pn = _pmap.get(active_sec, "AA")
-        if st.button(f"Preset Super-T {active_sec}", key=f"{pfx}_preset_{active_sec}",
-                     use_container_width=True):
-            _cad_push_undo(pfx, bb)
-            bb.process_cad_command(f"PRESET {_pn}", sec, cad_state)
-            hist.append((f"PRESET {_pn}", f"✓ Nạp preset {_pn}"))
-            st.rerun()
+        if L_fill < 0:
+            st.error(f"Tổng L1+L2+L3+L4 = {L1+L2+L3+L4:.0f} mm > L/2 = {L_half:.0f} mm")
+        else:
+            st.caption(f"B-B nhịp giữa (fill): {L_fill:.0f} mm")
 
-        # ── Validate + log ───────────────────────────────────────────────
-        _vr = bb.validate_section(sec)
-        for _e in _vr["errors"]:
-            st.error(_e, icon="⛔")
-        for _inf in _vr["infos"]:
-            st.caption(f"✔ {_inf}")
-        if hist:
-            _lc, _lr = hist[-1]
-            st.caption(f"⏺ {_lc[:30]}: {_lr[:40]}")
-
-    # ── Cột giữa: Canvas MCN ─────────────────────────────────────────────────
-    with col_canvas:
-        st.markdown(f"**Mặt cắt {active_sec}** — X=0 tâm ngang | Z=0 mặt trên (mm)")
-        fig_canvas = _canvas_fig(sec, cad_state)
-        st.plotly_chart(fig_canvas, use_container_width=True,
-                        key=f"{pfx}_canvas_{active_sec}",
-                        config={"scrollZoom": True, "displayModeBar": True,
-                                "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
-
-        # Bảng tọa độ (collapsible)
-        with st.expander(f"Bảng tọa độ ({len(sec.outer)} đỉnh)", expanded=False):
-            if sec.outer:
-                df_coord = pd.DataFrame(sec.outer, columns=["X (mm)", "Z (mm)"])
-                edited = st.data_editor(
-                    df_coord, num_rows="dynamic", use_container_width=True,
-                    key=f"{pfx}_coord_tbl_{active_sec}",
-                    column_config={
-                        "X (mm)": st.column_config.NumberColumn(format="%.1f", step=5.0),
-                        "Z (mm)": st.column_config.NumberColumn(format="%.1f", step=5.0),
-                    },
+        # Sơ đồ trắc dọc
+        _zones = [
+            (L1,   "C-C",      "#4488cc"),
+            (L2,   "→ A-A",   "#cc7733"),
+            (L3,   "A-A",      "#44aa66"),
+            (L4,   "→ B-B",   "#cc7733"),
+            (max(L_fill, 0), "B-B",  "#8855cc"),
+        ]
+        _fig_sch = go.Figure()
+        _x0 = 0.0
+        for _zlen, _zlabel, _zcol in _zones:
+            if _zlen <= 0:
+                continue
+            _fig_sch.add_shape(
+                type="rect", x0=_x0, x1=_x0 + _zlen, y0=0, y1=1,
+                fillcolor=_zcol.replace("#", "").ljust(6, "0"),
+                line=dict(color="#fff", width=0.5),
+                fillcolor=f"rgba({int(_zcol[1:3],16)},{int(_zcol[3:5],16)},{int(_zcol[5:7],16)},0.55)",
+            )
+            if _zlen > L_half * 0.04:
+                _fig_sch.add_annotation(
+                    x=_x0 + _zlen / 2, y=0.5, text=_zlabel,
+                    showarrow=False, font=dict(size=9, color="#fff"),
                 )
-                if st.button("✔ Áp dụng bảng", key=f"{pfx}_apply_tbl", type="primary"):
-                    _cad_push_undo(pfx, bb)
-                    rows = edited.dropna().values.tolist()
-                    sec.outer = [[float(r[0]), float(r[1])] for r in rows]
-                    st.rerun()
-            else:
-                st.info("Chưa có dữ liệu. Upload DXF hoặc chọn Preset.")
+            _x0 += _zlen
+        _fig_sch.update_layout(
+            template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
+            height=65, margin=dict(l=10, r=10, t=4, b=22),
+            xaxis=dict(range=[0, L_half], showgrid=False,
+                       tickformat=".0f", tickfont=dict(size=8),
+                       title=dict(text="mm từ đầu dầm", font=dict(size=8))),
+            yaxis=dict(visible=False), showlegend=False,
+        )
+        st.plotly_chart(_fig_sch, use_container_width=True,
+                        key=f"{pfx}_sch_fig",
+                        config={"displayModeBar": False})
 
-    # ── Cột phải: Elevation + 3D ─────────────────────────────────────────────
-    with col_views:
+    # ── Cột phải: 3D wireframe lớn ────────────────────────────────────────────
+    with col_3d:
+        L1 = cad_state["seg_L1"]; L2 = cad_state["seg_L2"]
+        L3 = cad_state["seg_L3"]; L4 = cad_state["seg_L4"]
+        L_fill = L_half - L1 - L2 - L3 - L4
+        _avail = {k: v for k, v in secs.items() if v.outer}
+
         try:
-            m_preview = bb.BeamModel(length=L * 1000, mirror=True)
-            m_preview.sections = {k: v.clone() for k, v in secs.items() if v.outer}
-            m_preview.segments = [
-                bb.Segment("constant", section="C-C", length=300.0),
-                bb.Segment("loft", from_sec="C-C", to_sec="A-A", length=900.0),
-                bb.Segment("loft", from_sec="A-A", to_sec="B-B", length=1200.0),
-                bb.Segment("constant", section="B-B", length="fill"),
-            ]
-        except Exception:
-            m_preview = None
+            if len(_avail) < 1:
+                st.info("Upload ít nhất 1 mặt cắt để xem 3D preview.", icon="ℹ")
+            elif L_fill < 0:
+                st.warning("Điều chỉnh L1–L4 sao cho tổng ≤ L/2.")
+            else:
+                m3d = bb.BeamModel(length=L_m * 1000, mirror=True)
+                m3d.sections = {k: v.clone() for k, v in _avail.items()}
 
-        st.markdown("**Mặt cắt dọc**")
-        if m_preview and len(m_preview.sections) >= 2:
-            st.plotly_chart(_side_elevation_fig(m_preview),
-                            use_container_width=True,
-                            key=f"{pfx}_elev_view",
-                            config={"displayModeBar": False})
-        else:
-            st.caption("(Cần ≥ 2 mặt cắt)")
+                # Build segments theo L1–L4, chỉ thêm nếu section tồn tại
+                _segs = []
+                def _has(*names):
+                    return all(n in m3d.sections for n in names)
 
-        st.markdown("**Wireframe 3D**")
-        if m_preview and len(m_preview.sections) >= 2:
-            st.plotly_chart(_side_3d_fig(m_preview),
-                            use_container_width=True,
-                            key=f"{pfx}_3d_view",
-                            config={"displayModeBar": False})
-        else:
-            st.caption("(Cần ≥ 2 mặt cắt)")
+                if L1 > 0 and _has("C-C"):
+                    _segs.append(bb.Segment("constant", section="C-C", length=L1))
+                elif L1 > 0 and _has("A-A"):
+                    _segs.append(bb.Segment("constant", section="A-A", length=L1))
+
+                if L2 > 0:
+                    if _has("C-C", "A-A"):
+                        _segs.append(bb.Segment("loft", from_sec="C-C", to_sec="A-A", length=L2))
+                    elif _has("A-A"):
+                        _segs.append(bb.Segment("constant", section="A-A", length=L2))
+
+                if L3 > 0 and _has("A-A"):
+                    _segs.append(bb.Segment("constant", section="A-A", length=L3))
+
+                if L4 > 0:
+                    if _has("A-A", "B-B"):
+                        _segs.append(bb.Segment("loft", from_sec="A-A", to_sec="B-B", length=L4))
+                    elif _has("B-B"):
+                        _segs.append(bb.Segment("constant", section="B-B", length=L4))
+
+                # Fill với section tốt nhất có
+                _mid_sec = "B-B" if "B-B" in m3d.sections else (
+                           "A-A" if "A-A" in m3d.sections else
+                           next(iter(m3d.sections)))
+                _segs.append(bb.Segment("constant", section=_mid_sec, length="fill"))
+                m3d.segments = _segs
+
+                _traces = bb.build_3d_wireframe(m3d)
+                _fig3d = go.Figure(data=_traces)
+                _fig3d.update_layout(
+                    template="plotly_dark", paper_bgcolor="#1a2330",
+                    height=600, margin=dict(l=0, r=0, t=35, b=0),
+                    title=dict(
+                        text="3D Wireframe — Dầm Super-T",
+                        font=dict(size=13, color="#9ac8e8"), x=0.5,
+                    ),
+                    scene=dict(
+                        xaxis=dict(title="X (mm)", backgroundcolor="#12202e",
+                                   gridcolor="#2a3a4a", showbackground=True),
+                        yaxis=dict(title="Y — dọc dầm (mm)", backgroundcolor="#12202e",
+                                   gridcolor="#2a3a4a", showbackground=True),
+                        zaxis=dict(title="Z (mm)", backgroundcolor="#12202e",
+                                   gridcolor="#2a3a4a", showbackground=True),
+                        bgcolor="#12202e", aspectmode="data",
+                        camera=dict(eye=dict(x=1.4, y=-1.6, z=0.9)),
+                    ),
+                )
+                st.plotly_chart(_fig3d, use_container_width=True,
+                                key=f"{pfx}_3d_large",
+                                config={"displayModeBar": True,
+                                        "modeBarButtonsToRemove": ["toImage"]})
+
+        except Exception as _e3d:
+            st.error(f"Không tạo được 3D: {_e3d}")
