@@ -330,12 +330,45 @@ def ve_spt_aa_detail(d=None):
     fig.add_shape(type="line", x0=0, y0=0.30, x1=0, y1=-1.85,
                   line=dict(color="#5dade2", width=1.2, dash="dashdot"))
 
-    dc = "#e0e8f0"   # dim colour
+    dc = "#d0dce8"   # dim colour
     ac = "#f0c050"   # accent colour
-    vc = "#87ceeb"   # void colour
+    vc = "#6ec6e8"   # void colour
+    gc = "#88d4a0"   # green (bottom flange)
+    BG = "rgba(15,22,30,0.88)"
 
-    # ── Kích thước ngang (trên đỉnh): 490|100|1020|100|490 = 2200 ───────────
-    y_td = 0.115
+    # ── Inline dim helpers (larger fonts, proper xanchor) ────────────────────
+    def _dh(x0, x1, z, txt, color, fs=10):
+        ht = 0.022
+        for xi in [x0, x1]:
+            fig.add_shape(type="line", x0=xi, y0=z - ht, x1=xi, y1=z + ht,
+                          line=dict(color=color, width=1.2))
+        fig.add_shape(type="line", x0=x0, y0=z, x1=x1, y1=z,
+                      line=dict(color=color, width=1.2))
+        fig.add_annotation(
+            x=(x0 + x1) / 2, y=z + ht + 0.012,
+            text=txt, showarrow=False,
+            font=dict(size=fs, color=color),
+            xanchor="center", yanchor="bottom",
+            bgcolor=BG, borderpad=2,
+        )
+
+    def _dv(z0, z1, xline, txt, color, fs=10):
+        ht = 0.022
+        for zi in [z0, z1]:
+            fig.add_shape(type="line", x0=xline - ht, y0=zi, x1=xline + ht, y1=zi,
+                          line=dict(color=color, width=1.2))
+        fig.add_shape(type="line", x0=xline, y0=z0, x1=xline, y1=z1,
+                      line=dict(color=color, width=1.2))
+        fig.add_annotation(
+            x=xline - ht - 0.012, y=(z0 + z1) / 2,
+            text=txt, showarrow=False,
+            font=dict(size=fs, color=color),
+            xanchor="right", yanchor="middle",
+            bgcolor=BG, borderpad=2,
+        )
+
+    # ── Kích thước ngang trên đỉnh: 490|100|1020|100|490 = 2200 ─────────────
+    y_td = 0.140
     for x0, x1, txt, lc in [
         (-1.100, -0.610, "490", dc),
         (-0.610, -0.510, "100", dc),
@@ -343,103 +376,89 @@ def ve_spt_aa_detail(d=None):
         ( 0.510,  0.610, "100", dc),
         ( 0.610,  1.100, "490", dc),
     ]:
-        _dim_h(fig, y_td, x0, x1, txt, color=lc, fs=7)
-    _dim_h(fig, y_td + 0.110, -1.100, 1.100, "= 2200mm (S dầm)", color=ac, fs=8)
+        _dh(x0, x1, y_td, txt, lc, fs=10)
+    _dh(-1.100, 1.100, y_td + 0.130, "2200mm  (bề rộng dầm S)", ac, fs=11)
 
     # ── Kích thước đứng bên trái: 75|75|150|875|300|50|225 = 1750 ───────────
-    xv = -1.340
-    segs = [
-        (0.000, -0.075, "75",  dc),
-        (-0.075, -0.150, "75",  dc),
-        (-0.150, -0.300, "150", vc),
-        (-0.300, -1.175, "875", dc),
-        (-1.175, -1.475, "300", dc),
-        (-1.475, -1.525, "50",  dc),
-        (-1.525, -1.750, "225", "#a3e4a3"),
-    ]
-    for z0, z1, txt, lc in segs:
-        _dim_v(fig, xv, z0, z1, txt, color=lc, dx=-0.06, fs=7)
+    xv = -1.30   # dim line between beam edge (-1.10) and plot edge
+    for z0, z1, txt, lc in [
+        ( 0.000, -0.075, "75",   dc),
+        (-0.075, -0.150, "75",   dc),
+        (-0.150, -0.300, "150",  vc),
+        (-0.300, -1.175, "875",  dc),
+        (-1.175, -1.475, "300",  dc),
+        (-1.475, -1.525, "50",   dc),
+        (-1.525, -1.750, "225",  gc),
+    ]:
+        _dv(z0, z1, xv, txt, lc, fs=9)
+    # H tổng
     fig.add_annotation(
-        x=xv - 0.20, y=-0.875, text="H = 1750mm",
+        x=xv - 0.14, y=-0.875, text="H = 1750mm",
         showarrow=False, textangle=-90,
-        font=dict(size=8, color=ac),
+        font=dict(size=10, color=ac),
+        bgcolor=BG,
     )
 
-    # ── Kích thước khoang rỗng ───────────────────────────────────────────────
-    # Miệng khoang (z=0): ±510mm → 1020mm
-    _dim_h(fig, -0.035, -0.510, 0.510, "1020 (miệng khoang)", color=vc, fs=7)
-    # Đáy khoang (z=-1.175): ±295mm → 590mm
-    _dim_h(fig, -1.215, -0.295, 0.295, "590 (đáy khoang)", color=vc, fs=7)
-    # Bề dày sườn tại đáy khoang: 0.510-0.295=215mm
-    for xsign in [1, -1]:
-        _dim_h(fig, -1.215, xsign * 0.295, xsign * 0.510,
-               "215" if xsign > 0 else "215", color=vc, fs=6)
+    # ── Kích thước đáy khoang (z=-1.175): 590mm + 215|215 mỗi bên ──────────
+    _dh(-0.295,  0.295, -1.250, "590mm (đáy khoang rỗng)", vc, fs=10)
+    _dh( 0.295,  0.510, -1.250, "215",  vc, fs=8)
+    _dh(-0.510, -0.295, -1.250, "215",  vc, fs=8)
 
-    # ── Bầu đáy: 160+700+160 = 1020 ─────────────────────────────────────────
-    _dim_h(fig, -1.820, -0.490, 0.490, "160+700+160 = 1020mm (bầu đáy)", color="#a3e4a3", fs=7)
+    # ── Bầu đáy: 160+700+160 = 1020mm ───────────────────────────────────────
+    _dh(-0.490, 0.490, -1.840, "160 + 700 + 160 = 1020mm (bầu đáy)", gc, fs=10)
 
-    # ── Bề dày sườn tại đỉnh: 100mm (outer 610 − inner 510) ─────────────────
+    # ── Web thickness at top (100mm = 610-510) ───────────────────────────────
     fig.add_annotation(
-        x=0.560, y=-0.165, text="100mm",
-        showarrow=True, arrowhead=2, arrowsize=0.8,
-        ax=40, ay=0, arrowcolor=dc,
-        font=dict(size=7, color=dc),
-        bgcolor="rgba(20,28,36,0.85)",
+        x=0.560, y=-0.155, text="100mm",
+        showarrow=True, arrowhead=2, arrowsize=0.9,
+        ax=55, ay=0, arrowcolor=dc,
+        font=dict(size=10, color=dc), bgcolor=BG, borderpad=2,
     )
+
     # ── Độ dốc sườn 1:10 ─────────────────────────────────────────────────────
     fig.add_annotation(
-        x=0.560, y=-0.650, text="1:10",
+        x=0.570, y=-0.680, text="1:10",
         showarrow=False,
-        font=dict(size=8, color=ac),
-        bgcolor="rgba(20,28,36,0.85)",
+        font=dict(size=11, color=ac, family="Arial Black"),
+        bgcolor=BG, borderpad=3,
     )
 
     # ── VÁT GÓC 20×20MM ──────────────────────────────────────────────────────
     fig.add_annotation(
         x=0.490, y=-1.748, text="VÁT GÓC 20×20MM",
-        showarrow=True, arrowhead=2, arrowsize=0.8,
-        ax=65, ay=-15, arrowcolor=dc,
-        font=dict(size=7, color=dc),
-        bgcolor="rgba(20,28,36,0.85)",
+        showarrow=True, arrowhead=2, arrowsize=0.9,
+        ax=80, ay=-18, arrowcolor=dc,
+        font=dict(size=10, color=dc), bgcolor=BG, borderpad=2,
     )
 
     # ── CHI TIẾT D (mép trong cánh) ──────────────────────────────────────────
     fig.add_annotation(
-        x=0.510, y=-0.010, text="CHI TIẾT D",
-        showarrow=True, arrowhead=2, arrowsize=0.8,
-        ax=55, ay=-25, arrowcolor=ac,
-        font=dict(size=7, color=ac, family="Arial Black"),
-        bgcolor="rgba(20,28,36,0.85)",
+        x=0.510, y=-0.008, text="CHI TIẾT D",
+        showarrow=True, arrowhead=2, arrowsize=0.9,
+        ax=70, ay=-30, arrowcolor=ac,
+        font=dict(size=10, color=ac, family="Arial Black"),
+        bgcolor=BG, borderpad=2,
     )
-    # ── dim 590 phụ dọc cạnh bên ─────────────────────────────────────────────
-    for xsign in [1, -1]:
-        fig.add_annotation(
-            x=xsign * 1.115, y=-0.075,
-            text="590" if xsign > 0 else "590",
-            showarrow=True, arrowhead=2, arrowsize=0.6,
-            ax=xsign * 28, ay=-8, arrowcolor=dc,
-            font=dict(size=6, color=dc),
-        )
 
     fig.update_layout(
         template="plotly_dark",
-        height=700,
+        height=750,
         title=dict(
             text="MẶT CẮT A-A — TL 1:25  |  Dầm Super-T S=2200mm, H=1750mm",
             x=0.5, font=dict(size=13, color="#dde3ea"),
         ),
         xaxis=dict(
-            range=[-1.60, 1.60], title="X (m)",
+            range=[-1.75, 1.75], title="X (m)",
             showgrid=True, gridcolor="#2a3a4a", dtick=0.1,
             zeroline=True, zerolinecolor="#5dade2", zerolinewidth=1.5,
             scaleanchor="y", scaleratio=1,
         ),
         yaxis=dict(
-            range=[-2.00, 0.38], title="Z (m)",
+            range=[-2.05, 0.42], title="Z (m)",
             showgrid=True, gridcolor="#2a3a4a", dtick=0.1,
             zeroline=True, zerolinecolor="#5dade2", zerolinewidth=1.5,
         ),
-        margin=dict(l=90, r=50, t=70, b=80),
+        margin=dict(l=70, r=50, t=70, b=80),
         paper_bgcolor="#1a232d",
         plot_bgcolor="#1a232d",
     )
