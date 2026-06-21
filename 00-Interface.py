@@ -3003,6 +3003,12 @@ with _col_main:
                             try:
                                 BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
                                 BVK.apply_render_mode(_fig_t, render_mode_3d)
+                                # Chèn wireframe dầm từ DXF upload (nếu có)
+                                try:
+                                    for _spt_t in BBUI.get_beam_model_traces(d):
+                                        _fig_t.add_trace(_spt_t)
+                                except Exception:
+                                    pass
                             except Exception as _oe:
                                 _err_overlay = str(_oe)
                             _n_after = len(_fig_t.data)
@@ -3036,6 +3042,15 @@ with _col_main:
                     try:
                         fig_3d = BVK.ve_cau_3d(d, df_tim_line=None)
                         BVK.apply_render_mode(fig_3d, _rm_no_terr)
+                        # Chèn wireframe dầm từ DXF upload (nếu có)
+                        try:
+                            _spt_tr = BBUI.get_beam_model_traces(d)
+                            for _tr in _spt_tr:
+                                fig_3d.add_trace(_tr)
+                            if _spt_tr:
+                                st.caption("🔩 Wireframe dầm từ mặt cắt DXF đã upload")
+                        except Exception:
+                            pass
                         st.plotly_chart(fig_3d, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
@@ -3062,6 +3077,11 @@ with _col_main:
                                                        dia_chat_data=_dc_data)
                     st.plotly_chart(fig_td_btc, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
+                    # Mặt cắt dầm từ DXF (nếu đã upload ở tab SPT)
+                    try:
+                        BBUI.render_btc_sections()
+                    except Exception:
+                        pass
                 except Exception as _e:
                     st.error(f"Lỗi tab Bố trí chung: {_e}")
     

@@ -945,6 +945,10 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                 _segs.append(bb.Segment("constant", section=_mid_sec, length="fill"))
                 m3d.segments = _segs
 
+                # Lưu để tab 3D Tổng hợp và Bố trí chung sử dụng
+                st.session_state["spt_beam_model"] = m3d
+                st.session_state["spt_L_m"] = L_m
+
                 _traces = bb.build_3d_wireframe(m3d)
                 _fig3d = go.Figure(data=_traces)
                 _fig3d.update_layout(
@@ -972,3 +976,87 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
 
         except Exception as _e3d:
             st.error(f"Không tạo được 3D: {_e3d}")
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PUBLIC — dùng từ 00-Interface.py
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def render_btc_sections(pfx: str = "spt"):
+    """Hiển thị mặt cắt dầm đã upload — gọi từ tab Bố trí chung."""
+    secs = st.session_state.get(_cad_key(pfx, "sections"), {})
+    if not secs:
+        return
+    avail = {k: v for k, v in secs.items() if v and v.outer}
+    if not avail:
+        return
+    st.markdown("---")
+    st.markdown("#### 📐 Chi tiết mặt cắt dầm chính (upload từ CAD)")
+    _labels = {
+        "A-A": "A-A — Giữa nhịp",
+        "B-B": "B-B — Đầu dầm (mố)",
+        "C-C": "C-C — Đầu dầm (trụ)",
+    }
+    _cols = st.columns(len(avail))
+    for _i, (_k, _sec) in enumerate(avail.items()):
+        _fig = _section_fig(_sec, height=280, title=_labels.get(_k, _k))
+        _cols[_i].plotly_chart(_fig, use_container_width=True,
+                               key=f"btc_sec_{pfx}_{_k}")
+
+
+def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
+    """Trả về list go.Scatter3d traces của BeamModel đã scale và định vị theo cầu.
+
+    Dùng để chèn vào figure tab 3D Tổng hợp.  Trả về [] nếu chưa có model.
+    """
+    m3d = st.session_state.get("spt_beam_model")
+    if m3d is None:
+        return []
+    bb = _get_bb()
+    try:
+        _raw = bb.build_3d_wireframe(m3d)
+    except Exception:
+        return []
+    if not _raw:
+        return []
+
+    kcn    = d.get("kcn_result") or d.get("ai_result", {})
+    geo    = d.get("geo_logic", {})
+    x0     = float(geo.get("x_mo_trai",     -60.0))
+    L_nhip = float(kcn.get("chieu_dai",      38.0))
+    n_nhip = int(kcn.get("tong_so_nhip",     3))
+    n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
+    kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
+    bc     = float(d.get("bc",               12.0))
+    oh     = float(kcn.get("overhang",        0.5))
+    cao_dd = float(d.get("cao_day_dam",        8.0))
+    H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+
+    x_first_dam = -bc / 2 + oh       # vị trí Y dầm đầu tiên (m)
+    z_beam_top  = cao_dd + H_dam      # cao độ đỉnh dầm = đáy bản mặt cầu (m)
+    L_m = float(st.session_state.get("spt_L_m", L_nhip))  # chiều dài beam model (m)
+
+    result = []
+    for i_nhip in range(n_nhip):
+        span_x0 = x0 + i_nhip * L_nhip
+        for i_dam in range(n_dam):
+            beam_y = x_first_dam + i_dam * kc_dam
+            for _t in _raw:
+                if not (hasattr(_t, 'x') and _t.x is not None and len(_t.x) > 0):
+                    continue
+                _tx = np.array(_t.x, dtype=float)  # mm, chiều ngang tiết diện
+                _ty = np.array(_t.y, dtype=float)  # mm, dọc dầm
+                _tz = np.array(_t.z, dtype=float)  # mm, đứng tiết diện
+
+                bx = span_x0 + _ty * (L_nhip / L_m) / 1000.0   # bridge X (m)
+                by = beam_y  + _tx / 1000.0                      # bridge Y (m)
+                bz = z_beam_top + _tz / 1000.0                   # bridge Z (m)
+
+                result.append(go.Scatter3d(
+                    x=bx.tolist(), y=by.tolist(), z=bz.tolist(),
+                    mode="lines",
+                    line=_t.line,
+                    showlegend=False,
+                    hoverinfo="skip",
+                ))
+    return result
