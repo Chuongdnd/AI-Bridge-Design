@@ -698,3 +698,192 @@ def preset_supert_model() -> BeamModel:
         Segment(type="constant", section="B-B", length="fill"),
     ]
     return m
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 10. CAD COMMAND INTERPRETER
+# ═══════════════════════════════════════════════════════════════════════════════
+
+CAD_HELP = (
+    "PL / POLYLINE       — bắt đầu vẽ polyline\n"
+    "L  / LINE           — bắt đầu vẽ line\n"
+    "x,z                 — tọa độ tuyệt đối (mm)\n"
+    "@dx,dz              — tọa độ tương đối\n"
+    "C  / CLOSE          — đóng & lưu polyline → outer\n"
+    "M  / MIRROR         — gương qua X=0 rồi nối\n"
+    "O  d / OFFSET d     — offset vào d mm → tạo lỗ void (mặc định 100)\n"
+    "CHA cx,cz           — vát góc (mặc định 20,20)\n"
+    "OPEN / CLOSED       — đặt cờ máng hở / kín\n"
+    "SNAP g              — đặt snap grid (mm, 0=tắt)\n"
+    "EH i / ERASEH i     — xoá lỗ void thứ i\n"
+    "CLEAR               — xoá toàn bộ mặt cắt\n"
+    "PRESET AA/BB/CC     — nạp preset Super-T\n"
+    "U  / UNDO           — hoàn tác bước vừa rồi\n"
+    "?  / HELP           — hiển thị trợ giúp này"
+)
+
+
+def _apply_snap(v: float, g: float) -> float:
+    return round(v / g) * g if g > 0 else v
+
+
+def process_cad_command(cmd_raw: str, sec: "CrossSection",
+                         cad_state: dict) -> str:
+    """
+    Xử lý một dòng lệnh CAD.  Thay đổi sec và cad_state tại chỗ.
+    Trả về chuỗi kết quả để hiển thị trong history.
+    cad_state keys: mode, current_poly, cursor, snap
+    """
+    cmd_raw = cmd_raw.strip()
+    if not cmd_raw:
+        return ""
+
+    parts  = cmd_raw.split()
+    verb   = parts[0].upper()
+    snap   = float(cad_state.get("snap", 0))
+
+    # ── HELP ──────────────────────────────────────────────────────────────
+    if verb in ("?", "H", "HELP"):
+        return CAD_HELP
+
+    # ── START MODES ───────────────────────────────────────────────────────
+    if verb in ("PL", "POLYLINE"):
+        cad_state["mode"] = "polyline"
+        cad_state["current_poly"] = []
+        return "POLYLINE — nhập tọa độ điểm đầu (vd: 0,0)"
+
+    if verb in ("L", "LINE"):
+        cad_state["mode"] = "line"
+        cad_state["current_poly"] = []
+        return "LINE — nhập điểm đầu"
+
+    # ── CLOSE ─────────────────────────────────────────────────────────────
+    if verb in ("C", "CLOSE"):
+        poly = cad_state.get("current_poly", [])
+        if len(poly) >= 3:
+            sec.outer = [list(p) for p in poly]
+            cad_state["current_poly"] = []
+            cad_state["mode"] = None
+            return f"✓ Đóng polyline — {len(sec.outer)} điểm → outer"
+        return f"⚠ Cần ≥ 3 điểm (hiện có {len(poly)})"
+
+    # ── COORDINATE INPUT: x,z hoặc @dx,dz ────────────────────────────────
+    coord = parts[0]
+    if coord.startswith("@") and "," in coord:
+        try:
+            dx, dz = map(float, coord[1:].split(",", 1))
+            last = cad_state.get("cursor", [0.0, 0.0])
+            x = last[0] + dx   # tọa độ gõ tay → KHÔNG snap
+            z = last[1] + dz
+            cad_state["cursor"] = [x, z]
+            if cad_state.get("mode") in ("polyline", "line"):
+                cad_state.setdefault("current_poly", []).append([x, z])
+                n = len(cad_state["current_poly"])
+                return f"+ ({x:.0f}, {z:.0f})  #{n}"
+            return f"Cursor → ({x:.0f}, {z:.0f})"
+        except ValueError:
+            pass
+
+    if "," in coord and not coord.startswith("@"):
+        try:
+            x, z = map(float, coord.split(",", 1))
+            # tọa độ gõ tay → KHÔNG snap (snap chỉ cho click chuột)
+            cad_state["cursor"] = [x, z]
+            if cad_state.get("mode") in ("polyline", "line"):
+                cad_state.setdefault("current_poly", []).append([x, z])
+                n = len(cad_state["current_poly"])
+                return f"+ ({x:.0f}, {z:.0f})  #{n}"
+            return f"Cursor → ({x:.0f}, {z:.0f})"
+        except ValueError:
+            pass
+
+    # ── MIRROR ────────────────────────────────────────────────────────────
+    if verb in ("M", "MIRROR"):
+        if sec.outer:
+            mir = poly_mirror_x(sec.outer)
+            sec.outer = poly_close(poly_ensure_ccw(
+                sec.outer + list(reversed(mir))))
+            return f"✓ Mirror X=0 — tổng {len(sec.outer)} điểm"
+        return "⚠ Chưa có outer boundary"
+
+    # ── OFFSET ────────────────────────────────────────────────────────────
+    if verb in ("O", "OFFSET"):
+        try:
+            d = float(parts[1]) if len(parts) >= 2 else 100.0
+            if len(sec.outer) >= 3:
+                hole = poly_close(poly_ensure_cw(poly_offset(sec.outer, d)))
+                sec.holes.append(hole)
+                return f"✓ Offset {d:.0f}mm → lỗ #{len(sec.holes)-1}"
+            return "⚠ Chưa có outer để offset"
+        except (ValueError, IndexError):
+            return "Cú pháp: O 100"
+
+    # ── CHAMFER ───────────────────────────────────────────────────────────
+    if verb in ("CHA", "CHAMFER"):
+        try:
+            if len(parts) >= 2 and "," in parts[1]:
+                cx, cz_v = map(float, parts[1].split(","))
+            else:
+                cx, cz_v = 20.0, 20.0
+            if sec.outer:
+                sec.outer = poly_apply_chamfer(sec.outer, cx, cz_v)
+                return f"✓ Chamfer {cx:.0f}×{cz_v:.0f}mm — {len(sec.outer)} điểm"
+            return "⚠ Chưa có outer"
+        except Exception:
+            return "Cú pháp: CHA 20,20"
+
+    # ── SNAP ──────────────────────────────────────────────────────────────
+    if verb in ("SNAP", "SN"):
+        try:
+            g = float(parts[1]) if len(parts) >= 2 else 50.0
+            cad_state["snap"] = g
+            return f"Snap grid = {g:.0f} mm"
+        except Exception:
+            return "Cú pháp: SNAP 50"
+
+    # ── OPEN / CLOSED ─────────────────────────────────────────────────────
+    if verb == "OPEN":
+        sec.open = True;  return "✓ Máng hở (open = True)"
+    if verb == "CLOSED":
+        sec.open = False; return "✓ Mặt cắt kín (open = False)"
+
+    # ── CLEAR ─────────────────────────────────────────────────────────────
+    if verb == "CLEAR":
+        sec.outer = []; sec.holes = []
+        cad_state["mode"] = None; cad_state["current_poly"] = []
+        return "✓ Đã xoá toàn bộ"
+
+    # ── ERASE HOLE ────────────────────────────────────────────────────────
+    if verb in ("EH", "ERASEH"):
+        try:
+            idx = int(parts[1]) if len(parts) >= 2 else -1
+            if sec.holes:
+                sec.holes.pop(idx)
+                return f"✓ Xoá lỗ #{idx} — còn {len(sec.holes)} lỗ"
+            return "⚠ Không có lỗ nào"
+        except Exception:
+            return "Cú pháp: EH 0"
+
+    # ── NORMALIZE ─────────────────────────────────────────────────────────
+    if verb in ("NORM", "NORMALIZE"):
+        if sec.outer:
+            normalize_section(sec)
+            return "✓ Chuẩn hoá chiều quay"
+        return "⚠ Chưa có outer"
+
+    # ── PRESET ────────────────────────────────────────────────────────────
+    if verb == "PRESET":
+        name = (parts[1].upper() if len(parts) >= 2 else "AA").replace("-", "")
+        if name == "AA":
+            ps = preset_supert_AA()
+        elif name == "BB":
+            ps = preset_supert_BB()
+        elif name == "CC":
+            ps = preset_supert_CC()
+        else:
+            return f"⚠ Preset '{name}' không có. Dùng: PRESET AA | BB | CC"
+        sec.outer = ps.outer; sec.holes = ps.holes; sec.open = ps.open
+        cad_state["mode"] = None; cad_state["current_poly"] = []
+        return f"✓ Nạp preset {name}"
+
+    return f"❓ '{cmd_raw}' không nhận diện. Gõ ? để xem lệnh."

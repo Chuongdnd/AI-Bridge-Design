@@ -549,3 +549,399 @@ def render_tab():
         _render_segment_editor()
     with tab_3d:
         _render_3d_view()
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# CAD SECTION SKETCHER — tích hợp vào tab "Chi tiết dầm SPT"
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SEC_PRESETS = {
+    "A-A": ("preset_supert_AA", True),
+    "B-B": ("preset_supert_BB", False),
+    "C-C": ("preset_supert_CC", False),
+}
+
+_QUICK_CMDS = [
+    ("PL",       "Polyline",     "Bắt đầu vẽ polyline"),
+    ("C",        "Close",        "Đóng & lưu polyline"),
+    ("M",        "Mirror X",     "Gương qua X=0"),
+    ("O 100",    "Offset void",  "Offset vào 100mm (tạo khoang rỗng)"),
+    ("CHA 20,20","Vát 20×20",   "Chamfer góc 20×20mm"),
+    ("CLEAR",    "Xoá tất cả",  "Xoá mặt cắt hiện tại"),
+]
+
+
+def _cad_key(pfx: str, name: str) -> str:
+    return f"cad_{pfx}_{name}"
+
+
+def _cad_init(pfx: str, bb):
+    """Khởi tạo session state CAD cho một prefix (A-A / B-B / C-C)."""
+    sk = _cad_key(pfx, "sections")
+    if sk not in st.session_state:
+        secs = {}
+        for sname, (fn, _) in _SEC_PRESETS.items():
+            ps = getattr(bb, fn)()
+            secs[sname] = ps
+        st.session_state[sk] = secs
+    if _cad_key(pfx, "active") not in st.session_state:
+        st.session_state[_cad_key(pfx, "active")] = "A-A"
+    if _cad_key(pfx, "state") not in st.session_state:
+        st.session_state[_cad_key(pfx, "state")] = {
+            "mode": None, "current_poly": [], "cursor": [0.0, 0.0],
+            "snap": 50.0,
+        }
+    if _cad_key(pfx, "hist") not in st.session_state:
+        st.session_state[_cad_key(pfx, "hist")] = []
+    if _cad_key(pfx, "undo") not in st.session_state:
+        st.session_state[_cad_key(pfx, "undo")] = []
+
+
+def _cad_push_undo(pfx: str, bb):
+    secs = st.session_state[_cad_key(pfx, "sections")]
+    import json
+    snap = {k: {"outer": s.outer, "holes": s.holes, "open": s.open}
+            for k, s in secs.items()}
+    stack = st.session_state[_cad_key(pfx, "undo")]
+    stack.append(json.dumps(snap))
+    if len(stack) > 20:
+        stack.pop(0)
+
+
+def _cad_undo(pfx: str, bb):
+    import json
+    stack = st.session_state[_cad_key(pfx, "undo")]
+    if not stack:
+        return
+    snap = json.loads(stack.pop())
+    secs = st.session_state[_cad_key(pfx, "sections")]
+    for k, v in snap.items():
+        if k in secs:
+            secs[k].outer = v["outer"]
+            secs[k].holes = v["holes"]
+            secs[k].open  = v["open"]
+    cs = st.session_state[_cad_key(pfx, "state")]
+    cs["current_poly"] = []; cs["mode"] = None
+
+
+def _canvas_fig(sec, cad_state: dict) -> "go.Figure":
+    """Canvas MCN: outer + in-progress polyline + cursor marker."""
+    bb = _get_bb()
+
+    outer = sec.outer if sec.outer else []
+    snap  = float(cad_state.get("snap", 0))
+
+    # Axis ranges — auto-fit to section with margin
+    all_pts = list(outer) + cad_state.get("current_poly", [])
+    if all_pts:
+        xs_all = [p[0] for p in all_pts]
+        zs_all = [p[1] for p in all_pts]
+        margin_x = max(200, (max(xs_all)-min(xs_all))*0.25)
+        margin_z = max(200, (max(zs_all)-min(zs_all))*0.25)
+        xr = [min(xs_all)-margin_x, max(xs_all)+margin_x]
+        zr = [min(zs_all)-margin_z, max(zs_all)+margin_z]
+    else:
+        xr, zr = [-1400, 1400], [-1900, 300]
+
+    fig = go.Figure()
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
+        height=520, margin=dict(l=50, r=10, t=30, b=45),
+        xaxis=dict(range=xr, title="X (mm)", showgrid=True, gridcolor="#233040",
+                   dtick=100, zeroline=True, zerolinecolor="#4da6d9", zerolinewidth=1.5,
+                   scaleanchor="y", scaleratio=1),
+        yaxis=dict(range=zr, title="Z (mm)", showgrid=True, gridcolor="#233040",
+                   dtick=100, zeroline=True, zerolinecolor="#4da6d9", zerolinewidth=1.5),
+        showlegend=False,
+    )
+
+    # Committed outer
+    if len(outer) >= 2:
+        ox = [p[0] for p in outer] + [outer[0][0]]
+        oz = [p[1] for p in outer] + [outer[0][1]]
+        fig.add_trace(go.Scatter(
+            x=ox, y=oz,
+            fill="toself", fillcolor="rgba(90,145,190,0.18)",
+            line=dict(color="#78b8de", width=2), mode="lines+markers",
+            marker=dict(size=6, color="#66ee99", symbol="circle"),
+            hovertemplate="P%{pointNumber}: (%{x:.0f}, %{y:.0f})<extra></extra>",
+        ))
+        # Đánh số đỉnh
+        for i, (px, pz) in enumerate(outer):
+            fig.add_annotation(x=px, y=pz, text=str(i), showarrow=False,
+                               font=dict(size=8, color="#66ee99"),
+                               bgcolor="rgba(0,0,0,0.6)", yshift=9,
+                               xanchor="center", yanchor="bottom")
+
+    # Holes
+    for hi, hole in enumerate(sec.holes or []):
+        if len(hole) < 2:
+            continue
+        hx = [p[0] for p in hole] + [hole[0][0]]
+        hz = [p[1] for p in hole] + [hole[0][1]]
+        fig.add_trace(go.Scatter(
+            x=hx, y=hz,
+            fill="toself", fillcolor="rgba(180,60,60,0.22)",
+            line=dict(color="#cc6666", width=1.5, dash="dot"),
+            mode="lines", name=f"Lỗ #{hi}",
+            hovertemplate=f"Lỗ #{hi} (%{{x:.0f}}, %{{y:.0f}})<extra></extra>",
+        ))
+
+    # In-progress polyline (dashed, lighter)
+    wip = cad_state.get("current_poly", [])
+    if len(wip) >= 2:
+        fig.add_trace(go.Scatter(
+            x=[p[0] for p in wip], y=[p[1] for p in wip],
+            mode="lines+markers",
+            line=dict(color="#ffcc44", width=1.5, dash="dash"),
+            marker=dict(size=5, color="#ffcc44"),
+            hovertemplate="WIP (%{x:.0f}, %{y:.0f})<extra></extra>",
+        ))
+    # Cursor marker
+    cur = cad_state.get("cursor", [0.0, 0.0])
+    fig.add_trace(go.Scatter(
+        x=[cur[0]], y=[cur[1]], mode="markers",
+        marker=dict(size=10, color="#ff6644", symbol="cross"),
+        hovertemplate=f"Cursor ({cur[0]:.0f}, {cur[1]:.0f})<extra></extra>",
+    ))
+
+    return fig
+
+
+def _side_elevation_fig(m) -> "go.Figure":
+    """Elevation figure nhỏ cho cột bên phải."""
+    bb = _get_bb()
+    try:
+        fig = bb.make_elevation_fig(m)
+        fig.update_layout(height=200, margin=dict(l=40, r=10, t=25, b=30),
+                          title=dict(text="Mặt cắt dọc", font=dict(size=11)))
+        return fig
+    except Exception:
+        fig = go.Figure()
+        fig.update_layout(height=200, template="plotly_dark",
+                          paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
+                          title=dict(text="Mặt cắt dọc (chưa có dữ liệu)",
+                                     font=dict(size=11)))
+        return fig
+
+
+def _side_3d_fig(m) -> "go.Figure":
+    """3D wireframe nhỏ."""
+    bb = _get_bb()
+    try:
+        traces = bb.build_3d_wireframe(m)
+        fig = go.Figure(data=traces)
+        fig.update_layout(
+            template="plotly_dark", paper_bgcolor="#1a2330", height=270,
+            margin=dict(l=0, r=0, t=25, b=0),
+            title=dict(text="3D Wireframe", font=dict(size=11)),
+            scene=dict(
+                xaxis=dict(title="X", backgroundcolor="#1a2330",
+                           gridcolor="#2a3a4a", showbackground=True, showticklabels=False),
+                yaxis=dict(title="Y", backgroundcolor="#1a2330",
+                           gridcolor="#2a3a4a", showbackground=True, showticklabels=False),
+                zaxis=dict(title="Z", backgroundcolor="#1a2330",
+                           gridcolor="#2a3a4a", showbackground=True, showticklabels=False),
+                bgcolor="#1a2330", aspectmode="data",
+            ),
+        )
+        return fig
+    except Exception:
+        fig = go.Figure()
+        fig.update_layout(height=270, template="plotly_dark",
+                          paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
+                          title=dict(text="3D (cần đủ đoạn)", font=dict(size=11)))
+        return fig
+
+
+def render_cad_spt_tab(d: dict, pfx: str = "spt"):
+    """
+    Tab chi tiết dầm Super-T với CAD command-line section sketcher.
+    Thay thế các bản vẽ tĩnh bằng giao diện vẽ tương tác.
+    d : design_data dict từ session_state
+    pfx: prefix để tránh collision session-state key
+    """
+    bb  = _get_bb()
+    _cad_init(pfx, bb)
+
+    secs       = st.session_state[_cad_key(pfx, "sections")]
+    active_sec = st.session_state[_cad_key(pfx, "active")]
+    cad_state  = st.session_state[_cad_key(pfx, "state")]
+    hist       = st.session_state[_cad_key(pfx, "hist")]
+    sec        = secs.get(active_sec)
+
+    # Lấy thông số dầm từ design_data để hiển thị
+    kcn = d.get("kcn_result") or d.get("ai_result") or {}
+    H   = float(kcn.get("chieu_cao_dam", 1.75)) * 1000   # mm
+    L   = float(kcn.get("chieu_dai", 38.0))
+    kc  = float(kcn.get("khoang_cach_dam", 2.2)) * 1000
+
+    # ── Header bar ──────────────────────────────────────────────────────────
+    hc1, hc2, hc3, hc4 = st.columns([3, 2, 1, 1])
+    with hc1:
+        st.markdown(
+            f"**Super-T** — L={L:.1f}m | H={H:.0f}mm | S={kc:.0f}mm"
+        )
+    with hc2:
+        new_active = st.radio(
+            "Mặt cắt", list(secs.keys()),
+            index=list(secs.keys()).index(active_sec),
+            horizontal=True, key=f"{pfx}_sec_radio",
+            label_visibility="collapsed",
+        )
+        if new_active != active_sec:
+            st.session_state[_cad_key(pfx, "active")] = new_active
+            cad_state["mode"] = None; cad_state["current_poly"] = []
+            st.rerun()
+    with hc3:
+        open_toggle = st.toggle("Máng hở", value=sec.open,
+                                key=f"{pfx}_open_toggle")
+        if open_toggle != sec.open:
+            _cad_push_undo(pfx, bb); sec.open = open_toggle
+    with hc4:
+        if st.button("↩ Undo", key=f"{pfx}_undo_btn",
+                     disabled=not st.session_state[_cad_key(pfx, "undo")]):
+            _cad_undo(pfx, bb); st.rerun()
+
+    # ── 3 cột chính ─────────────────────────────────────────────────────────
+    col_cmd, col_canvas, col_views = st.columns([1, 3, 1])
+
+    # ── Cột trái: CAD command line ──────────────────────────────────────────
+    with col_cmd:
+        # Mode indicator
+        mode = cad_state.get("mode")
+        cur  = cad_state.get("cursor", [0.0, 0.0])
+        snap = cad_state.get("snap", 50.0)
+        n_wip = len(cad_state.get("current_poly", []))
+
+        mode_text  = f"**{mode.upper()}**" if mode else "—"
+        snap_text  = f"{snap:.0f} mm" if snap > 0 else "Tắt"
+        st.markdown(
+            f"<div style='background:#111820;border:1px solid #2a4060;"
+            f"border-radius:6px;padding:8px;font-size:12px;font-family:monospace'>"
+            f"<span style='color:#4da6d9'>Lệnh:</span> {mode_text}<br>"
+            f"<span style='color:#4da6d9'>Cursor:</span> ({cur[0]:.0f}, {cur[1]:.0f})<br>"
+            f"<span style='color:#4da6d9'>WIP pts:</span> {n_wip}<br>"
+            f"<span style='color:#4da6d9'>Snap:</span> {snap_text}"
+            f"</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Command history (last 15 lines)
+        hist_text = "\n".join(
+            f"{'>' if i % 2 == 0 else ' '} {line}"
+            for i, line in enumerate(
+                [item for pair in hist[-8:] for item in pair]
+            )
+        ) if hist else "(Chưa có lệnh)"
+        st.markdown(
+            f"<div style='background:#0d141c;border:1px solid #1e3050;"
+            f"border-radius:4px;padding:6px 8px;font-size:11px;"
+            f"font-family:monospace;height:220px;overflow-y:auto;"
+            f"white-space:pre;color:#b0c8dc'>{hist_text}</div>",
+            unsafe_allow_html=True,
+        )
+
+        # Command input
+        def _submit():
+            cmd = st.session_state.get(f"{pfx}_cmd_input", "").strip()
+            if not cmd:
+                return
+            if cmd.upper() in ("U", "UNDO"):
+                _cad_undo(pfx, bb)
+                hist.append((cmd, "↩ Undo"))
+            else:
+                _cad_push_undo(pfx, bb)
+                result = bb.process_cad_command(cmd, sec, cad_state)
+                hist.append((cmd, result))
+            st.session_state[f"{pfx}_cmd_input"] = ""
+
+        st.text_input(
+            "Lệnh CAD:",
+            key=f"{pfx}_cmd_input",
+            on_change=_submit,
+            placeholder="PL  /  0,0  /  @490,0  /  C  /  ?",
+            label_visibility="visible",
+        )
+
+        # Quick command buttons
+        st.markdown("<div style='font-size:11px;color:#7090a0;margin-top:4px'>Nhanh:</div>",
+                    unsafe_allow_html=True)
+        for qcmd, qlabel, qtip in _QUICK_CMDS:
+            if st.button(qlabel, key=f"{pfx}_q_{qcmd.replace(' ','_')}",
+                         help=f"{qcmd} — {qtip}", use_container_width=True):
+                _cad_push_undo(pfx, bb)
+                result = bb.process_cad_command(qcmd, sec, cad_state)
+                hist.append((qcmd, result))
+                st.rerun()
+
+        # Validate
+        vr = bb.validate_section(sec)
+        for e in vr["errors"]:
+            st.error(e, icon="⛔")
+        for info in vr["infos"]:
+            st.caption(f"✔ {info}")
+
+    # ── Cột giữa: Canvas MCN ────────────────────────────────────────────────
+    with col_canvas:
+        st.markdown(f"**Mặt cắt {active_sec}** — Dầm Super-T S=2200mm")
+        fig_canvas = _canvas_fig(sec, cad_state)
+        st.plotly_chart(fig_canvas, use_container_width=True,
+                        key=f"{pfx}_canvas_{active_sec}",
+                        config={"scrollZoom": True, "displayModeBar": True,
+                                "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
+
+        # Bảng tọa độ (nhỏ, collapsible)
+        with st.expander(f"Bảng tọa độ ({len(sec.outer)} đỉnh)", expanded=False):
+            if sec.outer:
+                df_coord = pd.DataFrame(sec.outer, columns=["X (mm)", "Z (mm)"])
+                edited = st.data_editor(
+                    df_coord, num_rows="dynamic", use_container_width=True,
+                    key=f"{pfx}_coord_tbl_{active_sec}",
+                    column_config={
+                        "X (mm)": st.column_config.NumberColumn(format="%.0f", step=10.0),
+                        "Z (mm)": st.column_config.NumberColumn(format="%.0f", step=10.0),
+                    },
+                )
+                if st.button("✔ Áp dụng bảng", key=f"{pfx}_apply_tbl",
+                             type="primary"):
+                    _cad_push_undo(pfx, bb)
+                    rows = edited.dropna().values.tolist()
+                    sec.outer = [[float(r[0]), float(r[1])] for r in rows]
+                    st.rerun()
+            else:
+                st.info("Chưa có đỉnh. Dùng lệnh PL để vẽ.")
+
+    # ── Cột phải: Elevation + 3D ────────────────────────────────────────────
+    with col_views:
+        # Xây BeamModel từ các section hiện tại để preview
+        try:
+            m_preview = bb.BeamModel(length=L * 1000, mirror=True)
+            m_preview.sections = {k: v.clone() for k, v in secs.items()
+                                   if v.outer}
+            m_preview.segments = [
+                bb.Segment("constant", section="C-C", length=300.0),
+                bb.Segment("loft", from_sec="C-C", to_sec="A-A", length=900.0),
+                bb.Segment("loft", from_sec="A-A", to_sec="B-B", length=1200.0),
+                bb.Segment("constant", section="B-B", length="fill"),
+            ]
+        except Exception:
+            m_preview = None
+
+        st.markdown("**Mặt cắt dọc**")
+        if m_preview and len(m_preview.sections) >= 2:
+            st.plotly_chart(_side_elevation_fig(m_preview),
+                            use_container_width=True,
+                            key=f"{pfx}_elev_view",
+                            config={"displayModeBar": False})
+        else:
+            st.caption("(Cần ≥ 2 mặt cắt)")
+
+        st.markdown("**Wireframe 3D**")
+        if m_preview and len(m_preview.sections) >= 2:
+            st.plotly_chart(_side_3d_fig(m_preview),
+                            use_container_width=True,
+                            key=f"{pfx}_3d_view",
+                            config={"displayModeBar": False})
+        else:
+            st.caption("(Cần ≥ 2 mặt cắt)")

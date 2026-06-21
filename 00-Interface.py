@@ -3111,10 +3111,10 @@ with _col_main:
                 except Exception as _e:
                     st.error(f"Lỗi vẽ MCN vị trí: {_e}")
     
-            # ── TAB: Chi tiết dầm SPT ─────────────────────────────────────
+            # ── TAB: Chi tiết dầm SPT (CAD Section Sketcher) ─────────────
             with tab_spt:
                 try:
-                    CTD.render_chi_tiet_loai(d, st, "Super-T", key_prefix="spt")
+                    BBUI.render_cad_spt_tab(d, pfx="spt")
                 except Exception as _e:
                     import traceback
                     st.error(f"Lỗi tab SPT: {_e}")
