@@ -926,3 +926,109 @@ def process_cad_command(cmd_raw: str, sec: "CrossSection",
         return f"✓ Nạp preset {name}"
 
     return f"❓ '{cmd_raw}' không nhận diện. Gõ ? để xem lệnh."
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# 11. DXF IMPORT
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
+    """
+    Đọc file DXF (bytes), trả về dict:
+      outer   — list [[x,z], ...] đường biên ngoài (lớn nhất)
+      holes   — list of list [[x,z], ...] khoang rỗng
+      raw_count — số polyline đọc được
+      width_mm, height_mm — kích thước bounding box (mm)
+      error   — chuỗi lỗi nếu thất bại
+
+    Quy tắc chuyển đổi toạ độ:
+      CAD X → MCN X (giữ nguyên)
+      CAD Y → MCN Z (giữ nguyên dấu: lên = dương)
+      Sau khi đọc: dịch chuyển sao cho X=0 tại tâm ngang,
+                   Z=0 tại mặt trên (y_max của outer → 0)
+    Đơn vị CAD được giữ nguyên (mặc định mm).
+    """
+    try:
+        import ezdxf
+    except ImportError:
+        return {"error": "Thư viện ezdxf chưa được cài đặt.\n"
+                         "Chạy lệnh: pip install ezdxf"}
+
+    import io
+
+    try:
+        doc = ezdxf.read(io.BytesIO(dxf_bytes))
+    except Exception as exc:
+        return {"error": f"Không đọc được file DXF: {exc}"}
+
+    msp = doc.modelspace()
+    polys: list[list[tuple[float, float]]] = []
+
+    for entity in msp:
+        etype = entity.dxftype()
+        pts: list[tuple[float, float]] | None = None
+        closed = False
+
+        if etype == "LWPOLYLINE":
+            pts = [(float(p[0]), float(p[1])) for p in entity.get_points()]
+            closed = bool(entity.is_closed)
+
+        elif etype == "POLYLINE":
+            try:
+                if entity.get_mode() in ("AnyPolygonMesh", "PolyFaceMesh"):
+                    continue
+            except Exception:
+                pass
+            pts = [(float(v.dxf.location.x), float(v.dxf.location.y))
+                   for v in entity.vertices]
+            closed = bool(entity.is_closed)
+
+        if not pts or len(pts) < 3:
+            continue
+
+        # Force-close: nếu cờ closed hoặc điểm đầu/cuối gần nhau (< 1 mm)
+        if pts[0] != pts[-1]:
+            gap = ((pts[0][0] - pts[-1][0]) ** 2
+                   + (pts[0][1] - pts[-1][1]) ** 2) ** 0.5
+            if closed or gap < 1.0:
+                pts = pts + [pts[0]]
+
+        polys.append(pts)
+
+    if not polys:
+        return {"error": "Không tìm thấy LWPOLYLINE / POLYLINE trong file.\n"
+                         "Vui lòng vẽ mặt cắt bằng lệnh PLINE trong CAD và lưu DXF."}
+
+    # Tính diện tích để xác định outer (lớn nhất)
+    def _area(pts: list[tuple[float, float]]) -> float:
+        n = len(pts) - 1 if pts[0] == pts[-1] else len(pts)
+        a = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            a += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1]
+        return abs(a) / 2.0
+
+    areas = [_area(p) for p in polys]
+    idx_outer = areas.index(max(areas))
+    outer_raw = polys[idx_outer]
+    holes_raw = [p for i, p in enumerate(polys) if i != idx_outer]
+
+    # Bounding box của outer
+    xs = [p[0] for p in outer_raw]
+    ys = [p[1] for p in outer_raw]
+    xmin, xmax = min(xs), max(xs)
+    ymin, ymax = min(ys), max(ys)
+    x_mid = (xmin + xmax) / 2.0
+    y_top = ymax  # mặt trên → z = 0
+
+    def _center(pts: list[tuple[float, float]]) -> list[list[float]]:
+        return [[p[0] - x_mid, p[1] - y_top] for p in pts]
+
+    return {
+        "outer":     _center(outer_raw),
+        "holes":     [_center(h) for h in holes_raw],
+        "raw_count": len(polys),
+        "bbox_raw":  [xmin, xmax, ymin, ymax],
+        "width_mm":  round(xmax - xmin, 1),
+        "height_mm": round(ymax - ymin, 1),
+    }

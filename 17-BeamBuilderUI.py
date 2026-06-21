@@ -626,39 +626,16 @@ def _cad_undo(pfx: str, bb):
     cs["current_poly"] = []; cs["mode"] = None
 
 
-def _find_nearest_vertex(outer: list, px: float, pz: float, snap: float) -> int:
-    """Trả về index đỉnh gần nhất trong threshold, hoặc -1 nếu không có."""
-    if not outer:
-        return -1
-    thresh = max(snap if snap > 0 else 50, 30) * 2.5
-    best_i, best_d2 = -1, thresh ** 2
-    for i, p in enumerate(outer):
-        d2 = (p[0] - px) ** 2 + (p[1] - pz) ** 2
-        if d2 < best_d2:
-            best_i, best_d2 = i, d2
-    return best_i
-
-
 def _canvas_fig(sec, cad_state: dict) -> "go.Figure":
-    """
-    Canvas MCN tương tác:
-    - Trace 0 (_grid): lưới điểm click được — thêm điểm / dời đỉnh
-    - Trace 1 (_outer_line): đường biên ngoài (không click)
-    - Trace 2 (_vertices): đỉnh có số thứ tự — click để grip/erase
-    - Trace 3+: holes, WIP, cursor
-    """
+    """Canvas hiển thị mặt cắt ngang (sau khi import từ DXF hoặc dùng preset)."""
     outer = sec.outer if sec.outer else []
-    snap  = float(cad_state.get("snap", 50))
-    mode  = cad_state.get("mode")
-    grip_sel = cad_state.get("grip_selected")
 
     # Axis ranges — auto-fit with margin
-    all_pts = list(outer) + cad_state.get("current_poly", [])
-    if all_pts:
-        xs_all = [p[0] for p in all_pts]
-        zs_all = [p[1] for p in all_pts]
-        margin_x = max(200, (max(xs_all) - min(xs_all)) * 0.25)
-        margin_z = max(200, (max(zs_all) - min(zs_all)) * 0.25)
+    if outer:
+        xs_all = [p[0] for p in outer]
+        zs_all = [p[1] for p in outer]
+        margin_x = max(150, (max(xs_all) - min(xs_all)) * 0.20)
+        margin_z = max(150, (max(zs_all) - min(zs_all)) * 0.20)
         xr = [min(xs_all) - margin_x, max(xs_all) + margin_x]
         zr = [min(zs_all) - margin_z, max(zs_all) + margin_z]
     else:
@@ -666,73 +643,30 @@ def _canvas_fig(sec, cad_state: dict) -> "go.Figure":
 
     fig = go.Figure()
 
-    # ── Trace 0: snap grid (click target) ─────────────────────────────────
-    grid_res = max(snap, 20.0) if snap > 0 else 20.0
-    gx_arr = np.arange(xr[0], xr[1] + grid_res, grid_res)
-    gz_arr = np.arange(zr[0], zr[1] + grid_res, grid_res)
-    GX, GZ = np.meshgrid(gx_arr, gz_arr)
-    gx_flat = GX.flatten().tolist()
-    gz_flat = GZ.flatten().tolist()
-    # màu grid thay đổi theo mode để báo hiệu trạng thái
-    grid_color = {
-        "polyline": "rgba(70,180,100,0.35)",
-        "line":     "rgba(70,180,100,0.35)",
-        "grip":     "rgba(255,180,50,0.30)",
-        "erase":    "rgba(255,80,80,0.30)",
-        None:       "rgba(60,100,140,0.25)",
-    }.get(mode, "rgba(60,100,140,0.25)")
-
-    fig.add_trace(go.Scatter(
-        x=gx_flat, y=gz_flat,
-        mode="markers",
-        marker=dict(size=3, color=grid_color, symbol="circle"),
-        name="_grid",
-        showlegend=False,
-        hovertemplate="(%{x:.0f}, %{y:.0f})<extra>Click để thêm / dời điểm</extra>",
-        customdata=[["grid"]] * len(gx_flat),
-    ))
-
-    # ── Trace 1: outer polygon line (visual only, not selectable) ─────────
+    # Outer polygon — filled
     if len(outer) >= 2:
         ox = [p[0] for p in outer] + [outer[0][0]]
         oz = [p[1] for p in outer] + [outer[0][1]]
         fig.add_trace(go.Scatter(
             x=ox, y=oz,
-            fill="toself", fillcolor="rgba(90,145,190,0.18)",
-            line=dict(color="#78b8de", width=2), mode="lines",
-            showlegend=False, hoverinfo="none",
-            name="_outer_line",
+            fill="toself", fillcolor="rgba(90,145,190,0.20)",
+            line=dict(color="#78b8de", width=2.5),
+            mode="lines+markers",
+            marker=dict(size=7, color="#66ee99", symbol="circle",
+                        line=dict(width=1, color="#fff")),
+            showlegend=False,
+            hovertemplate="(%{x:.1f}, %{y:.1f})<extra>Đỉnh %{pointNumber}</extra>",
         ))
+        # Vertex labels
+        for i, (px, pz) in enumerate(outer):
+            fig.add_annotation(
+                x=px, y=pz, text=str(i), showarrow=False,
+                font=dict(size=8, color="#b0e8c0"),
+                bgcolor="rgba(0,0,0,0.55)", borderpad=2,
+                yshift=10, xanchor="center", yanchor="bottom",
+            )
 
-    # ── Trace 2: vertex markers (numbered, selectable for grip/erase) ─────
-    if outer:
-        v_colors = []
-        v_sizes  = []
-        for i in range(len(outer)):
-            if i == grip_sel:
-                v_colors.append("#ff3333"); v_sizes.append(18)
-            elif mode == "grip":
-                v_colors.append("#ffaa22"); v_sizes.append(12)
-            elif mode == "erase":
-                v_colors.append("#ff5544"); v_sizes.append(12)
-            else:
-                v_colors.append("#66ee99"); v_sizes.append(10)
-
-        fig.add_trace(go.Scatter(
-            x=[p[0] for p in outer],
-            y=[p[1] for p in outer],
-            mode="markers+text",
-            marker=dict(size=v_sizes, color=v_colors, symbol="circle",
-                        line=dict(width=1.5, color="#ffffff")),
-            text=[str(i) for i in range(len(outer))],
-            textposition="top center",
-            textfont=dict(size=9, color="#b0e8c0"),
-            showlegend=False, name="_vertices",
-            hovertemplate="Đỉnh %{pointNumber}: (%{x:.0f}, %{y:.0f})<extra>Click để chọn</extra>",
-            customdata=[["vertex", i] for i in range(len(outer))],
-        ))
-
-    # ── Holes ─────────────────────────────────────────────────────────────
+    # Holes
     for hi, hole in enumerate(sec.holes or []):
         if len(hole) < 2:
             continue
@@ -740,50 +674,26 @@ def _canvas_fig(sec, cad_state: dict) -> "go.Figure":
         hz = [p[1] for p in hole] + [hole[0][1]]
         fig.add_trace(go.Scatter(
             x=hx, y=hz,
-            fill="toself", fillcolor="rgba(180,60,60,0.22)",
-            line=dict(color="#cc6666", width=1.5, dash="dot"),
-            mode="lines", name=f"Lỗ #{hi}", showlegend=False,
-            hovertemplate=f"Lỗ #{hi} (%{{x:.0f}}, %{{y:.0f}})<extra></extra>",
+            fill="toself", fillcolor="rgba(20,30,45,0.90)",
+            line=dict(color="#cc8866", width=1.5, dash="dot"),
+            mode="lines", showlegend=False,
+            hovertemplate=f"Lỗ #{hi} (%{{x:.1f}}, %{{y:.1f}})<extra></extra>",
         ))
 
-    # ── In-progress WIP polyline ──────────────────────────────────────────
-    wip = cad_state.get("current_poly", [])
-    if wip:
-        fig.add_trace(go.Scatter(
-            x=[p[0] for p in wip], y=[p[1] for p in wip],
-            mode="lines+markers",
-            line=dict(color="#ffcc44", width=1.5, dash="dash"),
-            marker=dict(size=6, color="#ffcc44"),
-            showlegend=False,
-            hovertemplate="WIP (%{x:.0f}, %{y:.0f})<extra></extra>",
-        ))
-
-    # ── Cursor marker ─────────────────────────────────────────────────────
-    cur = cad_state.get("cursor", [0.0, 0.0])
-    fig.add_trace(go.Scatter(
-        x=[cur[0]], y=[cur[1]], mode="markers",
-        marker=dict(size=10, color="#ff6644", symbol="cross"),
-        showlegend=False,
-        hovertemplate=f"Cursor ({cur[0]:.0f}, {cur[1]:.0f})<extra></extra>",
-    ))
-
-    # ── Mode hint annotation ───────────────────────────────────────────────
-    _hints = {
-        "polyline": "🖊 POLYLINE — click lưới để thêm điểm | C để đóng",
-        "line":     "📏 LINE — click lưới để thêm điểm | C để đóng",
-        "grip":     "✋ GRIP — click đỉnh (cam) để chọn, rồi click vị trí mới",
-        "erase":    "✂ ERASE — click đỉnh (đỏ) để xoá | ESC để thoát",
-        None:       "Gõ PL / G / E — hoặc click lưới (khi có mode)",
-    }
-    hint_color = "#ffcc44" if mode else "#607080"
-    fig.add_annotation(
-        x=0.01, y=0.99, xref="paper", yref="paper",
-        text=_hints.get(mode, ""),
-        showarrow=False,
-        font=dict(size=10, color=hint_color),
-        bgcolor="rgba(0,0,0,0.55)", borderpad=4,
-        xanchor="left", yanchor="top",
-    )
+    # Dimension annotation: width + height
+    if outer:
+        xs_o = [p[0] for p in outer]
+        zs_o = [p[1] for p in outer]
+        w_mm = max(xs_o) - min(xs_o)
+        h_mm = max(zs_o) - min(zs_o)
+        fig.add_annotation(
+            x=0.99, y=0.02, xref="paper", yref="paper",
+            text=f"B={w_mm:.0f} mm  H={h_mm:.0f} mm  N={len(outer)} đỉnh",
+            showarrow=False,
+            font=dict(size=10, color="#7ab8d9"),
+            bgcolor="rgba(0,0,0,0.50)", borderpad=4,
+            xanchor="right", yanchor="bottom",
+        )
 
     fig.update_layout(
         template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
@@ -794,9 +704,7 @@ def _canvas_fig(sec, cad_state: dict) -> "go.Figure":
         yaxis=dict(range=zr, title="Z (mm)", showgrid=True, gridcolor="#233040",
                    dtick=100, zeroline=True, zerolinecolor="#4da6d9", zerolinewidth=1.5),
         showlegend=False,
-        clickmode="event+select",
     )
-
     return fig
 
 
@@ -848,12 +756,11 @@ def _side_3d_fig(m) -> "go.Figure":
 
 def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     """
-    Tab chi tiết dầm Super-T với CAD command-line section sketcher.
-    Thay thế các bản vẽ tĩnh bằng giao diện vẽ tương tác.
-    d : design_data dict từ session_state
-    pfx: prefix để tránh collision session-state key
+    Tab chi tiết dầm Super-T — import mặt cắt ngang từ file DXF.
+    d   : design_data dict từ session_state
+    pfx : prefix tránh collision session-state key
     """
-    bb  = _get_bb()
+    bb = _get_bb()
     _cad_init(pfx, bb)
 
     secs       = st.session_state[_cad_key(pfx, "sections")]
@@ -862,18 +769,15 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     hist       = st.session_state[_cad_key(pfx, "hist")]
     sec        = secs.get(active_sec)
 
-    # Lấy thông số dầm từ design_data để hiển thị
     kcn = d.get("kcn_result") or d.get("ai_result") or {}
-    H   = float(kcn.get("chieu_cao_dam", 1.75)) * 1000   # mm
+    H   = float(kcn.get("chieu_cao_dam", 1.75)) * 1000
     L   = float(kcn.get("chieu_dai", 38.0))
     kc  = float(kcn.get("khoang_cach_dam", 2.2)) * 1000
 
-    # ── Header bar ──────────────────────────────────────────────────────────
-    hc1, hc2, hc3, hc4 = st.columns([3, 2, 1, 1])
+    # ── Header ───────────────────────────────────────────────────────────────
+    hc1, hc2, hc3 = st.columns([3, 2, 1])
     with hc1:
-        st.markdown(
-            f"**Super-T** — L={L:.1f}m | H={H:.0f}mm | S={kc:.0f}mm"
-        )
+        st.markdown(f"**Super-T** — L={L:.1f}m | H={H:.0f}mm | S={kc:.0f}mm")
     with hc2:
         new_active = st.radio(
             "Mặt cắt", list(secs.keys()),
@@ -883,183 +787,128 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
         )
         if new_active != active_sec:
             st.session_state[_cad_key(pfx, "active")] = new_active
-            cad_state["mode"] = None; cad_state["current_poly"] = []
+            cad_state["mode"] = None
+            cad_state["current_poly"] = []
             st.rerun()
     with hc3:
-        open_toggle = st.toggle("Máng hở", value=sec.open,
-                                key=f"{pfx}_open_toggle")
-        if open_toggle != sec.open:
-            _cad_push_undo(pfx, bb); sec.open = open_toggle
-    with hc4:
-        if st.button("↩ Undo", key=f"{pfx}_undo_btn",
+        if st.button("↩ Undo", key=f"{pfx}_undo_hdr",
                      disabled=not st.session_state[_cad_key(pfx, "undo")]):
-            _cad_undo(pfx, bb); st.rerun()
+            _cad_undo(pfx, bb)
+            st.rerun()
 
-    # ── 3 cột chính ─────────────────────────────────────────────────────────
-    col_cmd, col_canvas, col_views = st.columns([1, 3, 1])
+    # ── 3 cột chính ──────────────────────────────────────────────────────────
+    col_upload, col_canvas, col_views = st.columns([1, 3, 1])
 
-    # ── Cột trái: CAD command line ──────────────────────────────────────────
-    with col_cmd:
-        # Mode indicator
-        mode = cad_state.get("mode")
-        cur  = cad_state.get("cursor", [0.0, 0.0])
-        snap = cad_state.get("snap", 50.0)
-        n_wip = len(cad_state.get("current_poly", []))
+    # ── Cột trái: Upload DXF + chỉnh sửa ───────────────────────────────────
+    with col_upload:
+        st.markdown(f"**Upload DXF — mặt cắt {active_sec}**")
 
-        grip_sel   = cad_state.get("grip_selected")
-        snap_text  = f"{snap:.0f} mm" if snap > 0 else "Tắt"
-        _mode_colors = {"polyline": "#44dd88", "line": "#44dd88",
-                        "grip": "#ffaa22", "erase": "#ff5544"}
-        _mc = _mode_colors.get(mode, "#7090a0")
-        _mode_label = mode.upper() if mode else "—"
-        _grip_line = (f"<br><span style='color:#ffaa22'>Grip đỉnh:</span> #{grip_sel}"
-                      if grip_sel is not None else "")
-        st.markdown(
-            f"<div style='background:#111820;border:1px solid #2a4060;"
-            f"border-radius:6px;padding:8px;font-size:12px;font-family:monospace'>"
-            f"<span style='color:#4da6d9'>Lệnh:</span> "
-            f"<span style='color:{_mc};font-weight:bold'>{_mode_label}</span>{_grip_line}<br>"
-            f"<span style='color:#4da6d9'>Cursor:</span> ({cur[0]:.0f}, {cur[1]:.0f})<br>"
-            f"<span style='color:#4da6d9'>WIP pts:</span> {n_wip}<br>"
-            f"<span style='color:#4da6d9'>Snap:</span> {snap_text}"
-            f"</div>",
-            unsafe_allow_html=True,
+        uploaded = st.file_uploader(
+            "Chọn file DXF",
+            type=["dxf"],
+            key=f"{pfx}_dxf_{active_sec}",
+            help="Vẽ đường biên mặt cắt bằng lệnh PLINE trong AutoCAD (đơn vị mm). "
+                 "Có thể vẽ ở bất kỳ vị trí nào — webapp tự căn về gốc toạ độ.",
+            label_visibility="collapsed",
         )
 
-        # Command history (last 15 lines)
-        hist_text = "\n".join(
-            f"{'>' if i % 2 == 0 else ' '} {line}"
-            for i, line in enumerate(
-                [item for pair in hist[-8:] for item in pair]
-            )
-        ) if hist else "(Chưa có lệnh)"
-        st.markdown(
-            f"<div style='background:#0d141c;border:1px solid #1e3050;"
-            f"border-radius:4px;padding:6px 8px;font-size:11px;"
-            f"font-family:monospace;height:220px;overflow-y:auto;"
-            f"white-space:pre;color:#b0c8dc'>{hist_text}</div>",
-            unsafe_allow_html=True,
-        )
+        if uploaded is not None:
+            # Fingerprint = tên + kích thước để phát hiện file mới
+            _fp = f"{uploaded.name}_{uploaded.size}"
+            _fp_key = f"_dxf_fp_{pfx}_{active_sec}"
 
-        # Command input
-        def _submit():
-            cmd = st.session_state.get(f"{pfx}_cmd_input", "").strip()
-            if not cmd:
-                return
-            if cmd.upper() in ("U", "UNDO"):
-                _cad_undo(pfx, bb)
-                hist.append((cmd, "↩ Undo"))
+            if cad_state.get(_fp_key) != _fp:
+                # File mới → tự động import
+                _raw = uploaded.read()
+                _res = bb.parse_dxf_bytes(_raw)
+                if "error" in _res:
+                    st.error(_res["error"])
+                else:
+                    _cad_push_undo(pfx, bb)
+                    sec.outer = _res["outer"]
+                    sec.holes = _res["holes"]
+                    cad_state[_fp_key] = _fp
+                    cad_state["mode"] = None
+                    cad_state["current_poly"] = []
+                    _w = _res.get("width_mm", 0)
+                    _h = _res.get("height_mm", 0)
+                    hist.append((
+                        f"DXF: {uploaded.name}",
+                        f"✓ {_res['raw_count']} polyline | outer {len(sec.outer)} đỉnh"
+                        f" | {_w:.0f}×{_h:.0f} mm",
+                    ))
+                    st.rerun()
             else:
-                _cad_push_undo(pfx, bb)
-                result = bb.process_cad_command(cmd, sec, cad_state)
-                hist.append((cmd, result))
-            st.session_state[f"{pfx}_cmd_input"] = ""
+                # Đã import — hiển thị thông tin nhanh
+                if sec.outer:
+                    _ox = [p[0] for p in sec.outer]
+                    _oz = [p[1] for p in sec.outer]
+                    _wi = max(_ox) - min(_ox)
+                    _hi = abs(min(_oz))
+                    st.success(
+                        f"✔ **{uploaded.name}**  \n"
+                        f"B={_wi:.0f} mm | H={_hi:.0f} mm | {len(sec.outer)} đỉnh",
+                    )
+        else:
+            if not sec.outer:
+                st.info("Upload file DXF hoặc dùng **Preset** bên dưới.", icon="ℹ")
 
-        st.text_input(
-            "Lệnh CAD:",
-            key=f"{pfx}_cmd_input",
-            on_change=_submit,
-            placeholder="PL  /  0,0  /  @490,0  /  C  /  ?",
-            label_visibility="visible",
-        )
+        # ── Chỉnh sửa sau import ─────────────────────────────────────────
+        st.divider()
+        st.caption("Chỉnh sửa sau import:")
 
-        # Quick command buttons
-        st.markdown("<div style='font-size:11px;color:#7090a0;margin-top:4px'>Nhanh:</div>",
-                    unsafe_allow_html=True)
-        for qcmd, qlabel, qtip in _QUICK_CMDS:
-            if st.button(qlabel, key=f"{pfx}_q_{qcmd.replace(' ','_')}",
-                         help=f"{qcmd} — {qtip}", use_container_width=True):
+        _edit_cmds = [
+            ("M",          "↔ Mirror X",    "Gương qua X=0 → tạo biên đối xứng"),
+            ("O 100",      "Offset void",   "Tạo khoang rỗng offset vào 100mm"),
+            ("CHA 20,20",  "Vát góc 20×20", "Chamfer 20×20mm tất cả góc"),
+        ]
+        for _qc, _ql, _qt in _edit_cmds:
+            if st.button(_ql, key=f"{pfx}_edit_{_qc.replace(' ','_')}",
+                         help=_qt, use_container_width=True):
                 _cad_push_undo(pfx, bb)
-                result = bb.process_cad_command(qcmd, sec, cad_state)
-                hist.append((qcmd, result))
+                _r = bb.process_cad_command(_qc, sec, cad_state)
+                hist.append((_qc, _r))
                 st.rerun()
 
-        # Validate
-        vr = bb.validate_section(sec)
-        for e in vr["errors"]:
-            st.error(e, icon="⛔")
-        for info in vr["infos"]:
-            st.caption(f"✔ {info}")
+        if st.button("Xoá tất cả", key=f"{pfx}_clear_btn",
+                     use_container_width=True):
+            _cad_push_undo(pfx, bb)
+            bb.process_cad_command("CLEAR", sec, cad_state)
+            hist.append(("CLEAR", "✓ Đã xoá"))
+            st.rerun()
 
-    # ── Cột giữa: Canvas MCN ────────────────────────────────────────────────
+        # ── Preset fallback ──────────────────────────────────────────────
+        st.divider()
+        st.caption("Không có DXF — dùng Preset:")
+        _pmap = {"A-A": "AA", "B-B": "BB", "C-C": "CC"}
+        _pn = _pmap.get(active_sec, "AA")
+        if st.button(f"Preset Super-T {active_sec}", key=f"{pfx}_preset_{active_sec}",
+                     use_container_width=True):
+            _cad_push_undo(pfx, bb)
+            bb.process_cad_command(f"PRESET {_pn}", sec, cad_state)
+            hist.append((f"PRESET {_pn}", f"✓ Nạp preset {_pn}"))
+            st.rerun()
+
+        # ── Validate + log ───────────────────────────────────────────────
+        _vr = bb.validate_section(sec)
+        for _e in _vr["errors"]:
+            st.error(_e, icon="⛔")
+        for _inf in _vr["infos"]:
+            st.caption(f"✔ {_inf}")
+        if hist:
+            _lc, _lr = hist[-1]
+            st.caption(f"⏺ {_lc[:30]}: {_lr[:40]}")
+
+    # ── Cột giữa: Canvas MCN ─────────────────────────────────────────────────
     with col_canvas:
-        st.markdown(f"**Mặt cắt {active_sec}** — Dầm Super-T S=2200mm")
+        st.markdown(f"**Mặt cắt {active_sec}** — X=0 tâm ngang | Z=0 mặt trên (mm)")
         fig_canvas = _canvas_fig(sec, cad_state)
-        canvas_event = st.plotly_chart(
-            fig_canvas, use_container_width=True,
-            key=f"{pfx}_canvas_{active_sec}",
-            on_select="rerun",
-            selection_mode="points",
-            config={"scrollZoom": True, "displayModeBar": True,
-                    "modeBarButtonsToRemove": ["select2d", "lasso2d"]},
-        )
+        st.plotly_chart(fig_canvas, use_container_width=True,
+                        key=f"{pfx}_canvas_{active_sec}",
+                        config={"scrollZoom": True, "displayModeBar": True,
+                                "modeBarButtonsToRemove": ["select2d", "lasso2d"]})
 
-        # ── Canvas click handler ────────────────────────────────────────
-        _sel = getattr(canvas_event, "selection", None)
-        _pts = getattr(_sel, "points", None) if _sel else None
-        if _pts:
-            pt0 = _pts[0]
-            # extract coordinates
-            _px = float(pt0.get("x") if hasattr(pt0, "get") else getattr(pt0, "x", 0))
-            _pz = float(pt0.get("y") if hasattr(pt0, "get") else getattr(pt0, "y", 0))
-            # extract customdata to know trace type
-            _cd = (pt0.get("customdata") if hasattr(pt0, "get")
-                   else getattr(pt0, "customdata", None))
-            _ctype = _cd[0] if _cd else "grid"
-            _cidx  = int(_cd[1]) if (_cd and len(_cd) > 1) else -1
-
-            _mode = cad_state.get("mode")
-
-            if _mode in ("polyline", "line"):
-                # Click anywhere on grid → add vertex to WIP
-                _cad_push_undo(pfx, bb)
-                cad_state["cursor"] = [_px, _pz]
-                cad_state.setdefault("current_poly", []).append([_px, _pz])
-                _n = len(cad_state["current_poly"])
-                hist.append((f"click ({_px:.0f},{_pz:.0f})", f"+ ({_px:.0f},{_pz:.0f}) #{_n}"))
-                st.rerun()
-
-            elif _mode == "grip":
-                _gsel = cad_state.get("grip_selected")
-                if _gsel is None:
-                    # First click: select nearest vertex
-                    if _ctype == "vertex" and 0 <= _cidx < len(sec.outer):
-                        target = _cidx
-                    else:
-                        target = _find_nearest_vertex(
-                            sec.outer, _px, _pz, cad_state.get("snap", 50))
-                    if target >= 0:
-                        cad_state["grip_selected"] = target
-                        _op = sec.outer[target]
-                        hist.append((f"grip ({_px:.0f},{_pz:.0f})",
-                                     f"Chọn đỉnh #{target} ({_op[0]:.0f},{_op[1]:.0f})"))
-                        st.rerun()
-                else:
-                    # Second click: move selected vertex
-                    _cad_push_undo(pfx, bb)
-                    _old = sec.outer[_gsel]
-                    sec.outer[_gsel] = [_px, _pz]
-                    cad_state["grip_selected"] = None
-                    cad_state["cursor"] = [_px, _pz]
-                    hist.append((f"move → ({_px:.0f},{_pz:.0f})",
-                                 f"#{_gsel} ({_old[0]:.0f},{_old[1]:.0f})→({_px:.0f},{_pz:.0f})"))
-                    st.rerun()
-
-            elif _mode == "erase":
-                # Click on/near a vertex → delete it
-                if _ctype == "vertex" and 0 <= _cidx < len(sec.outer):
-                    target = _cidx
-                else:
-                    target = _find_nearest_vertex(
-                        sec.outer, _px, _pz, cad_state.get("snap", 50))
-                if target >= 0:
-                    _cad_push_undo(pfx, bb)
-                    _removed = sec.outer.pop(target)
-                    hist.append((f"erase ({_px:.0f},{_pz:.0f})",
-                                 f"Xoá đỉnh #{target} ({_removed[0]:.0f},{_removed[1]:.0f})"))
-                    st.rerun()
-
-        # Bảng tọa độ (nhỏ, collapsible)
+        # Bảng tọa độ (collapsible)
         with st.expander(f"Bảng tọa độ ({len(sec.outer)} đỉnh)", expanded=False):
             if sec.outer:
                 df_coord = pd.DataFrame(sec.outer, columns=["X (mm)", "Z (mm)"])
@@ -1067,26 +916,23 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                     df_coord, num_rows="dynamic", use_container_width=True,
                     key=f"{pfx}_coord_tbl_{active_sec}",
                     column_config={
-                        "X (mm)": st.column_config.NumberColumn(format="%.0f", step=10.0),
-                        "Z (mm)": st.column_config.NumberColumn(format="%.0f", step=10.0),
+                        "X (mm)": st.column_config.NumberColumn(format="%.1f", step=5.0),
+                        "Z (mm)": st.column_config.NumberColumn(format="%.1f", step=5.0),
                     },
                 )
-                if st.button("✔ Áp dụng bảng", key=f"{pfx}_apply_tbl",
-                             type="primary"):
+                if st.button("✔ Áp dụng bảng", key=f"{pfx}_apply_tbl", type="primary"):
                     _cad_push_undo(pfx, bb)
                     rows = edited.dropna().values.tolist()
                     sec.outer = [[float(r[0]), float(r[1])] for r in rows]
                     st.rerun()
             else:
-                st.info("Chưa có đỉnh. Dùng lệnh PL để vẽ.")
+                st.info("Chưa có dữ liệu. Upload DXF hoặc chọn Preset.")
 
-    # ── Cột phải: Elevation + 3D ────────────────────────────────────────────
+    # ── Cột phải: Elevation + 3D ─────────────────────────────────────────────
     with col_views:
-        # Xây BeamModel từ các section hiện tại để preview
         try:
             m_preview = bb.BeamModel(length=L * 1000, mirror=True)
-            m_preview.sections = {k: v.clone() for k, v in secs.items()
-                                   if v.outer}
+            m_preview.sections = {k: v.clone() for k, v in secs.items() if v.outer}
             m_preview.segments = [
                 bb.Segment("constant", section="C-C", length=300.0),
                 bb.Segment("loft", from_sec="C-C", to_sec="A-A", length=900.0),
