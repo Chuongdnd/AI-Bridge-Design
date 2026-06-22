@@ -3586,8 +3586,19 @@ with _col_main:
             with tab_mcn_vt:
                 st.markdown("##### Mặt cắt ngang tại từng vị trí Mố – Trụ")
                 _kcn_vt = d.get("kcn_result") or d.get("ai_result", {})
-                _n_nhip_vt = int(_kcn_vt.get("tong_so_nhip", 3))
-                _n_tru_vt  = max(0, _n_nhip_vt - 1)
+                _geo_vt = d.get("geo_logic", {})
+                # Bố trí nhịp ĐỀU theo catalog (đồng bộ với bản vẽ) → suy ra số trụ thực tế
+                _x0_vt   = float(_geo_vt.get("x_mo_trai", -60))
+                _xe_vt   = float(_geo_vt.get("x_mo_phai",  60))
+                _xtim_vt = float(_geo_vt.get("x_tim_clearance", (_x0_vt + _xe_vt) / 2))
+                _Lnhip_vt = float(_kcn_vt.get("chieu_dai", 33) or 33)
+                _supports_vt, _ = BVK.calc_span_layout(
+                    _x0_vt, _xe_vt, _xtim_vt, float(d.get("B", 20)), _Lnhip_vt
+                )
+                _x0_vt, _xe_vt = _supports_vt[0], _supports_vt[-1]
+                _piers_vt  = _supports_vt[1:-1]
+                _n_nhip_vt = len(_supports_vt) - 1
+                _n_tru_vt  = len(_piers_vt)
                 _vi_tri_options = ["mo_trai"] + [f"tru_{i+1}" for i in range(_n_tru_vt)] + ["mo_phai"]
                 _vi_tri_labels  = (
                     ["Mố trái"] +
@@ -3604,17 +3615,9 @@ with _col_main:
                     )
                 _selected_vt = _vi_tri_options[_vt_idx]
                 with _sel_col2:
-                    _geo_vt = d.get("geo_logic", {})
-                    _piers_vt = BVK.calc_pier_positions(
-                        float(_geo_vt.get("x_mo_trai", -60)),
-                        float(_geo_vt.get("x_mo_phai",  60)),
-                        _n_nhip_vt,
-                        float(_geo_vt.get("x_tim_clearance", 0)),
-                        float(d.get("B", 20))
-                    )
                     _pos_map = {
-                        "mo_trai": float(_geo_vt.get("x_mo_trai", -60)),
-                        "mo_phai": float(_geo_vt.get("x_mo_phai",  60)),
+                        "mo_trai": _x0_vt,
+                        "mo_phai": _xe_vt,
                         **{f"tru_{i+1}": _piers_vt[i] for i in range(len(_piers_vt))}
                     }
                     _x_cut_show = _pos_map.get(_selected_vt, 0)

@@ -28,6 +28,33 @@ _V3_DEFAULT = os.path.join(_DIR, "Data", "Bridge_Train_Dataset_v3.xlsx")
 # Danh sách nhịp tiêu chuẩn (m) — theo thực tế VN
 STD_LENGTHS = [12, 15, 18, 21, 24, 25, 27, 30, 33, 38.2, 40]
 
+# Khoảng an toàn mép trụ cách biên tĩnh không (m) — ĐỒNG BỘ với _PIER_SAFETY
+# trong 11-BanVe_KetCau.py. Nhịp chính căng giữa tĩnh không nên phải ≥
+# B_tk + 2×_PIER_SAFETY thì hai trụ kề mới không lấn vào tĩnh không.
+_PIER_SAFETY = 2.0
+
+
+def _L_nhip_min(B_tk, goc):
+    """
+    Chiều dài nhịp TỐI THIỂU để nhịp chính KHÔNG vi phạm tĩnh không.
+
+    Ràng buộc đồng thời:
+      - Hình học vượt chéo: L ≥ B_tk / sin(goc) + 2.0
+      - Tĩnh không (nhịp chính căng giữa, 2 trụ ngoài biên ± _PIER_SAFETY):
+        L ≥ B_tk + 2×_PIER_SAFETY
+    """
+    L_geo   = B_tk / np.sin(np.radians(max(goc, 30))) + 2.0
+    L_clear = B_tk + 2.0 * _PIER_SAFETY
+    return max(L_geo, L_clear)
+
+
+def _n_nhip_from(L_cau, L_span):
+    """Số nhịp khi chia cầu thành các nhịp ĐỀU = L_span (định hình catalog).
+    Dùng làm tròn về số nhịp gần nhất (khớp cách bố trí của module vẽ 11)."""
+    if not L_cau or L_cau <= 0 or not L_span or L_span <= 0:
+        return 1
+    return max(1, int(round(L_cau / L_span)))
+
 
 # ---------------------------------------------------------------------------
 # CATALOG DẦM BTCT THEO KINH NGHIỆM THỰC TẾ VN
@@ -686,9 +713,13 @@ def _predict_single(B_tk, H_tk, goc, B_cau, moi_truong, models):
     loai_dam = str(le_type.inverse_transform([t_idx])[0]).strip()
 
     L_raw = float(models["reg_L"].predict(X_row)[0])
-    L_min_geo = (B_tk / np.sin(np.radians(max(goc, 30)))) + 2.0
+    L_min_geo = _L_nhip_min(B_tk, goc)
     L_raw = max(L_raw, L_min_geo)
     L_span = _snap_length(L_raw)
+    # Bảo đảm nhịp định hình sau khi snap vẫn ≥ điều kiện tĩnh không
+    if L_span < L_min_geo:
+        ge = [l for l in STD_LENGTHS if l >= L_min_geo - 1e-6]
+        L_span = min(ge) if ge else L_span
 
     t_enc_best = le_type.transform([loai_dam])[0] if loai_dam in le_type.classes_ else 0
     H_dam = float(models["reg_H"].predict([[t_enc_best, L_span]])[0])
@@ -713,10 +744,13 @@ def _predict_optimize(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
     candidate_types = {t for t in candidate_types if t in le_type.classes_}
 
     L_ai_raw  = float(models["reg_L"].predict(X_row)[0])
-    L_min_geo = (B_tk / np.sin(np.radians(max(goc, 30)))) + 2.0
+    L_min_geo = _L_nhip_min(B_tk, goc)
     L_ai_raw  = max(L_ai_raw, L_min_geo)
     L_ai_std  = _snap_length(L_ai_raw)
-    possible_L = sorted({L_ai_std} | {l for l in STD_LENGTHS if l >= L_min_geo * 0.9})
+    # Chỉ xét nhịp định hình ≥ điều kiện tĩnh không (nhịp chính không vi phạm TK).
+    # Toàn cầu dùng MỘT chiều dài định hình duy nhất → các nhịp đều nhau.
+    possible_L = sorted({l for l in STD_LENGTHS if l >= L_min_geo - 1e-6} | {L_ai_std})
+    possible_L = [l for l in possible_L if l >= L_min_geo - 1e-6] or [L_ai_std]
 
     best_score = -1
     best = None
@@ -727,23 +761,17 @@ def _predict_optimize(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
             H_dam = float(models["reg_H"].predict([[t_enc, L]])[0])
             H_dam = max(0.5, min(H_dam, 3.5))
 
-            if L_cau_tong and L_cau_tong > 0:
-                n_nhip = max(1, int(np.ceil(L_cau_tong / L)))
-                L_thuc = L_cau_tong / n_nhip
-                if L_thuc > 45:
-                    continue
-            else:
-                n_nhip = 1
-                L_thuc = L
+            n_nhip = _n_nhip_from(L_cau_tong, L) if (L_cau_tong and L_cau_tong > 0) else 1
 
-            score = _score_candidate(dam_type, L_thuc, n_nhip, H_dam, L_cau_tong, B_tk=B_tk)
+            # Chấm điểm theo CHÍNH chiều dài định hình L (mọi nhịp đều = L)
+            score = _score_candidate(dam_type, L, n_nhip, H_dam, L_cau_tong, B_tk=B_tk)
             if score > best_score:
                 best_score = score
-                best = (dam_type, round(L_thuc, 2), n_nhip, H_dam)
+                best = (dam_type, L, n_nhip, H_dam)
 
     if best is None:
         loai_dam, L_span, H_dam = _predict_single(B_tk, H_tk, goc, B_cau, moi_truong, models)
-        n_nhip = max(1, int(np.ceil(L_cau_tong / L_span))) if L_cau_tong else 1
+        n_nhip = _n_nhip_from(L_cau_tong, L_span) if L_cau_tong else 1
         best = (loai_dam, L_span, n_nhip, H_dam)
 
     return best
@@ -772,10 +800,10 @@ def _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong):
     -------
     dict với cấu trúc chuẩn (xem predict_kcn).
     """
-    L_min_geo = B_tk / np.sin(np.radians(max(goc, 30))) + 2.0
+    L_min_geo = _L_nhip_min(B_tk, goc)
     L_cau = float(L_cau_tong) if L_cau_tong else None
 
-    eligible = [r for r in BEAM_CATALOG if r[1] >= L_min_geo]
+    eligible = [r for r in BEAM_CATALOG if r[1] >= L_min_geo - 1e-6]
     if not eligible:
         eligible = BEAM_CATALOG
 
@@ -785,10 +813,7 @@ def _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong):
 
     for record in eligible:
         loai, L, B, H, S, cong_nghe = record
-        if L_cau:
-            n_nhip = max(1, int(np.ceil(L_cau / L)))
-        else:
-            n_nhip = 1
+        n_nhip = _n_nhip_from(L_cau, L) if L_cau else 1
 
         # Scoring: ít nhịp (ít trụ) → ưu tiên cao nhất; nhịp dài → thứ hai; S lớn → thứ ba
         score = (1.0 / n_nhip) * 100.0 + L * 1.0 + S * 5.0
@@ -847,10 +872,10 @@ def _predict_rb_my_quan(B_tk, goc, B_cau, L_cau_tong):
     -------
     dict với cấu trúc chuẩn (xem predict_kcn).
     """
-    L_min_geo = B_tk / np.sin(np.radians(max(goc, 30))) + 2.0
+    L_min_geo = _L_nhip_min(B_tk, goc)
     L_cau = float(L_cau_tong) if L_cau_tong else None
 
-    eligible = [r for r in BEAM_CATALOG if r[1] >= L_min_geo]
+    eligible = [r for r in BEAM_CATALOG if r[1] >= L_min_geo - 1e-6]
     if not eligible:
         eligible = BEAM_CATALOG
 
@@ -860,10 +885,7 @@ def _predict_rb_my_quan(B_tk, goc, B_cau, L_cau_tong):
 
     for record in eligible:
         loai, L, B, H, S, cong_nghe = record
-        if L_cau:
-            n_nhip = max(1, int(np.ceil(L_cau / L)))
-        else:
-            n_nhip = 1
+        n_nhip = _n_nhip_from(L_cau, L) if L_cau else 1
 
         # Scoring: H nhỏ → điểm cao; bonus dầm bản rỗng và T ngược; phạt nhẹ số nhịp
         score = -H * 50.0
@@ -926,14 +948,14 @@ def _predict_ai(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
     -------
     dict với cấu trúc chuẩn (xem predict_kcn).
     """
+    L_min_geo = _L_nhip_min(B_tk, goc)
     if models is None:
-        # Fallback: chọn bản ghi catalog có L/H gần 18 nhất và L >= L_min_geo
-        L_min_geo = B_tk / np.sin(np.radians(max(goc, 30))) + 2.0
-        eligible = [r for r in BEAM_CATALOG if r[1] >= L_min_geo] or BEAM_CATALOG
+        # Fallback: chọn bản ghi catalog có L/H gần 18 nhất và L >= L_min_geo (tĩnh không)
+        eligible = [r for r in BEAM_CATALOG if r[1] >= L_min_geo - 1e-6] or BEAM_CATALOG
         best_record = min(eligible, key=lambda r: abs(r[1] / r[3] - 18.0))
         loai_cat, L_cat, B_cat, H_cat, S_cat, cong_nghe = best_record
         L_cau_actual = float(L_cau_tong) if L_cau_tong else L_cat
-        n_nhip_cat = max(1, int(np.ceil(L_cau_actual / L_cat)))
+        n_nhip_cat = _n_nhip_from(L_cau_actual, L_cat)
         ghi_chu = (f"Chưa có mô hình AI — catalog L/H≈18: "
                    f"{loai_cat} L={L_cat}m, {n_nhip_cat} nhịp.")
         phuong_phap = "Catalog (chưa có AI)"
@@ -941,10 +963,16 @@ def _predict_ai(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
         loai_ai, L_ai, _, _ = _predict_optimize(
             B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models
         )
-        best_record = get_beam_from_catalog(L_ai, loai_dam=loai_ai)
+        # Nhịp chính không vi phạm tĩnh không → bảo đảm L tra catalog ≥ L_min_geo
+        best_record = get_beam_from_catalog(max(L_ai, L_min_geo), loai_dam=loai_ai)
         loai_cat, L_cat, B_cat, H_cat, S_cat, cong_nghe = best_record
+        if L_cat < L_min_geo - 1e-6:
+            elig = [r for r in BEAM_CATALOG if r[1] >= L_min_geo - 1e-6]
+            if elig:
+                best_record = min(elig, key=lambda r: r[1])
+                loai_cat, L_cat, B_cat, H_cat, S_cat, cong_nghe = best_record
         L_cau_actual = float(L_cau_tong) if L_cau_tong else L_cat
-        n_nhip_cat = max(1, int(np.ceil(L_cau_actual / L_cat)))
+        n_nhip_cat = _n_nhip_from(L_cau_actual, L_cat)
         ghi_chu = (f"AI: {loai_ai} L≈{L_ai:.1f}m → "
                    f"Catalog: {loai_cat} L={L_cat}m, {n_nhip_cat} nhịp.")
         phuong_phap = "AI + Catalog"

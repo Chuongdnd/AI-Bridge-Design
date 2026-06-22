@@ -159,6 +159,63 @@ def _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk):
 # Public alias
 calc_pier_positions = _calc_pier_positions
 
+
+# Danh sách nhịp định hình catalog (m) — đồng bộ STD_LENGTHS của 06-AI_KetCauNhip.py
+STD_LENGTHS = [12, 15, 18, 21, 24, 25, 27, 30, 33, 38.2, 40]
+
+
+def _snap_up_std(L_min):
+    """Chiều dài nhịp định hình catalog NHỎ NHẤT ≥ L_min (m).
+    Nếu L_min vượt danh mục thì làm tròn lên bội số 5m."""
+    ge = [l for l in STD_LENGTHS if l >= L_min - 1e-6]
+    if ge:
+        return float(min(ge))
+    return float(int(np.ceil(L_min / 5.0)) * 5)
+
+
+def _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip=None):
+    """
+    Bố trí nhịp ĐỀU — tất cả nhịp = một chiều dài định hình catalog L_std.
+
+    Nguyên tắc (theo yêu cầu thiết kế):
+      1. Nhịp chính (nhịp chứa tim tĩnh không) căng GIỮA x_tim → hai trụ kề
+         nhịp chính cách biên tĩnh không ≥ _PIER_SAFETY ⇒ KHÔNG vi phạm tĩnh không.
+      2. Mọi nhịp (kể cả nhịp dẫn) đều bằng nhau và bằng chiều dài định hình
+         catalog L_std — không còn mỗi nhịp một chiều dài lẻ khác nhau.
+
+    L_nhip : chiều dài nhịp định hình do module 06 chọn (kcn['chieu_dai']).
+             Nếu thiếu hoặc < điều kiện tĩnh không (B_tk + 2×_PIER_SAFETY) thì
+             tự nâng lên định hình nhỏ nhất thỏa điều kiện này.
+
+    Returns
+    -------
+    (supports, L_std)
+        supports : list[float] — tọa độ MỐ–TRỤ–MỐ tăng dần (gồm cả 2 mố).
+        L_std    : float       — chiều dài mỗi nhịp (m).
+    """
+    L_clear = B_tk + 2.0 * _PIER_SAFETY
+    if L_nhip and float(L_nhip) + 1e-6 >= L_clear:
+        L_std = float(L_nhip)
+    else:
+        L_std = _snap_up_std(L_clear)
+
+    # Nhịp chính căng giữa tim tĩnh không
+    main_L = x_tim - L_std / 2.0
+    main_R = x_tim + L_std / 2.0
+
+    # Mở rộng đều về hai phía để phủ phạm vi cầu [x0, x_end]
+    n_left  = max(0, int(np.ceil((main_L - x0)   / L_std - 1e-6)))
+    n_right = max(0, int(np.ceil((x_end - main_R) / L_std - 1e-6)))
+
+    left  = [main_L - i * L_std for i in range(n_left, 0, -1)]
+    right = [main_R + i * L_std for i in range(1, n_right + 1)]
+    supports = left + [main_L, main_R] + right
+    return supports, L_std
+
+
+# Public alias
+calc_span_layout = _calc_span_layout
+
 # ===========================================================================
 # 0b. OVERLAY ĐỊA CHẤT — Trắc dọc
 # ===========================================================================
@@ -436,9 +493,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None):
             return h_tn
         return float(np.interp(x, _lt_arr, _z_arr))
 
-    # ── Vị trí trụ đặt ngoài tĩnh không + safety ─────────────────────────
-    piers    = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
-    supports = [x0] + piers + [x_end]
+    # ── Bố trí nhịp ĐỀU theo chiều dài định hình catalog, nhịp chính căng
+    #    giữa tĩnh không (xem _calc_span_layout) ────────────────────────────
+    L_nhip   = float(kcn.get("chieu_dai", 33.0) or 33.0)
+    supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+    x0, x_end = supports[0], supports[-1]
+    piers    = supports[1:-1]
+    n_nhip   = len(supports) - 1
+    L_cau    = x_end - x0
     spans    = [(supports[i], supports[i+1]) for i in range(len(supports)-1)]
 
     # ── Cao độ kết cấu (tuyệt đối) ───────────────────────────────────────
@@ -668,21 +730,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None):
     _dim_h(fig, dy_dim+1.2, x0, x_end,
            f"<b>L_cầu = {L_cau:.1f}m ({n_nhip} nhịp — {loai})</b>",
            color="#c0392b", dy=0)
-    if len(piers) >= 2:
-        khoang_thong = piers[-1] - piers[0]
-        ok_str = "✓" if khoang_thong >= B_tk + 2*_PIER_SAFETY else "⚠"
-        _dim_h(fig, dy_dim, piers[0], piers[-1],
-               f"Khoảng thông thuyền {khoang_thong:.1f}m (TK={B_tk:.1f}m+2×{_PIER_SAFETY:.0f}m safety) {ok_str}",
-               color="#e74c3c", dy=0)
-    elif len(piers) == 1:
-        # n_nhip=2: nhịp chính phải ≥ B_tk + 2×safety
-        xs_main = min(piers[0], x_end - (piers[0]-x0))
-        xe_main = max(piers[0], x_end - (piers[0]-x0))
-        span_main = spans[1][1] - spans[1][0] if piers[0] < x_tim else spans[0][1] - spans[0][0]
-        ok_str = "✓" if span_main >= B_tk + 2*_PIER_SAFETY else "⚠"
-        _dim_h(fig, dy_dim, x_tim-B_tk/2, x_tim+B_tk/2,
-               f"Nhịp chính {span_main:.1f}m ≥ B_tk={B_tk:.1f}m {ok_str}",
-               color="#e74c3c", dy=0)
+    # Nhịp chính = nhịp chứa tim tĩnh không (đã căng giữa x_tim, tất cả nhịp = L_std)
+    main_a, main_b = next(((a, b) for (a, b) in spans
+                           if a - 1e-6 <= x_tim <= b + 1e-6), (spans[0] if spans else (x0, x_end)))
+    span_main = main_b - main_a
+    ok_str = "✓" if span_main >= B_tk + 2*_PIER_SAFETY else "⚠"
+    _dim_h(fig, dy_dim, main_a, main_b,
+           f"Nhịp chính {span_main:.1f}m (≥ B_tk {B_tk:.1f}m + 2×{_PIER_SAFETY:.0f}m) {ok_str}",
+           color="#e74c3c", dy=0)
     _dim_v(fig, x_end+W_mo+0.3, z_sh_b, z_cap_b, f"H_trụ={H_tru:.1f}m", dx=0.2)
     _dim_v(fig, x0-W_mo-0.3, cao_dd, cao_dd+H_dam, f"H_dầm={H_dam:.2f}m", dx=0.2)
     if piers:
@@ -1305,9 +1360,12 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None):
     x_end = float(geo.get("x_mo_phai", x0 + L_cau))
     x_tim = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
 
-    # Pier positions
-    piers    = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
-    supports = [x0] + piers + [x_end]
+    # Bố trí nhịp đều theo chiều dài định hình catalog, nhịp chính căng giữa tĩnh không
+    supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+    x0, x_end = supports[0], supports[-1]
+    piers    = supports[1:-1]
+    n_nhip   = len(supports) - 1
+    L_cau    = x_end - x0
     spans    = [(supports[i], supports[i+1]) for i in range(len(supports)-1)]
 
     cap_H = 0.80
@@ -1530,7 +1588,11 @@ def add_bridge_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         MNCN   =  float(d.get("MNCN", 3.5)) * hz
         H_tk   =  float(d.get("H", 3.0)) * hz
 
-        piers = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
+        L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
+        supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+        x0, x_end = supports[0], supports[-1]
+        piers = supports[1:-1]
+        n_nhip = len(supports) - 1
 
         # ── Bề mặt bản mặt cầu — go.Mesh3d (dải tam giác dọc tim tuyến) ──
         # go.Surface với z=const không render được vì colorscale min==max → dùng Mesh3d
@@ -1754,8 +1816,11 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         be_long   = be_W * 0.7
         mo_L      = 3.5
 
-        piers    = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
-        supports = [x0] + piers + [x_end]
+        supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+        x0, x_end = supports[0], supports[-1]
+        piers    = supports[1:-1]
+        n_nhip   = len(supports) - 1
+        L_cau    = x_end - x0
         spans    = [(supports[i], supports[i+1]) for i in range(len(supports)-1)]
 
         # ── Helper: HỘP 3D căn theo tim tuyến VN-2000 ────────────────────
@@ -1969,7 +2034,12 @@ def ve_binh_do_2d(d, df_tim_line=None):
     x0     = float(geo.get("x_mo_trai", -L_cau / 2))
     x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
     x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
-    piers  = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
+    L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
+    supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+    x0, x_end = supports[0], supports[-1]
+    piers  = supports[1:-1]
+    n_nhip = len(supports) - 1
+    L_cau  = x_end - x0
     cap_W  = max(2.0, bc * 0.18 + 1.0)
     mo_W   = 3.5
 
@@ -2149,7 +2219,11 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None):
     x0     = float(geo.get("x_mo_trai", -L_cau / 2))
     x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
     x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
-    piers  = _calc_pier_positions(x0, x_end, n_nhip, x_tim, B_tk)
+    L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
+    supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+    x0, x_end = supports[0], supports[-1]
+    piers  = supports[1:-1]
+    n_nhip = len(supports) - 1
     cap_W  = max(2.0, bc * 0.18 + 1.0)
     be_W   = cap_W + 0.8
 
