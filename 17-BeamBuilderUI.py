@@ -28,6 +28,26 @@ def _get_bb():
     return bb
 
 
+def _get_banve():
+    """Lazy-load 11-BanVe_KetCau.py để dùng chung bố trí nhịp (calc_span_layout)."""
+    bv = sys.modules.get("BanVeKetCau11")
+    if bv is None:
+        import importlib.util as _bv_util
+        _spec = _bv_util.spec_from_file_location(
+            "BanVeKetCau11",
+            pathlib.Path(__file__).parent / "11-BanVe_KetCau.py",
+        )
+        if _spec is None:
+            return None
+        bv = _bv_util.module_from_spec(_spec)
+        sys.modules["BanVeKetCau11"] = bv
+        try:
+            _spec.loader.exec_module(bv)
+        except Exception:
+            return None
+    return bv
+
+
 def _get_ifc_exporter():
     """Lazy-load 18-IFC_Exporter.py."""
     import importlib.util as _ifc_util
@@ -1709,10 +1729,22 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     # Mirror cho nửa phải
     full_pts = pts + [(L_m - p[0], p[1]) for p in reversed(pts[:-1])]
 
+    # ── Bố trí nhịp ĐỒNG BỘ với bản vẽ trắc dọc (11-BanVe_KetCau.calc_span_layout):
+    #    nhịp chính căng giữa tĩnh không, mọi nhịp = chiều dài định hình. Phải dùng
+    #    chung supports để dầm khớp đúng mố/trụ/bản mặt cầu (tránh lệch 1 nhịp). ──
+    _bv       = _get_banve()
+    B_tk      = float(d.get("B", 20.0))
+    x_end_geo = float(geo.get("x_mo_phai", x0 + max(1, n_nhip) * L_nhip))
+    x_tim     = float(geo.get("x_tim_clearance", (x0 + x_end_geo) / 2))
+    if _bv is not None and hasattr(_bv, "calc_span_layout"):
+        supports, _ = _bv.calc_span_layout(x0, x_end_geo, x_tim, B_tk, L_nhip)
+    else:
+        supports = [x0 + i * L_nhip for i in range(n_nhip + 1)]
+    spans = list(zip(supports[:-1], supports[1:]))
+
     result = []
-    for i_nhip in range(n_nhip):
-        span_x0 = x0 + i_nhip * L_nhip
-        scale   = L_nhip / L_m
+    for i_nhip, (span_x0, span_x1) in enumerate(spans):
+        scale   = (span_x1 - span_x0) / L_m
 
         bot_x = [span_x0 + s * scale for s, _ in full_pts]
         bot_y = [beam_top - h / 1000.0 for _, h in full_pts]
