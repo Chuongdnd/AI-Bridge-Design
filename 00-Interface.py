@@ -3526,8 +3526,27 @@ with _col_main:
                     st.markdown("**Mặt cắt ngang điển hình** (kết cấu nhịp)")
                     fig_mcn_btc = BVK.ve_mat_cat_ngang_2d(d)
                     try:
-                        for _mcn_tr in BBUI.get_mcn_overlay_traces(d):
-                            fig_mcn_btc.add_trace(_mcn_tr)
+                        _mcn_traces = BBUI.get_mcn_overlay_traces(d)
+                        if _mcn_traces:
+                            # Xóa dầm parametric cũ (#85929e) khi đã có DXF thực tế
+                            fig_mcn_btc.data = tuple(
+                                t for t in fig_mcn_btc.data
+                                if not (
+                                    getattr(t, 'fill', None) == 'toself'
+                                    and '#85929e' in str(getattr(t, 'fillcolor', ''))
+                                )
+                                and not (
+                                    'BTCT DƯL' in str(getattr(t, 'name', ''))
+                                    and getattr(t, 'mode', '') == 'markers'
+                                )
+                            )
+                            # Xóa annotation nhãn "DẦM ... BTCT DƯL"
+                            fig_mcn_btc.layout.annotations = tuple(
+                                a for a in (fig_mcn_btc.layout.annotations or [])
+                                if 'BTCT DƯL' not in str(getattr(a, 'text', ''))
+                            )
+                            for _mcn_tr in _mcn_traces:
+                                fig_mcn_btc.add_trace(_mcn_tr)
                     except Exception:
                         pass
                     # Clip y-axis: chỉ hiện từ đáy dầm trở lên (bỏ trụ, cọc, mố)
@@ -3543,11 +3562,7 @@ with _col_main:
                     )
                     st.plotly_chart(fig_mcn_btc, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
-                    # Mặt cắt dầm từ DXF (nếu đã upload ở tab Chi tiết dầm)
-                    try:
-                        BBUI.render_btc_sections()
-                    except Exception:
-                        pass
+
                 except Exception as _e:
                     st.error(f"Lỗi tab Bố trí chung: {_e}")
     
