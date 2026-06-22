@@ -2228,6 +2228,32 @@ def _decl_box_hinh_hoc():
             _save_design_inputs(st.session_state.design_data)
             st.toast("✅ Đã lưu — Hình học & Giao thông", icon="✅")
 
+@st.fragment
+def _decl_box_dia_hinh():
+    """Hộp khai báo 3 — Dữ liệu địa hình (.NTD + tọa độ VN-2000)."""
+    with st.expander("📥 Địa hình (.NTD + tọa độ VN-2000)",
+                     expanded=("df_geology" not in st.session_state)):
+        st.caption("Nạp file khảo sát để bản vẽ tích hợp địa hình thực đo.")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            file_khao_sat = st.file_uploader(
+                "📂 File .NTD (trắc dọc – ngang)", type=["ntd"], key="ntd_up")
+        with _c2:
+            file_toa_do = st.file_uploader(
+                "📍 Tọa độ tim tuyến (.CSV/.XLSX)", type=["csv", "xlsx"], key="coord_up")
+        if file_khao_sat and file_toa_do:
+            with st.spinner("⚡ Đang đồng bộ tọa độ VN-2000..."):
+                df_ntd   = TV.parse_ntd_file(file_khao_sat)
+                df_coord = TV.parse_coordinate_file(file_toa_do)
+            if df_coord is not None and not df_ntd.empty:
+                _dg = TV.convert_to_vn2000(df_ntd, df_coord)
+                if not _dg.empty:
+                    st.session_state.df_geology = _dg
+                    _tl = (_dg[_dg["Offset"] == 0][["Lý trình", "Z"]]
+                           .drop_duplicates("Lý trình").sort_values("Lý trình"))
+                    st.session_state.df_tim_line = _tl
+                    st.success(f"✅ Đã đồng bộ {len(_dg)} điểm địa hình theo VN-2000!")
+
 # ── Dialog dispatcher ────────────────────────────────────────────────────────
 _od = st.session_state.get('open_dialog')
 if _od == "step1":
@@ -2237,27 +2263,30 @@ elif _od == "step2":
 elif _od == "step3":
     dialog_step3()
 
-# ── Hàng nút OPTIONS + hộp khai báo độc lập ─────────────────────────────────
-ctrl_col1, _dc_col_a, _dc_col_b = st.columns([1, 2, 2])
-with ctrl_col1:
-    _has_result = bool(st.session_state.design_data.get('kcn_result'))
-    _btn_label  = "⚙️ CHỈNH SỬA" if _has_result else "⚙️ Wizard\nKhai báo"
-    if st.button(
-        _btn_label,
-        use_container_width=True,
-        type="secondary" if _has_result else "primary",
-        help="Mở wizard 3-bước đầy đủ (thay thế: dùng các hộp khai báo ở bên phải)",
-        key="btn_options_main",
-    ):
-        st.session_state.field_touched  = set()
-        st.session_state.field_errors   = {}
-        st.session_state.field_warnings = {}
-        st.session_state.open_dialog    = "step1"
-        st.rerun()
+# ── 3 HỘP KHAI BÁO TÁCH RIÊNG (đưa lên trên) + nút wizard CHỈNH SỬA ──────────
+_has_result = bool(st.session_state.design_data.get('kcn_result'))
+_btn_label  = "⚙️ CHỈNH SỬA (wizard 3 bước)" if _has_result else "⚙️ Wizard Khai báo"
+if st.button(
+    _btn_label,
+    use_container_width=True,
+    type="secondary" if _has_result else "primary",
+    help="Mở wizard 3-bước đầy đủ (hoặc dùng trực tiếp 3 hộp khai báo bên dưới)",
+    key="btn_options_main",
+):
+    st.session_state.field_touched  = set()
+    st.session_state.field_errors   = {}
+    st.session_state.field_warnings = {}
+    st.session_state.open_dialog    = "step1"
+    st.rerun()
+
+# Khai báo 1 · 2 · 3 — mỗi phần một hộp riêng, cùng hàng trên cùng
+_dc_col_a, _dc_col_b, _dc_col_c = st.columns(3)
 with _dc_col_a:
     _decl_box_thuy_van()
 with _dc_col_b:
     _decl_box_hinh_hoc()
+with _dc_col_c:
+    _decl_box_dia_hinh()
 
 # --- THANH SIDEBAR TRÍI ---
 with st.sidebar:
@@ -3245,34 +3274,9 @@ with _col_main:
         tru = d.get("tru_result")
         has_ai = kcn is not None
     
-        # ── Khai báo địa hình (luôn hiển thị) ──────────────────────────────
-        with st.expander(
-            "📥 Khai báo dữ liệu địa hình (file .NTD + bảng tọa độ VN-2000)",
-            expanded=(not has_ai or "df_geology" not in st.session_state),
-        ):
-            st.caption("Nạp file khảo sát để bản vẽ kết cấu tích hợp địa hình thực đo.")
-            _c1, _c2 = st.columns(2)
-            with _c1:
-                file_khao_sat = st.file_uploader(
-                    "📂 File .NTD (trắc dọc – trắc ngang)", type=["ntd"], key="ntd_up"
-                )
-            with _c2:
-                file_toa_do = st.file_uploader(
-                    "📍 Tọa độ tim tuyến (.CSV / .XLSX)", type=["csv","xlsx"], key="coord_up"
-                )
-            if file_khao_sat and file_toa_do:
-                with st.spinner("⚡ Đang đồng bộ tọa độ VN-2000..."):
-                    df_ntd   = TV.parse_ntd_file(file_khao_sat)
-                    df_coord = TV.parse_coordinate_file(file_toa_do)
-                if df_coord is not None and not df_ntd.empty:
-                    _dg = TV.convert_to_vn2000(df_ntd, df_coord)
-                    if not _dg.empty:
-                        st.session_state.df_geology = _dg
-                        _tl = (_dg[_dg["Offset"] == 0][["Lý trình","Z"]]
-                               .drop_duplicates("Lý trình").sort_values("Lý trình"))
-                        st.session_state.df_tim_line = _tl
-                        st.success(f"✅ Đã đồng bộ {len(_dg)} điểm địa hình theo VN-2000!")
-    
+        # (Khai báo địa hình đã chuyển lên "Hộp khai báo 3" ở hàng trên cùng
+        #  — chung với Thủy văn & Hình học, dùng fragment _decl_box_dia_hinh.)
+
         st.markdown("---")
     
         if not has_ai:

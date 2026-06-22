@@ -1129,6 +1129,78 @@ def render_ifc_export_card(
     st.markdown("</div>", unsafe_allow_html=True)
 
 
+def _render_seg_rows(seg_list, _ALL, max_len, kp, ver_key, cad_state):
+    """Render bảng khai báo đoạn mặt cắt cho MỘT nửa dầm (đầu → giữa nhịp).
+    kp = key prefix duy nhất; ver_key = khóa version trong cad_state (rerun khi sửa)."""
+    _v = cad_state.get(ver_key, 0)
+    _h1, _h2, _h3, _h4 = st.columns([3, 4, 3, 1])
+    _h1.caption("Loại"); _h2.caption("Mặt cắt"); _h3.caption("Dài (mm)"); _h4.caption("")
+    _del = None
+    for _i, _sg in enumerate(seg_list):
+        _ka, _kb, _kc, _kd = (f"{kp}_v{_v}_s{_i}_{x}" for x in ("t", "sec", "len", "del"))
+        _ca, _cb, _cc, _cd = st.columns([3, 4, 3, 1])
+        _t_new = _ca.selectbox("t", ["Giữ nguyên", "Vuốt loft"],
+                               index=1 if _sg.get("type") == "loft" else 0,
+                               key=_ka, label_visibility="collapsed")
+        _sg["type"] = "loft" if _t_new == "Vuốt loft" else "constant"
+        if _sg["type"] == "constant":
+            _si = _ALL.index(_sg.get("sec", "A-A")) if _sg.get("sec") in _ALL else 0
+            _sg["sec"] = _cb.selectbox("s", _ALL, index=_si, key=_kb,
+                                       label_visibility="collapsed")
+            _sg.pop("from_sec", None); _sg.pop("to_sec", None)
+        else:
+            _fi = _ALL.index(_sg.get("from_sec", "C-C")) if _sg.get("from_sec") in _ALL \
+                  else (2 if len(_ALL) > 2 else 0)
+            _ti = _ALL.index(_sg.get("to_sec", "A-A")) if _sg.get("to_sec") in _ALL else 0
+            _cf, _ar, _ct = _cb.columns([5, 1, 5])
+            _sg["from_sec"] = _cf.selectbox("f", _ALL, index=_fi, key=_kb + "f",
+                                            label_visibility="collapsed")
+            _ar.markdown("<div style='text-align:center;padding-top:4px'>→</div>",
+                         unsafe_allow_html=True)
+            _sg["to_sec"] = _ct.selectbox("t", _ALL, index=_ti, key=_kb + "t",
+                                          label_visibility="collapsed")
+            _sg.pop("sec", None)
+        _sg["length"] = float(_cc.number_input(
+            "l", min_value=0, max_value=int(max_len),
+            value=int(_sg.get("length", 500)), step=50,
+            key=_kc, label_visibility="collapsed", format="%d"))
+        if _cd.button("✕", key=_kd, use_container_width=True):
+            _del = _i
+    if _del is not None:
+        seg_list.pop(_del); cad_state[ver_key] = _v + 1; st.rerun()
+    if st.button("＋ Thêm đoạn", key=f"{kp}_v{_v}_add", use_container_width=True):
+        seg_list.append({"type": "constant", "sec": "A-A", "length": 500.0})
+        cad_state[ver_key] = _v + 1; st.rerun()
+
+
+def _segdicts_to_segments(bb, seg_dicts, has_fn, avail, reverse=False):
+    """Đổi list dict đoạn → list bb.Segment. reverse=True (nửa phải): đảo thứ tự
+    và đảo chiều loft (đang khai đầu→giữa, cần chuyển thành giữa→đầu)."""
+    out = []
+    src = list(reversed(seg_dicts)) if reverse else list(seg_dicts)
+    for sg in src:
+        slen = float(sg.get("length", 0))
+        if slen <= 0:
+            continue
+        if sg.get("type") == "loft":
+            fs = sg.get("from_sec", "C-C"); ts = sg.get("to_sec", "A-A")
+            if reverse:
+                fs, ts = ts, fs
+            if has_fn(fs, ts):
+                out.append(bb.Segment("loft", from_sec=fs, to_sec=ts, length=slen))
+            elif has_fn(ts):
+                out.append(bb.Segment("constant", section=ts, length=slen))
+            elif has_fn(fs):
+                out.append(bb.Segment("constant", section=fs, length=slen))
+        else:
+            ss = sg.get("sec") or (next(iter(avail)) if avail else None)
+            if ss and has_fn(ss):
+                out.append(bb.Segment("constant", section=ss, length=slen))
+            elif avail:
+                out.append(bb.Segment("constant", section=next(iter(avail)), length=slen))
+    return out
+
+
 def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     """
     Tab chi tiết dầm — hỗ trợ Super-T, T ngược, I-Beam.
@@ -1301,9 +1373,7 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     _upload_row()
     st.divider()
 
-    # ═══ Hàng 2: Khai báo đoạn mặt cắt (toàn bộ chiều rộng) ════════════════
-    st.markdown(f"**Đoạn mặt cắt — nửa dầm** (L/2 = {L_half:.0f} mm)")
-
+    # ═══ Hàng 2: Khai báo đoạn mặt cắt ════════════════════════════════════════
     if "segs" not in cad_state:
         _l1 = cad_state.get("seg_L1", min(300.0,  L_half * 0.02))
         _l2 = cad_state.get("seg_L2", min(900.0,  L_half * 0.12))
@@ -1318,65 +1388,42 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
         cad_state.setdefault("fill_sec", _bt_fill_default)
         cad_state.setdefault("segs_ver", 0)
 
-    _SD   = cad_state["segs"]
-    _v    = cad_state.get("segs_ver", 0)
     _ALL  = list(secs.keys())
     _PAL  = ["#44aa66","#8855cc","#4488cc","#cc8844","#dd5577","#4499bb","#99aa22","#cc5533"]
     _SCOL = {k: _PAL[i % len(_PAL)] for i, k in enumerate(_ALL)}
     _LCOL = "#cc8844"
 
-    _h1, _h2, _h3, _h4 = st.columns([3, 4, 3, 1])
-    _h1.caption("Loại"); _h2.caption("Mặt cắt"); _h3.caption("Dài (mm)"); _h4.caption("")
+    # Tùy chọn HAI ĐẦU DẦM KHÁC NHAU (không đối xứng)
+    _asym = st.toggle(
+        "🔀 Hai đầu dầm khác nhau (không đối xứng)",
+        value=bool(cad_state.get("asym", False)), key=f"{pfx}_asym",
+        help="Bật nếu đầu dầm phía này khác đầu kia (vd đầu mố ≠ đầu trụ). "
+             "Tắt = hai đầu đối xứng (mirror nửa dầm).",
+    )
+    cad_state["asym"] = _asym
+    _SD    = cad_state["segs"]
+    _full  = L_m * 1000.0
 
-    _del_idx = None
-    for _i, _sg in enumerate(_SD):
-        _ka, _kb, _kc, _kd = (f"{pfx}_v{_v}_s{_i}_{x}" for x in ("t","sec","len","del"))
-        _ca, _cb, _cc, _cd = st.columns([3, 4, 3, 1])
+    if _asym:
+        # Lần đầu bật: clone nửa phải từ nửa trái để kế thừa, người dùng sửa sau
+        cad_state.setdefault("segs_right", [dict(s) for s in _SD])
+        cad_state.setdefault("segs_right_ver", 0)
+        _SDR = cad_state["segs_right"]
+        st.markdown(f"**① Đoạn đầu TRÁI → giữa** (toàn dầm L = {_full:.0f} mm)")
+        _render_seg_rows(_SD,  _ALL, _full, f"{pfx}_L", "segs_ver",       cad_state)
+        st.markdown("**② Đoạn đầu PHẢI → giữa**")
+        _render_seg_rows(_SDR, _ALL, _full, f"{pfx}_R", "segs_right_ver", cad_state)
+        _L_used  = (sum(float(s.get("length", 0)) for s in _SD)
+                    + sum(float(s.get("length", 0)) for s in _SDR))
+        L_fill   = _full - _L_used
+        _cap_txt = f"toàn dầm {_full:.0f} mm"
+    else:
+        st.markdown(f"**Đoạn mặt cắt — nửa dầm** (L/2 = {L_half:.0f} mm)")
+        _render_seg_rows(_SD, _ALL, L_half, f"{pfx}_L", "segs_ver", cad_state)
+        _L_used  = sum(float(s.get("length", 0)) for s in _SD)
+        L_fill   = L_half - _L_used
+        _cap_txt = f"L/2 {L_half:.0f} mm"
 
-        _t_cur = 1 if _sg.get("type") == "loft" else 0
-        _t_new = _ca.selectbox("t", ["Giữ nguyên", "Vuốt loft"],
-                               index=_t_cur, key=_ka,
-                               label_visibility="collapsed")
-        _sg["type"] = "loft" if _t_new == "Vuốt loft" else "constant"
-
-        if _sg["type"] == "constant":
-            _si = _ALL.index(_sg.get("sec","A-A")) if _sg.get("sec") in _ALL else 0
-            _sg["sec"] = _cb.selectbox("s", _ALL, index=_si, key=_kb,
-                                       label_visibility="collapsed")
-            _sg.pop("from_sec", None); _sg.pop("to_sec", None)
-        else:
-            _fi = _ALL.index(_sg.get("from_sec","C-C")) if _sg.get("from_sec") in _ALL else 2
-            _ti = _ALL.index(_sg.get("to_sec","A-A"))   if _sg.get("to_sec")   in _ALL else 0
-            _cf, _arrow, _ct = _cb.columns([5, 1, 5])
-            _sg["from_sec"] = _cf.selectbox("f", _ALL, index=_fi,
-                                            key=_kb + "f", label_visibility="collapsed")
-            _arrow.markdown("<div style='text-align:center;padding-top:4px'>→</div>",
-                            unsafe_allow_html=True)
-            _sg["to_sec"]   = _ct.selectbox("t", _ALL, index=_ti,
-                                            key=_kb + "t", label_visibility="collapsed")
-            _sg.pop("sec", None)
-
-        _sg["length"] = float(_cc.number_input(
-            "l", min_value=0, max_value=int(L_half),
-            value=int(_sg.get("length", 500)), step=50,
-            key=_kc, label_visibility="collapsed", format="%d",
-        ))
-
-        if _cd.button("✕", key=_kd, use_container_width=True):
-            _del_idx = _i
-
-    if _del_idx is not None:
-        _SD.pop(_del_idx)
-        cad_state["segs_ver"] = _v + 1
-        st.rerun()
-
-    if st.button("＋ Thêm đoạn", key=f"{pfx}_v{_v}_add", use_container_width=True):
-        _SD.append({"type": "constant", "sec": "A-A", "length": 500.0})
-        cad_state["segs_ver"] = _v + 1
-        st.rerun()
-
-    _L_used = sum(float(s.get("length", 0)) for s in _SD)
-    L_fill  = L_half - _L_used
     st.markdown("---")
     _cur_fill = cad_state.get("fill_sec", _bt_fill_default)
     _fi2 = _ALL.index(_cur_fill) if _cur_fill in _ALL else 0
@@ -1385,7 +1432,7 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
         _ALL, index=_fi2, key=f"{pfx}_fill_sec",
     )
     if L_fill < 0:
-        st.error(f"Tổng {_L_used:.0f} mm > L/2 {L_half:.0f} mm — giảm chiều dài đoạn.")
+        st.error(f"Tổng đoạn {_L_used:.0f} mm > {_cap_txt} — giảm chiều dài đoạn.")
 
     # ═══ Hàng 2b: Sơ đồ dầm (toàn bộ chiều rộng) ════════════════════════════
     st.divider()
@@ -1406,34 +1453,43 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     )
     st.session_state[f"{pfx}_h_sch"] = _h_sch
 
-    # Xây vùng màu nửa dầm (từ đầu → giữa nhịp)
-    _zones_half = []
-    for _sg in _SD:
-        _zl = float(_sg.get("length", 0))
-        if _sg["type"] == "loft":
-            _zlab = f"{_sg.get('from_sec','?')}→{_sg.get('to_sec','?')}"
-            _zcl  = _LCOL
-        else:
-            _zlab = _sg.get("sec", "?")
-            _zcl  = _SCOL.get(_zlab, "#668899")
-        _zones_half.append((_zl, _zlab, _zcl))
+    # Xây vùng màu từ list đoạn (đầu → giữa nhịp)
     _fsc = cad_state.get("fill_sec", _bt_fill_default)
-    _zones_half.append((max(L_fill, 0), _fsc, _SCOL.get(_fsc, "#668899")))
+    def _zones_of(_seglist):
+        _zz = []
+        for _sg in _seglist:
+            _zl = float(_sg.get("length", 0))
+            if _sg["type"] == "loft":
+                _zlab = f"{_sg.get('from_sec','?')}→{_sg.get('to_sec','?')}"
+                _zcl  = _LCOL
+            else:
+                _zlab = _sg.get("sec", "?")
+                _zcl  = _SCOL.get(_zlab, "#668899")
+            _zz.append((_zl, _zlab, _zcl))
+        return _zz
 
-    # Chế độ toàn dầm: mirror zones_half sang bên phải
-    if _sch_mode == "Toàn dầm":
-        # fill ở giữa gộp lại (2 × L_fill), các đoạn còn lại đối xứng
-        _zones_mid = list(_zones_half)                  # nửa trái: đầu → giữa
-        _zones_right = list(reversed(_zones_half))      # nửa phải: giữa → cuối
-        _zones_sch = _zones_mid + _zones_right
-        _x_total = L_m * 1000                           # tổng mm
-        _x_mid   = L_half                               # vị trí tim dầm (mm)
-        _x_label = "mm từ đầu dầm (toàn nhịp)"
+    _fill_zone = (max(L_fill, 0), _fsc, _SCOL.get(_fsc, "#668899"))
+
+    if _asym:
+        # Toàn dầm BẤT ĐỐI XỨNG: trái(đầu→giữa) + fill + phải đảo(giữa→đầu)
+        _zr = list(reversed(_zones_of(_SDR)))
+        _zr = [(_zl, ("→".join(reversed(_lab.split("→"))) if "→" in _lab else _lab), _cl)
+               for (_zl, _lab, _cl) in _zr]
+        _zones_sch = _zones_of(_SD) + [_fill_zone] + _zr
+        _x_total = _full; _x_mid = None
+        _x_label = "mm từ đầu dầm (toàn dầm — 2 đầu khác nhau)"
     else:
-        _zones_sch = _zones_half
-        _x_total = L_half
-        _x_mid   = None
-        _x_label = "mm từ đầu dầm (nửa nhịp)"
+        _zones_half = _zones_of(_SD) + [_fill_zone]
+        if _sch_mode == "Toàn dầm":
+            _zones_sch = list(_zones_half) + list(reversed(_zones_half))
+            _x_total = L_m * 1000
+            _x_mid   = L_half
+            _x_label = "mm từ đầu dầm (toàn nhịp)"
+        else:
+            _zones_sch = _zones_half
+            _x_total = L_half
+            _x_mid   = None
+            _x_label = "mm từ đầu dầm (nửa nhịp)"
 
     _fig_sch = go.Figure()
     _x0_s = 0.0
@@ -1470,49 +1526,40 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     # ═══ Hàng 3: 3D Wireframe — toàn bộ chiều rộng ════════════════════════════
     st.divider()
     _avail = {k: v for k, v in secs.items() if v.outer}
-    _SD_3d = cad_state.get("segs", [])
-    _L_used_3d = sum(float(s.get("length", 0)) for s in _SD_3d)
-    L_fill_3d  = L_half - _L_used_3d
+    _SD_3d  = cad_state.get("segs", [])
+    _SDR_3d = cad_state.get("segs_right", []) if _asym else []
+    _L_used_3d = (sum(float(s.get("length", 0)) for s in _SD_3d)
+                  + (sum(float(s.get("length", 0)) for s in _SDR_3d) if _asym else 0))
+    _cap_total = _full if _asym else L_half
+    L_fill_3d  = _cap_total - _L_used_3d
 
     try:
         if len(_avail) < 1:
             st.info("Upload ít nhất 1 mặt cắt để xem 3D preview.", icon="ℹ")
         elif L_fill_3d < 0:
-            st.warning(f"Tổng đoạn {_L_used_3d:.0f} mm > L/2 {L_half:.0f} mm — giảm chiều dài.")
+            st.warning(f"Tổng đoạn {_L_used_3d:.0f} mm > {_cap_total:.0f} mm — giảm chiều dài.")
         else:
-            m3d = bb.BeamModel(length=L_m * 1000, mirror=True)
+            # Bất đối xứng → mirror=False, khai báo NGUYÊN dầm; đối xứng → mirror=True (nửa dầm)
+            m3d = bb.BeamModel(length=L_m * 1000, mirror=not _asym)
             m3d.sections = {k: v.clone() for k, v in _avail.items()}
 
             def _has(*names):
                 return all(n in m3d.sections for n in names)
 
-            _segs = []
-            for _sg in _SD_3d:
-                _slen = float(_sg.get("length", 0))
-                if _slen <= 0:
-                    continue
-                if _sg["type"] == "loft":
-                    _fs = _sg.get("from_sec", "C-C")
-                    _ts = _sg.get("to_sec",   "A-A")
-                    if _has(_fs, _ts):
-                        _segs.append(bb.Segment("loft", from_sec=_fs, to_sec=_ts, length=_slen))
-                    elif _has(_ts):
-                        _segs.append(bb.Segment("constant", section=_ts, length=_slen))
-                    elif _has(_fs):
-                        _segs.append(bb.Segment("constant", section=_fs, length=_slen))
-                else:
-                    _ss = _sg.get("sec", next(iter(m3d.sections), "A-A"))
-                    if _has(_ss):
-                        _segs.append(bb.Segment("constant", section=_ss, length=_slen))
-                    elif _avail:
-                        _segs.append(bb.Segment("constant",
-                                                section=next(iter(_avail)), length=_slen))
-
             _fill_sec = cad_state.get("fill_sec", _bt_fill_default)
             if not _has(_fill_sec):
                 _fill_sec = next(iter(m3d.sections), None)
-            if _fill_sec:
-                _segs.append(bb.Segment("constant", section=_fill_sec, length="fill"))
+
+            if _asym:
+                # trái(đầu→giữa) + fill(giữa) + phải đảo(giữa→đầu)
+                _segs  = _segdicts_to_segments(bb, _SD_3d,  _has, _avail, reverse=False)
+                if _fill_sec:
+                    _segs.append(bb.Segment("constant", section=_fill_sec, length="fill"))
+                _segs += _segdicts_to_segments(bb, _SDR_3d, _has, _avail, reverse=True)
+            else:
+                _segs = _segdicts_to_segments(bb, _SD_3d, _has, _avail, reverse=False)
+                if _fill_sec:
+                    _segs.append(bb.Segment("constant", section=_fill_sec, length="fill"))
             m3d.segments = _segs
 
             _traces = bb.build_3d_wireframe(m3d)
