@@ -1227,142 +1227,171 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     _upload_row()
     st.divider()
 
-    # ═══ Hàng 2: Khai báo đoạn (trái) + Sơ đồ trắc dọc (phải) ══════════════
-    col_seg, col_sch = st.columns([58, 42])
+    # ═══ Hàng 2: Khai báo đoạn mặt cắt (toàn bộ chiều rộng) ════════════════
+    st.markdown(f"**Đoạn mặt cắt — nửa dầm** (L/2 = {L_half:.0f} mm)")
 
-    # ── Cột trái: bảng đoạn + fill ──────────────────────────────────────────
-    with col_seg:
-        st.markdown(f"**Đoạn mặt cắt — nửa dầm** (L/2 = {L_half:.0f} mm)")
+    if "segs" not in cad_state:
+        _l1 = cad_state.get("seg_L1", min(300.0,  L_half * 0.02))
+        _l2 = cad_state.get("seg_L2", min(900.0,  L_half * 0.12))
+        _l3 = cad_state.get("seg_L3", 0.0)
+        _l4 = cad_state.get("seg_L4", min(1200.0, L_half * 0.16))
+        _init = []
+        if _l1 > 0: _init.append({"type": "constant", "sec": "C-C", "length": _l1})
+        if _l2 > 0: _init.append({"type": "loft", "from_sec": "C-C", "to_sec": "A-A", "length": _l2})
+        if _l3 > 0: _init.append({"type": "constant", "sec": "A-A", "length": _l3})
+        if _l4 > 0: _init.append({"type": "loft", "from_sec": "A-A", "to_sec": "B-B", "length": _l4})
+        cad_state["segs"] = _init
+        cad_state.setdefault("fill_sec", _bt_fill_default)
+        cad_state.setdefault("segs_ver", 0)
 
-        if "segs" not in cad_state:
-            _l1 = cad_state.get("seg_L1", min(300.0,  L_half * 0.02))
-            _l2 = cad_state.get("seg_L2", min(900.0,  L_half * 0.12))
-            _l3 = cad_state.get("seg_L3", 0.0)
-            _l4 = cad_state.get("seg_L4", min(1200.0, L_half * 0.16))
-            _init = []
-            if _l1 > 0: _init.append({"type": "constant", "sec": "C-C", "length": _l1})
-            if _l2 > 0: _init.append({"type": "loft", "from_sec": "C-C", "to_sec": "A-A", "length": _l2})
-            if _l3 > 0: _init.append({"type": "constant", "sec": "A-A", "length": _l3})
-            if _l4 > 0: _init.append({"type": "loft", "from_sec": "A-A", "to_sec": "B-B", "length": _l4})
-            cad_state["segs"] = _init
-            cad_state.setdefault("fill_sec", _bt_fill_default)
-            cad_state.setdefault("segs_ver", 0)
+    _SD   = cad_state["segs"]
+    _v    = cad_state.get("segs_ver", 0)
+    _ALL  = list(secs.keys())
+    _PAL  = ["#44aa66","#8855cc","#4488cc","#cc8844","#dd5577","#4499bb","#99aa22","#cc5533"]
+    _SCOL = {k: _PAL[i % len(_PAL)] for i, k in enumerate(_ALL)}
+    _LCOL = "#cc8844"
 
-        _SD   = cad_state["segs"]
-        _v    = cad_state.get("segs_ver", 0)
-        _ALL  = list(secs.keys())
-        _PAL  = ["#44aa66","#8855cc","#4488cc","#cc8844","#dd5577","#4499bb","#99aa22","#cc5533"]
-        _SCOL = {k: _PAL[i % len(_PAL)] for i, k in enumerate(_ALL)}
-        _LCOL = "#cc8844"
+    _h1, _h2, _h3, _h4 = st.columns([3, 4, 3, 1])
+    _h1.caption("Loại"); _h2.caption("Mặt cắt"); _h3.caption("Dài (mm)"); _h4.caption("")
 
-        _h1, _h2, _h3, _h4 = st.columns([3, 4, 3, 1])
-        _h1.caption("Loại"); _h2.caption("Mặt cắt"); _h3.caption("Dài (mm)"); _h4.caption("")
+    _del_idx = None
+    for _i, _sg in enumerate(_SD):
+        _ka, _kb, _kc, _kd = (f"{pfx}_v{_v}_s{_i}_{x}" for x in ("t","sec","len","del"))
+        _ca, _cb, _cc, _cd = st.columns([3, 4, 3, 1])
 
-        _del_idx = None
-        for _i, _sg in enumerate(_SD):
-            _ka, _kb, _kc, _kd = (f"{pfx}_v{_v}_s{_i}_{x}" for x in ("t","sec","len","del"))
-            _ca, _cb, _cc, _cd = st.columns([3, 4, 3, 1])
+        _t_cur = 1 if _sg.get("type") == "loft" else 0
+        _t_new = _ca.selectbox("t", ["Giữ nguyên", "Vuốt loft"],
+                               index=_t_cur, key=_ka,
+                               label_visibility="collapsed")
+        _sg["type"] = "loft" if _t_new == "Vuốt loft" else "constant"
 
-            _t_cur = 1 if _sg.get("type") == "loft" else 0
-            _t_new = _ca.selectbox("t", ["Giữ nguyên", "Vuốt loft"],
-                                   index=_t_cur, key=_ka,
-                                   label_visibility="collapsed")
-            _sg["type"] = "loft" if _t_new == "Vuốt loft" else "constant"
+        if _sg["type"] == "constant":
+            _si = _ALL.index(_sg.get("sec","A-A")) if _sg.get("sec") in _ALL else 0
+            _sg["sec"] = _cb.selectbox("s", _ALL, index=_si, key=_kb,
+                                       label_visibility="collapsed")
+            _sg.pop("from_sec", None); _sg.pop("to_sec", None)
+        else:
+            _fi = _ALL.index(_sg.get("from_sec","C-C")) if _sg.get("from_sec") in _ALL else 2
+            _ti = _ALL.index(_sg.get("to_sec","A-A"))   if _sg.get("to_sec")   in _ALL else 0
+            _cf, _arrow, _ct = _cb.columns([5, 1, 5])
+            _sg["from_sec"] = _cf.selectbox("f", _ALL, index=_fi,
+                                            key=_kb + "f", label_visibility="collapsed")
+            _arrow.markdown("<div style='text-align:center;padding-top:4px'>→</div>",
+                            unsafe_allow_html=True)
+            _sg["to_sec"]   = _ct.selectbox("t", _ALL, index=_ti,
+                                            key=_kb + "t", label_visibility="collapsed")
+            _sg.pop("sec", None)
 
-            if _sg["type"] == "constant":
-                _si = _ALL.index(_sg.get("sec","A-A")) if _sg.get("sec") in _ALL else 0
-                _sg["sec"] = _cb.selectbox("s", _ALL, index=_si, key=_kb,
-                                           label_visibility="collapsed")
-                _sg.pop("from_sec", None); _sg.pop("to_sec", None)
-            else:
-                _fi = _ALL.index(_sg.get("from_sec","C-C")) if _sg.get("from_sec") in _ALL else 2
-                _ti = _ALL.index(_sg.get("to_sec","A-A"))   if _sg.get("to_sec")   in _ALL else 0
-                _cf, _arrow, _ct = _cb.columns([5, 1, 5])
-                _sg["from_sec"] = _cf.selectbox("f", _ALL, index=_fi,
-                                                key=_kb + "f", label_visibility="collapsed")
-                _arrow.markdown("<div style='text-align:center;padding-top:4px'>→</div>",
-                                unsafe_allow_html=True)
-                _sg["to_sec"]   = _ct.selectbox("t", _ALL, index=_ti,
-                                                key=_kb + "t", label_visibility="collapsed")
-                _sg.pop("sec", None)
+        _sg["length"] = float(_cc.number_input(
+            "l", min_value=0, max_value=int(L_half),
+            value=int(_sg.get("length", 500)), step=50,
+            key=_kc, label_visibility="collapsed", format="%d",
+        ))
 
-            _sg["length"] = float(_cc.number_input(
-                "l", min_value=0, max_value=int(L_half),
-                value=int(_sg.get("length", 500)), step=50,
-                key=_kc, label_visibility="collapsed", format="%d",
-            ))
+        if _cd.button("✕", key=_kd, use_container_width=True):
+            _del_idx = _i
 
-            if _cd.button("✕", key=_kd, use_container_width=True):
-                _del_idx = _i
+    if _del_idx is not None:
+        _SD.pop(_del_idx)
+        cad_state["segs_ver"] = _v + 1
+        st.rerun()
 
-        if _del_idx is not None:
-            _SD.pop(_del_idx)
-            cad_state["segs_ver"] = _v + 1
-            st.rerun()
+    if st.button("＋ Thêm đoạn", key=f"{pfx}_v{_v}_add", use_container_width=True):
+        _SD.append({"type": "constant", "sec": "A-A", "length": 500.0})
+        cad_state["segs_ver"] = _v + 1
+        st.rerun()
 
-        if st.button("＋ Thêm đoạn", key=f"{pfx}_v{_v}_add", use_container_width=True):
-            _SD.append({"type": "constant", "sec": "A-A", "length": 500.0})
-            cad_state["segs_ver"] = _v + 1
-            st.rerun()
+    _L_used = sum(float(s.get("length", 0)) for s in _SD)
+    L_fill  = L_half - _L_used
+    st.markdown("---")
+    _cur_fill = cad_state.get("fill_sec", _bt_fill_default)
+    _fi2 = _ALL.index(_cur_fill) if _cur_fill in _ALL else 0
+    cad_state["fill_sec"] = st.selectbox(
+        f"Đoạn giữa nhịp (fill = {max(L_fill, 0):.0f} mm)",
+        _ALL, index=_fi2, key=f"{pfx}_fill_sec",
+    )
+    if L_fill < 0:
+        st.error(f"Tổng {_L_used:.0f} mm > L/2 {L_half:.0f} mm — giảm chiều dài đoạn.")
 
-        _L_used = sum(float(s.get("length", 0)) for s in _SD)
-        L_fill  = L_half - _L_used
-        st.markdown("---")
-        _cur_fill = cad_state.get("fill_sec", _bt_fill_default)
-        _fi2 = _ALL.index(_cur_fill) if _cur_fill in _ALL else 0
-        cad_state["fill_sec"] = st.selectbox(
-            f"Đoạn giữa nhịp (fill = {max(L_fill, 0):.0f} mm)",
-            _ALL, index=_fi2, key=f"{pfx}_fill_sec",
-        )
-        if L_fill < 0:
-            st.error(f"Tổng {_L_used:.0f} mm > L/2 {L_half:.0f} mm — giảm chiều dài đoạn.")
+    # ═══ Hàng 2b: Sơ đồ dầm (toàn bộ chiều rộng) ════════════════════════════
+    st.divider()
+    _sch_ctrl_l, _sch_ctrl_r = st.columns([1, 1])
+    _sch_mode = _sch_ctrl_l.radio(
+        "Chế độ sơ đồ",
+        ["Nửa dầm", "Toàn dầm"],
+        index=int(st.session_state.get(f"{pfx}_sch_mode", 0)),
+        horizontal=True,
+        key=f"{pfx}_sch_mode_rb",
+    )
+    st.session_state[f"{pfx}_sch_mode"] = 0 if _sch_mode == "Nửa dầm" else 1
+    _h_sch = _sch_ctrl_r.slider(
+        "↕ Cao sơ đồ", min_value=60, max_value=300, step=10,
+        value=int(st.session_state.get(f"{pfx}_h_sch", 100)),
+        key=f"{pfx}_h_sch_sl",
+        help="Kéo để phóng to / thu nhỏ sơ đồ trắc dọc",
+    )
+    st.session_state[f"{pfx}_h_sch"] = _h_sch
 
-    # ── Cột phải: sơ đồ trắc dọc ─────────────────────────────────────────────
-    with col_sch:
-        st.markdown("**Sơ đồ nửa dầm**")
-        _h_sch = st.slider(
-            "↕ Cao sơ đồ", min_value=60, max_value=400, step=10,
-            value=int(st.session_state.get(f"{pfx}_h_sch", 140)),
-            key=f"{pfx}_h_sch_sl",
-            help="Kéo để phóng to / thu nhỏ sơ đồ trắc dọc",
-        )
-        st.session_state[f"{pfx}_h_sch"] = _h_sch
-        _zones_sch = []
-        for _sg in _SD:
-            _zl = float(_sg.get("length", 0))
-            if _sg["type"] == "loft":
-                _zlab = f"{_sg.get('from_sec','?')}→{_sg.get('to_sec','?')}"
-                _zcl  = _LCOL
-            else:
-                _zlab = _sg.get("sec", "?")
-                _zcl  = _SCOL.get(_zlab, "#668899")
-            _zones_sch.append((_zl, _zlab, _zcl))
-        _fsc = cad_state.get("fill_sec", _bt_fill_default)
-        _zones_sch.append((max(L_fill, 0), _fsc, _SCOL.get(_fsc, "#668899")))
+    # Xây vùng màu nửa dầm (từ đầu → giữa nhịp)
+    _zones_half = []
+    for _sg in _SD:
+        _zl = float(_sg.get("length", 0))
+        if _sg["type"] == "loft":
+            _zlab = f"{_sg.get('from_sec','?')}→{_sg.get('to_sec','?')}"
+            _zcl  = _LCOL
+        else:
+            _zlab = _sg.get("sec", "?")
+            _zcl  = _SCOL.get(_zlab, "#668899")
+        _zones_half.append((_zl, _zlab, _zcl))
+    _fsc = cad_state.get("fill_sec", _bt_fill_default)
+    _zones_half.append((max(L_fill, 0), _fsc, _SCOL.get(_fsc, "#668899")))
 
-        _fig_sch = go.Figure()
-        _x0_s = 0.0
-        for _zl, _zlab, _zcl in _zones_sch:
-            if _zl <= 0:
-                continue
-            _r, _g, _b = int(_zcl[1:3],16), int(_zcl[3:5],16), int(_zcl[5:7],16)
-            _fig_sch.add_shape(type="rect", x0=_x0_s, x1=_x0_s+_zl, y0=0, y1=1,
-                               fillcolor=f"rgba({_r},{_g},{_b},0.55)",
-                               line=dict(color="#fff", width=0.5))
-            if _zl > L_half * 0.04:
-                _fig_sch.add_annotation(x=_x0_s+_zl/2, y=0.5, text=_zlab,
-                                        showarrow=False, font=dict(size=9, color="#fff"))
-            _x0_s += _zl
-        _fig_sch.update_layout(
-            template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
-            height=_h_sch, margin=dict(l=10, r=10, t=4, b=22),
-            xaxis=dict(range=[0, L_half], showgrid=False, tickformat=".0f",
-                       tickfont=dict(size=8),
-                       title=dict(text="mm từ đầu dầm", font=dict(size=8))),
-            yaxis=dict(visible=False), showlegend=False,
-        )
-        st.plotly_chart(_fig_sch, use_container_width=True,
-                        key=f"{pfx}_sch_fig", config={"displayModeBar": False})
+    # Chế độ toàn dầm: mirror zones_half sang bên phải
+    if _sch_mode == "Toàn dầm":
+        # fill ở giữa gộp lại (2 × L_fill), các đoạn còn lại đối xứng
+        _zones_mid = list(_zones_half)                  # nửa trái: đầu → giữa
+        _zones_right = list(reversed(_zones_half))      # nửa phải: giữa → cuối
+        _zones_sch = _zones_mid + _zones_right
+        _x_total = L_m * 1000                           # tổng mm
+        _x_mid   = L_half                               # vị trí tim dầm (mm)
+        _x_label = "mm từ đầu dầm (toàn nhịp)"
+    else:
+        _zones_sch = _zones_half
+        _x_total = L_half
+        _x_mid   = None
+        _x_label = "mm từ đầu dầm (nửa nhịp)"
+
+    _fig_sch = go.Figure()
+    _x0_s = 0.0
+    for _zl, _zlab, _zcl in _zones_sch:
+        if _zl <= 0:
+            continue
+        _r, _g, _b = int(_zcl[1:3],16), int(_zcl[3:5],16), int(_zcl[5:7],16)
+        _fig_sch.add_shape(type="rect", x0=_x0_s, x1=_x0_s+_zl, y0=0, y1=1,
+                           fillcolor=f"rgba({_r},{_g},{_b},0.55)",
+                           line=dict(color="#fff", width=0.5))
+        if _zl > _x_total * 0.04:
+            _fig_sch.add_annotation(x=_x0_s+_zl/2, y=0.5, text=_zlab,
+                                    showarrow=False, font=dict(size=9, color="#fff"))
+        _x0_s += _zl
+
+    # Đường tim (chỉ ở chế độ toàn dầm)
+    if _x_mid is not None:
+        _fig_sch.add_shape(type="line", x0=_x_mid, x1=_x_mid, y0=0, y1=1,
+                           line=dict(color="#ffffff", width=1.5, dash="dot"))
+        _fig_sch.add_annotation(x=_x_mid, y=1.05, text="CL", showarrow=False,
+                                font=dict(size=8, color="#ffffff"), yref="paper")
+
+    _fig_sch.update_layout(
+        template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
+        height=_h_sch, margin=dict(l=10, r=10, t=12, b=22),
+        xaxis=dict(range=[0, _x_total], showgrid=False, tickformat=".0f",
+                   tickfont=dict(size=8),
+                   title=dict(text=_x_label, font=dict(size=8))),
+        yaxis=dict(visible=False), showlegend=False,
+    )
+    st.plotly_chart(_fig_sch, use_container_width=True,
+                    key=f"{pfx}_sch_fig", config={"displayModeBar": False})
 
     # ═══ Hàng 3: 3D Wireframe — toàn bộ chiều rộng ════════════════════════════
     st.divider()
