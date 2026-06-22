@@ -1470,7 +1470,11 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     n_nhip = int(kcn.get("tong_so_nhip",    3))
     cao_dd = float(d.get("cao_day_dam",      8.0))
     H_nom  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
-    L_m    = float(st.session_state.get("spt_L_m", L_nhip * 1000))  # mm
+    _spt_L_raw = st.session_state.get("spt_L_m", None)
+    if _spt_L_raw is not None:
+        L_m = float(_spt_L_raw) * 1000.0   # spt_L_m stored in m → convert to mm
+    else:
+        L_m = L_nhip * 1000.0              # fallback: L_nhip metres → mm
 
     beam_top = cao_dd + H_nom   # cao độ đỉnh dầm (m) — cố định theo thiết kế
 

@@ -3374,9 +3374,25 @@ with _col_main:
                             key="rm3d",
                             help="Shaded: mặc định • Realistic: đổ bóng cao • X-Ray: xuyên thấu • Wireframe: khung lưới"
                         )
+                    # Compute VN-2000 origin from min-lý-trình centre-line point
+                    _x_origin_vn2000 = 0.0
+                    _y_origin_vn2000 = 0.0
+                    if 'X_Real' in _df_geo.columns and 'Lý trình' in _df_geo.columns:
+                        _df_geo_cl = _df_geo[_df_geo['Offset'] == 0] if 'Offset' in _df_geo.columns else _df_geo
+                        if not _df_geo_cl.empty:
+                            _idx_min_lt = _df_geo_cl['Lý trình'].idxmin()
+                            _x_origin_vn2000 = float(_df_geo_cl.loc[_idx_min_lt, 'X_Real'])
+                    if 'Y_Real' in _df_geo.columns and 'Lý trình' in _df_geo.columns:
+                        _df_geo_cl2 = _df_geo[_df_geo['Offset'] == 0] if 'Offset' in _df_geo.columns else _df_geo
+                        if not _df_geo_cl2.empty:
+                            _idx_min_lt2 = _df_geo_cl2['Lý trình'].idxmin()
+                            _y_origin_vn2000 = float(_df_geo_cl2.loc[_idx_min_lt2, 'Y_Real'])
+                    st.session_state['terrain_x_origin'] = _x_origin_vn2000
+                    st.session_state['terrain_y_origin'] = _y_origin_vn2000
                     try:
                         _fig_t, mx, my, mz = TV.ve_dia_hinh_3d(
-                            _df_geo, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view
+                            _df_geo, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view,
+                            x_origin=_x_origin_vn2000, y_origin=_y_origin_vn2000,
                         )
                         if _fig_t:
                             _n_before = len(_fig_t.data)
@@ -3400,7 +3416,27 @@ with _col_main:
                             except Exception as _oe:
                                 _err_overlay = str(_oe)
                             _n_after = len(_fig_t.data)
-    
+
+                            # Focus camera on bridge span (lý trình relative coords)
+                            _geo_cam = d.get("geo_logic", {})
+                            _x_cam_mid = (
+                                float(_geo_cam.get("x_mo_trai", 0)) +
+                                float(_geo_cam.get("x_mo_phai", 0))
+                            ) / 2.0
+                            _z_cam_ref = float(d.get("cao_mat_cau") or d.get("cao_day_dam", 8.0))
+                            _z_cam_sc  = _z_cam_ref * he_so_z
+                            _fig_t.update_layout(
+                                scene_camera=dict(
+                                    eye=dict(x=0.0, y=-2.5, z=1.2),
+                                    center=dict(x=0.0, y=0.0, z=0.0),
+                                ),
+                                scene=dict(
+                                    xaxis=dict(title="Lý trình (m)"),
+                                    yaxis=dict(title="Ngang cầu (m)"),
+                                    zaxis=dict(title="Cao độ (m)"),
+                                ),
+                            )
+
                             st.plotly_chart(_fig_t, use_container_width=True,
                                             config={"displayModeBar": True})
                             st.caption(
@@ -3480,8 +3516,19 @@ with _col_main:
                     fig_td_btc = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim,
                                                        dia_chat_data=_dc_data)
                     try:
-                        for _td_tr in BBUI.get_elevation_profile_traces(d):
-                            fig_td_btc.add_trace(_td_tr)
+                        _elev_traces = BBUI.get_elevation_profile_traces(d)
+                        if _elev_traces:
+                            # Remove any preliminary beam fill traces before adding DXF-based ones
+                            fig_td_btc.data = tuple(
+                                t for t in fig_td_btc.data
+                                if not (
+                                    hasattr(t, 'fill') and t.fill == 'toself'
+                                    and hasattr(t, 'fillcolor')
+                                    and 'rgba(90' in str(getattr(t, 'fillcolor', ''))
+                                )
+                            )
+                            for _td_tr in _elev_traces:
+                                fig_td_btc.add_trace(_td_tr)
                     except Exception:
                         pass
                     st.plotly_chart(fig_td_btc, use_container_width=True,

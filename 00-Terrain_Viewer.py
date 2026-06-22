@@ -133,7 +133,8 @@ def convert_to_vn2000(df_ntd, df_coord):
         st.error(f"Lỗi xử lý đồng bộ chuỗi điểm tim thực địa: {e}")
         return pd.DataFrame()
 
-def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
+def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3,
+                   x_origin: float = 0.0, y_origin: float = 0.0):
     if df.empty:
         return None, None, None, None
     try:
@@ -164,6 +165,11 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3):
         df_right = create_extended_section(df_last, lt_right, lt_right - lt_max)
 
         df_clean = pd.concat([df_left, df_clean, df_right], ignore_index=True)
+        # Normalize VN-2000 absolute coords → relative (lý trình system)
+        if x_origin != 0.0 and 'X_Real' in df_clean.columns:
+            df_clean['X_Real'] = df_clean['X_Real'] - x_origin
+        if y_origin != 0.0 and 'Y_Real' in df_clean.columns:
+            df_clean['Y_Real'] = df_clean['Y_Real'] - y_origin
         df_clean = df_clean.sort_values(['Lý trình', 'Offset']).reset_index(drop=True)
         unique_lts = sorted(df_clean['Lý trình'].unique())
 
