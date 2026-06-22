@@ -194,7 +194,6 @@ try:
     importlib.reload(PLOT)
     importlib.reload(BVK)
     importlib.reload(CTD)
-    importlib.reload(BDE)
 
     # ── Section Sketcher + Beam Builder (module nạp bằng spec vì tên có số) ──
     _bb_dir  = os.path.dirname(os.path.abspath(__file__))
