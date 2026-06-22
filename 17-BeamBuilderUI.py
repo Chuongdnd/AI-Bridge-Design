@@ -1733,3 +1733,112 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
         ))
 
     return result
+
+
+def get_plan_beam_traces(d: dict, pfx: str = "spt") -> list:
+    """Trả về go.Scatter traces overlay đường tim dầm lên mặt bằng cầu (bình đồ).
+
+    Hệ trục bình đồ: x = lý trình (m), y = ngang cầu (m).
+    """
+    secs_st = st.session_state.get(_cad_key(pfx, "sections"), {})
+    if not any(s and s.outer for s in secs_st.values()):
+        return []
+
+    kcn    = d.get("kcn_result") or d.get("ai_result", {})
+    geo    = d.get("geo_logic", {})
+    x0     = float(geo.get("x_mo_trai", -60.0))
+    x_end  = float(geo.get("x_mo_phai", x0 + float(geo.get("L_cau", 120))))
+    n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
+    kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
+    bc     = float(d.get("bc", 12.0))
+    oh     = float(kcn.get("overhang", 0.5))
+
+    x_first = -bc / 2 + oh
+    result  = []
+    for i in range(n_dam):
+        y_beam = x_first + i * kc_dam
+        result.append(go.Scatter(
+            x=[x0, x_end], y=[y_beam, y_beam],
+            mode="lines",
+            line=dict(color="#27ae60", width=1.5, dash="dot"),
+            name="Tim dầm (DXF)" if i == 0 else "",
+            showlegend=(i == 0),
+            hovertemplate=f"Tim dầm {i+1} | offset={y_beam:.2f}m<extra></extra>",
+        ))
+    return result
+
+
+def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
+    """Trả về go.Mesh3d traces (solid shape) từ mặt cắt DXF thực tế.
+
+    Dùng để thay thế dầm parametric trong tab 3D Tổng hợp.
+    Lấy mặt cắt fill_sec làm đại diện; extrude dọc theo chiều dài nhịp.
+    """
+    secs_st   = st.session_state.get(_cad_key(pfx, "sections"), {})
+    cad_state = st.session_state.get(_cad_key(pfx, "state"), {})
+
+    fill_name = cad_state.get("fill_sec", "B-B")
+    sec = secs_st.get(fill_name)
+    if not sec or not sec.outer:
+        for _s in secs_st.values():
+            if _s and _s.outer:
+                sec = _s
+                break
+        else:
+            return []
+
+    kcn    = d.get("kcn_result") or d.get("ai_result", {})
+    geo    = d.get("geo_logic", {})
+    x0     = float(geo.get("x_mo_trai",      -60.0))
+    L_nhip = float(kcn.get("chieu_dai",       38.0))
+    n_nhip = int(kcn.get("tong_so_nhip",      3))
+    n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
+    kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
+    bc     = float(d.get("bc",                12.0))
+    oh     = float(kcn.get("overhang",         0.5))
+    cao_dd = float(d.get("cao_day_dam",         8.0))
+    H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+
+    # DXF: p[0]=ngang (mm), p[1]=cao (mm, 0=đỉnh dầm, âm=xuống)
+    outer  = sec.outer
+    prof_y = [p[0] / 1000.0 for p in outer]
+    prof_z = [p[1] / 1000.0 for p in outer]
+    z_top  = cao_dd + H_dam
+    x_first = -bc / 2 + oh
+    n = len(prof_y)
+
+    # Tam giác hóa: mặt bên + 2 mặt đầu
+    _ii, _jj, _kk = [], [], []
+    for k in range(n):
+        k1 = (k + 1) % n
+        a, b, c, e = k, k1, k + n, k1 + n
+        _ii += [a, a]; _jj += [b, c]; _kk += [c, e]
+    for k in range(1, n - 1):
+        _ii.append(0);  _jj.append(k);     _kk.append(k + 1)
+    for k in range(1, n - 1):
+        _ii.append(n);  _jj.append(n+k+1); _kk.append(n + k)
+
+    result  = []
+    _legend = True
+    for i_dam in range(n_dam):
+        beam_y = x_first + i_dam * kc_dam
+        for i_nhip in range(n_nhip):
+            sx0 = x0 + i_nhip * L_nhip
+            sx1 = sx0 + L_nhip
+            vx = [sx0] * n + [sx1] * n
+            vy = [beam_y + py for py in prof_y] + [beam_y + py for py in prof_y]
+            vz = [z_top  + pz for pz in prof_z] + [z_top  + pz for pz in prof_z]
+            result.append(go.Mesh3d(
+                x=vx, y=vy, z=vz,
+                i=_ii, j=_jj, k=_kk,
+                color="#5d8aa8", opacity=0.95,
+                name="Dầm DXF thực tế" if _legend else "",
+                showlegend=_legend,
+                flatshading=True,
+                lighting=dict(ambient=0.55, diffuse=0.85, specular=0.30,
+                              roughness=0.65, fresnel=0.05),
+                lightposition=dict(x=500, y=300, z=1500),
+                hovertemplate="<b>Dầm DXF</b><extra></extra>" if _legend else None,
+            ))
+            _legend = False
+    return result

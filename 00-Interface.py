@@ -3399,7 +3399,7 @@ with _col_main:
                                 BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
                                 # Thay thế dầm cũ bằng wireframe DXF TRƯỚC apply_render_mode
                                 try:
-                                    _spt_t_traces = BBUI.get_beam_model_traces(d)
+                                    _spt_t_traces = BBUI.get_beam_model_mesh_traces(d)
                                     if _spt_t_traces:
                                         _fig_t.data = tuple(
                                             t for t in _fig_t.data
@@ -3473,7 +3473,7 @@ with _col_main:
                         fig_3d = BVK.ve_cau_3d(d, df_tim_line=None)
                         # Thay thế dầm cũ TRƯỚC apply_render_mode (tránh màu bị đổi)
                         try:
-                            _spt_tr = BBUI.get_beam_model_traces(d)
+                            _spt_tr = BBUI.get_beam_model_mesh_traces(d)
                             if _spt_tr:
                                 # Xóa dầm cũ: Mesh3d (#85929e) + Scatter3d edges (#1a252f)
                                 fig_3d.data = tuple(
@@ -3512,12 +3512,12 @@ with _col_main:
                     try:
                         _elev_traces = BBUI.get_elevation_profile_traces(d)
                         if _elev_traces:
+                            # Xóa dầm parametric cũ màu #85929e trong trắc dọc
                             fig_td_btc.data = tuple(
                                 t for t in fig_td_btc.data
                                 if not (
-                                    hasattr(t, 'fill') and t.fill == 'toself'
-                                    and hasattr(t, 'fillcolor')
-                                    and 'rgba(90' in str(getattr(t, 'fillcolor', ''))
+                                    getattr(t, 'fill', None) == 'toself'
+                                    and '#85929e' in str(getattr(t, 'fillcolor', ''))
                                 )
                             )
                             for _td_tr in _elev_traces:
@@ -3530,6 +3530,11 @@ with _col_main:
                     # ── 2. Mặt bằng cầu ──────────────────────────────────────
                     st.markdown("**Mặt bằng cầu** (nhìn từ trên)")
                     fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim)
+                    try:
+                        for _bd_tr in BBUI.get_plan_beam_traces(d):
+                            fig_bd.add_trace(_bd_tr)
+                    except Exception:
+                        pass
                     st.plotly_chart(fig_bd, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
 
