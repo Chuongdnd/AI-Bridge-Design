@@ -1725,21 +1725,16 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     Hệ trục: x = lý trình (m), y = cao độ tuyệt đối (m).
     Hiển thị dạng haunch profile: cao ở hai đầu (C-C), thấp ở giữa nhịp (A-A).
     """
-    secs_st   = st.session_state.get(_cad_key(pfx, "sections"), {})
-    cad_state = st.session_state.get(_cad_key(pfx, "state"), {})
+    cad_state = st.session_state.get(_cad_key(pfx, "state"), {}) or {}
     segs_data = cad_state.get("segs", [])
-    fill_sec  = cad_state.get("fill_sec", "A-A")
-
-    # Fallback: chưa mở/khai báo tab Chi tiết dầm → dùng cấu hình đã lưu lần trước
-    if not segs_data or not any(getattr(s, "outer", None) for s in (secs_st or {}).values()):
+    # Mặt cắt + fill_sec: session → file lưu → preset (luôn có dữ liệu)
+    secs_st, fill_sec = _resolve_beam_sections(pfx)
+    # Đoạn dầm (haunch): chưa khai trong session → thử file lưu; vẫn trống thì để rỗng
+    # và profile sẽ là chiều cao ĐỀU theo mặt cắt giữa nhịp (fallback an toàn).
+    if not segs_data:
         _saved = _load_defaults(_get_bb())
         if _saved:
-            secs_st   = _saved["secs"]
-            segs_data = _saved.get("segs", []) or segs_data
-            fill_sec  = cad_state.get("fill_sec") or _saved.get("fill_sec", "A-A")
-
-    if not segs_data:
-        return []
+            segs_data = _saved.get("segs", []) or []
 
     def _h_mm(name: str):
         s = secs_st.get(name)

@@ -691,13 +691,12 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None):
             showlegend=False, hoverinfo="skip",
         ))
 
-    # ── Dầm theo từng nhịp (chiều dài thực) ──────────────────────────────
+    # ── Bản mặt cầu theo từng nhịp + nhãn chiều dài ──────────────────────
+    # Biên dạng DẦM do người dùng dựng (tab Chi tiết dầm) chèn ở 00-Interface
+    # qua get_elevation_profile_traces — KHÔNG vẽ dầm AI tại đây nữa.
     for i, (xs, xe) in enumerate(spans):
         sl = (i == 0)
         L_span = xe - xs
-        _poly(fig, [xs, xe, xe, xs], [cao_dd, cao_dd, cao_dd+H_dam, cao_dd+H_dam],
-              _C["dam"], _C["dam_dk"],
-              f"Dầm {loai}" if sl else "", showlegend=sl)
         _poly(fig, [xs, xe, xe, xs],
               [cao_dd+H_dam, cao_dd+H_dam, z_deck, z_deck],
               _C["ban"], _C["dam_dk"],
@@ -772,81 +771,6 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None):
 # ===========================================================================
 # 2. MẶT CẮT NGANG ĐIỂN HÌNH ĐẦY ĐỦ
 # ===========================================================================
-def _beam_poly(fig, xc, H, loai, kc, t_ban):
-    """
-    Vẽ mặt cắt ngang dầm tại tim xc.
-    z=0 tại mặt dưới bản mặt cầu; dầm nằm trong [z0, z0-H].
-
-    Profile chuẩn dựa trên bản vẽ SPT thực tế (Chi tiết dầm SPT, L=38.2m):
-    - Super-T (14đ): cánh trên=kc, haunch→web song song, cánh đáy nhỏ (tỷ lệ từ PDF)
-    - T ngược  (8đ): web hẹp TRÊN, cánh rộng ĐÁY (T lộn ngược)
-    - Dầm I   (12đ): cánh trên = cánh dưới, web hẹp
-    """
-    z0 = -t_ban
-    ll = loai.lower()
-
-    if "bản" in ll:
-        hw = kc * 0.48
-        _poly(fig, [xc-hw, xc+hw, xc+hw, xc-hw],
-              [z0, z0, z0-H, z0-H],
-              _C["dam"], _C["dam_dk"], showlegend=False)
-
-    elif "t ngược" in ll or "t-ngược" in ll or "tngược" in ll:
-        # Dầm T ngược: web hẹp TRÊN, cánh rộng ĐÁY
-        tw = max(0.07, min(0.13, kc * 0.10))
-        fw = min(kc * 0.44, 0.50)
-        fh = min(H * 0.24, 0.30)
-        xs = [xc-tw, xc+tw, xc+tw, xc+fw, xc+fw, xc-fw, xc-fw, xc-tw]
-        ys = [z0, z0, z0-H+fh, z0-H+fh, z0-H, z0-H, z0-H+fh, z0-H+fh]
-        _poly(fig, xs, ys, _C["dam"], _C["dam_dk"], showlegend=False)
-
-    elif "super" in ll:
-        # Dầm Super-T — ref H=1750mm, kc=2200mm:
-        # A-A: 490+100+1020+100+490=2200mm; đáy=160+700+160=1020mm
-        # haunch=75mm, web leg=110mm, đáy flange=225+50=275mm
-        k      = H / 1.750
-        tf_hw  = kc / 2
-        tin_hw = min(kc/2 - 0.05, 0.610 * k)
-        tf_h   = max(0.150, 0.150 * k)
-        hau_h  = max(0.070, 0.075 * k)
-        w_hw   = max(0.280, 0.405 * k)
-        bt_h   = max(0.030, 0.050 * k)
-        bf_hw  = max(0.380, 0.510 * k)
-        bf_h   = max(0.150, 0.275 * k)
-        xs = [
-            xc-tf_hw, xc+tf_hw,        # 1,2 : đỉnh cánh ngoài (=kc, rộng)
-            xc+tf_hw, xc+tin_hw,       # 3,4 : phải ngoài → haunch phải bắt đầu
-            xc+w_hw,                   # 5   : cuối haunch (đỉnh web song song)
-            xc+w_hw,                   # 6   : đáy web song song phải
-            xc+bf_hw, xc+bf_hw,        # 7,8 : cánh đáy phải
-            xc-bf_hw, xc-bf_hw,        # 9,10: cánh đáy trái
-            xc-w_hw,                   # 11  : đáy web song song trái
-            xc-w_hw,                   # 12  : đỉnh web song song trái
-            xc-tin_hw, xc-tf_hw,       # 13,14: haunch trái → ngoài trái
-        ]
-        ys = [
-            z0, z0,                                  # 1,2
-            z0-tf_h, z0-tf_h,                        # 3,4: đáy cánh trên
-            z0-tf_h-hau_h,                           # 5  : cuối haunch
-            z0-H+bf_h+bt_h,                          # 6  : đáy web song song
-            z0-H+bf_h, z0-H,                         # 7,8: cánh đáy phải
-            z0-H, z0-H+bf_h,                         # 9,10: cánh đáy trái
-            z0-H+bf_h+bt_h,                          # 11 : đáy web trái
-            z0-tf_h-hau_h,                           # 12 : đỉnh web trái
-            z0-tf_h, z0-tf_h,                        # 13,14: đáy cánh trên trái
-        ]
-        _poly(fig, xs, ys, _C["dam"], _C["dam_dk"], showlegend=False)
-
-    else:  # Dầm I
-        # 12 điểm chuẩn: cánh trên = cánh dưới, web hẹp giữa
-        tw = max(0.07, min(0.11, kc * 0.07))
-        fw = max(0.16, min(0.30, kc * 0.20))
-        tf = min(H * 0.13, 0.18)
-        xs = [xc-fw, xc+fw, xc+fw, xc+tw,   xc+tw,   xc+fw,
-              xc+fw, xc-fw, xc-fw, xc-tw,   xc-tw,   xc-fw]
-        ys = [z0,    z0,    z0-tf, z0-tf,   z0-H+tf, z0-H+tf,
-              z0-H,  z0-H,  z0-H+tf, z0-H+tf, z0-tf, z0-tf]
-        _poly(fig, xs, ys, _C["dam"], _C["dam_dk"], showlegend=False)
 
 
 def ve_mat_cat_ngang_2d(d, beam_params=None):
@@ -913,13 +837,8 @@ def ve_mat_cat_ngang_2d(d, beam_params=None):
     _poly(fig, [-bc/2, bc/2, bc/2, -bc/2], [0, 0, -t_ban, -t_ban],
           _C["ban"], _C["btong_dk"], "Bản mặt cầu BTCT")
 
-    # ── Dầm chính ────────────────────────────────────────────────────────
-    _beam_poly(fig, x_first, H_dam, loai, kc, t_ban)
-    for i in range(1, n_dam):
-        _beam_poly(fig, x_first + i * kc, H_dam, loai, kc, t_ban)
-    fig.add_trace(go.Scatter(x=[None], y=[None], mode="markers",
-        marker=dict(color=_C["dam"], size=10, symbol="square"),
-        name=f"Dầm {loai} BTCT DƯL ({n_dam} dầm)"))
+    # ── Dầm chính: biên dạng do người dùng dựng (tab Chi tiết dầm) được chèn
+    #    ở 00-Interface qua get_mcn_overlay_traces — KHÔNG vẽ dầm AI tại đây nữa.
 
     # ── Lan can ───────────────────────────────────────────────────────────
     for side in [-1, 1]:
@@ -1194,133 +1113,6 @@ def ve_mat_dung_tru_2d(d):
 # 3b. HELPER — Extrude profile dầm thành Mesh3D
 # ===========================================================================
 
-def _spt_profile_yz(yd, z_top, H, kc):
-    """
-    Profile SPT 14 điểm trong mặt phẳng (y, z) cho 3D.
-    yd = tim dầm theo trục ngang y.
-    z_top = cao độ đỉnh dầm (= cao_dd + H_dam).
-    Trả về (ys, zs) — y-coords và z-coords theo hệ toàn cục.
-    """
-    k      = H / 1.750
-    tf_hw  = kc / 2
-    tin_hw = min(kc/2 - 0.05, 0.610 * k)
-    tf_h   = max(0.150, 0.150 * k)
-    hau_h  = max(0.070, 0.075 * k)
-    w_hw   = max(0.280, 0.405 * k)
-    bt_h   = max(0.030, 0.050 * k)
-    bf_hw  = max(0.380, 0.510 * k)
-    bf_h   = max(0.150, 0.275 * k)
-    z0 = z_top
-    ys = [
-        yd-tf_hw, yd+tf_hw,
-        yd+tf_hw, yd+tin_hw,
-        yd+w_hw, yd+w_hw,
-        yd+bf_hw, yd+bf_hw,
-        yd-bf_hw, yd-bf_hw,
-        yd-w_hw, yd-w_hw,
-        yd-tin_hw, yd-tf_hw,
-    ]
-    zs = [
-        z0, z0,
-        z0-tf_h, z0-tf_h,
-        z0-tf_h-hau_h,
-        z0-H+bf_h+bt_h,
-        z0-H+bf_h, z0-H,
-        z0-H, z0-H+bf_h,
-        z0-H+bf_h+bt_h,
-        z0-tf_h-hau_h,
-        z0-tf_h, z0-tf_h,
-    ]
-    return ys, zs
-
-
-def _tngược_profile_yz(yd, z_top, H, kc):
-    k = H / 1.20
-    tw  = max(0.065, 0.080 * k)
-    fw  = min(kc * 0.44, 0.480)
-    fh  = max(0.100, 0.220 * k)
-    z0  = z_top
-    ys  = [yd-tw, yd+tw, yd+tw, yd+fw, yd+fw, yd-fw, yd-fw, yd-tw]
-    zs  = [z0, z0, z0-H+fh, z0-H+fh, z0-H, z0-H, z0-H+fh, z0-H+fh]
-    return ys, zs
-
-
-def _dami_profile_yz(yd, z_top, H, kc):
-    k = H / 1.60
-    fw = max(0.160, 0.200 * k)
-    tw = max(0.070, 0.090 * k)
-    tf = max(0.120, 0.160 * k)
-    z0 = z_top
-    ys = [yd-fw, yd+fw, yd+fw, yd+tw, yd+tw, yd+fw,
-          yd+fw, yd-fw, yd-fw, yd-tw, yd-tw, yd-fw]
-    zs = [z0, z0, z0-tf, z0-tf, z0-H+tf, z0-H+tf,
-          z0-H, z0-H, z0-H+tf, z0-H+tf, z0-tf, z0-tf]
-    return ys, zs
-
-
-def _beam_mesh3d(yd, z_top, x_start, x_end, H, kc, loai, color, name="", sl=True):
-    """
-    Tạo go.Mesh3d cho một dầm bằng cách extrude profile 2D (y,z) theo trục x.
-    Trục: x=chiều dài, y=ngang, z=cao độ.
-    """
-    ll = loai.lower()
-    if "super" in ll:
-        prof_y, prof_z = _spt_profile_yz(yd, z_top, H, kc)
-    elif "t ngược" in ll or "tngược" in ll or "t-ngược" in ll:
-        prof_y, prof_z = _tngược_profile_yz(yd, z_top, H, kc)
-    else:
-        prof_y, prof_z = _dami_profile_yz(yd, z_top, H, kc)
-
-    n = len(prof_y)
-    # Mặt trước (x=x_start) và mặt sau (x=x_end)
-    vx = [x_start]*n + [x_end]*n
-    vy = prof_y + prof_y
-    vz = prof_z + prof_z
-
-    ii, jj, kk = [], [], []
-    # Mặt bên (side) — mỗi cạnh → 2 tam giác
-    for i in range(n):
-        i1 = (i + 1) % n
-        a, b, c, e = i, i1, i + n, i1 + n
-        ii += [a, a]; jj += [b, c]; kk += [c, e]
-    # Mặt đầu bên trái (fan từ điểm 0)
-    for i in range(1, n - 1):
-        ii.append(0); jj.append(i); kk.append(i + 1)
-    # Mặt đầu bên phải (fan từ điểm n)
-    for i in range(1, n - 1):
-        ii.append(n); jj.append(n + i + 1); kk.append(n + i)
-
-    mesh = go.Mesh3d(
-        x=vx, y=vy, z=vz,
-        i=ii, j=jj, k=kk,
-        color=color, opacity=1.0,
-        name=name, showlegend=sl and bool(name),
-        flatshading=True,
-        lighting=dict(ambient=0.55, diffuse=0.85, specular=0.30,
-                      roughness=0.65, fresnel=0.05),
-        lightposition=dict(x=500, y=300, z=1500),
-        hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
-    )
-
-    # Đường viền nét — Revit Shaded edges
-    n_p = len(prof_y)
-    ex, ey, ez = [], [], []
-    for xi in [x_start, x_end]:
-        for pi in range(n_p):
-            ex.append(xi); ey.append(prof_y[pi]); ez.append(prof_z[pi])
-        ex.append(xi); ey.append(prof_y[0]); ez.append(prof_z[0])
-        ex.append(None); ey.append(None); ez.append(None)
-    for pi in range(n_p):
-        ex += [x_start, x_end, None]
-        ey += [prof_y[pi], prof_y[pi], None]
-        ez += [prof_z[pi], prof_z[pi], None]
-    edges = go.Scatter3d(
-        x=ex, y=ey, z=ez, mode="lines",
-        line=dict(color="#1a252f", width=1.0),
-        name="", showlegend=False, hoverinfo="skip",
-    )
-    return mesh, edges
-
 
 # ===========================================================================
 # 4. MÔ HÌNH 3D — Kết cấu + địa hình (nếu có df_tim_line)
@@ -1441,27 +1233,8 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None):
         traces.append(_box3d(xt-cap_W, -bc/2*0.9, z_cap_b, xt+cap_W, bc/2*0.9, z_cap_t,
                              color="#d5dbdb", name="Xà mũ" if sl else "", sl=sl))
 
-    # ── Dầm chính theo từng nhịp — profile 3D chính xác ─────────────────────
-    if beam_params is not None:
-        loai_dam = str(beam_params.get("loai_dam", kcn.get("loai_dam", "Super-T")))
-    else:
-        loai_dam = str(kcn.get("loai_dam", "Super-T"))
-    y_first  = -bc/2 + oh
-    for i_nhip, (xs, xe) in enumerate(spans):
-        sl = (i_nhip == 0)
-        for i_dam in range(n_dam):
-            yd = y_first + i_dam * kc_dam
-            # z_top = cao độ đỉnh dầm (= đáy bản mặt cầu)
-            z_top_dam = cao_dd + H_dam
-            _m, _e = _beam_mesh3d(
-                yd, z_top_dam, xs, xe,
-                H_dam, kc_dam, loai_dam,
-                color="#85929e",
-                name=f"Dầm {loai_dam}" if (sl and i_dam == 0) else "",
-                sl=(sl and i_dam == 0),
-            )
-            traces.append(_m)
-            traces.append(_e)
+    # ── Dầm chính: mô hình 3D do người dùng dựng (tab Chi tiết dầm) được chèn
+    #    ở 00-Interface qua get_beam_model_mesh_traces — KHÔNG vẽ dầm AI tại đây.
 
     # ── Bản mặt cầu ───────────────────────────────────────────────────────
     for i_nhip, (xs, xe) in enumerate(spans):
@@ -1921,19 +1694,8 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         fig.add_trace(_abox(x0, x_end, -bc/2, bc/2,
                             z_bant, z_deck, "#d5d8dc", 0.82, "Bản mặt cầu"))
 
-        # Dầm chính — mỗi dầm 1 hộp
-        bf_half = 0.20
-        y_first = -bc/2 + oh_dam
-        for i_sp, (xs, xe) in enumerate(spans):
-            sl_sp = (i_sp == 0)
-            for i_d in range(n_dam):
-                yd = y_first + i_d * kc_dam
-                fig.add_trace(_abox(
-                    xs, xe, yd - bf_half, yd + bf_half,
-                    z_beamb, z_bant, "#85929e", 0.92,
-                    f"Dầm {kcn.get('loai_dam','')}" if (sl_sp and i_d == 0) else "",
-                    sl=sl_sp and i_d == 0,
-                ))
+        # Dầm chính: mô hình 3D do người dùng dựng (tab Chi tiết dầm) được chèn
+        # ở 00-Interface qua get_beam_model_mesh_traces — KHÔNG vẽ dầm AI tại đây.
 
         # =========================================================
         # LỚP 4 — TRỤ CẦU (Mesh3d KHỐI 3D)
