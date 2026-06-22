@@ -2137,6 +2137,33 @@ def _render_statusbar(d: dict) -> None:
 _cur_tab = st.session_state.get('current_tab', 'THUYẾT MINH')
 _render_topbar(st.session_state.design_data, _cur_tab)
 
+# ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
+#    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
+_has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
+_dk1, _dk2, _dk3 = st.columns(3)
+with _dk1:
+    if st.button("🌊 Thông số thủy văn & vị trí cầu",
+                 use_container_width=True, key="declbtn_step1",
+                 help="Khai báo thủy văn, mực nước, vị trí & tĩnh không"):
+        st.session_state.field_touched = set()
+        st.session_state.field_errors = {}
+        st.session_state.field_warnings = {}
+        st.session_state.open_dialog = "step1"
+        st.rerun()
+with _dk2:
+    if st.button("🛣️ Tiêu chuẩn hình học tuyến đường",
+                 use_container_width=True, key="declbtn_step2",
+                 help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
+        st.session_state.open_dialog = "step2"
+        st.rerun()
+with _dk3:
+    if st.button("✅ Xem lại thông số & Chạy tính toán",
+                 use_container_width=True, key="declbtn_step3",
+                 type="primary" if not _has_kq_decl else "secondary",
+                 help="Xem lại toàn bộ rồi chạy pipeline AI"):
+        st.session_state.open_dialog = "step3"
+        st.rerun()
+
 _col_tabs = st.columns(4)
 for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
     with _col:
@@ -2263,30 +2290,8 @@ elif _od == "step2":
 elif _od == "step3":
     dialog_step3()
 
-# ── 3 HỘP KHAI BÁO TÁCH RIÊNG (đưa lên trên) + nút wizard CHỈNH SỬA ──────────
-_has_result = bool(st.session_state.design_data.get('kcn_result'))
-_btn_label  = "⚙️ CHỈNH SỬA (wizard 3 bước)" if _has_result else "⚙️ Wizard Khai báo"
-if st.button(
-    _btn_label,
-    use_container_width=True,
-    type="secondary" if _has_result else "primary",
-    help="Mở wizard 3-bước đầy đủ (hoặc dùng trực tiếp 3 hộp khai báo bên dưới)",
-    key="btn_options_main",
-):
-    st.session_state.field_touched  = set()
-    st.session_state.field_errors   = {}
-    st.session_state.field_warnings = {}
-    st.session_state.open_dialog    = "step1"
-    st.rerun()
-
-# Khai báo 1 · 2 · 3 — mỗi phần một hộp riêng, cùng hàng trên cùng
-_dc_col_a, _dc_col_b, _dc_col_c = st.columns(3)
-with _dc_col_a:
-    _decl_box_thuy_van()
-with _dc_col_b:
-    _decl_box_hinh_hoc()
-with _dc_col_c:
-    _decl_box_dia_hinh()
+# (3 hộp khai báo đã chuyển LÊN TRÊN ribbon — xem khối "3 HỘP KHAI BÁO ĐỘC LẬP".
+#  Hộp khai báo địa hình nằm trong tab BẢN VẼ KỸ THUẬT.)
 
 # --- THANH SIDEBAR TRÍI ---
 with st.sidebar:
@@ -2527,30 +2532,8 @@ with st.sidebar:
                 "Dùng Ctrl+P để in từ trình duyệt tạm thời."
             )
 
-    # ── VÙNG D: Chatbot AI ───────────────────────────────────────────────
-    st.markdown(
-        "<hr style='border-color:#2a2a3a;margin:10px 0'>"
-        "<p style='font-size:10px;color:#555;margin:0 0 8px;"
-        "text-transform:uppercase;letter-spacing:0.4px'>"
-        "🤖 Hỏi AI về kết quả</p>",
-        unsafe_allow_html=True,
-    )
-
-    chat_container = st.container(height=220, border=True)
-    with chat_container:
-        for msg in st.session_state.messages:
-            st.chat_message(msg["role"]).write(msg["content"])
-
-    if prompt := st.chat_input("Hỏi tôi về thiết kế...", key="sidebar_chat"):
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        try:
-            design_info = st.session_state.chatbot_context
-            system_msg = f"Bạn là chuyên gia thiết kế cầu UTH. Tri thức: {st.session_state.bridge_library}. Dữ liệu: {design_info}"
-            response = gemini_model.generate_content(f"{system_msg}\n\nCâu hỏi: {prompt}")
-            st.session_state.messages.append({"role": "assistant", "content": response.text})
-            st.rerun()
-        except Exception as e:
-            st.error(f"Lỗi AI: {e}")
+    # ── (Chatbot AI đã chuyển thành widget NỔI góc dưới phải — xem
+    #     _render_floating_chat() ở cuối, ngoài sidebar) ─────────────────────
 
     # ── Reset kích thước panel ────────────────────────────────────────────
     st.markdown(
@@ -2571,6 +2554,70 @@ with st.sidebar:
             </script>""",
             unsafe_allow_html=True,
         )
+
+# =========================================================================
+# CHATBOT AI — WIDGET NỔI góc dưới phải (thu/phóng kiểu Messenger)
+# Render TRƯỚC vùng chính (trước mọi st.stop) để luôn hiện ở mọi tab.
+# =========================================================================
+def _render_floating_chat():
+    st.session_state.setdefault('chat_open', False)
+    st.markdown("""
+    <style>
+    /* Bong bóng mở chat (khi thu nhỏ) */
+    .st-key-floatbtn_wrap { position: fixed; bottom: 20px; right: 20px; z-index: 100000; width: 150px; }
+    .st-key-floatbtn_wrap button {
+        border-radius: 28px !important; height: 50px; font-weight: 700;
+        box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
+    /* Khung chat (khi mở) */
+    .st-key-floatchat_wrap {
+        position: fixed; bottom: 20px; right: 20px; z-index: 100000;
+        width: 380px; max-width: 92vw;
+        background: #12121c; border: 1px solid #2a3550; border-radius: 14px;
+        box-shadow: 0 12px 44px rgba(0,0,0,0.6); padding: 8px 12px 4px; }
+    .st-key-floatchat_wrap [data-testid="stChatInput"] { background: transparent; }
+    </style>
+    """, unsafe_allow_html=True)
+
+    if not st.session_state.chat_open:
+        with st.container(key="floatbtn_wrap"):
+            if st.button("💬 Hỏi AI", key="chat_open_btn", type="primary",
+                         use_container_width=True):
+                st.session_state.chat_open = True
+                st.rerun()
+        return
+
+    with st.container(key="floatchat_wrap"):
+        _h1, _h2 = st.columns([5, 1])
+        _h1.markdown(
+            "<div style='font-weight:700;color:#9ac8e8;padding-top:6px'>"
+            "🤖 Trợ lý AI cầu</div>", unsafe_allow_html=True)
+        if _h2.button("–", key="chat_min_btn", help="Thu nhỏ"):
+            st.session_state.chat_open = False
+            st.rerun()
+
+        _box = st.container(height=320)
+        with _box:
+            if not st.session_state.get("messages"):
+                st.caption("Hỏi tôi về thông số, kết quả thiết kế, tiêu chuẩn…")
+            for _msg in st.session_state.get("messages", []):
+                st.chat_message(_msg["role"]).write(_msg["content"])
+
+        if _prompt := st.chat_input("Hỏi tôi về thiết kế…", key="float_chat_input"):
+            st.session_state.messages.append({"role": "user", "content": _prompt})
+            try:
+                _design_info = st.session_state.chatbot_context
+                _system_msg = (f"Bạn là chuyên gia thiết kế cầu UTH. "
+                               f"Tri thức: {st.session_state.bridge_library}. "
+                               f"Dữ liệu: {_design_info}")
+                _resp = gemini_model.generate_content(
+                    f"{_system_msg}\n\nCâu hỏi: {_prompt}")
+                st.session_state.messages.append(
+                    {"role": "assistant", "content": _resp.text})
+                st.rerun()
+            except Exception as _e:
+                st.error(f"Lỗi AI: {_e}")
+
+_render_floating_chat()
 
 # =========================================================================
 # VÙNG HIỂN THỊ CHÍNH
@@ -3274,8 +3321,8 @@ with _col_main:
         tru = d.get("tru_result")
         has_ai = kcn is not None
     
-        # (Khai báo địa hình đã chuyển lên "Hộp khai báo 3" ở hàng trên cùng
-        #  — chung với Thủy văn & Hình học, dùng fragment _decl_box_dia_hinh.)
+        # ── Khai báo dữ liệu địa hình (.NTD + VN-2000) ─────────────────────
+        _decl_box_dia_hinh()
 
         st.markdown("---")
     
