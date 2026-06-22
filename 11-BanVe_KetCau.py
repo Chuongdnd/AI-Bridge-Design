@@ -1555,6 +1555,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         goc_v = df_cl["Góc_Tuyến"].values
         vz_v  = df_cl["Z"].values
 
+        # Origin = tim tuyến VN-2000 tại lý trình NHỎ NHẤT — TRÙNG với origin mà
+        # ve_dia_hinh_3d đã trừ (terrain_x_origin/y_origin). Bắt buộc trừ origin
+        # để kết cấu cầu nằm CÙNG hệ toạ độ gần-0 với địa hình (nếu để VN-2000
+        # thô ~600.000m thì auto-range nổ tung, không zoom vào được).
+        _i0   = int(np.argmin(lt_v))
+        x_org = float(vx_v[_i0]); y_org = float(vy_v[_i0])
+
         def _at(s):
             return (float(np.interp(s, lt_v, vx_v)),
                     float(np.interp(s, lt_v, vy_v)),
@@ -1564,7 +1571,8 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         def _vn(s, off=0.0):
             xc, yc, goc, _ = _at(s)
             perp = goc + np.pi / 2
-            return xc + off * np.cos(perp), yc + off * np.sin(perp)
+            return (xc + off * np.cos(perp) - x_org,
+                    yc + off * np.sin(perp) - y_org)
 
         hz = he_so_z
 

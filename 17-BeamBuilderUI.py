@@ -1158,6 +1158,60 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
         pfx = f"{pfx}_{_bt_suffix}"
 
     bb = _get_bb()
+    # Bảo đảm dầm gốc (default) đã init trước khi clone biến thể từ nó
+    _cad_init(pfx, bb)
+
+    # ═══ DẦM BIẾN THỂ THEO VAI TRÒ (kế thừa từ dầm gốc) ═══════════════════════
+    _base_pfx = pfx
+    with st.container():
+        _vc1, _vc2 = st.columns(2)
+        _tg_dam  = _vc1.toggle("Dầm biên khác dầm giữa",
+                               key=f"{_base_pfx}_tg_dambien",
+                               help="Bật để dựng riêng cây dầm BIÊN (cây ngoài cùng)")
+        _tg_nhip = _vc2.toggle("Nhịp biên khác nhịp giữa",
+                               key=f"{_base_pfx}_tg_nhipbien",
+                               help="Bật để dựng riêng dầm ở NHỊP BIÊN (nhịp mố–trụ)")
+
+    # Tập biến thể đang bật → để hàm đặt dầm định tuyến (đọc qua _active_variants)
+    _active = set()
+    if _tg_dam:  _active.add("TB")
+    if _tg_nhip: _active.add("LB")
+    if _tg_dam and _tg_nhip: _active.add("LB_TB")
+    st.session_state[_variant_active_key(_base_pfx)] = _active
+
+    _role_opts = [("default", "Mặc định (nhịp giữa · dầm giữa)")]
+    if _tg_dam:  _role_opts.append(("TB", "Dầm biên"))
+    if _tg_nhip: _role_opts.append(("LB", "Nhịp biên"))
+    if _tg_dam and _tg_nhip: _role_opts.append(("LB_TB", "Nhịp biên · Dầm biên"))
+
+    _role_sel = "default"
+    if len(_role_opts) > 1:
+        _role_sel = st.radio(
+            "🧩 Đang dựng dầm cho vai trò:",
+            [k for k, _ in _role_opts],
+            format_func=lambda k: dict(_role_opts)[k],
+            horizontal=True, key=f"{_base_pfx}_role_sel",
+        )
+
+    if _role_sel != "default":
+        _role_pfx = f"{_base_pfx}__{_role_sel}"
+        # KẾ THỪA: lần đầu chọn vai trò → clone mặt cắt + đoạn từ dầm gốc
+        if _cad_key(_role_pfx, "sections") not in st.session_state:
+            _src_secs = st.session_state.get(_cad_key(_base_pfx, "sections")) or {}
+            st.session_state[_cad_key(_role_pfx, "sections")] = {
+                k: v.clone() for k, v in _src_secs.items()
+            }
+            _src_state = st.session_state.get(_cad_key(_base_pfx, "state"), {}) or {}
+            st.session_state[_cad_key(_role_pfx, "state")] = {
+                **{k: v for k, v in _src_state.items() if k != "segs"},
+                "segs": [dict(s) for s in _src_state.get("segs", [])],
+            }
+            st.session_state.setdefault(_cad_key(_role_pfx, "hist"), [])
+            st.session_state.setdefault(_cad_key(_role_pfx, "undo"), [])
+        pfx = _role_pfx
+        st.info(f"✏️ Đang chỉnh **{dict(_role_opts)[_role_sel]}** — kế thừa từ dầm "
+                f"gốc, chỉ sửa phần khác. Vai trò không khai sẽ tự dùng dầm gốc.")
+
     _cad_init(pfx, bb)
     _inject_resize_js()
 
@@ -1504,8 +1558,15 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                 st.session_state["spt_beam_model"] = m3d
                 st.session_state["spt_L_m"] = L_m
                 st.session_state.pop("spt_beam_traces_cache", None)
-                _save_defaults(secs, cad_state)
-                st.toast("✅ Đã cập nhật 3D & lưu cấu hình. Chuyển tab 🏗️ để xem.", icon="✅")
+                # Chỉ lưu file mặc định cho DẦM GỐC (biến thể chỉ giữ trong phiên,
+                # tránh ghi đè spt_sections_saved.json bằng mặt cắt biến thể).
+                if _role_sel == "default":
+                    _save_defaults(secs, cad_state)
+                    _msg_extra = "& lưu cấu hình"
+                else:
+                    _msg_extra = f"(vai trò: {dict(_role_opts)[_role_sel]})"
+                st.toast(f"✅ Đã cập nhật 3D toàn cầu {_msg_extra}. Chuyển tab 🏗️ để xem.",
+                         icon="✅")
 
             render_ifc_export_card(m3d, d, pfx=pfx)
 
@@ -1594,6 +1655,76 @@ def _pick_beam_section(secs: dict, fill_sec: str):
     return None
 
 
+# ── DẦM BIẾN THỂ THEO VAI TRÒ (kế thừa đầy đủ — clone cây dầm theo từng vai trò) ──
+# Vai trò = (vị trí DỌC cầu) × (vị trí NGANG cầu):
+#   L = "B" nhịp biên (nhịp đầu/cuối, mố–trụ) | "G" nhịp giữa (trụ–trụ)
+#   T = "B" dầm biên  (cây ngoài cùng)        | "G" dầm giữa
+# Mỗi biến thể là 1 cây dầm RIÊNG, lưu state dưới pfx riêng: f"{base}__{key}".
+#   key ∈ {"TB"(dầm biên), "LB"(nhịp biên), "LB_TB"(nhịp biên & dầm biên)}.
+#   Mặc định (G,G) = base pfx. Vai trò chưa khai → fallback về cây gần nhất → base.
+def _variant_active_key(base_pfx: str) -> str:
+    return f"{base_pfx}__active_variants"
+
+
+def _active_variants(base_pfx: str) -> set:
+    """Tập key biến thể đã commit (vd {'TB','LB'})."""
+    return set(st.session_state.get(_variant_active_key(base_pfx), set()))
+
+
+def _variant_pfx(base_pfx: str, L: str, T: str, active: set) -> str:
+    """pfx của cây dầm áp cho vai trò (L,T) theo fallback: khớp đúng → 1 trục → base."""
+    if L == "B" and T == "B":
+        cands = ["LB_TB", "LB", "TB"]
+    elif L == "B":
+        cands = ["LB"]
+    elif T == "B":
+        cands = ["TB"]
+    else:
+        cands = []
+    for c in cands:
+        if c in active:
+            return f"{base_pfx}__{c}"
+    return base_pfx
+
+
+def _build_role_sections(base_pfx: str):
+    """Tính trước mặt cắt đại diện cho base + từng biến thể (tránh đọc lặp).
+    Trả về (active:set, secmap:{pfx: section})."""
+    active = _active_variants(base_pfx)
+    pfxs = {base_pfx} | {f"{base_pfx}__{v}" for v in active}
+    secmap = {}
+    for p in pfxs:
+        secs, fill = _resolve_beam_sections(p)
+        secmap[p] = _pick_beam_section(secs, fill)
+    return active, secmap
+
+
+def _cell_section(base_pfx, active, secmap, i_span, n_span, i_dam, n_dam):
+    """Mặt cắt + cờ mirror cho 1 cây dầm tại (nhịp i_span, vị trí ngang i_dam).
+    mirror=True cho dầm biên phía phải (cây ngoài cùng bên +y) để đối xứng."""
+    L = "B" if (i_span == 0 or i_span == n_span - 1) else "G"
+    T = "B" if (i_dam == 0 or i_dam == n_dam - 1) else "G"
+    pfx = _variant_pfx(base_pfx, L, T, active)
+    sec = secmap.get(pfx) or secmap.get(base_pfx)
+    mirror = (T == "B" and i_dam == n_dam - 1)
+    return sec, mirror
+
+
+def _prism_tri(n: int):
+    """Chỉ số tam giác (i,j,k) cho lăng trụ extrude từ đa giác n đỉnh
+    (đỉnh 0..n-1 = mặt trước, n..2n-1 = mặt sau)."""
+    ii, jj, kk = [], [], []
+    for k in range(n):
+        k1 = (k + 1) % n
+        a, b, c, e = k, k1, k + n, k1 + n
+        ii += [a, a]; jj += [b, c]; kk += [c, e]
+    for k in range(1, n - 1):
+        ii.append(0);  jj.append(k);     kk.append(k + 1)
+    for k in range(1, n - 1):
+        ii.append(n);  jj.append(n+k+1); kk.append(n + k)
+    return ii, jj, kk
+
+
 def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
     """Trả về list go.Scatter3d traces của BeamModel đã scale và định vị theo cầu.
 
@@ -1671,9 +1802,8 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt") -> list:
     Hệ trục MCN: x = ngang cầu (m), y = cao độ (0=mặt bê tông bản, âm=xuống dưới).
     Chỉ vẽ khi session_state có mặt cắt A-A với outer polygon đã upload.
     """
-    secs_st, fill_name = _resolve_beam_sections(pfx)
-    sec_rep = _pick_beam_section(secs_st, fill_name)
-    if sec_rep is None:
+    active, secmap = _build_role_sections(pfx)
+    if not any(s and getattr(s, "outer", None) for s in secmap.values()):
         return []
 
     kcn    = d.get("kcn_result") or d.get("ai_result", {})
@@ -1684,14 +1814,18 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt") -> list:
     t_ban  = float(d.get("t_ban_mm", 200)) / 1000.0
 
     x_first = -bc / 2 + oh
-    outer   = sec_rep.outer   # [[x_mm, z_mm], ...]
-    holes   = sec_rep.holes or []
     result  = []
-
+    # MCN điển hình = nhịp GIỮA (L="G"); chỉ khác theo vai trò NGANG (dầm biên/giữa).
+    # Dùng span giả ở giữa (n_span=3, i_span=1) để _cell_section cho L="G".
+    _leg = True
     for i_dam in range(n_dam):
+        sec, mir = _cell_section(pfx, active, secmap, 1, 3, i_dam, n_dam)
+        if sec is None or not getattr(sec, "outer", None):
+            continue
+        _sgn = -1.0 if mir else 1.0
         x_center = x_first + i_dam * kc_dam
-        xs = [x_center + p[0] / 1000.0 for p in outer]
-        ys = [-t_ban   + p[1] / 1000.0 for p in outer]
+        xs = [x_center + _sgn * p[0] / 1000.0 for p in sec.outer]
+        ys = [-t_ban   + p[1] / 1000.0 for p in sec.outer]
         xs.append(xs[0]); ys.append(ys[0])
         result.append(go.Scatter(
             x=xs, y=ys,
@@ -1699,14 +1833,15 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt") -> list:
             fillcolor="rgba(46,204,113,0.28)",
             line=dict(color="#27ae60", width=1.8),
             mode="lines",
-            name=f"Mặt cắt dầm {fill_name} (DXF)" if i_dam == 0 else "",
-            showlegend=(i_dam == 0),
-            hovertemplate=f"Mặt cắt {fill_name} thực tế<extra></extra>",
+            name="Mặt cắt dầm (DXF)" if _leg else "",
+            showlegend=_leg,
+            hovertemplate="Mặt cắt dầm thực tế<extra></extra>",
         ))
-        for hole in holes:
+        _leg = False
+        for hole in (sec.holes or []):
             if not hole:
                 continue
-            hx = [x_center + p[0] / 1000.0 for p in hole]
+            hx = [x_center + _sgn * p[0] / 1000.0 for p in hole]
             hy = [-t_ban   + p[1] / 1000.0 for p in hole]
             hx.append(hx[0]); hy.append(hy[0])
             result.append(go.Scatter(
@@ -1865,9 +2000,8 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     Dùng để thay thế dầm parametric trong tab 3D Tổng hợp.
     Lấy mặt cắt fill_sec làm đại diện; extrude dọc theo chiều dài nhịp.
     """
-    secs_st, fill_name = _resolve_beam_sections(pfx)
-    sec = _pick_beam_section(secs_st, fill_name)
-    if sec is None:
+    active, secmap = _build_role_sections(pfx)
+    if not any(s and getattr(s, "outer", None) for s in secmap.values()):
         return []
 
     kcn    = d.get("kcn_result") or d.get("ai_result", {})
@@ -1878,36 +2012,116 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     cao_dd = float(d.get("cao_day_dam",         8.0))
     H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
 
-    # DXF: p[0]=ngang (mm), p[1]=cao (mm, 0=đỉnh dầm, âm=xuống)
-    outer  = sec.outer
-    prof_y = [p[0] / 1000.0 for p in outer]
-    prof_z = [p[1] / 1000.0 for p in outer]
-    z_top  = cao_dd + H_dam
+    z_top   = cao_dd + H_dam
     x_first = -bc / 2 + oh
-    n = len(prof_y)
-
-    # Tam giác hóa: mặt bên + 2 mặt đầu
-    _ii, _jj, _kk = [], [], []
-    for k in range(n):
-        k1 = (k + 1) % n
-        a, b, c, e = k, k1, k + n, k1 + n
-        _ii += [a, a]; _jj += [b, c]; _kk += [c, e]
-    for k in range(1, n - 1):
-        _ii.append(0);  _jj.append(k);     _kk.append(k + 1)
-    for k in range(1, n - 1):
-        _ii.append(n);  _jj.append(n+k+1); _kk.append(n + k)
-
     _spans  = _beam_span_list(d)
+    n_span  = len(_spans)
     result  = []
     _legend = True
     for i_dam in range(n_dam):
         beam_y = x_first + i_dam * kc_dam
-        for sx0, sx1 in _spans:
+        for i_span, (sx0, sx1) in enumerate(_spans):
+            # Mặt cắt theo VAI TRÒ của cây dầm này (biên/giữa × nhịp biên/giữa)
+            sec, mir = _cell_section(pfx, active, secmap,
+                                     i_span, n_span, i_dam, n_dam)
+            if sec is None or not getattr(sec, "outer", None):
+                continue
+            _sgn   = -1.0 if mir else 1.0
+            prof_y = [_sgn * p[0] / 1000.0 for p in sec.outer]
+            prof_z = [p[1] / 1000.0 for p in sec.outer]
+            n = len(prof_y)
+            _ii, _jj, _kk = _prism_tri(n)
             vx = [sx0] * n + [sx1] * n
             vy = [beam_y + py for py in prof_y] + [beam_y + py for py in prof_y]
             vz = [z_top  + pz for pz in prof_z] + [z_top  + pz for pz in prof_z]
             result.append(go.Mesh3d(
                 x=vx, y=vy, z=vz,
+                i=_ii, j=_jj, k=_kk,
+                color="#5d8aa8", opacity=0.95,
+                name="Dầm DXF thực tế" if _legend else "",
+                showlegend=_legend,
+                flatshading=True,
+                lighting=dict(ambient=0.55, diffuse=0.85, specular=0.30,
+                              roughness=0.65, fresnel=0.05),
+                lightposition=dict(x=500, y=300, z=1500),
+                hovertemplate="<b>Dầm DXF</b><extra></extra>" if _legend else None,
+            ))
+            _legend = False
+    return result
+
+
+def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
+                                      pfx: str = "spt") -> list:
+    """Như get_beam_model_mesh_traces nhưng đặt dầm trong hệ toạ độ VN-2000 ĐÃ
+    TRỪ ORIGIN (trùng hệ với địa hình của ve_dia_hinh_3d) — dùng cho view
+    '3D Tổng hợp' (terrain). Ánh xạ (lý trình, offset ngang) → (X,Y) theo tim
+    tuyến rồi trừ origin = tim tuyến tại lý trình nhỏ nhất. z × he_so_z.
+
+    Phải dùng hàm này (KHÔNG dùng bản chainage) khi chèn dầm lên figure địa
+    hình, nếu không dầm sẽ lệch hệ → auto-range nổ tung, không zoom được.
+    """
+    if df_geology is None or getattr(df_geology, "empty", True):
+        return []
+    need = {"Lý trình", "X_VN2000", "Y_VN2000", "Góc_Tuyến", "Offset"}
+    if need - set(df_geology.columns):
+        return []
+
+    active, secmap = _build_role_sections(pfx)
+    if not any(s and getattr(s, "outer", None) for s in secmap.values()):
+        return []
+
+    df_cl = (df_geology[df_geology["Offset"] == 0]
+             [["Lý trình", "X_VN2000", "Y_VN2000", "Góc_Tuyến"]]
+             .drop_duplicates("Lý trình").sort_values("Lý trình"))
+    if df_cl.empty:
+        return []
+    lt_v = df_cl["Lý trình"].values
+    vx_v = df_cl["X_VN2000"].values
+    vy_v = df_cl["Y_VN2000"].values
+    gc_v = df_cl["Góc_Tuyến"].values
+    _i0  = int(np.argmin(lt_v))
+    x_org = float(vx_v[_i0]); y_org = float(vy_v[_i0])
+
+    def _vn(s, off):
+        xc = float(np.interp(s, lt_v, vx_v))
+        yc = float(np.interp(s, lt_v, vy_v))
+        g  = float(np.interp(s, lt_v, gc_v))
+        p  = g + np.pi / 2
+        return (xc + off * np.cos(p) - x_org, yc + off * np.sin(p) - y_org)
+
+    kcn    = d.get("kcn_result") or d.get("ai_result", {})
+    n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
+    kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
+    bc     = float(d.get("bc", 12.0))
+    oh     = float(kcn.get("overhang", 0.5))
+    cao_dd = float(d.get("cao_day_dam", 8.0))
+    H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+
+    z_top   = cao_dd + H_dam
+    x_first = -bc / 2 + oh
+    spans   = _beam_span_list(d)
+    n_span  = len(spans)
+    result = []
+    _legend = True
+    for i_dam in range(n_dam):
+        beam_y = x_first + i_dam * kc_dam
+        for i_span, (sx0, sx1) in enumerate(spans):
+            sec, mir = _cell_section(pfx, active, secmap,
+                                     i_span, n_span, i_dam, n_dam)
+            if sec is None or not getattr(sec, "outer", None):
+                continue
+            _sgn   = -1.0 if mir else 1.0
+            prof_t = [_sgn * p[0] / 1000.0 for p in sec.outer]
+            prof_z = [p[1] / 1000.0 for p in sec.outer]
+            n = len(prof_t)
+            _ii, _jj, _kk = _prism_tri(n)
+            vX, vY, vZ = [], [], []
+            for s_chain in (sx0, sx1):
+                for k in range(n):
+                    X, Y = _vn(s_chain, beam_y + prof_t[k])
+                    vX.append(X); vY.append(Y); vZ.append((z_top + prof_z[k]) * he_so_z)
+            result.append(go.Mesh3d(
+                x=vX, y=vY, z=vZ,
                 i=_ii, j=_jj, k=_kk,
                 color="#5d8aa8", opacity=0.95,
                 name="Dầm DXF thực tế" if _legend else "",

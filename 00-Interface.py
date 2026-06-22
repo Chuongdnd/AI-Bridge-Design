@@ -191,7 +191,6 @@ try:
     BVK  = importlib.import_module("11-BanVe_KetCau")   # Bản vẽ kết cấu 2D/3D
     SSP  = importlib.import_module("09-So_Sanh_PA")     # So sánh 3 phương án
     CTD  = importlib.import_module("12-ChiTiet_Dam")    # Chi tiết dầm
-    BDE  = importlib.import_module("06d-BeamDimEditor") # Chỉnh sửa kích thước dầm
     importlib.reload(PLOT)
     importlib.reload(BVK)
     importlib.reload(CTD)
@@ -2791,14 +2790,8 @@ with _col_main:
             else:
                 st.warning("Chưa có kết quả AI kết cấu nhịp.")
     
-        # ── II.b CHỈNH SỬA KÍCH THƯỚC CHI TIẾT DẦM ──────────────────────────
-        with st.expander("**✏️ II.b CHỈNH SỬA KÍCH THƯỚC CHI TIẾT DẦM**", expanded=False):
-            try:
-                BDE.render_beam_dim_editor(d, st)
-            except Exception as _bde_err:
-                st.error(f"Lỗi module chỉnh sửa dầm: {_bde_err}")
-                import traceback as _tb
-                st.code(_tb.format_exc())
+        # (Đã bỏ "II.b CHỈNH SỬA KÍCH THƯỚC CHI TIẾT DẦM" — thay bằng tab
+        #  BeamBuilder mới; chi tiết dầm do người dùng dựng ở đó.)
 
         # ── III. TRỤ CẦU (AI) ────────────────────────────────────────────────
         with st.expander("**III. TRỤ CẦU — Phân loại & kích thước (AI v2)**", expanded=True):
@@ -3399,7 +3392,10 @@ with _col_main:
                                 BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
                                 # Thay thế dầm cũ bằng wireframe DXF TRƯỚC apply_render_mode
                                 try:
-                                    _spt_t_traces = BBUI.get_beam_model_mesh_traces(d)
+                                    # Dầm trong HỆ VN-2000 trừ origin (khớp địa hình), KHÔNG dùng
+                                    # bản chainage (sẽ lệch hệ → không zoom được).
+                                    _spt_t_traces = BBUI.get_beam_model_mesh_traces_vn2000(
+                                        d, _df_geo, he_so_z)
                                     if _spt_t_traces:
                                         _fig_t.data = tuple(
                                             t for t in _fig_t.data

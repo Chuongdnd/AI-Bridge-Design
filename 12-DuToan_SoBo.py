@@ -149,21 +149,9 @@ def _tiet_dien_mm2(beam_params: dict, loai_dam: str) -> float:
     mc = beam_params.get("MC_AA", {})
     H  = beam_params.get("H", 1750)
 
-    try:
-        from shapely.geometry import Polygon as ShPoly
-        from shapely.affinity import scale as sh_scale
-        import importlib.util, os
-        _dir = os.path.dirname(os.path.abspath(__file__))
-        spec = importlib.util.spec_from_file_location("beam3d", os.path.join(_dir, "04b-Beam3D.py"))
-        mod  = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-        poly = mod.beam_section_polygon(beam_params, loai_dam)
-        if poly is not None:
-            return poly.area    # mm²
-    except Exception:
-        pass
-
-    # Fallback: hình học đơn giản
+    # Diện tích tiết diện theo công thức giải tích từ MC_AA.
+    # (Trước đây thử dựng polygon chính xác qua 04b-Beam3D — đã gỡ cùng hệ
+    #  "chi tiết dầm" cũ; dùng xấp xỉ giải tích cho dự toán sơ bộ.)
     # Hỗ trợ cả 2 quy ước đặt tên key: Vietnamese (B_canh_tren…) và bf_top/tf_top
     def _get(vn_key, en_key, default):
         return float(mc.get(vn_key) or mc.get(en_key) or default)
