@@ -4,6 +4,7 @@ Import module này từ 00-Interface.py rồi gọi render_tab().
 Không có auto-execution — không gọi st.set_page_config hay st.title ở đây.
 """
 from __future__ import annotations
+import json
 import sys
 import pathlib
 
@@ -25,6 +26,142 @@ def _get_bb():
         sys.modules["BeamBuilder"] = bb
         _spec.loader.exec_module(bb)
     return bb
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# PERSISTENCE — lưu/tải mặt cắt mặc định
+# ═══════════════════════════════════════════════════════════════════════════════
+
+_SAVE_FILE = pathlib.Path(__file__).parent / "spt_sections_saved.json"
+
+
+def _save_defaults(secs: dict, cad_state: dict) -> str:
+    """Ghi mặt cắt + cấu hình đoạn ra file JSON bên cạnh script.
+    Trả về thông báo kết quả.
+    """
+    data: dict = {
+        "sections": {
+            name: {"outer": sec.outer, "holes": sec.holes}
+            for name, sec in secs.items()
+            if sec.outer          # chỉ lưu mặt cắt đã có dữ liệu
+        },
+        "segs":     cad_state.get("segs", []),
+        "fill_sec": cad_state.get("fill_sec", "B-B"),
+    }
+    try:
+        _SAVE_FILE.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
+        n = len(data["sections"])
+        return f"✅ Đã lưu {n} mặt cắt vào {_SAVE_FILE.name}"
+    except Exception as _e:
+        return f"❌ Không lưu được: {_e}"
+
+
+def _load_defaults(bb) -> dict | None:
+    """Đọc file JSON đã lưu. Trả về dict hoặc None nếu không có / lỗi."""
+    if not _SAVE_FILE.exists():
+        return None
+    try:
+        raw = json.loads(_SAVE_FILE.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    secs_out: dict = {}
+    for name, v in raw.get("sections", {}).items():
+        sec = bb.CrossSection(name=name, outer=[], holes=[], open=False)
+        sec.outer = v.get("outer", [])
+        sec.holes = v.get("holes", [])
+        secs_out[name] = sec
+    if not secs_out:
+        return None
+    return {
+        "secs":     secs_out,
+        "segs":     raw.get("segs", []),
+        "fill_sec": raw.get("fill_sec", "B-B"),
+    }
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# DRAG-RESIZE — inject CSS + JS để kéo thả thay đổi kích thước khung nhìn
+# ═══════════════════════════════════════════════════════════════════════════════
+
+def _inject_resize_js() -> None:
+    """Chèn CSS resize handle và JS ResizeObserver vào trang.
+
+    • CSS thêm tay cầm kéo (▼) ở góc dưới phải mỗi khung Plotly.
+    • JS (qua parent.document) lắng nghe resize container và gọi
+      Plotly.Plots.resize() để chart tự điều chỉnh.
+    • MutationObserver giúp tự áp dụng lại sau mỗi Streamlit rerun.
+    """
+    # CSS — mỗi plotly chart có thể kéo dọc
+    st.markdown("""
+<style>
+[data-testid="stPlotlyChart"] {
+    resize: vertical !important;
+    overflow: hidden !important;
+    min-height: 80px !important;
+    border-bottom: 2px solid rgba(68,136,204,0.18);
+    transition: border-color 0.15s;
+}
+[data-testid="stPlotlyChart"]:hover {
+    border-bottom-color: rgba(68,136,204,0.55);
+}
+[data-testid="stPlotlyChart"]::-webkit-resizer {
+    background: linear-gradient(135deg,
+        transparent 55%, rgba(68,136,204,0.7) 55%);
+    border-radius: 0 0 2px 0;
+}
+</style>
+""", unsafe_allow_html=True)
+
+    # JS — theo dõi resize container → reflow Plotly chart
+    st.components.v1.html("""
+<script>
+(function() {
+  function setupCharts(pDoc, pWin) {
+    function setupOne(el) {
+      if (el.__resizeReady) return;
+      el.__resizeReady = true;
+      var ro = new pWin.ResizeObserver(function() {
+        var p = el.querySelector('.js-plotly-plot');
+        if (p && pWin.Plotly) pWin.Plotly.Plots.resize(p);
+      });
+      ro.observe(el);
+    }
+
+    // Áp dụng cho chart hiện tại
+    pDoc.querySelectorAll('[data-testid="stPlotlyChart"]').forEach(setupOne);
+
+    // Theo dõi chart mới (sau mỗi Streamlit rerun)
+    if (!pDoc.__resizeMoInstalled) {
+      pDoc.__resizeMoInstalled = true;
+      var mo = new pWin.MutationObserver(function(muts) {
+        muts.forEach(function(m) {
+          m.addedNodes.forEach(function(n) {
+            if (!n.querySelectorAll) return;
+            n.querySelectorAll('[data-testid="stPlotlyChart"]').forEach(setupOne);
+            if (n.matches && n.matches('[data-testid="stPlotlyChart"]')) setupOne(n);
+          });
+        });
+      });
+      mo.observe(pDoc.body, { childList: true, subtree: true });
+    }
+  }
+
+  function trySetup(tries) {
+    try {
+      var pDoc = window.parent.document;
+      var pWin = window.parent;
+      if (!pDoc.body) throw new Error('body not ready');
+      setupCharts(pDoc, pWin);
+    } catch(e) {
+      if (tries < 8) setTimeout(function(){ trySetup(tries+1); }, 600);
+    }
+  }
+  trySetup(0);
+})();
+</script>
+""", height=0, scrolling=False)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -578,21 +715,36 @@ def _cad_key(pfx: str, name: str) -> str:
 
 
 def _cad_init(pfx: str, bb):
-    """Khởi tạo session state CAD cho một prefix (A-A / B-B / C-C)."""
+    """Khởi tạo session state CAD.
+    Ưu tiên tải từ file JSON đã lưu; nếu không có thì dùng preset mặc định.
+    """
     sk = _cad_key(pfx, "sections")
     if sk not in st.session_state:
-        secs = {}
-        for sname, (fn, _) in _SEC_PRESETS.items():
-            ps = getattr(bb, fn)()
-            secs[sname] = ps
+        _saved = _load_defaults(bb)
+        if _saved:
+            secs = _saved["secs"]
+            # Đảm bảo 3 mặt cắt gốc luôn tồn tại (dù rỗng)
+            for sname, (fn, _) in _SEC_PRESETS.items():
+                if sname not in secs:
+                    secs[sname] = getattr(bb, fn)()
+        else:
+            secs = {sname: getattr(bb, fn)() for sname, (fn, _) in _SEC_PRESETS.items()}
         st.session_state[sk] = secs
+
     if _cad_key(pfx, "active") not in st.session_state:
         st.session_state[_cad_key(pfx, "active")] = "A-A"
+
     if _cad_key(pfx, "state") not in st.session_state:
-        st.session_state[_cad_key(pfx, "state")] = {
+        _saved = _load_defaults(bb)
+        _init_cs: dict = {
             "mode": None, "current_poly": [], "cursor": [0.0, 0.0],
             "snap": 50.0, "grip_selected": None,
         }
+        if _saved:
+            _init_cs["segs"]     = _saved.get("segs", [])
+            _init_cs["fill_sec"] = _saved.get("fill_sec", "B-B")
+        st.session_state[_cad_key(pfx, "state")] = _init_cs
+
     if _cad_key(pfx, "hist") not in st.session_state:
         st.session_state[_cad_key(pfx, "hist")] = []
     if _cad_key(pfx, "undo") not in st.session_state:
@@ -775,6 +927,8 @@ def _dxf_upload_card(pfx: str, bb, secs: dict, cad_state: dict,
                 _h = _res.get("height_mm", 0)
                 hist.append((f"DXF {sec_name}: {uploaded.name}",
                              f"✓ {len(sec.outer)} đỉnh | {_w:.0f}×{_h:.0f}mm"))
+                # Auto-save sau mỗi lần import thành công
+                _save_defaults(secs, cad_state)
                 st.rerun()
         else:
             if has_data:
@@ -798,6 +952,7 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     """
     bb = _get_bb()
     _cad_init(pfx, bb)
+    _inject_resize_js()   # CSS + JS cho kéo thả khung nhìn
 
     secs      = st.session_state[_cad_key(pfx, "sections")]
     cad_state = st.session_state[_cad_key(pfx, "state")]
@@ -840,9 +995,9 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
             del secs[_del_sec]
             st.rerun()
 
-        # ── Thêm mặt cắt tùy chỉnh ──────────────────────────────────────
+        # ── Thêm mặt cắt tùy chỉnh + lưu mặc định ──────────────────────
         st.markdown("---")
-        _ac1, _ac2 = st.columns([3, 1])
+        _ac1, _ac2, _ac3 = st.columns([3, 1, 1])
         _nn = _ac1.text_input(
             "x", placeholder="Tên mặt cắt mới — VD: D-D, E-E, CC-2",
             key=f"{pfx}_new_sec_name", label_visibility="collapsed",
@@ -857,6 +1012,29 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                 st.warning("Nhập tên mặt cắt trước.")
             else:
                 st.info(f"'{_clean}' đã tồn tại.")
+
+        if _ac3.button("💾 Lưu mặc định", key=f"{pfx}_save_def",
+                       use_container_width=True,
+                       help="Lưu tất cả mặt cắt + cấu hình đoạn. Lần sau mở app không cần upload lại."):
+            _msg = _save_defaults(secs, cad_state)
+            st.toast(_msg)
+
+        # Trạng thái file đã lưu
+        if _SAVE_FILE.exists():
+            import os, time as _t
+            _mtime = _SAVE_FILE.stat().st_mtime
+            _dt    = _t.strftime("%d/%m/%Y %H:%M", _t.localtime(_mtime))
+            _n_sec = len([k for k, v in secs.items() if v.outer])
+            st.caption(
+                f"💾 Đã lưu lúc {_dt} — {_n_sec} mặt cắt có dữ liệu  "
+                f"| [Xóa file đã lưu]({'#'}) "
+            )
+            if st.button("🗑 Xóa dữ liệu đã lưu", key=f"{pfx}_del_save",
+                         help="Xóa file lưu — lần sau app dùng preset mặc định"):
+                _SAVE_FILE.unlink(missing_ok=True)
+                st.toast("Đã xóa file lưu. Restart app để dùng preset mặc định.")
+        else:
+            st.caption("Chưa có dữ liệu lưu — bấm 💾 Lưu mặc định để lưu.")
 
     _upload_row()
     st.divider()
@@ -1106,7 +1284,9 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                     st.session_state["spt_beam_model"] = m3d
                     st.session_state["spt_L_m"] = L_m
                     st.session_state.pop("spt_beam_traces_cache", None)
-                    st.toast("✅ Đã cập nhật 3D toàn cầu. Chuyển tab 🏗️ để xem.", icon="✅")
+                    # Lưu cấu hình đoạn vào file (bao gồm segs + fill_sec)
+                    _save_defaults(secs, cad_state)
+                    st.toast("✅ Đã cập nhật 3D & lưu cấu hình. Chuyển tab 🏗️ để xem.", icon="✅")
 
         except Exception as _e3d:
             st.error(f"Không tạo được 3D: {_e3d}")
