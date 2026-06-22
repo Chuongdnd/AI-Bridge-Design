@@ -2567,13 +2567,34 @@ def _chat_resize_js():
 <script>
 (function(){
   var KW='cau_chat_w', KH='cau_chat_h';
+  function msgTargets(wrap){
+    // Phần tử CUỘN thực sự (mang height/overflow) + phần tử .st-key-chat_msgs
+    var c = wrap.querySelector('.st-key-chat_msgs');
+    if(!c) return [];
+    var set = [c];
+    c.querySelectorAll('[data-testid="stVerticalBlockBorderWrapper"]').forEach(function(x){ set.push(x); });
+    if(c.matches && c.matches('[data-testid="stVerticalBlockBorderWrapper"]')) set.push(c);
+    return set;
+  }
+  function applyH(wrap, h){
+    msgTargets(wrap).forEach(function(el){
+      el.style.height = h + 'px';
+      el.style.maxHeight = 'none';
+      el.style.overflow = 'auto';
+    });
+  }
+  function curH(wrap){
+    var t = msgTargets(wrap);
+    var best = 320;
+    t.forEach(function(el){ var r = el.getBoundingClientRect().height; if(r > 40) best = r; });
+    return best;
+  }
   function setup(pDoc, pWin){
     var wrap = pDoc.querySelector('.st-key-floatchat_wrap');
     if(!wrap) return;
-    var msgs = wrap.querySelector('.st-key-chat_msgs');
     var sw0 = localStorage.getItem(KW), sh0 = localStorage.getItem(KH);
     if(sw0) wrap.style.width = sw0 + 'px';
-    if(sh0 && msgs) msgs.style.height = sh0 + 'px';
+    if(sh0) applyH(wrap, parseFloat(sh0));
     if(wrap.__chatGrip) return;
     wrap.__chatGrip = true;
     if(getComputedStyle(wrap).position === 'static') wrap.style.position = 'fixed';
@@ -2584,12 +2605,11 @@ def _chat_resize_js():
       + 'border-left:3px solid #4a9eff;border-radius:9px 0 0 0;'
       + 'background:rgba(74,158,255,0.12);';
     wrap.appendChild(g);
-    var drag=false, sx, sy, sw, sh, m;
+    var drag=false, sx, sy, sw, sh;
     g.addEventListener('mousedown', function(e){
       drag=true; sx=e.clientX; sy=e.clientY;
       sw=wrap.getBoundingClientRect().width;
-      m=wrap.querySelector('.st-key-chat_msgs');
-      sh=m ? m.getBoundingClientRect().height : 320;
+      sh=curH(wrap);
       e.preventDefault(); e.stopPropagation();
     });
     pDoc.addEventListener('mousemove', function(e){
@@ -2597,13 +2617,12 @@ def _chat_resize_js():
       var nw=Math.min(Math.max(sw+(sx-e.clientX),320), pWin.innerWidth*0.9);
       var nh=Math.min(Math.max(sh+(sy-e.clientY),160), pWin.innerHeight*0.78);
       wrap.style.width=nw+'px';
-      if(m) m.style.height=nh+'px';
+      applyH(wrap, nh);
     });
     pDoc.addEventListener('mouseup', function(){
       if(!drag) return; drag=false;
       localStorage.setItem(KW, Math.round(parseFloat(wrap.style.width)||380));
-      var m2=wrap.querySelector('.st-key-chat_msgs');
-      if(m2 && m2.style.height) localStorage.setItem(KH, Math.round(parseFloat(m2.style.height)||320));
+      localStorage.setItem(KH, Math.round(curH(wrap)));
     });
   }
   function start(tries){
