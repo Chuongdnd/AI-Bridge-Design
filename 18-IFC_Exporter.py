@@ -115,7 +115,7 @@ def _make_faceted_brep(ifc_file, verts, faces, context):
     Geometry format Revit hiểu khi mở trực tiếp.
     """
     ifc_verts = [
-        ifc_file.createIfcCartesianPoint((float(v[0]), float(v[1]), float(v[2])))
+        ifc_file.createIfcCartesianPoint([float(v[0]), float(v[1]), float(v[2])])
         for v in verts
     ]
 
@@ -138,9 +138,9 @@ def _make_faceted_brep(ifc_file, verts, faces, context):
 def _placement(ifc_file, x=0.0, y=0.0, z=0.0,
                axis=(0, 0, 1), ref_dir=(1, 0, 0)):
     """Tạo IfcLocalPlacement."""
-    origin = ifc_file.createIfcCartesianPoint((x, y, z))
-    ax     = ifc_file.createIfcDirection(axis)
-    ref    = ifc_file.createIfcDirection(ref_dir)
+    origin = ifc_file.createIfcCartesianPoint([float(x), float(y), float(z)])
+    ax     = ifc_file.createIfcDirection([float(v) for v in axis])
+    ref    = ifc_file.createIfcDirection([float(v) for v in ref_dir])
     ax2    = ifc_file.createIfcAxis2Placement3D(origin, ax, ref)
     return ifc_file.createIfcLocalPlacement(None, ax2)
 
@@ -204,11 +204,11 @@ def export_beam_to_ifc(
     unit_assign = ifc_file.createIfcUnitAssignment([mm_unit, deg_unit])
 
     # ── 4. Geometric context ─────────────────────────────────────────
-    world_origin = ifc_file.createIfcCartesianPoint((0.0, 0.0, 0.0))
+    world_origin = ifc_file.createIfcCartesianPoint([0.0, 0.0, 0.0])
     world_ax     = ifc_file.createIfcAxis2Placement3D(
         world_origin,
-        ifc_file.createIfcDirection((0.0, 0.0, 1.0)),
-        ifc_file.createIfcDirection((1.0, 0.0, 0.0)),
+        ifc_file.createIfcDirection([0.0, 0.0, 1.0]),
+        ifc_file.createIfcDirection([1.0, 0.0, 0.0]),
     )
     ctx = ifc_file.createIfcGeometricRepresentationContext(
         "Model", "Model", 3, 1.0e-5, world_ax, None)
@@ -343,9 +343,9 @@ def export_beam_to_ifc(
 
             # Placement tương đối với storey
             _plc_ax2 = ifc_file.createIfcAxis2Placement3D(
-                ifc_file.createIfcCartesianPoint((float(x_nhip), float(y_dam), 0.0)),
-                ifc_file.createIfcDirection((0.0, 0.0, 1.0)),
-                ifc_file.createIfcDirection((1.0, 0.0, 0.0)),
+                ifc_file.createIfcCartesianPoint([float(x_nhip), float(y_dam), 0.0]),
+                ifc_file.createIfcDirection([0.0, 0.0, 1.0]),
+                ifc_file.createIfcDirection([1.0, 0.0, 0.0]),
             )
             beam_plc_rel = ifc_file.createIfcLocalPlacement(
                 storey_plc, _plc_ax2)
