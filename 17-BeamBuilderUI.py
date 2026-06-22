@@ -816,19 +816,62 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
         unsafe_allow_html=True,
     )
 
-    # ═══ Hàng 1: 3 upload card (fragment — upload không rerun toàn app) ═══════
+    # ═══ Hàng 1: upload card (fragment — upload không rerun toàn app) ══════════
+    _DEFAULTS = {"A-A", "B-B", "C-C"}
+
     @st.fragment
     def _upload_row():
-        _c_aa, _c_bb, _c_cc = st.columns(3)
-        for _col, _sname in [(_c_aa, "A-A"), (_c_bb, "B-B"), (_c_cc, "C-C")]:
-            with _col:
-                _dxf_upload_card(pfx, bb, secs, cad_state, hist, _sname)
+        _sec_names = list(secs.keys())
+        _del_sec   = None
+
+        # Grid 3 cards/hàng, tất cả các mặt cắt hiện có
+        for _r in range(0, len(_sec_names), 3):
+            _row  = _sec_names[_r : _r + 3]
+            _cols = st.columns(len(_row))
+            for _col, _sn in zip(_cols, _row):
+                with _col:
+                    if _sn not in _DEFAULTS:
+                        if st.button(f"🗑 Xóa {_sn}", key=f"{pfx}_del_sec_{_sn}",
+                                     use_container_width=True):
+                            _del_sec = _sn
+                    _dxf_upload_card(pfx, bb, secs, cad_state, hist, _sn)
+
+        if _del_sec and _del_sec not in _DEFAULTS and _del_sec in secs:
+            del secs[_del_sec]
+            st.rerun()
+
+        # ── Thêm mặt cắt tùy chỉnh ──────────────────────────────────────
+        st.markdown("---")
+        _ac1, _ac2 = st.columns([3, 1])
+        _nn = _ac1.text_input(
+            "x", placeholder="Tên mặt cắt mới — VD: D-D, E-E, CC-2",
+            key=f"{pfx}_new_sec_name", label_visibility="collapsed",
+        )
+        if _ac2.button("＋ Thêm mặt cắt", key=f"{pfx}_add_sec_btn",
+                       use_container_width=True):
+            _clean = _nn.strip().upper()
+            if _clean and _clean not in secs:
+                secs[_clean] = bb.CrossSection(name=_clean, outer=[], holes=[], open=False)
+                st.rerun()
+            elif not _clean:
+                st.warning("Nhập tên mặt cắt trước.")
+            else:
+                st.info(f"'{_clean}' đã tồn tại.")
 
     _upload_row()
     st.divider()
 
     # ═══ Hàng 2: Vị trí mặt cắt | 3D lớn ════════════════════════════════════
-    col_pos, col_3d = st.columns([1, 3])
+    # Thanh kéo tỷ lệ cột
+    _cw = st.slider(
+        "⟺  Cột đoạn mặt cắt  ◀▶  Cột 3D",
+        min_value=10, max_value=55, step=5, format="%d%%",
+        value=int(st.session_state.get(f"{pfx}_col_w", 25)),
+        key=f"{pfx}_col_w_sl",
+        help="Kéo để thay đổi tỷ lệ rộng cột trái (đoạn mặt cắt) / cột phải (3D)",
+    )
+    st.session_state[f"{pfx}_col_w"] = _cw
+    col_pos, col_3d = st.columns([_cw, 100 - _cw])
 
     # ── Cột trái: vị trí + loại mặt cắt trên trắc dọc ──────────────────────
     with col_pos:
@@ -851,8 +894,9 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
 
         _SD = cad_state["segs"]         # segment list (mutable reference)
         _v  = cad_state.get("segs_ver", 0)   # version suffix for stable keys
-        _ALL = ["A-A", "B-B", "C-C"]
-        _SCOL = {"A-A": "#44aa66", "B-B": "#8855cc", "C-C": "#4488cc"}
+        _ALL  = list(secs.keys())        # tất cả tên mặt cắt đã đăng ký
+        _PAL  = ["#44aa66","#8855cc","#4488cc","#cc8844","#dd5577","#4499bb","#99aa22","#cc5533"]
+        _SCOL = {k: _PAL[i % len(_PAL)] for i, k in enumerate(_ALL)}
         _LCOL = "#cc8844"
 
         # ── Tiêu đề cột ──────────────────────────────────────────────────
@@ -923,7 +967,14 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
         if L_fill < 0:
             st.error(f"Tổng {_L_used:.0f} mm > L/2 {L_half:.0f} mm — giảm chiều dài đoạn.")
 
-        # ── Sơ đồ trắc dọc ───────────────────────────────────────────────
+        # ── Sơ đồ trắc dọc (có điều chỉnh chiều cao) ────────────────────
+        _h_sch = st.slider(
+            "↕ Cao sơ đồ", min_value=40, max_value=220, step=10,
+            value=int(st.session_state.get(f"{pfx}_h_sch", 60)),
+            key=f"{pfx}_h_sch_sl",
+            help="Kéo để phóng to / thu nhỏ sơ đồ trắc dọc",
+        )
+        st.session_state[f"{pfx}_h_sch"] = _h_sch
         _zones_sch = []
         for _sg in _SD:
             _zl = float(_sg.get("length", 0))
@@ -952,7 +1003,7 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
             _x0_s += _zl
         _fig_sch.update_layout(
             template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
-            height=55, margin=dict(l=10, r=10, t=4, b=18),
+            height=_h_sch, margin=dict(l=10, r=10, t=4, b=18),
             xaxis=dict(range=[0, L_half], showgrid=False, tickformat=".0f",
                        tickfont=dict(size=7),
                        title=dict(text="mm từ đầu dầm", font=dict(size=7))),
@@ -1012,9 +1063,19 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
 
                 _traces = bb.build_3d_wireframe(m3d)
                 _fig3d = go.Figure(data=_traces)
+
+                # Thanh điều chỉnh chiều cao view 3D
+                _h3d = st.slider(
+                    "↕ Cao view 3D", min_value=300, max_value=1000, step=50,
+                    value=int(st.session_state.get(f"{pfx}_h3d", 560)),
+                    key=f"{pfx}_h3d_sl",
+                    help="Kéo để phóng to / thu nhỏ khung nhìn 3D",
+                )
+                st.session_state[f"{pfx}_h3d"] = _h3d
+
                 _fig3d.update_layout(
                     template="plotly_dark", paper_bgcolor="#1a2330",
-                    height=560, margin=dict(l=0, r=0, t=35, b=0),
+                    height=_h3d, margin=dict(l=0, r=0, t=35, b=0),
                     title=dict(
                         text="3D Wireframe — Dầm Super-T",
                         font=dict(size=13, color="#9ac8e8"), x=0.5,
