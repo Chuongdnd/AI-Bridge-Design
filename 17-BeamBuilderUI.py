@@ -1539,6 +1539,61 @@ def render_btc_sections(pfx: str = "spt"):
                                key=f"btc_sec_{pfx}_{_k}")
 
 
+def _beam_span_list(d: dict) -> list:
+    """Danh sách (x_start, x_end) từng nhịp — ĐỒNG BỘ với bản vẽ cầu qua
+    11-BanVe_KetCau.calc_span_layout (nhịp chính căng giữa tĩnh không, nhịp đều).
+    Fallback về chia đều từ x_mo_trai nếu không nạp được module bản vẽ."""
+    geo    = d.get("geo_logic", {})
+    kcn    = d.get("kcn_result") or d.get("ai_result", {})
+    x0     = float(geo.get("x_mo_trai", -60.0))
+    L_nhip = float(kcn.get("chieu_dai", 38.0))
+    n_nhip = int(kcn.get("tong_so_nhip", 3))
+    x_end  = float(geo.get("x_mo_phai", x0 + max(1, n_nhip) * L_nhip))
+    x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
+    B_tk   = float(d.get("B", 20.0))
+    bv = _get_banve()
+    if bv is not None and hasattr(bv, "calc_span_layout"):
+        try:
+            supports, _ = bv.calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+            return list(zip(supports[:-1], supports[1:]))
+        except Exception:
+            pass
+    return [(x0 + i * L_nhip, x0 + (i + 1) * L_nhip) for i in range(n_nhip)]
+
+
+def _resolve_beam_sections(pfx: str = "spt"):
+    """Bộ mặt cắt dầm + tên mặt cắt giữa nhịp (fill_sec), theo thứ tự ưu tiên:
+    1) mặt cắt người dùng đang khai báo trong session,
+    2) dầm mặc định đã lưu (spt_sections_saved.json),
+    3) preset built-in (Super-T A-A/B-B/C-C).
+    Đảm bảo mọi view luôn có dầm để vẽ kể cả khi chưa mở tab Chi tiết dầm."""
+    bb = _get_bb()
+    secs      = st.session_state.get(_cad_key(pfx, "sections"))
+    cad_state = st.session_state.get(_cad_key(pfx, "state"), {}) or {}
+    fill_sec  = cad_state.get("fill_sec")
+    _has_outer = bool(secs) and any(getattr(s, "outer", None) for s in secs.values())
+    if not _has_outer:
+        saved = _load_defaults(bb)
+        if saved:
+            secs     = saved["secs"]
+            fill_sec = fill_sec or saved.get("fill_sec")
+        else:
+            secs     = {sn: getattr(bb, fn)() for sn, (fn, _) in _SEC_PRESETS.items()}
+            fill_sec = fill_sec or "B-B"
+    return secs, (fill_sec or "B-B")
+
+
+def _pick_beam_section(secs: dict, fill_sec: str):
+    """Mặt cắt đại diện (ưu tiên fill_sec, sau đó mặt cắt đầu tiên có outer)."""
+    sec = secs.get(fill_sec) if secs else None
+    if sec and getattr(sec, "outer", None):
+        return sec
+    for _s in (secs or {}).values():
+        if _s and getattr(_s, "outer", None):
+            return _s
+    return None
+
+
 def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
     """Trả về list go.Scatter3d traces của BeamModel đã scale và định vị theo cầu.
 
@@ -1577,13 +1632,14 @@ def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
     x_first_dam  = -bc / 2 + oh        # vị trí Y dầm đầu tiên (m)
     z_beam_top   = cao_dd + H_dam       # cao độ đỉnh dầm = đáy bản mặt cầu (m)
     L_m          = float(st.session_state.get("spt_L_m", L_nhip))
+    _spans  = _beam_span_list(d)
     result  = []
     _legend = True   # legend only on the very first trace
 
     for i_dam in range(n_dam):
         beam_y = x_first_dam + i_dam * kc_dam
-        for i_nhip in range(n_nhip):
-            span_x0 = x0 + i_nhip * L_nhip
+        for span_x0, span_x1 in _spans:
+            _scale = (span_x1 - span_x0) / L_m
             for _t in _raw:
                 if not (hasattr(_t, 'x') and _t.x is not None and len(_t.x) > 0):
                     continue
@@ -1591,7 +1647,7 @@ def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
                 _ty = np.array(_t.y, dtype=float)
                 _tz = np.array(_t.z, dtype=float)
 
-                bx = span_x0 + _ty * (L_nhip / L_m) / 1000.0
+                bx = span_x0 + _ty * _scale / 1000.0
                 by = beam_y  + _tx / 1000.0
                 bz = z_beam_top + _tz / 1000.0
 
@@ -1615,9 +1671,9 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt") -> list:
     Hệ trục MCN: x = ngang cầu (m), y = cao độ (0=mặt bê tông bản, âm=xuống dưới).
     Chỉ vẽ khi session_state có mặt cắt A-A với outer polygon đã upload.
     """
-    secs_st = st.session_state.get(_cad_key(pfx, "sections"), {})
-    sec_aa  = secs_st.get("A-A")
-    if not sec_aa or not sec_aa.outer:
+    secs_st, fill_name = _resolve_beam_sections(pfx)
+    sec_rep = _pick_beam_section(secs_st, fill_name)
+    if sec_rep is None:
         return []
 
     kcn    = d.get("kcn_result") or d.get("ai_result", {})
@@ -1628,8 +1684,8 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt") -> list:
     t_ban  = float(d.get("t_ban_mm", 200)) / 1000.0
 
     x_first = -bc / 2 + oh
-    outer   = sec_aa.outer   # [[x_mm, z_mm], ...]
-    holes   = sec_aa.holes or []
+    outer   = sec_rep.outer   # [[x_mm, z_mm], ...]
+    holes   = sec_rep.holes or []
     result  = []
 
     for i_dam in range(n_dam):
@@ -1643,9 +1699,9 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt") -> list:
             fillcolor="rgba(46,204,113,0.28)",
             line=dict(color="#27ae60", width=1.8),
             mode="lines",
-            name="Mặt cắt A-A (DXF)" if i_dam == 0 else "",
+            name=f"Mặt cắt dầm {fill_name} (DXF)" if i_dam == 0 else "",
             showlegend=(i_dam == 0),
-            hovertemplate="Mặt cắt A-A thực tế<extra></extra>",
+            hovertemplate=f"Mặt cắt {fill_name} thực tế<extra></extra>",
         ))
         for hole in holes:
             if not hole:
@@ -1673,6 +1729,14 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     cad_state = st.session_state.get(_cad_key(pfx, "state"), {})
     segs_data = cad_state.get("segs", [])
     fill_sec  = cad_state.get("fill_sec", "A-A")
+
+    # Fallback: chưa mở/khai báo tab Chi tiết dầm → dùng cấu hình đã lưu lần trước
+    if not segs_data or not any(getattr(s, "outer", None) for s in (secs_st or {}).values()):
+        _saved = _load_defaults(_get_bb())
+        if _saved:
+            secs_st   = _saved["secs"]
+            segs_data = _saved.get("segs", []) or segs_data
+            fill_sec  = cad_state.get("fill_sec") or _saved.get("fill_sec", "A-A")
 
     if not segs_data:
         return []
@@ -1806,24 +1870,12 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     Dùng để thay thế dầm parametric trong tab 3D Tổng hợp.
     Lấy mặt cắt fill_sec làm đại diện; extrude dọc theo chiều dài nhịp.
     """
-    secs_st   = st.session_state.get(_cad_key(pfx, "sections"), {})
-    cad_state = st.session_state.get(_cad_key(pfx, "state"), {})
-
-    fill_name = cad_state.get("fill_sec", "B-B")
-    sec = secs_st.get(fill_name)
-    if not sec or not sec.outer:
-        for _s in secs_st.values():
-            if _s and _s.outer:
-                sec = _s
-                break
-        else:
-            return []
+    secs_st, fill_name = _resolve_beam_sections(pfx)
+    sec = _pick_beam_section(secs_st, fill_name)
+    if sec is None:
+        return []
 
     kcn    = d.get("kcn_result") or d.get("ai_result", {})
-    geo    = d.get("geo_logic", {})
-    x0     = float(geo.get("x_mo_trai",      -60.0))
-    L_nhip = float(kcn.get("chieu_dai",       38.0))
-    n_nhip = int(kcn.get("tong_so_nhip",      3))
     n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
     kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
     bc     = float(d.get("bc",                12.0))
@@ -1850,13 +1902,12 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     for k in range(1, n - 1):
         _ii.append(n);  _jj.append(n+k+1); _kk.append(n + k)
 
+    _spans  = _beam_span_list(d)
     result  = []
     _legend = True
     for i_dam in range(n_dam):
         beam_y = x_first + i_dam * kc_dam
-        for i_nhip in range(n_nhip):
-            sx0 = x0 + i_nhip * L_nhip
-            sx1 = sx0 + L_nhip
+        for sx0, sx1 in _spans:
             vx = [sx0] * n + [sx1] * n
             vy = [beam_y + py for py in prof_y] + [beam_y + py for py in prof_y]
             vz = [z_top  + pz for pz in prof_z] + [z_top  + pz for pz in prof_z]
