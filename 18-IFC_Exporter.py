@@ -1,7 +1,9 @@
 """
 18-IFC_Exporter.py
-Xuất BeamModel → IFC4 có thể mở trực tiếp trong Revit
+Xuất BeamModel → IFC2X3 có thể mở trực tiếp trong Revit
 (File → Open → IFC → chọn file .ifc)
+Dùng IFC2X3 vì Revit chỉ hỗ trợ Open IFC đầy đủ với schema này;
+IFC4 chỉ hỗ trợ qua Link IFC.
 
 Yêu cầu: pip install ifcopenshell
 """
@@ -193,7 +195,7 @@ def export_beam_to_ifc(
     project_name: str = "Cầu Super-T",
 ) -> bytes:
     """
-    Xuất BeamModel → IFC4 bytes có thể mở trực tiếp trong Revit.
+    Xuất BeamModel → IFC2X3 bytes có thể mở trực tiếp trong Revit.
 
     Params
     ------
@@ -218,8 +220,8 @@ def export_beam_to_ifc(
     if bb is None:
         raise RuntimeError("BeamBuilder module chưa được load.")
 
-    # ── 1. Tạo file IFC4 ─────────────────────────────────────────────
-    ifc_file = ifcopenshell.file(schema="IFC4")
+    # ── 1. Tạo file IFC2X3 (Revit hỗ trợ Open IFC đầy đủ với IFC2X3) ──
+    ifc_file = ifcopenshell.file(schema="IFC2X3")
 
     # ── 2. IfcOwnerHistory ───────────────────────────────────────────
     person  = ifc_file.createIfcPerson(
@@ -232,7 +234,7 @@ def export_beam_to_ifc(
         org, "1.0", "UTH Bridge AI System", "UTH-AI")
     ts      = int(time.time())
     owner_hist = ifc_file.createIfcOwnerHistory(
-        p_and_o, app, "READWRITE", None, None, None, None, ts)
+        p_and_o, app, "READWRITE", "ADDED", None, None, None, ts)
 
     # ── 3. Units (mm) ────────────────────────────────────────────────
     mm_unit  = ifc_file.createIfcSIUnit(None, "LENGTHUNIT", "MILLI", "METRE")
@@ -394,7 +396,8 @@ def export_beam_to_ifc(
                 None,
                 beam_plc_rel,
                 prod_def,
-                None, "BEAM",
+                None,
+                # IFC2X3 IfcBeam không có PredefinedType (chỉ 8 thuộc tính)
             )
             beam_elements.append(beam_el)
 

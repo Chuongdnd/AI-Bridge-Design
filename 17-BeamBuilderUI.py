@@ -1017,7 +1017,7 @@ def render_ifc_export_card(
 
     st.markdown(
         f"<div style='font-size:11px;color:#aaa;margin-bottom:8px'>"
-        f"Schema: <b style='color:#2ecc71'>IFC4</b> &nbsp;|&nbsp; "
+        f"Schema: <b style='color:#2ecc71'>IFC2X3</b> &nbsp;|&nbsp; "
         f"Phần tử: <b style='color:#2ecc71'>"
         f"{n_nhip * n_dam} IfcBeam</b> &nbsp;|&nbsp; "
         f"({n_nhip} nhịp × {n_dam} dầm)<br>"
@@ -1102,7 +1102,7 @@ def render_ifc_export_card(
 - Chọn schema mapping phù hợp
 
 **Lưu ý:**
-- IFC4 yêu cầu Revit 2020 trở lên
+- Schema IFC2X3 — tương thích với mọi phiên bản Revit hỗ trợ Open IFC
 - Geometry xuất dạng IfcFacetedBrep (solid mesh)
 - Properties kỹ thuật nằm trong tab Properties của từng element trong Revit
 """)
