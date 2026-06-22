@@ -2559,6 +2559,71 @@ with st.sidebar:
 # CHATBOT AI — WIDGET NỔI góc dưới phải (thu/phóng kiểu Messenger)
 # Render TRƯỚC vùng chính (trước mọi st.stop) để luôn hiện ở mọi tab.
 # =========================================================================
+def _chat_resize_js():
+    """Tay nắm góc TRÊN-TRÁI để kéo phóng to/thu nhỏ khung chat (cả 2 chiều).
+    Khung neo dưới-phải → kéo lên-trái thì to ra. Lưu kích thước vào localStorage,
+    tự áp lại sau mỗi rerun (MutationObserver). Chạy trong iframe → parent.document."""
+    st.components.v1.html("""
+<script>
+(function(){
+  var KW='cau_chat_w', KH='cau_chat_h';
+  function setup(pDoc, pWin){
+    var wrap = pDoc.querySelector('.st-key-floatchat_wrap');
+    if(!wrap) return;
+    var msgs = wrap.querySelector('.st-key-chat_msgs');
+    var sw0 = localStorage.getItem(KW), sh0 = localStorage.getItem(KH);
+    if(sw0) wrap.style.width = sw0 + 'px';
+    if(sh0 && msgs) msgs.style.height = sh0 + 'px';
+    if(wrap.__chatGrip) return;
+    wrap.__chatGrip = true;
+    if(getComputedStyle(wrap).position === 'static') wrap.style.position = 'fixed';
+    var g = pDoc.createElement('div');
+    g.title = 'Kéo để phóng to / thu nhỏ';
+    g.style.cssText = 'position:absolute;top:-4px;left:-4px;width:22px;height:22px;'
+      + 'cursor:nwse-resize;z-index:100003;border-top:3px solid #4a9eff;'
+      + 'border-left:3px solid #4a9eff;border-radius:9px 0 0 0;'
+      + 'background:rgba(74,158,255,0.12);';
+    wrap.appendChild(g);
+    var drag=false, sx, sy, sw, sh, m;
+    g.addEventListener('mousedown', function(e){
+      drag=true; sx=e.clientX; sy=e.clientY;
+      sw=wrap.getBoundingClientRect().width;
+      m=wrap.querySelector('.st-key-chat_msgs');
+      sh=m ? m.getBoundingClientRect().height : 320;
+      e.preventDefault(); e.stopPropagation();
+    });
+    pDoc.addEventListener('mousemove', function(e){
+      if(!drag) return;
+      var nw=Math.min(Math.max(sw+(sx-e.clientX),320), pWin.innerWidth*0.9);
+      var nh=Math.min(Math.max(sh+(sy-e.clientY),160), pWin.innerHeight*0.78);
+      wrap.style.width=nw+'px';
+      if(m) m.style.height=nh+'px';
+    });
+    pDoc.addEventListener('mouseup', function(){
+      if(!drag) return; drag=false;
+      localStorage.setItem(KW, Math.round(parseFloat(wrap.style.width)||380));
+      var m2=wrap.querySelector('.st-key-chat_msgs');
+      if(m2 && m2.style.height) localStorage.setItem(KH, Math.round(parseFloat(m2.style.height)||320));
+    });
+  }
+  function start(tries){
+    try{
+      var pDoc=window.parent.document, pWin=window.parent;
+      if(!pDoc.body) throw 0;
+      setup(pDoc, pWin);
+      if(!pDoc.__chatMO){
+        pDoc.__chatMO=true;
+        new pWin.MutationObserver(function(){ setup(pDoc, pWin); })
+          .observe(pDoc.body, {childList:true, subtree:true});
+      }
+    }catch(e){ if(tries<12) setTimeout(function(){ start(tries+1); }, 500); }
+  }
+  start(0);
+})();
+</script>
+""", height=0)
+
+
 def _render_floating_chat():
     st.session_state.setdefault('chat_open', False)
     st.markdown("""
@@ -2568,21 +2633,15 @@ def _render_floating_chat():
     .st-key-floatbtn_wrap button {
         border-radius: 28px !important; height: 50px; font-weight: 700;
         box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
-    /* Khung chat (khi mở) — rộng auto theo vùng tin nhắn (kéo để resize) */
+    /* Khung chat (khi mở) — kéo tay nắm góc TRÊN-TRÁI để phóng to/thu nhỏ
+       (neo dưới-phải nên nở lên-trái). Kích thước do JS điều khiển. */
     .st-key-floatchat_wrap {
         position: fixed; bottom: 20px; right: 20px; z-index: 100000;
-        width: fit-content; min-width: 360px; max-width: 92vw;
+        width: 380px; max-width: 92vw;
         background: #12121c; border: 1px solid #2a3550; border-radius: 14px;
-        box-shadow: 0 12px 44px rgba(0,0,0,0.6); padding: 8px 12px 4px; }
+        box-shadow: 0 12px 44px rgba(0,0,0,0.6); padding: 14px 12px 4px; }
     .st-key-floatchat_wrap [data-testid="stChatInput"] { background: transparent; }
-    /* Vùng tin nhắn: KÉO góc dưới-phải để phóng to / thu nhỏ */
-    .st-key-chat_msgs {
-        resize: both !important; overflow: auto !important;
-        min-width: 320px; max-width: 86vw;
-        min-height: 160px; max-height: 72vh; }
-    .st-key-chat_msgs::-webkit-resizer {
-        background: linear-gradient(135deg, transparent 45%, #4488cc 45%);
-        border-radius: 0 0 3px 0; }
+    .st-key-chat_msgs { overflow: auto !important; }
     </style>
     """, unsafe_allow_html=True)
 
@@ -2607,7 +2666,7 @@ def _render_floating_chat():
         with _box:
             if not st.session_state.get("messages"):
                 st.caption("Hỏi tôi về thông số, kết quả thiết kế, tiêu chuẩn… "
-                           "(kéo góc ↘ để phóng to/thu nhỏ)")
+                           "(kéo tay nắm ◤ góc trên-trái để phóng to/thu nhỏ)")
             for _msg in st.session_state.get("messages", []):
                 st.chat_message(_msg["role"]).write(_msg["content"])
 
@@ -2625,6 +2684,9 @@ def _render_floating_chat():
                 st.rerun()
             except Exception as _e:
                 st.error(f"Lỗi AI: {_e}")
+
+    # Tay nắm kéo góc trên-trái (phóng to/thu nhỏ cả 2 chiều)
+    _chat_resize_js()
 
 _render_floating_chat()
 
