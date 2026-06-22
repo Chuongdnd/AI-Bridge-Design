@@ -1772,6 +1772,118 @@ def _prism_tri(n: int):
     return ii, jj, kk
 
 
+# ── QUÉT MẶT CẮT BIẾN THIÊN DỌC NHỊP (3D toàn cầu thể hiện 2 đầu/haunch khác nhau) ──
+def _beam_model_from_pfx(pfx: str, L_mm: float):
+    """Dựng bb.BeamModel từ state của 1 vai trò (pfx): mặt cắt + đoạn (segs/segs_right)
+    + fill + cờ asym. Trả None nếu không có mặt cắt."""
+    bb = _get_bb()
+    secs_st   = st.session_state.get(_cad_key(pfx, "sections")) or {}
+    cad_state = st.session_state.get(_cad_key(pfx, "state"), {}) or {}
+    avail = {k: v for k, v in secs_st.items() if getattr(v, "outer", None)}
+    if not avail:
+        # Fallback: file lưu / preset (không có đoạn → dầm 1 mặt cắt)
+        rs, fill = _resolve_beam_sections(pfx)
+        avail = {k: v for k, v in (rs or {}).items() if getattr(v, "outer", None)}
+        cad_state = {"fill_sec": fill}
+    if not avail:
+        return None
+    asym   = bool(cad_state.get("asym", False))
+    segs   = cad_state.get("segs", [])
+    segs_r = cad_state.get("segs_right", []) if asym else []
+    m = bb.BeamModel(length=float(L_mm), mirror=not asym)
+    m.sections = {k: v.clone() for k, v in avail.items()}
+    _has = lambda *n: all(x in m.sections for x in n)
+    fs = cad_state.get("fill_sec")
+    if not fs or not _has(fs):
+        fs = next(iter(m.sections), None)
+    seglist = _segdicts_to_segments(bb, segs, _has, avail, reverse=False)
+    if fs:
+        seglist.append(bb.Segment("constant", section=fs, length="fill"))
+    if asym:
+        seglist += _segdicts_to_segments(bb, segs_r, _has, avail, reverse=True)
+    m.segments = seglist
+    return m
+
+
+def _beam_rings(m, N: int = 28):
+    """List (frac∈[0,1], ring Nx2 mm[ngang,cao]) lấy mẫu mặt cắt dọc dầm.
+    constant → 2 ring giống nhau; loft → nội suy (đã xoay khớp)."""
+    bb = _get_bb()
+    try:
+        segs = bb._resolve_segments(m)
+    except Exception:
+        return []
+    total = sum(s["length"] for s in segs) or 1.0
+    def _ring(name):
+        sec = m.sections.get(name)
+        if not sec or not getattr(sec, "outer", None):
+            return None
+        try:
+            return bb.resample_polygon(sec.outer, N, closed=True)
+        except Exception:
+            return None
+    out = []; y = 0.0
+    for seg in segs:
+        L = seg["length"]; y1 = y + L
+        if seg["type"] == "constant":
+            ra = _ring(seg.get("section"))
+            if ra is not None:
+                out.append((y / total, ra)); out.append((y1 / total, ra))
+        else:
+            ra = _ring(seg.get("from_sec")); rb = _ring(seg.get("to_sec"))
+            if ra is not None and rb is not None:
+                try:
+                    rb = bb._best_rotation(ra, rb)
+                except Exception:
+                    pass
+                _NS = 4
+                for i in range(_NS + 1):
+                    t = i / _NS
+                    out.append(((y + L * t) / total, ra * (1 - t) + rb * t))
+            elif ra is not None:
+                out.append((y / total, ra)); out.append((y1 / total, ra))
+        y = y1
+    return out
+
+
+def _build_role_rings(base_pfx: str, L_mm: float, N: int = 28):
+    """Ring dọc dầm cho base + từng biến thể (precompute). (active, ringmap{pfx:rings})."""
+    active = _active_variants(base_pfx)
+    pfxs = {base_pfx} | {f"{base_pfx}__{v}" for v in active}
+    ringmap = {}
+    for p in pfxs:
+        m = _beam_model_from_pfx(p, L_mm)
+        ringmap[p] = _beam_rings(m, N) if m is not None else []
+    return active, ringmap
+
+
+def _cell_rings(base_pfx, active, ringmap, i_span, n_span, i_dam, n_dam):
+    """Ring + cờ mirror cho 1 cây dầm tại (nhịp, vị trí ngang) theo vai trò."""
+    L = "B" if (i_span == 0 or i_span == n_span - 1) else "G"
+    T = "B" if (i_dam == 0 or i_dam == n_dam - 1) else "G"
+    pfx = _variant_pfx(base_pfx, L, T, active)
+    rings = ringmap.get(pfx) or ringmap.get(base_pfx) or []
+    mirror = (T == "B" and i_dam == n_dam - 1)
+    return rings, mirror
+
+
+def _tube_faces(M: int, N: int):
+    """Tam giác hoá ống: M vòng × N điểm + 2 nắp đầu."""
+    ii, jj, kk = [], [], []
+    for r in range(M - 1):
+        b0, b1 = r * N, (r + 1) * N
+        for i in range(N):
+            i1 = (i + 1) % N
+            a, b, c, e = b0 + i, b0 + i1, b1 + i, b1 + i1
+            ii += [a, a]; jj += [b, e]; kk += [e, c]
+    for i in range(1, N - 1):           # nắp đầu
+        ii.append(0); jj.append(i); kk.append(i + 1)
+    _last = (M - 1) * N
+    for i in range(1, N - 1):           # nắp cuối
+        ii.append(_last); jj.append(_last + i + 1); kk.append(_last + i)
+    return ii, jj, kk
+
+
 def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
     """Trả về list go.Scatter3d traces của BeamModel đã scale và định vị theo cầu.
 
@@ -2042,15 +2154,8 @@ def get_plan_beam_traces(d: dict, pfx: str = "spt") -> list:
 
 
 def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
-    """Trả về go.Mesh3d traces (solid shape) từ mặt cắt DXF thực tế.
-
-    Dùng để thay thế dầm parametric trong tab 3D Tổng hợp.
-    Lấy mặt cắt fill_sec làm đại diện; extrude dọc theo chiều dài nhịp.
-    """
-    active, secmap = _build_role_sections(pfx)
-    if not any(s and getattr(s, "outer", None) for s in secmap.values()):
-        return []
-
+    """go.Mesh3d (solid) dầm cho 3D toàn cầu — QUÉT mặt cắt biến thiên dọc nhịp
+    (thể hiện 2 đầu/haunch khác nhau), theo VAI TRÒ từng cây (biên/giữa × nhịp biên/giữa)."""
     kcn    = d.get("kcn_result") or d.get("ai_result", {})
     n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
     kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
@@ -2058,6 +2163,11 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     oh     = float(kcn.get("overhang",         0.5))
     cao_dd = float(d.get("cao_day_dam",         8.0))
     H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+    L_mm   = float(st.session_state.get("spt_L_m", kcn.get("chieu_dai", 38.0))) * 1000.0
+
+    active, ringmap = _build_role_rings(pfx, L_mm)
+    if not any(ringmap.values()):
+        return []
 
     z_top   = cao_dd + H_dam
     x_first = -bc / 2 + oh
@@ -2068,19 +2178,20 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     for i_dam in range(n_dam):
         beam_y = x_first + i_dam * kc_dam
         for i_span, (sx0, sx1) in enumerate(_spans):
-            # Mặt cắt theo VAI TRÒ của cây dầm này (biên/giữa × nhịp biên/giữa)
-            sec, mir = _cell_section(pfx, active, secmap,
+            rings, mir = _cell_rings(pfx, active, ringmap,
                                      i_span, n_span, i_dam, n_dam)
-            if sec is None or not getattr(sec, "outer", None):
+            if not rings or len(rings) < 2:
                 continue
-            _sgn   = -1.0 if mir else 1.0
-            prof_y = [_sgn * p[0] / 1000.0 for p in sec.outer]
-            prof_z = [p[1] / 1000.0 for p in sec.outer]
-            n = len(prof_y)
-            _ii, _jj, _kk = _prism_tri(n)
-            vx = [sx0] * n + [sx1] * n
-            vy = [beam_y + py for py in prof_y] + [beam_y + py for py in prof_y]
-            vz = [z_top  + pz for pz in prof_z] + [z_top  + pz for pz in prof_z]
+            _sgn = -1.0 if mir else 1.0
+            Np   = len(rings[0][1]); M = len(rings)
+            vx, vy, vz = [], [], []
+            for frac, R in rings:
+                ch = sx0 + frac * (sx1 - sx0)
+                for i in range(Np):
+                    vx.append(ch)
+                    vy.append(beam_y + _sgn * R[i, 0] / 1000.0)
+                    vz.append(z_top + R[i, 1] / 1000.0)
+            _ii, _jj, _kk = _tube_faces(M, Np)
             result.append(go.Mesh3d(
                 x=vx, y=vy, z=vz,
                 i=_ii, j=_jj, k=_kk,
@@ -2113,8 +2224,17 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
     if need - set(df_geology.columns):
         return []
 
-    active, secmap = _build_role_sections(pfx)
-    if not any(s and getattr(s, "outer", None) for s in secmap.values()):
+    kcn    = d.get("kcn_result") or d.get("ai_result", {})
+    n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
+    kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
+    bc     = float(d.get("bc", 12.0))
+    oh     = float(kcn.get("overhang", 0.5))
+    cao_dd = float(d.get("cao_day_dam", 8.0))
+    H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+    L_mm   = float(st.session_state.get("spt_L_m", kcn.get("chieu_dai", 38.0))) * 1000.0
+
+    active, ringmap = _build_role_rings(pfx, L_mm)
+    if not any(ringmap.values()):
         return []
 
     df_cl = (df_geology[df_geology["Offset"] == 0]
@@ -2136,14 +2256,6 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
         p  = g + np.pi / 2
         return (xc + off * np.cos(p) - x_org, yc + off * np.sin(p) - y_org)
 
-    kcn    = d.get("kcn_result") or d.get("ai_result", {})
-    n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
-    kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
-    bc     = float(d.get("bc", 12.0))
-    oh     = float(kcn.get("overhang", 0.5))
-    cao_dd = float(d.get("cao_day_dam", 8.0))
-    H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
-
     z_top   = cao_dd + H_dam
     x_first = -bc / 2 + oh
     spans   = _beam_span_list(d)
@@ -2153,20 +2265,19 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
     for i_dam in range(n_dam):
         beam_y = x_first + i_dam * kc_dam
         for i_span, (sx0, sx1) in enumerate(spans):
-            sec, mir = _cell_section(pfx, active, secmap,
+            rings, mir = _cell_rings(pfx, active, ringmap,
                                      i_span, n_span, i_dam, n_dam)
-            if sec is None or not getattr(sec, "outer", None):
+            if not rings or len(rings) < 2:
                 continue
-            _sgn   = -1.0 if mir else 1.0
-            prof_t = [_sgn * p[0] / 1000.0 for p in sec.outer]
-            prof_z = [p[1] / 1000.0 for p in sec.outer]
-            n = len(prof_t)
-            _ii, _jj, _kk = _prism_tri(n)
+            _sgn = -1.0 if mir else 1.0
+            Np   = len(rings[0][1]); M = len(rings)
             vX, vY, vZ = [], [], []
-            for s_chain in (sx0, sx1):
-                for k in range(n):
-                    X, Y = _vn(s_chain, beam_y + prof_t[k])
-                    vX.append(X); vY.append(Y); vZ.append((z_top + prof_z[k]) * he_so_z)
+            for frac, R in rings:
+                ch = sx0 + frac * (sx1 - sx0)
+                for i in range(Np):
+                    X, Y = _vn(ch, beam_y + _sgn * R[i, 0] / 1000.0)
+                    vX.append(X); vY.append(Y); vZ.append((z_top + R[i, 1] / 1000.0) * he_so_z)
+            _ii, _jj, _kk = _tube_faces(M, Np)
             result.append(go.Mesh3d(
                 x=vX, y=vY, z=vZ,
                 i=_ii, j=_jj, k=_kk,
