@@ -1111,28 +1111,50 @@ def render_ifc_export_card(
 
 def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     """
-    Tab chi tiết dầm Super-T — import mặt cắt ngang từ DXF.
-    Layout: 3 upload card (A-A / B-B / C-C) + [vị trí mặt cắt | 3D lớn].
+    Tab chi tiết dầm — hỗ trợ Super-T, T ngược, I-Beam.
+    Layout: dropdown loại dầm → upload cards → khai báo đoạn + sơ đồ → 3D toàn rộng.
     d   : design_data dict từ session_state
     pfx : prefix tránh collision session-state key
     """
+    # ── Loại dầm ─────────────────────────────────────────────────────────────
+    # (suffix, label_hiện_thị, fill_sec_mặc_định)
+    _BTYPES: dict[str, tuple[str, str, str]] = {
+        "Super-T":     ("",      "Dầm Super-T",    "B-B"),
+        "Dầm T ngược": ("tinv",  "Dầm T ngược",    "A-A"),
+        "Dầm I":       ("ibeam", "Dầm I (I-Beam)", "A-A"),
+    }
+    _bt_names = list(_BTYPES.keys())
+    _bt_key   = f"{pfx}_beam_type"
+    _bt_sel   = st.selectbox(
+        "🏗️ Loại dầm",
+        _bt_names,
+        index=_bt_names.index(st.session_state.get(_bt_key, "Super-T")),
+        key=_bt_key,
+        help="Mỗi loại dầm có bộ mặt cắt và cấu hình riêng biệt",
+    )
+    _bt_suffix, _bt_label, _bt_fill_default = _BTYPES[_bt_sel]
+    # Super-T giữ pfx="spt" để tương thích dữ liệu đã lưu; loại khác thêm suffix
+    if _bt_suffix:
+        pfx = f"{pfx}_{_bt_suffix}"
+
     bb = _get_bb()
     _cad_init(pfx, bb)
-    _inject_resize_js()   # CSS + JS cho kéo thả khung nhìn
+    _inject_resize_js()
 
     secs      = st.session_state[_cad_key(pfx, "sections")]
     cad_state = st.session_state[_cad_key(pfx, "state")]
     hist      = st.session_state[_cad_key(pfx, "hist")]
+    cad_state.setdefault("fill_sec", _bt_fill_default)
 
     kcn = d.get("kcn_result") or d.get("ai_result") or {}
     H   = float(kcn.get("chieu_cao_dam", 1.75)) * 1000
     L_m = float(kcn.get("chieu_dai", 38.0))
     kc  = float(kcn.get("khoang_cach_dam", 2.2)) * 1000
-    L_half = L_m * 1000 / 2  # nửa dầm (mm), dùng mirror=True
+    L_half = L_m * 1000 / 2
 
     st.markdown(
         f"<div style='font-size:13px;color:#9ac8e8;margin-bottom:6px'>"
-        f"Dầm Super-T — L={L_m:.1f}m | H={H:.0f}mm | S={kc:.0f}mm | "
+        f"{_bt_label} — L={L_m:.1f}m | H={H:.0f}mm | S={kc:.0f}mm | "
         f"Upload DXF mặt cắt ngang từ AutoCAD (đơn vị mm)</div>",
         unsafe_allow_html=True,
     )
@@ -1205,23 +1227,13 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     _upload_row()
     st.divider()
 
-    # ═══ Hàng 2: Vị trí mặt cắt | 3D lớn ════════════════════════════════════
-    # Thanh kéo tỷ lệ cột
-    _cw = st.slider(
-        "⟺  Cột đoạn mặt cắt  ◀▶  Cột 3D",
-        min_value=10, max_value=55, step=5, format="%d%%",
-        value=int(st.session_state.get(f"{pfx}_col_w", 25)),
-        key=f"{pfx}_col_w_sl",
-        help="Kéo để thay đổi tỷ lệ rộng cột trái (đoạn mặt cắt) / cột phải (3D)",
-    )
-    st.session_state[f"{pfx}_col_w"] = _cw
-    col_pos, col_3d = st.columns([_cw, 100 - _cw])
+    # ═══ Hàng 2: Khai báo đoạn (trái) + Sơ đồ trắc dọc (phải) ══════════════
+    col_seg, col_sch = st.columns([58, 42])
 
-    # ── Cột trái: vị trí + loại mặt cắt trên trắc dọc ──────────────────────
-    with col_pos:
+    # ── Cột trái: bảng đoạn + fill ──────────────────────────────────────────
+    with col_seg:
         st.markdown(f"**Đoạn mặt cắt — nửa dầm** (L/2 = {L_half:.0f} mm)")
 
-        # ── Migration: L1-L4 cũ → danh sách đoạn mới ─────────────────────
         if "segs" not in cad_state:
             _l1 = cad_state.get("seg_L1", min(300.0,  L_half * 0.02))
             _l2 = cad_state.get("seg_L2", min(900.0,  L_half * 0.12))
@@ -1233,17 +1245,16 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
             if _l3 > 0: _init.append({"type": "constant", "sec": "A-A", "length": _l3})
             if _l4 > 0: _init.append({"type": "loft", "from_sec": "A-A", "to_sec": "B-B", "length": _l4})
             cad_state["segs"] = _init
-            cad_state.setdefault("fill_sec", "B-B")
+            cad_state.setdefault("fill_sec", _bt_fill_default)
             cad_state.setdefault("segs_ver", 0)
 
-        _SD = cad_state["segs"]         # segment list (mutable reference)
-        _v  = cad_state.get("segs_ver", 0)   # version suffix for stable keys
-        _ALL  = list(secs.keys())        # tất cả tên mặt cắt đã đăng ký
+        _SD   = cad_state["segs"]
+        _v    = cad_state.get("segs_ver", 0)
+        _ALL  = list(secs.keys())
         _PAL  = ["#44aa66","#8855cc","#4488cc","#cc8844","#dd5577","#4499bb","#99aa22","#cc5533"]
         _SCOL = {k: _PAL[i % len(_PAL)] for i, k in enumerate(_ALL)}
         _LCOL = "#cc8844"
 
-        # ── Tiêu đề cột ──────────────────────────────────────────────────
         _h1, _h2, _h3, _h4 = st.columns([3, 4, 3, 1])
         _h1.caption("Loại"); _h2.caption("Mặt cắt"); _h3.caption("Dài (mm)"); _h4.caption("")
 
@@ -1252,14 +1263,12 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
             _ka, _kb, _kc, _kd = (f"{pfx}_v{_v}_s{_i}_{x}" for x in ("t","sec","len","del"))
             _ca, _cb, _cc, _cd = st.columns([3, 4, 3, 1])
 
-            # Loại
             _t_cur = 1 if _sg.get("type") == "loft" else 0
             _t_new = _ca.selectbox("t", ["Giữ nguyên", "Vuốt loft"],
                                    index=_t_cur, key=_ka,
                                    label_visibility="collapsed")
             _sg["type"] = "loft" if _t_new == "Vuốt loft" else "constant"
 
-            # Mặt cắt
             if _sg["type"] == "constant":
                 _si = _ALL.index(_sg.get("sec","A-A")) if _sg.get("sec") in _ALL else 0
                 _sg["sec"] = _cb.selectbox("s", _ALL, index=_si, key=_kb,
@@ -1277,18 +1286,15 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                                                 key=_kb + "t", label_visibility="collapsed")
                 _sg.pop("sec", None)
 
-            # Chiều dài
             _sg["length"] = float(_cc.number_input(
                 "l", min_value=0, max_value=int(L_half),
                 value=int(_sg.get("length", 500)), step=50,
                 key=_kc, label_visibility="collapsed", format="%d",
             ))
 
-            # Xóa
             if _cd.button("✕", key=_kd, use_container_width=True):
                 _del_idx = _i
 
-        # Xử lý xóa sau loop (tránh mutation trong loop)
         if _del_idx is not None:
             _SD.pop(_del_idx)
             cad_state["segs_ver"] = _v + 1
@@ -1299,22 +1305,24 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
             cad_state["segs_ver"] = _v + 1
             st.rerun()
 
-        # ── Đoạn fill (tự động — còn lại) ───────────────────────────────
         _L_used = sum(float(s.get("length", 0)) for s in _SD)
         L_fill  = L_half - _L_used
         st.markdown("---")
-        _fi2 = _ALL.index(cad_state.get("fill_sec","B-B")) if cad_state.get("fill_sec") in _ALL else 1
+        _cur_fill = cad_state.get("fill_sec", _bt_fill_default)
+        _fi2 = _ALL.index(_cur_fill) if _cur_fill in _ALL else 0
         cad_state["fill_sec"] = st.selectbox(
-            f"Đoạn giữa nhịp (fill = {max(L_fill,0):.0f} mm)",
+            f"Đoạn giữa nhịp (fill = {max(L_fill, 0):.0f} mm)",
             _ALL, index=_fi2, key=f"{pfx}_fill_sec",
         )
         if L_fill < 0:
             st.error(f"Tổng {_L_used:.0f} mm > L/2 {L_half:.0f} mm — giảm chiều dài đoạn.")
 
-        # ── Sơ đồ trắc dọc (có điều chỉnh chiều cao) ────────────────────
+    # ── Cột phải: sơ đồ trắc dọc ─────────────────────────────────────────────
+    with col_sch:
+        st.markdown("**Sơ đồ nửa dầm**")
         _h_sch = st.slider(
-            "↕ Cao sơ đồ", min_value=40, max_value=220, step=10,
-            value=int(st.session_state.get(f"{pfx}_h_sch", 60)),
+            "↕ Cao sơ đồ", min_value=60, max_value=400, step=10,
+            value=int(st.session_state.get(f"{pfx}_h_sch", 140)),
             key=f"{pfx}_h_sch_sl",
             help="Kéo để phóng to / thu nhỏ sơ đồ trắc dọc",
         )
@@ -1329,7 +1337,7 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                 _zlab = _sg.get("sec", "?")
                 _zcl  = _SCOL.get(_zlab, "#668899")
             _zones_sch.append((_zl, _zlab, _zcl))
-        _fsc = cad_state.get("fill_sec", "B-B")
+        _fsc = cad_state.get("fill_sec", _bt_fill_default)
         _zones_sch.append((max(L_fill, 0), _fsc, _SCOL.get(_fsc, "#668899")))
 
         _fig_sch = go.Figure()
@@ -1343,122 +1351,117 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                                line=dict(color="#fff", width=0.5))
             if _zl > L_half * 0.04:
                 _fig_sch.add_annotation(x=_x0_s+_zl/2, y=0.5, text=_zlab,
-                                        showarrow=False, font=dict(size=8, color="#fff"))
+                                        showarrow=False, font=dict(size=9, color="#fff"))
             _x0_s += _zl
         _fig_sch.update_layout(
             template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
-            height=_h_sch, margin=dict(l=10, r=10, t=4, b=18),
+            height=_h_sch, margin=dict(l=10, r=10, t=4, b=22),
             xaxis=dict(range=[0, L_half], showgrid=False, tickformat=".0f",
-                       tickfont=dict(size=7),
-                       title=dict(text="mm từ đầu dầm", font=dict(size=7))),
+                       tickfont=dict(size=8),
+                       title=dict(text="mm từ đầu dầm", font=dict(size=8))),
             yaxis=dict(visible=False), showlegend=False,
         )
         st.plotly_chart(_fig_sch, use_container_width=True,
                         key=f"{pfx}_sch_fig", config={"displayModeBar": False})
 
-    # ── Cột phải: 3D wireframe lớn ────────────────────────────────────────────
-    with col_3d:
-        _avail  = {k: v for k, v in secs.items() if v.outer}
-        _SD_3d  = cad_state.get("segs", [])
-        _L_used = sum(float(s.get("length", 0)) for s in _SD_3d)
-        L_fill  = L_half - _L_used
+    # ═══ Hàng 3: 3D Wireframe — toàn bộ chiều rộng ════════════════════════════
+    st.divider()
+    _avail = {k: v for k, v in secs.items() if v.outer}
+    _SD_3d = cad_state.get("segs", [])
+    _L_used_3d = sum(float(s.get("length", 0)) for s in _SD_3d)
+    L_fill_3d  = L_half - _L_used_3d
 
-        try:
-            if len(_avail) < 1:
-                st.info("Upload ít nhất 1 mặt cắt để xem 3D preview.", icon="ℹ")
-            elif L_fill < 0:
-                st.warning(f"Tổng đoạn {_L_used:.0f} mm > L/2 {L_half:.0f} mm — giảm chiều dài.")
-            else:
-                m3d = bb.BeamModel(length=L_m * 1000, mirror=True)
-                m3d.sections = {k: v.clone() for k, v in _avail.items()}
+    try:
+        if len(_avail) < 1:
+            st.info("Upload ít nhất 1 mặt cắt để xem 3D preview.", icon="ℹ")
+        elif L_fill_3d < 0:
+            st.warning(f"Tổng đoạn {_L_used_3d:.0f} mm > L/2 {L_half:.0f} mm — giảm chiều dài.")
+        else:
+            m3d = bb.BeamModel(length=L_m * 1000, mirror=True)
+            m3d.sections = {k: v.clone() for k, v in _avail.items()}
 
-                def _has(*names):
-                    return all(n in m3d.sections for n in names)
+            def _has(*names):
+                return all(n in m3d.sections for n in names)
 
-                _segs = []
-                for _sg in _SD_3d:
-                    _slen = float(_sg.get("length", 0))
-                    if _slen <= 0:
-                        continue
-                    if _sg["type"] == "loft":
-                        _fs = _sg.get("from_sec", "C-C")
-                        _ts = _sg.get("to_sec",   "A-A")
-                        if _has(_fs, _ts):
-                            _segs.append(bb.Segment("loft", from_sec=_fs, to_sec=_ts, length=_slen))
-                        elif _has(_ts):
-                            _segs.append(bb.Segment("constant", section=_ts, length=_slen))
-                        elif _has(_fs):
-                            _segs.append(bb.Segment("constant", section=_fs, length=_slen))
-                    else:
-                        _ss = _sg.get("sec", next(iter(m3d.sections), "A-A"))
-                        if _has(_ss):
-                            _segs.append(bb.Segment("constant", section=_ss, length=_slen))
-                        elif _avail:
-                            _segs.append(bb.Segment("constant",
-                                                    section=next(iter(_avail)), length=_slen))
+            _segs = []
+            for _sg in _SD_3d:
+                _slen = float(_sg.get("length", 0))
+                if _slen <= 0:
+                    continue
+                if _sg["type"] == "loft":
+                    _fs = _sg.get("from_sec", "C-C")
+                    _ts = _sg.get("to_sec",   "A-A")
+                    if _has(_fs, _ts):
+                        _segs.append(bb.Segment("loft", from_sec=_fs, to_sec=_ts, length=_slen))
+                    elif _has(_ts):
+                        _segs.append(bb.Segment("constant", section=_ts, length=_slen))
+                    elif _has(_fs):
+                        _segs.append(bb.Segment("constant", section=_fs, length=_slen))
+                else:
+                    _ss = _sg.get("sec", next(iter(m3d.sections), "A-A"))
+                    if _has(_ss):
+                        _segs.append(bb.Segment("constant", section=_ss, length=_slen))
+                    elif _avail:
+                        _segs.append(bb.Segment("constant",
+                                                section=next(iter(_avail)), length=_slen))
 
-                # Đoạn fill giữa nhịp
-                _fill_sec = cad_state.get("fill_sec", "B-B")
-                if not _has(_fill_sec):
-                    _fill_sec = next(iter(m3d.sections), None)
-                if _fill_sec:
-                    _segs.append(bb.Segment("constant", section=_fill_sec, length="fill"))
-                m3d.segments = _segs
+            _fill_sec = cad_state.get("fill_sec", _bt_fill_default)
+            if not _has(_fill_sec):
+                _fill_sec = next(iter(m3d.sections), None)
+            if _fill_sec:
+                _segs.append(bb.Segment("constant", section=_fill_sec, length="fill"))
+            m3d.segments = _segs
 
-                _traces = bb.build_3d_wireframe(m3d)
-                _fig3d = go.Figure(data=_traces)
+            _traces = bb.build_3d_wireframe(m3d)
+            _fig3d  = go.Figure(data=_traces)
 
-                # Thanh điều chỉnh chiều cao view 3D
-                _h3d = st.slider(
-                    "↕ Cao view 3D", min_value=300, max_value=1000, step=50,
-                    value=int(st.session_state.get(f"{pfx}_h3d", 560)),
-                    key=f"{pfx}_h3d_sl",
-                    help="Kéo để phóng to / thu nhỏ khung nhìn 3D",
-                )
-                st.session_state[f"{pfx}_h3d"] = _h3d
+            _h3d = st.slider(
+                "↕ Cao view 3D", min_value=400, max_value=1200, step=50,
+                value=int(st.session_state.get(f"{pfx}_h3d", 700)),
+                key=f"{pfx}_h3d_sl",
+                help="Kéo để phóng to / thu nhỏ khung nhìn 3D",
+            )
+            st.session_state[f"{pfx}_h3d"] = _h3d
 
-                _fig3d.update_layout(
-                    template="plotly_dark", paper_bgcolor="#1a2330",
-                    height=_h3d, margin=dict(l=0, r=0, t=35, b=0),
-                    title=dict(
-                        text="3D Wireframe — Dầm Super-T",
-                        font=dict(size=13, color="#9ac8e8"), x=0.5,
-                    ),
-                    scene=dict(
-                        xaxis=dict(title="X (mm)", backgroundcolor="#12202e",
-                                   gridcolor="#2a3a4a", showbackground=True),
-                        yaxis=dict(title="Y — dọc dầm (mm)", backgroundcolor="#12202e",
-                                   gridcolor="#2a3a4a", showbackground=True),
-                        zaxis=dict(title="Z (mm)", backgroundcolor="#12202e",
-                                   gridcolor="#2a3a4a", showbackground=True),
-                        bgcolor="#12202e", aspectmode="data",
-                        camera=dict(eye=dict(x=1.4, y=-1.6, z=0.9)),
-                    ),
-                )
-                st.plotly_chart(_fig3d, use_container_width=True,
-                                key=f"{pfx}_3d_large",
-                                config={"displayModeBar": True,
-                                        "modeBarButtonsToRemove": ["toImage"]})
+            _fig3d.update_layout(
+                template="plotly_dark", paper_bgcolor="#1a2330",
+                height=_h3d, margin=dict(l=0, r=0, t=40, b=0),
+                title=dict(
+                    text=f"3D Wireframe — {_bt_label}",
+                    font=dict(size=14, color="#9ac8e8"), x=0.5,
+                ),
+                scene=dict(
+                    xaxis=dict(title="X (mm)", backgroundcolor="#12202e",
+                               gridcolor="#2a3a4a", showbackground=True),
+                    yaxis=dict(title="Y — dọc dầm (mm)", backgroundcolor="#12202e",
+                               gridcolor="#2a3a4a", showbackground=True),
+                    zaxis=dict(title="Z (mm)", backgroundcolor="#12202e",
+                               gridcolor="#2a3a4a", showbackground=True),
+                    bgcolor="#12202e", aspectmode="data",
+                    camera=dict(eye=dict(x=1.4, y=-1.6, z=0.9)),
+                ),
+            )
+            st.plotly_chart(_fig3d, use_container_width=True,
+                            key=f"{pfx}_3d_large",
+                            config={"displayModeBar": True,
+                                    "modeBarButtonsToRemove": ["toImage"]})
 
-                # Nút commit — chỉ update tab khác khi user bấm
-                if st.button(
-                    "🏗️ Cập nhật 3D toàn cầu & Bố trí chung",
-                    type="primary", use_container_width=True,
-                    key=f"{pfx}_commit_3d",
-                    help="Ghi mô hình dầm này vào tab 3D Tổng hợp và Bố trí chung",
-                ):
-                    st.session_state["spt_beam_model"] = m3d
-                    st.session_state["spt_L_m"] = L_m
-                    st.session_state.pop("spt_beam_traces_cache", None)
-                    # Lưu cấu hình đoạn vào file (bao gồm segs + fill_sec)
-                    _save_defaults(secs, cad_state)
-                    st.toast("✅ Đã cập nhật 3D & lưu cấu hình. Chuyển tab 🏗️ để xem.", icon="✅")
+            if st.button(
+                "🏗️ Cập nhật 3D toàn cầu & Bố trí chung",
+                type="primary", use_container_width=True,
+                key=f"{pfx}_commit_3d",
+                help="Ghi mô hình dầm này vào tab 3D Tổng hợp và Bố trí chung",
+            ):
+                st.session_state["spt_beam_model"] = m3d
+                st.session_state["spt_L_m"] = L_m
+                st.session_state.pop("spt_beam_traces_cache", None)
+                _save_defaults(secs, cad_state)
+                st.toast("✅ Đã cập nhật 3D & lưu cấu hình. Chuyển tab 🏗️ để xem.", icon="✅")
 
-                # Xuất IFC mở được trong Revit
-                render_ifc_export_card(m3d, d, pfx=pfx)
+            render_ifc_export_card(m3d, d, pfx=pfx)
 
-        except Exception as _e3d:
-            st.error(f"Không tạo được 3D: {_e3d}")
+    except Exception as _e3d:
+        st.error(f"Không tạo được 3D: {_e3d}")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
