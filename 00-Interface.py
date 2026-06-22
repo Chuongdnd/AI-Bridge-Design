@@ -1859,7 +1859,7 @@ def dialog_step3():
             time.sleep(0.8)
             st.session_state.open_dialog = None
             st.session_state.wizard_draft = {}
-            st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
+            st.session_state.current_tab = "Phương án 1"
             st.rerun()
         elif n_critical_errors > 0:
             st.error(
@@ -1873,8 +1873,8 @@ def dialog_step3():
 # =========================================================================
 
 # Map tên tab cũ về mới
-if st.session_state.current_tab == "BẢN VẼ KẾT CẤU":
-    st.session_state.current_tab = "BẢN VẼ KỸ THUẬT"
+if st.session_state.current_tab in ("BẢN VẼ KẾT CẤU", "BẢN VẼ KỸ THUẬT"):
+    st.session_state.current_tab = "Phương án 1"
 
 
 def _get_tab_states(d: dict) -> dict:
@@ -1936,10 +1936,24 @@ _TAB_META = [
         'lock_msg': 'Nhấn OPTIONS → OK để chạy tính toán',
     },
     {
-        'key':      'BẢN VẼ KỸ THUẬT',
+        'key':      'Phương án 1',
         'icon':     '🖼️',
         'state':    tab_states['tab1'],
-        'tip':      'Bản vẽ 2D/3D kết cấu cầu',
+        'tip':      'Bản vẽ 2D/3D — Phương án 1 (tối ưu chi phí)',
+        'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
+    },
+    {
+        'key':      'Phương án 2',
+        'icon':     '🖼️',
+        'state':    tab_states['tab1'],
+        'tip':      'Bản vẽ 2D/3D — Phương án 2 (tối ưu mỹ quan)',
+        'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
+    },
+    {
+        'key':      'Phương án 3',
+        'icon':     '🖼️',
+        'state':    tab_states['tab1'],
+        'tip':      'Bản vẽ 2D/3D — Phương án 3 (AI đề xuất)',
         'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
     },
     {
@@ -2140,7 +2154,7 @@ _render_topbar(st.session_state.design_data, _cur_tab)
 # ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
 #    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
 _has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
-_dk1, _dk2, _dk3 = st.columns(3)
+_dk1, _dk2, _dk4, _dk3 = st.columns(4)
 with _dk1:
     if st.button("🌊 Thông số thủy văn & vị trí cầu",
                  use_container_width=True, key="declbtn_step1",
@@ -2156,6 +2170,14 @@ with _dk2:
                  help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
         st.session_state.open_dialog = "step2"
         st.rerun()
+with _dk4:
+    _has_geo = bool(st.session_state.get("df_geology") is not None
+                    or st.session_state.get("dia_chat_frames"))
+    if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
+                 use_container_width=True, key="declbtn_geodata",
+                 help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
+        st.session_state.open_dialog = "geodata"
+        st.rerun()
 with _dk3:
     if st.button("✅ Xem lại thông số & Chạy tính toán",
                  use_container_width=True, key="declbtn_step3",
@@ -2164,7 +2186,7 @@ with _dk3:
         st.session_state.open_dialog = "step3"
         st.rerun()
 
-_col_tabs = st.columns(4)
+_col_tabs = st.columns(len(_TAB_META))
 for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
     with _col:
         if _m['state'] == 'locked':
@@ -2281,6 +2303,73 @@ def _decl_box_dia_hinh():
                     st.session_state.df_tim_line = _tl
                     st.success(f"✅ Đã đồng bộ {len(_dg)} điểm địa hình theo VN-2000!")
 
+
+def _process_geology_excel(file):
+    """Đọc file Excel địa chất 3 sheet → lưu session (dùng chung 3 phương án).
+    Lưu cả dia_chat_data (cho trắc dọc) và dia_chat_frames (df thô cho 3D)."""
+    df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file)
+    if df_hk is None or df_hk.empty:
+        return None
+    _hk_list_ss = []
+    for _i, _hkr in df_hk.iterrows():
+        _ten_hk = str(_hkr.get("Ho_Khoan", f"HK{_i}")).strip().upper()
+        _z_m    = float(_hkr.get("Z_Mieng", 0) or 0)
+        _lop_dat_ss, _prev_z = [], _z_m
+        if df_layers is not None and not df_layers.empty:
+            _hk_lops = df_layers[df_layers["Ho_Khoan"] == _ten_hk]
+            for _, _lr in _hk_lops.iterrows():
+                _z_day = float(_lr.get("Cao_Do_Day", _prev_z - 2) or _prev_z - 2)
+                _lop_dat_ss.append({
+                    "ten_lop": str(_lr.get("Ten_Lop", "?")).strip(),
+                    "cao_do_dinh": round(_prev_z, 3),
+                    "cao_do_day":  round(_z_day, 3),
+                    "chieu_day":   round(_prev_z - _z_day, 2),
+                    "mo_ta": "", "loai_dat": "",
+                })
+                _prev_z = _z_day
+        _hk_list_ss.append({
+            "ten": _ten_hk, "X": float(_hkr.get("X_VN2000", 0) or 0),
+            "Y": float(_hkr.get("Y_VN2000", 0) or 0), "Z": _z_m,
+            "ly_trinh": None, "lop_dat": _lop_dat_ss, "spt": [],
+        })
+    st.session_state["dia_chat_data"] = {
+        "ho_khoan_list": _hk_list_ss, "validation_errors": [],
+        "dac_trung_tong_hop": {},
+    }
+    st.session_state["dia_chat_frames"] = (df_hk, df_layers, df_spt)
+    return df_hk, df_layers, df_spt
+
+
+@st.dialog("🪨 Địa hình & Địa chất (dùng chung 3 phương án)", width="large")
+def dialog_geo_data():
+    st.caption("Dữ liệu địa hình & địa chất dùng CHUNG cho cả 3 phương án.")
+    st.markdown("#### 🗺️ Địa hình (.NTD + tọa độ VN-2000)")
+    _decl_box_dia_hinh()
+    st.markdown("---")
+    st.markdown("#### 🪨 Địa chất (Excel 3 sheet: Toado_HK · HKxx · SPT)")
+    _dc_tpl = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                           "Data", "Template_DiaChat.xlsx")
+    if os.path.exists(_dc_tpl):
+        with open(_dc_tpl, "rb") as _fh_tpl:
+            st.download_button(
+                "⬇️ Tải Template_DiaChat.xlsx", data=_fh_tpl.read(),
+                file_name="Template_DiaChat.xlsx",
+                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                use_container_width=True, key="dl_tpl_dc")
+    _f = st.file_uploader("File .xlsx địa chất (theo template):",
+                          type=["xlsx"], key="dc_ex")
+    if _f:
+        with st.spinner("Đang phân tích địa chất..."):
+            _r = _process_geology_excel(_f)
+        if _r is not None:
+            st.success(f"✅ Đã nạp {len(_r[0])} hố khoan — dùng chung cho cả 3 phương án.")
+        else:
+            st.error("❌ Không đọc được dữ liệu. Kiểm tra cấu trúc file theo template.")
+    elif st.session_state.get("dia_chat_frames"):
+        _fhk = st.session_state["dia_chat_frames"][0]
+        st.caption(f"✅ Đang có dữ liệu địa chất: {len(_fhk)} hố khoan trong phiên.")
+
+
 # ── Dialog dispatcher ────────────────────────────────────────────────────────
 _od = st.session_state.get('open_dialog')
 if _od == "step1":
@@ -2289,6 +2378,8 @@ elif _od == "step2":
     dialog_step2()
 elif _od == "step3":
     dialog_step3()
+elif _od == "geodata":
+    dialog_geo_data()
 
 # (3 hộp khai báo đã chuyển LÊN TRÊN ribbon — xem khối "3 HỘP KHAI BÁO ĐỘC LẬP".
 #  Hộp khai báo địa hình nằm trong tab BẢN VẼ KỸ THUẬT.)
@@ -3369,7 +3460,7 @@ with _col_main:
         st.markdown("---")
         st.caption("Kết quả mang tính tham khảo sơ bộ. Cần kiểm tra và điều chỉnh theo tiêu chuẩn TCVN hiện hành.")
     
-    elif selected_ribbon == "BẢN VẼ KỸ THUẬT":
+    elif selected_ribbon in ("Phương án 1", "Phương án 2", "Phương án 3"):
         _s1 = tab_states['tab1']
         if _s1 == 'done':
             st.markdown(
@@ -3407,12 +3498,18 @@ with _col_main:
             st.stop()
 
         d   = st.session_state.design_data
+        # Chọn phương án theo tab → đổi kcn_result sang PA tương ứng.
+        # Trụ/móng/địa hình/địa chất DÙNG CHUNG cho cả 3 phương án.
+        _pa_map = {"Phương án 1": "pa1_chi_phi",
+                   "Phương án 2": "pa2_my_quan",
+                   "Phương án 3": "pa3_ai"}
+        _pa_key = _pa_map.get(selected_ribbon, "pa1_chi_phi")
+        _3pa = d.get("kcn_3_pa") or {}
+        if _3pa.get(_pa_key):
+            d = {**d, "kcn_result": dict(_3pa[_pa_key])}
         kcn = d.get("kcn_result") or d.get("ai_result")
         tru = d.get("tru_result")
         has_ai = kcn is not None
-    
-        # ── Khai báo dữ liệu địa hình (.NTD + VN-2000) ─────────────────────
-        _decl_box_dia_hinh()
 
         st.markdown("---")
     
@@ -3779,137 +3876,26 @@ with _col_main:
     
             # ── TAB: Địa chất & Địa hình chi tiết ─────────────────────────
             with tab_dia_chat:
-                # ── Quy trình 3 bước — luôn hiển thị dù có hay chưa có địa hình ──
-                _dc_tpl = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                       "Data", "Template_DiaChat.xlsx")
-                st.markdown("##### 🪨 Quy trình khai báo dữ liệu địa chất")
-                _cs1, _cs2, _cs3 = st.columns(3)
-                with _cs1:
-                    st.markdown(
-                        "<div style='background:#1e3a5f;border-radius:8px;padding:14px'>"
-                        "<div style='color:#f39c12;font-weight:700;font-size:14px'>1️⃣ Tải file template mẫu</div>"
-                        "<div style='color:#ccc;font-size:12px;margin-top:6px'>"
-                        "Mở file, đọc hướng dẫn ở sheet <b>HUONG_DAN</b>.</div></div>",
-                        unsafe_allow_html=True,
-                    )
-                    st.markdown("")
-                    if os.path.exists(_dc_tpl):
-                        with open(_dc_tpl, "rb") as _fh_tpl:
-                            st.download_button(
-                                "⬇️ Tải Template_DiaChat.xlsx",
-                                data=_fh_tpl.read(),
-                                file_name="Template_DiaChat.xlsx",
-                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-                                use_container_width=True, key="dl_tpl_dc",
-                                help="Gồm 5 sheet: HUONG_DAN · Toado_HK · HK1 · HK2 · HK3 · SPT",
-                            )
-                        st.caption("Sheet: HUONG_DAN | Toado_HK | HKx | SPT")
-                    else:
-                        st.error("⚠️ Không tìm thấy Data/Template_DiaChat.xlsx")
-                with _cs2:
-                    st.markdown(
-                        "<div style='background:#1a3d1a;border-radius:8px;padding:14px'>"
-                        "<div style='color:#2ecc71;font-weight:700;font-size:14px'>2️⃣ Điền số liệu vào template</div>"
-                        "<div style='color:#ccc;font-size:12px;margin-top:6px'>"
-                        "• Sheet <b>Toado_HK</b>: tọa độ X, Y (VN-2000) + Z miệng hố<br>"
-                        "• Sheet <b>HK01, HK02…</b>: tên lớp, cao độ đáy lớp, mô tả<br>"
-                        "• Sheet <b>SPT</b>: độ sâu + giá trị N (nếu có)</div></div>",
-                        unsafe_allow_html=True,
-                    )
-                with _cs3:
-                    st.markdown(
-                        "<div style='background:#3d1a1a;border-radius:8px;padding:14px'>"
-                        "<div style='color:#e74c3c;font-weight:700;font-size:14px'>3️⃣ Upload & phân tích</div>"
-                        "<div style='color:#ccc;font-size:12px;margin-top:6px'>"
-                        "Tải file đã điền lên ô bên dưới. Hệ thống tự đọc và tích hợp "
-                        "vào mô hình 3D địa hình (nếu đã nạp file .NTD).</div></div>",
-                        unsafe_allow_html=True,
-                    )
-    
-                st.markdown("---")
-    
-                # ── Upload file địa chất (luôn hiển thị) ─────────────────────────
-                st.markdown("#### 📤 Tải lên file Excel địa chất đã điền")
-                file_excel_dc = st.file_uploader(
-                    "Chọn file .xlsx (cấu trúc theo template):",
-                    type=["xlsx"], key="dc_ex",
-                    help="File cần có: sheet Toado_HK (tọa độ hố khoan) + sheet HKxx (phân lớp địa chất từng hố).",
-                )
-                df_hk, df_layers, df_spt = None, None, None
-                hien_mat_lop, hien_khoi_lop, do_trong_dh = True, False, 1.0
-    
-                if file_excel_dc:
-                    with st.spinner("Đang phân tích địa chất..."):
-                        df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file_excel_dc)
-                    if df_hk is not None and not df_hk.empty:
-                        st.success(f"✅ Đọc được **{len(df_hk)} hố khoan** từ file.")
-                        _df_hk_show = df_hk.rename(columns={
-                            "Ho_Khoan": "Hố khoan",
-                            "X_VN2000": "X (VN-2000)",
-                            "Y_VN2000": "Y (VN-2000)",
-                            "Z_Mieng":  "Z miệng (m)",
-                        })
-                        st.dataframe(_df_hk_show, use_container_width=True, hide_index=True)
-                        _cap_parts = []
-                        if df_layers is not None and not df_layers.empty:
-                            _n_lop = (df_layers["Ten_Lop"].nunique()
-                                      if "Ten_Lop" in df_layers.columns else len(df_layers))
-                            _cap_parts.append(f"📊 {_n_lop} loại lớp | {len(df_layers)} bản ghi phân lớp")
-                        if df_spt is not None and not df_spt.empty:
-                            _cap_parts.append(f"🔩 SPT: {len(df_spt)} dòng")
-                        if _cap_parts:
-                            st.caption(" · ".join(_cap_parts))
-                        # ── Lưu vào session_state để trắc dọc dùng được ──────────
-                        try:
-                            _hk_list_ss = []
-                            for _, _hkr in df_hk.iterrows():
-                                _ten_hk = str(_hkr.get("Ho_Khoan", f"HK{_}")).strip().upper()
-                                _z_m    = float(_hkr.get("Z_Mieng", 0) or 0)
-                                _lop_dat_ss = []
-                                _prev_z = _z_m
-                                if df_layers is not None and not df_layers.empty:
-                                    _hk_lops = df_layers[df_layers["Ho_Khoan"] == _ten_hk]
-                                    for _, _lr in _hk_lops.iterrows():
-                                        _z_day = float(_lr.get("Cao_Do_Day", _prev_z - 2) or _prev_z - 2)
-                                        _lop_dat_ss.append({
-                                            "ten_lop":    str(_lr.get("Ten_Lop", "?")).strip(),
-                                            "cao_do_dinh": round(_prev_z, 3),
-                                            "cao_do_day":  round(_z_day, 3),
-                                            "chieu_day":   round(_prev_z - _z_day, 2),
-                                            "mo_ta": "", "loai_dat": "",
-                                        })
-                                        _prev_z = _z_day
-                                _hk_list_ss.append({
-                                    "ten": _ten_hk,
-                                    "X": float(_hkr.get("X_VN2000", 0) or 0),
-                                    "Y": float(_hkr.get("Y_VN2000", 0) or 0),
-                                    "Z": _z_m,
-                                    "ly_trinh": None,
-                                    "lop_dat":  _lop_dat_ss,
-                                    "spt":      [],
-                                })
-                            st.session_state["dia_chat_data"] = {
-                                "ho_khoan_list":      _hk_list_ss,
-                                "validation_errors":  [],
-                                "dac_trung_tong_hop": {},
-                            }
-                            st.caption(f"💾 Đã lưu {len(_hk_list_ss)} hố khoan vào bộ nhớ phiên — trắc dọc sẽ hiển thị địa chất.")
-                        except Exception as _e_ss:
-                            st.caption(f"⚠️ Lưu session_state thất bại: {_e_ss}")
-                        if has_terr:
-                            cdc1, cdc2, cdc3 = st.columns(3)
-                            with cdc1:
-                                hien_mat_lop  = st.checkbox("Mặt phẳng lớp đất", True)
-                            with cdc2:
-                                hien_khoi_lop = st.checkbox("Khối lớp đất", False)
-                            with cdc3:
-                                do_trong_dh = st.slider("Độ trong suốt:", 0.35, 1.0, 0.72, 0.05)
-                    else:
-                        st.error("❌ Không đọc được dữ liệu. Kiểm tra cấu trúc file theo template.")
+                st.markdown("##### 🪨 Địa hình & Địa chất (dùng chung 3 phương án)")
+                st.info("Khai báo dữ liệu địa hình & địa chất ở nút "
+                        "**🪨 Địa hình & Địa chất** trên cùng — dùng chung cho cả 3 phương án.")
+                _frames = st.session_state.get("dia_chat_frames")
+                df_hk, df_layers, df_spt = _frames if _frames else (None, None, None)
+                hien_mat_lop, hien_khoi_lop, do_trong_dh = True, False, 0.72
+                if df_hk is not None and not df_hk.empty:
+                    st.success(f"✅ Đã có {len(df_hk)} hố khoan (khai báo chung).")
+                    if has_terr:
+                        cdc1, cdc2, cdc3 = st.columns(3)
+                        with cdc1:
+                            hien_mat_lop = st.checkbox("Mặt phẳng lớp đất", True, key="dc_mat")
+                        with cdc2:
+                            hien_khoi_lop = st.checkbox("Khối lớp đất", False, key="dc_khoi")
+                        with cdc3:
+                            do_trong_dh = st.slider("Độ trong suốt:", 0.35, 1.0, 0.72, 0.05, key="dc_trong")
     
                 # ── Mô hình 3D địa hình + overlay địa chất ───────────────────────
                 if not has_terr:
-                    st.info("📌 Nạp file địa hình (.NTD + tọa độ VN-2000) ở **đầu tab BẢN VẼ KỸ THUẬT** để xem mô hình 3D địa hình tích hợp địa chất.")
+                    st.info("📌 Nạp file địa hình (.NTD + tọa độ VN-2000) ở nút **🪨 Địa hình & Địa chất** trên cùng để xem mô hình 3D địa hình tích hợp địa chất.")
                 else:
                     try:
                         st.markdown("---")
