@@ -3397,20 +3397,28 @@ with _col_main:
                             _err_overlay = None
                             try:
                                 BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
-                                BVK.apply_render_mode(_fig_t, render_mode_3d)
-                                # Thay thế dầm sơ bộ bằng wireframe DXF (nếu đã commit)
+                                # Thay thế dầm cũ bằng wireframe DXF TRƯỚC apply_render_mode
                                 try:
                                     _spt_t_traces = BBUI.get_beam_model_traces(d)
                                     if _spt_t_traces:
                                         _fig_t.data = tuple(
                                             t for t in _fig_t.data
-                                            if not (isinstance(t, go.Mesh3d)
-                                                    and getattr(t, 'color', None) == "#85929e")
+                                            if not (
+                                                isinstance(t, go.Mesh3d)
+                                                and '#85929e' in str(getattr(t, 'color', ''))
+                                            )
+                                            and not (
+                                                isinstance(t, go.Scatter3d)
+                                                and '#1a252f' in str(getattr(
+                                                    getattr(t, 'line', None), 'color', ''))
+                                                and not getattr(t, 'showlegend', True)
+                                            )
                                         )
                                         for _spt_t in _spt_t_traces:
                                             _fig_t.add_trace(_spt_t)
                                 except Exception:
                                     pass
+                                BVK.apply_render_mode(_fig_t, render_mode_3d)
                             except Exception as _oe:
                                 _err_overlay = str(_oe)
                             _n_after = len(_fig_t.data)
@@ -3463,27 +3471,30 @@ with _col_main:
                     )
                     try:
                         fig_3d = BVK.ve_cau_3d(d, df_tim_line=None)
-                        BVK.apply_render_mode(fig_3d, _rm_no_terr)
-                        # Thay thế dầm sơ bộ bằng wireframe DXF (nếu đã commit)
+                        # Thay thế dầm cũ TRƯỚC apply_render_mode (tránh màu bị đổi)
                         try:
                             _spt_tr = BBUI.get_beam_model_traces(d)
                             if _spt_tr:
-                                # Xóa dầm parametric (Mesh3d màu #85929e + edges màu #1a252f)
+                                # Xóa dầm cũ: Mesh3d (#85929e) + Scatter3d edges (#1a252f)
                                 fig_3d.data = tuple(
                                     t for t in fig_3d.data
-                                    if not (isinstance(t, go.Mesh3d)
-                                            and getattr(t, 'color', None) == "#85929e")
-                                    and not (isinstance(t, go.Scatter3d)
-                                             and hasattr(t, 'line')
-                                             and t.line is not None
-                                             and getattr(t.line, 'color', None) == "#1a252f"
-                                             and not t.showlegend)
+                                    if not (
+                                        isinstance(t, go.Mesh3d)
+                                        and '#85929e' in str(getattr(t, 'color', ''))
+                                    )
+                                    and not (
+                                        isinstance(t, go.Scatter3d)
+                                        and '#1a252f' in str(getattr(
+                                            getattr(t, 'line', None), 'color', ''))
+                                        and not getattr(t, 'showlegend', True)
+                                    )
                                 )
                                 for _tr in _spt_tr:
                                     fig_3d.add_trace(_tr)
-                                st.caption("🔩 Dầm Super-T thực tế từ DXF (đã thay thế dầm sơ bộ)")
+                                st.caption("🔩 Dầm thực tế từ DXF (đã thay thế dầm sơ bộ)")
                         except Exception:
                             pass
+                        BVK.apply_render_mode(fig_3d, _rm_no_terr)
                         st.plotly_chart(fig_3d, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
