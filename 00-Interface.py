@@ -3316,14 +3316,12 @@ with _col_main:
     
             # ── Sub-tabs ────────────────────────────────────────────────────
             (tab_3d, tab_btc, tab_mcn_vt,
-             tab_spt, tab_tng, tab_dami,
+             tab_spt,
              tab_dia_chat, tab_export) = st.tabs([
                 "🏗️ 3D Tổng hợp"  + (" 🗺️" if has_terr else " (sơ đồ)"),
                 "📋 Bố trí chung",
                 "✂️ MCN Mố/Trụ",
-                "🔩 Chi tiết SPT",
-                "🔩 T ngược",
-                "🔩 Dầm I",
+                "🔩 Chi tiết dầm",
                 "🪨 Địa chất",
                 "📤 Xuất bản vẽ",
             ])
@@ -3493,24 +3491,9 @@ with _col_main:
     
             # ── TAB 2: Bố trí chung ────────────────────────────────────────
             with tab_btc:
-                st.markdown("##### Bố trí chung — Bình đồ + Trắc dọc + MCN điển hình")
+                st.markdown("##### Bố trí chung")
                 try:
-                    _btc1, _btc2 = st.columns([3, 2])
-                    with _btc1:
-                        st.markdown("**Bình đồ cầu** (nhìn từ trên)")
-                        fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim)
-                        st.plotly_chart(fig_bd, use_container_width=True,
-                                        config={"scrollZoom": True, "displayModeBar": True})
-                    with _btc2:
-                        st.markdown("**MCN điển hình**")
-                        fig_mcn_btc = BVK.ve_mat_cat_ngang_2d(d)
-                        try:
-                            for _mcn_tr in BBUI.get_mcn_overlay_traces(d):
-                                fig_mcn_btc.add_trace(_mcn_tr)
-                        except Exception:
-                            pass
-                        st.plotly_chart(fig_mcn_btc, use_container_width=True,
-                                        config={"scrollZoom": True, "displayModeBar": True})
+                    # ── 1. Trắc dọc cầu ──────────────────────────────────────
                     st.markdown("**Trắc dọc cầu**")
                     _dc_data = st.session_state.get("dia_chat_data")
                     fig_td_btc = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim,
@@ -3518,7 +3501,6 @@ with _col_main:
                     try:
                         _elev_traces = BBUI.get_elevation_profile_traces(d)
                         if _elev_traces:
-                            # Remove any preliminary beam fill traces before adding DXF-based ones
                             fig_td_btc.data = tuple(
                                 t for t in fig_td_btc.data
                                 if not (
@@ -3533,7 +3515,35 @@ with _col_main:
                         pass
                     st.plotly_chart(fig_td_btc, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
-                    # Mặt cắt dầm từ DXF (nếu đã upload ở tab SPT)
+
+                    # ── 2. Mặt bằng cầu ──────────────────────────────────────
+                    st.markdown("**Mặt bằng cầu** (nhìn từ trên)")
+                    fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim)
+                    st.plotly_chart(fig_bd, use_container_width=True,
+                                    config={"scrollZoom": True, "displayModeBar": True})
+
+                    # ── 3. MCN điển hình (chỉ phần trên — từ đáy dầm trở lên) ──
+                    st.markdown("**Mặt cắt ngang điển hình** (kết cấu nhịp)")
+                    fig_mcn_btc = BVK.ve_mat_cat_ngang_2d(d)
+                    try:
+                        for _mcn_tr in BBUI.get_mcn_overlay_traces(d):
+                            fig_mcn_btc.add_trace(_mcn_tr)
+                    except Exception:
+                        pass
+                    # Clip y-axis: chỉ hiện từ đáy dầm trở lên (bỏ trụ, cọc, mố)
+                    _kcn_btc = d.get("kcn_result") or d.get("ai_result", {})
+                    _H_dam_btc = float(_kcn_btc.get("chieu_cao_dam") or _kcn_btc.get("chieu_cao", 1.75))
+                    _t_ban_btc = float(d.get("t_ban_mm", 200)) / 1000.0
+                    _t_phu_btc = float((d.get("lop_phu_result") or {}).get("tong_day_tt", 70)) / 1000.0
+                    _y_bot_btc = -(_H_dam_btc + _t_ban_btc + 0.15)   # ngay dưới đáy dầm
+                    _y_top_btc = _t_phu_btc + 1.40                    # trên đỉnh lan can
+                    fig_mcn_btc.update_layout(
+                        yaxis=dict(range=[_y_bot_btc, _y_top_btc], autorange=False),
+                        height=420,
+                    )
+                    st.plotly_chart(fig_mcn_btc, use_container_width=True,
+                                    config={"scrollZoom": True, "displayModeBar": True})
+                    # Mặt cắt dầm từ DXF (nếu đã upload ở tab Chi tiết dầm)
                     try:
                         BBUI.render_btc_sections()
                     except Exception:
@@ -3594,26 +3604,6 @@ with _col_main:
                 except Exception as _e:
                     import traceback
                     st.error(f"Lỗi tab SPT: {_e}")
-                    with st.expander("Chi tiết lỗi"):
-                        st.code(traceback.format_exc())
-    
-            # ── TAB: Chi tiết dầm T ngược ─────────────────────────────────
-            with tab_tng:
-                try:
-                    CTD.render_chi_tiet_loai(d, st, "T ngược", key_prefix="tng")
-                except Exception as _e:
-                    import traceback
-                    st.error(f"Lỗi tab T ngược: {_e}")
-                    with st.expander("Chi tiết lỗi"):
-                        st.code(traceback.format_exc())
-    
-            # ── TAB: Chi tiết dầm I ────────────────────────────────────────
-            with tab_dami:
-                try:
-                    CTD.render_chi_tiet_loai(d, st, "Dầm I", key_prefix="dami")
-                except Exception as _e:
-                    import traceback
-                    st.error(f"Lỗi tab Dầm I: {_e}")
                     with st.expander("Chi tiết lỗi"):
                         st.code(traceback.format_exc())
     
