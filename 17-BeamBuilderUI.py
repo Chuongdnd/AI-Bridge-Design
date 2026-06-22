@@ -816,144 +816,205 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
         unsafe_allow_html=True,
     )
 
-    # ═══ Hàng 1: 3 upload card ════════════════════════════════════════════════
-    c_aa, c_bb, c_cc = st.columns(3)
-    for col, sname in [(c_aa, "A-A"), (c_bb, "B-B"), (c_cc, "C-C")]:
-        with col:
-            _dxf_upload_card(pfx, bb, secs, cad_state, hist, sname)
+    # ═══ Hàng 1: 3 upload card (fragment — upload không rerun toàn app) ═══════
+    @st.fragment
+    def _upload_row():
+        _c_aa, _c_bb, _c_cc = st.columns(3)
+        for _col, _sname in [(_c_aa, "A-A"), (_c_bb, "B-B"), (_c_cc, "C-C")]:
+            with _col:
+                _dxf_upload_card(pfx, bb, secs, cad_state, hist, _sname)
 
+    _upload_row()
     st.divider()
 
     # ═══ Hàng 2: Vị trí mặt cắt | 3D lớn ════════════════════════════════════
     col_pos, col_3d = st.columns([1, 3])
 
-    # ── Cột trái: vị trí mặt cắt trên trắc dọc ──────────────────────────────
+    # ── Cột trái: vị trí + loại mặt cắt trên trắc dọc ──────────────────────
     with col_pos:
-        st.markdown("**Vị trí mặt cắt trên trắc dọc**")
-        st.caption(f"(Nhập chiều dài từng đoạn, đơn vị mm. L/2 = {L_half:.0f} mm)")
+        st.markdown(f"**Đoạn mặt cắt — nửa dầm** (L/2 = {L_half:.0f} mm)")
 
-        # Defaults lần đầu
-        cad_state.setdefault("seg_L1", min(300.0,  L_half * 0.02))
-        cad_state.setdefault("seg_L2", min(900.0,  L_half * 0.12))
-        cad_state.setdefault("seg_L3", 0.0)
-        cad_state.setdefault("seg_L4", min(1200.0, L_half * 0.16))
+        # ── Migration: L1-L4 cũ → danh sách đoạn mới ─────────────────────
+        if "segs" not in cad_state:
+            _l1 = cad_state.get("seg_L1", min(300.0,  L_half * 0.02))
+            _l2 = cad_state.get("seg_L2", min(900.0,  L_half * 0.12))
+            _l3 = cad_state.get("seg_L3", 0.0)
+            _l4 = cad_state.get("seg_L4", min(1200.0, L_half * 0.16))
+            _init = []
+            if _l1 > 0: _init.append({"type": "constant", "sec": "C-C", "length": _l1})
+            if _l2 > 0: _init.append({"type": "loft", "from_sec": "C-C", "to_sec": "A-A", "length": _l2})
+            if _l3 > 0: _init.append({"type": "constant", "sec": "A-A", "length": _l3})
+            if _l4 > 0: _init.append({"type": "loft", "from_sec": "A-A", "to_sec": "B-B", "length": _l4})
+            cad_state["segs"] = _init
+            cad_state.setdefault("fill_sec", "B-B")
+            cad_state.setdefault("segs_ver", 0)
 
-        _seg_defs = [
-            ("seg_L1", "L1 — C-C đầu dầm (mm)",   "Đoạn hộp đầu, mặt cắt C-C giữ nguyên"),
-            ("seg_L2", "L2 — Vút C-C → A-A (mm)",  "Đoạn haunch, loft từ C-C sang A-A"),
-            ("seg_L3", "L3 — A-A giữa (mm)",       "Đoạn A-A giữ nguyên (0 = bỏ qua)"),
-            ("seg_L4", "L4 — Vút A-A → B-B (mm)",  "Đoạn haunch loft từ A-A sang B-B"),
-        ]
-        for _sk, _slabel, _shelp in _seg_defs:
-            _val = st.number_input(
-                _slabel, min_value=0, max_value=int(L_half),
-                value=int(cad_state[_sk]), step=50,
-                key=f"{pfx}_{_sk}", help=_shelp,
-            )
-            cad_state[_sk] = float(_val)
+        _SD = cad_state["segs"]         # segment list (mutable reference)
+        _v  = cad_state.get("segs_ver", 0)   # version suffix for stable keys
+        _ALL = ["A-A", "B-B", "C-C"]
+        _SCOL = {"A-A": "#44aa66", "B-B": "#8855cc", "C-C": "#4488cc"}
+        _LCOL = "#cc8844"
 
-        L1 = cad_state["seg_L1"]; L2 = cad_state["seg_L2"]
-        L3 = cad_state["seg_L3"]; L4 = cad_state["seg_L4"]
-        L_fill = L_half - L1 - L2 - L3 - L4
+        # ── Tiêu đề cột ──────────────────────────────────────────────────
+        _h1, _h2, _h3, _h4 = st.columns([3, 4, 3, 1])
+        _h1.caption("Loại"); _h2.caption("Mặt cắt"); _h3.caption("Dài (mm)"); _h4.caption("")
 
+        _del_idx = None
+        for _i, _sg in enumerate(_SD):
+            _ka, _kb, _kc, _kd = (f"{pfx}_v{_v}_s{_i}_{x}" for x in ("t","sec","len","del"))
+            _ca, _cb, _cc, _cd = st.columns([3, 4, 3, 1])
+
+            # Loại
+            _t_cur = 1 if _sg.get("type") == "loft" else 0
+            _t_new = _ca.selectbox("t", ["Giữ nguyên", "Vuốt loft"],
+                                   index=_t_cur, key=_ka,
+                                   label_visibility="collapsed")
+            _sg["type"] = "loft" if _t_new == "Vuốt loft" else "constant"
+
+            # Mặt cắt
+            if _sg["type"] == "constant":
+                _si = _ALL.index(_sg.get("sec","A-A")) if _sg.get("sec") in _ALL else 0
+                _sg["sec"] = _cb.selectbox("s", _ALL, index=_si, key=_kb,
+                                           label_visibility="collapsed")
+                _sg.pop("from_sec", None); _sg.pop("to_sec", None)
+            else:
+                _fi = _ALL.index(_sg.get("from_sec","C-C")) if _sg.get("from_sec") in _ALL else 2
+                _ti = _ALL.index(_sg.get("to_sec","A-A"))   if _sg.get("to_sec")   in _ALL else 0
+                _cf, _arrow, _ct = _cb.columns([5, 1, 5])
+                _sg["from_sec"] = _cf.selectbox("f", _ALL, index=_fi,
+                                                key=_kb + "f", label_visibility="collapsed")
+                _arrow.markdown("<div style='text-align:center;padding-top:4px'>→</div>",
+                                unsafe_allow_html=True)
+                _sg["to_sec"]   = _ct.selectbox("t", _ALL, index=_ti,
+                                                key=_kb + "t", label_visibility="collapsed")
+                _sg.pop("sec", None)
+
+            # Chiều dài
+            _sg["length"] = float(_cc.number_input(
+                "l", min_value=0, max_value=int(L_half),
+                value=int(_sg.get("length", 500)), step=50,
+                key=_kc, label_visibility="collapsed", format="%d",
+            ))
+
+            # Xóa
+            if _cd.button("✕", key=_kd, use_container_width=True):
+                _del_idx = _i
+
+        # Xử lý xóa sau loop (tránh mutation trong loop)
+        if _del_idx is not None:
+            _SD.pop(_del_idx)
+            cad_state["segs_ver"] = _v + 1
+            st.rerun()
+
+        if st.button("＋ Thêm đoạn", key=f"{pfx}_v{_v}_add", use_container_width=True):
+            _SD.append({"type": "constant", "sec": "A-A", "length": 500.0})
+            cad_state["segs_ver"] = _v + 1
+            st.rerun()
+
+        # ── Đoạn fill (tự động — còn lại) ───────────────────────────────
+        _L_used = sum(float(s.get("length", 0)) for s in _SD)
+        L_fill  = L_half - _L_used
+        st.markdown("---")
+        _fi2 = _ALL.index(cad_state.get("fill_sec","B-B")) if cad_state.get("fill_sec") in _ALL else 1
+        cad_state["fill_sec"] = st.selectbox(
+            f"Đoạn giữa nhịp (fill = {max(L_fill,0):.0f} mm)",
+            _ALL, index=_fi2, key=f"{pfx}_fill_sec",
+        )
         if L_fill < 0:
-            st.error(f"Tổng L1+L2+L3+L4 = {L1+L2+L3+L4:.0f} mm > L/2 = {L_half:.0f} mm")
-        else:
-            st.caption(f"B-B nhịp giữa (fill): {L_fill:.0f} mm")
+            st.error(f"Tổng {_L_used:.0f} mm > L/2 {L_half:.0f} mm — giảm chiều dài đoạn.")
 
-        # Sơ đồ trắc dọc
-        _zones = [
-            (L1,   "C-C",      "#4488cc"),
-            (L2,   "→ A-A",   "#cc7733"),
-            (L3,   "A-A",      "#44aa66"),
-            (L4,   "→ B-B",   "#cc7733"),
-            (max(L_fill, 0), "B-B",  "#8855cc"),
-        ]
+        # ── Sơ đồ trắc dọc ───────────────────────────────────────────────
+        _zones_sch = []
+        for _sg in _SD:
+            _zl = float(_sg.get("length", 0))
+            if _sg["type"] == "loft":
+                _zlab = f"{_sg.get('from_sec','?')}→{_sg.get('to_sec','?')}"
+                _zcl  = _LCOL
+            else:
+                _zlab = _sg.get("sec", "?")
+                _zcl  = _SCOL.get(_zlab, "#668899")
+            _zones_sch.append((_zl, _zlab, _zcl))
+        _fsc = cad_state.get("fill_sec", "B-B")
+        _zones_sch.append((max(L_fill, 0), _fsc, _SCOL.get(_fsc, "#668899")))
+
         _fig_sch = go.Figure()
-        _x0 = 0.0
-        for _zlen, _zlabel, _zcol in _zones:
-            if _zlen <= 0:
+        _x0_s = 0.0
+        for _zl, _zlab, _zcl in _zones_sch:
+            if _zl <= 0:
                 continue
-            _fig_sch.add_shape(
-                type="rect", x0=_x0, x1=_x0 + _zlen, y0=0, y1=1,
-                fillcolor=f"rgba({int(_zcol[1:3],16)},{int(_zcol[3:5],16)},{int(_zcol[5:7],16)},0.55)",
-                line=dict(color="#fff", width=0.5),
-            )
-            if _zlen > L_half * 0.04:
-                _fig_sch.add_annotation(
-                    x=_x0 + _zlen / 2, y=0.5, text=_zlabel,
-                    showarrow=False, font=dict(size=9, color="#fff"),
-                )
-            _x0 += _zlen
+            _r, _g, _b = int(_zcl[1:3],16), int(_zcl[3:5],16), int(_zcl[5:7],16)
+            _fig_sch.add_shape(type="rect", x0=_x0_s, x1=_x0_s+_zl, y0=0, y1=1,
+                               fillcolor=f"rgba({_r},{_g},{_b},0.55)",
+                               line=dict(color="#fff", width=0.5))
+            if _zl > L_half * 0.04:
+                _fig_sch.add_annotation(x=_x0_s+_zl/2, y=0.5, text=_zlab,
+                                        showarrow=False, font=dict(size=8, color="#fff"))
+            _x0_s += _zl
         _fig_sch.update_layout(
             template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
-            height=65, margin=dict(l=10, r=10, t=4, b=22),
-            xaxis=dict(range=[0, L_half], showgrid=False,
-                       tickformat=".0f", tickfont=dict(size=8),
-                       title=dict(text="mm từ đầu dầm", font=dict(size=8))),
+            height=55, margin=dict(l=10, r=10, t=4, b=18),
+            xaxis=dict(range=[0, L_half], showgrid=False, tickformat=".0f",
+                       tickfont=dict(size=7),
+                       title=dict(text="mm từ đầu dầm", font=dict(size=7))),
             yaxis=dict(visible=False), showlegend=False,
         )
         st.plotly_chart(_fig_sch, use_container_width=True,
-                        key=f"{pfx}_sch_fig",
-                        config={"displayModeBar": False})
+                        key=f"{pfx}_sch_fig", config={"displayModeBar": False})
 
     # ── Cột phải: 3D wireframe lớn ────────────────────────────────────────────
     with col_3d:
-        L1 = cad_state["seg_L1"]; L2 = cad_state["seg_L2"]
-        L3 = cad_state["seg_L3"]; L4 = cad_state["seg_L4"]
-        L_fill = L_half - L1 - L2 - L3 - L4
-        _avail = {k: v for k, v in secs.items() if v.outer}
+        _avail  = {k: v for k, v in secs.items() if v.outer}
+        _SD_3d  = cad_state.get("segs", [])
+        _L_used = sum(float(s.get("length", 0)) for s in _SD_3d)
+        L_fill  = L_half - _L_used
 
         try:
             if len(_avail) < 1:
                 st.info("Upload ít nhất 1 mặt cắt để xem 3D preview.", icon="ℹ")
             elif L_fill < 0:
-                st.warning("Điều chỉnh L1–L4 sao cho tổng ≤ L/2.")
+                st.warning(f"Tổng đoạn {_L_used:.0f} mm > L/2 {L_half:.0f} mm — giảm chiều dài.")
             else:
                 m3d = bb.BeamModel(length=L_m * 1000, mirror=True)
                 m3d.sections = {k: v.clone() for k, v in _avail.items()}
 
-                # Build segments theo L1–L4, chỉ thêm nếu section tồn tại
-                _segs = []
                 def _has(*names):
                     return all(n in m3d.sections for n in names)
 
-                if L1 > 0 and _has("C-C"):
-                    _segs.append(bb.Segment("constant", section="C-C", length=L1))
-                elif L1 > 0 and _has("A-A"):
-                    _segs.append(bb.Segment("constant", section="A-A", length=L1))
+                _segs = []
+                for _sg in _SD_3d:
+                    _slen = float(_sg.get("length", 0))
+                    if _slen <= 0:
+                        continue
+                    if _sg["type"] == "loft":
+                        _fs = _sg.get("from_sec", "C-C")
+                        _ts = _sg.get("to_sec",   "A-A")
+                        if _has(_fs, _ts):
+                            _segs.append(bb.Segment("loft", from_sec=_fs, to_sec=_ts, length=_slen))
+                        elif _has(_ts):
+                            _segs.append(bb.Segment("constant", section=_ts, length=_slen))
+                        elif _has(_fs):
+                            _segs.append(bb.Segment("constant", section=_fs, length=_slen))
+                    else:
+                        _ss = _sg.get("sec", next(iter(m3d.sections), "A-A"))
+                        if _has(_ss):
+                            _segs.append(bb.Segment("constant", section=_ss, length=_slen))
+                        elif _avail:
+                            _segs.append(bb.Segment("constant",
+                                                    section=next(iter(_avail)), length=_slen))
 
-                if L2 > 0:
-                    if _has("C-C", "A-A"):
-                        _segs.append(bb.Segment("loft", from_sec="C-C", to_sec="A-A", length=L2))
-                    elif _has("A-A"):
-                        _segs.append(bb.Segment("constant", section="A-A", length=L2))
-
-                if L3 > 0 and _has("A-A"):
-                    _segs.append(bb.Segment("constant", section="A-A", length=L3))
-
-                if L4 > 0:
-                    if _has("A-A", "B-B"):
-                        _segs.append(bb.Segment("loft", from_sec="A-A", to_sec="B-B", length=L4))
-                    elif _has("B-B"):
-                        _segs.append(bb.Segment("constant", section="B-B", length=L4))
-
-                # Fill với section tốt nhất có
-                _mid_sec = "B-B" if "B-B" in m3d.sections else (
-                           "A-A" if "A-A" in m3d.sections else
-                           next(iter(m3d.sections)))
-                _segs.append(bb.Segment("constant", section=_mid_sec, length="fill"))
+                # Đoạn fill giữa nhịp
+                _fill_sec = cad_state.get("fill_sec", "B-B")
+                if not _has(_fill_sec):
+                    _fill_sec = next(iter(m3d.sections), None)
+                if _fill_sec:
+                    _segs.append(bb.Segment("constant", section=_fill_sec, length="fill"))
                 m3d.segments = _segs
-
-                # Lưu để tab 3D Tổng hợp và Bố trí chung sử dụng
-                st.session_state["spt_beam_model"] = m3d
-                st.session_state["spt_L_m"] = L_m
 
                 _traces = bb.build_3d_wireframe(m3d)
                 _fig3d = go.Figure(data=_traces)
                 _fig3d.update_layout(
                     template="plotly_dark", paper_bgcolor="#1a2330",
-                    height=600, margin=dict(l=0, r=0, t=35, b=0),
+                    height=560, margin=dict(l=0, r=0, t=35, b=0),
                     title=dict(
                         text="3D Wireframe — Dầm Super-T",
                         font=dict(size=13, color="#9ac8e8"), x=0.5,
@@ -973,6 +1034,18 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                                 key=f"{pfx}_3d_large",
                                 config={"displayModeBar": True,
                                         "modeBarButtonsToRemove": ["toImage"]})
+
+                # Nút commit — chỉ update tab khác khi user bấm
+                if st.button(
+                    "🏗️ Cập nhật 3D toàn cầu & Bố trí chung",
+                    type="primary", use_container_width=True,
+                    key=f"{pfx}_commit_3d",
+                    help="Ghi mô hình dầm này vào tab 3D Tổng hợp và Bố trí chung",
+                ):
+                    st.session_state["spt_beam_model"] = m3d
+                    st.session_state["spt_L_m"] = L_m
+                    st.session_state.pop("spt_beam_traces_cache", None)
+                    st.toast("✅ Đã cập nhật 3D toàn cầu. Chuyển tab 🏗️ để xem.", icon="✅")
 
         except Exception as _e3d:
             st.error(f"Không tạo được 3D: {_e3d}")
@@ -1008,10 +1081,17 @@ def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
     """Trả về list go.Scatter3d traces của BeamModel đã scale và định vị theo cầu.
 
     Dùng để chèn vào figure tab 3D Tổng hợp.  Trả về [] nếu chưa có model.
+    Kết quả được cache vào session_state cho đến khi model được commit lại.
     """
     m3d = st.session_state.get("spt_beam_model")
     if m3d is None:
         return []
+
+    # Cache — tránh tính lại khi rerun không liên quan
+    _cache_key = "spt_beam_traces_cache"
+    if _cache_key in st.session_state:
+        return st.session_state[_cache_key]
+
     bb = _get_bb()
     try:
         _raw = bb.build_3d_wireframe(m3d)
@@ -1032,31 +1112,33 @@ def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
     cao_dd = float(d.get("cao_day_dam",        8.0))
     H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
 
-    x_first_dam = -bc / 2 + oh       # vị trí Y dầm đầu tiên (m)
-    z_beam_top  = cao_dd + H_dam      # cao độ đỉnh dầm = đáy bản mặt cầu (m)
-    L_m = float(st.session_state.get("spt_L_m", L_nhip))  # chiều dài beam model (m)
+    x_first_dam  = -bc / 2 + oh        # vị trí Y dầm đầu tiên (m)
+    z_beam_top   = cao_dd + H_dam       # cao độ đỉnh dầm = đáy bản mặt cầu (m)
+    L_m          = float(st.session_state.get("spt_L_m", L_nhip))
+    i_dam_center = n_dam // 2           # chỉ vẽ dầm giữa để giảm số trace
 
     result = []
+    beam_y = x_first_dam + i_dam_center * kc_dam
     for i_nhip in range(n_nhip):
         span_x0 = x0 + i_nhip * L_nhip
-        for i_dam in range(n_dam):
-            beam_y = x_first_dam + i_dam * kc_dam
-            for _t in _raw:
-                if not (hasattr(_t, 'x') and _t.x is not None and len(_t.x) > 0):
-                    continue
-                _tx = np.array(_t.x, dtype=float)  # mm, chiều ngang tiết diện
-                _ty = np.array(_t.y, dtype=float)  # mm, dọc dầm
-                _tz = np.array(_t.z, dtype=float)  # mm, đứng tiết diện
+        for _t in _raw:
+            if not (hasattr(_t, 'x') and _t.x is not None and len(_t.x) > 0):
+                continue
+            _tx = np.array(_t.x, dtype=float)
+            _ty = np.array(_t.y, dtype=float)
+            _tz = np.array(_t.z, dtype=float)
 
-                bx = span_x0 + _ty * (L_nhip / L_m) / 1000.0   # bridge X (m)
-                by = beam_y  + _tx / 1000.0                      # bridge Y (m)
-                bz = z_beam_top + _tz / 1000.0                   # bridge Z (m)
+            bx = span_x0 + _ty * (L_nhip / L_m) / 1000.0
+            by = beam_y  + _tx / 1000.0
+            bz = z_beam_top + _tz / 1000.0
 
-                result.append(go.Scatter3d(
-                    x=bx.tolist(), y=by.tolist(), z=bz.tolist(),
-                    mode="lines",
-                    line=_t.line,
-                    showlegend=False,
-                    hoverinfo="skip",
-                ))
+            result.append(go.Scatter3d(
+                x=bx.tolist(), y=by.tolist(), z=bz.tolist(),
+                mode="lines",
+                line=_t.line,
+                showlegend=False,
+                hoverinfo="skip",
+            ))
+
+    st.session_state[_cache_key] = result
     return result
