@@ -11,7 +11,6 @@ import uuid
 import time
 import numpy as np
 from typing import List, Tuple
-import io
 
 try:
     import ifcopenshell
@@ -416,9 +415,19 @@ def export_beam_to_ifc(
             beam_elements, pset)
 
     # ── 14. Xuất ra bytes ────────────────────────────────────────────
-    buf = io.StringIO()
-    ifc_file.write(buf)
-    return buf.getvalue().encode("utf-8")
+    # ifcopenshell.write() chỉ nhận file path, không nhận StringIO
+    import tempfile, os
+    with tempfile.NamedTemporaryFile(suffix=".ifc", delete=False) as _tmp:
+        _tmp_path = _tmp.name
+    try:
+        ifc_file.write(_tmp_path)
+        with open(_tmp_path, "rb") as _f:
+            return _f.read()
+    finally:
+        try:
+            os.unlink(_tmp_path)
+        except OSError:
+            pass
 
 
 def check_ifcopenshell() -> tuple[bool, str]:
