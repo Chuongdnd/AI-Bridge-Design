@@ -1,0 +1,436 @@
+"""
+18-IFC_Exporter.py
+Xuất BeamModel → IFC4 có thể mở trực tiếp trong Revit
+(File → Open → IFC → chọn file .ifc)
+
+Yêu cầu: pip install ifcopenshell
+"""
+from __future__ import annotations
+import math
+import uuid
+import time
+import numpy as np
+from typing import List, Tuple
+import io
+
+try:
+    import ifcopenshell
+    import ifcopenshell.api
+    import ifcopenshell.api.root
+    import ifcopenshell.api.unit
+    import ifcopenshell.api.context
+    import ifcopenshell.api.geometry
+    import ifcopenshell.api.spatial
+    import ifcopenshell.api.aggregate
+    HAS_IFC = True
+except ImportError:
+    HAS_IFC = False
+
+
+# ══════════════════════════════════════════════════════════
+# HELPERS
+# ══════════════════════════════════════════════════════════
+
+def _new_guid() -> str:
+    return ifcopenshell.guid.compress(uuid.uuid4().hex)
+
+
+def _loft_cross_sections(
+    sec_from: list,   # [[x,z], ...] mm
+    sec_to:   list,   # [[x,z], ...] mm
+    length:   float,  # mm, dọc theo Y
+    n_steps:  int = 6,
+) -> Tuple[List, List]:
+    """
+    Nội suy tuyến tính giữa 2 mặt cắt theo chiều dài.
+    Trả về (vertices, faces) để tạo IfcFacetedBrep.
+    vertices: list of (x, y, z) mm
+    faces:    list of [i0, i1, i2, ...] (index vào vertices)
+    """
+    n = min(len(sec_from), len(sec_to))
+    if n < 3:
+        return [], []
+
+    from_pts = sec_from[:n]
+    to_pts   = sec_to[:n]
+
+    verts = []
+    faces = []
+
+    rings = []
+    for step in range(n_steps + 1):
+        t = step / n_steps
+        y = t * length
+        ring = []
+        for i in range(n):
+            x = from_pts[i][0] * (1 - t) + to_pts[i][0] * t
+            z = from_pts[i][1] * (1 - t) + to_pts[i][1] * t
+            ring.append(len(verts))
+            verts.append((x, y, z))
+        rings.append(ring)
+
+    for s in range(n_steps):
+        r0 = rings[s]
+        r1 = rings[s + 1]
+        for i in range(n):
+            j = (i + 1) % n
+            faces.append([r0[i], r0[j], r1[j]])
+            faces.append([r0[i], r1[j], r1[i]])
+
+    # Cap đầu (fan triangulation)
+    r_start = rings[0]
+    cx_s = sum(verts[i][0] for i in r_start) / n
+    cz_s = sum(verts[i][2] for i in r_start) / n
+    verts.append((cx_s, 0.0, cz_s))
+    ci_s = len(verts) - 1
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append([ci_s, r_start[j], r_start[i]])
+
+    # Cap cuối
+    r_end = rings[-1]
+    cx_e = sum(verts[i][0] for i in r_end) / n
+    cz_e = sum(verts[i][2] for i in r_end) / n
+    verts.append((cx_e, length, cz_e))
+    ci_e = len(verts) - 1
+    for i in range(n):
+        j = (i + 1) % n
+        faces.append([ci_e, r_end[i], r_end[j]])
+
+    return verts, faces
+
+
+def _extrude_section(
+    outer: list,   # [[x,z], ...] mm
+    holes: list,   # [[[x,z],...], ...]
+    length: float, # mm, theo Y
+) -> Tuple[List, List]:
+    """Constant section: extrude theo Y."""
+    return _loft_cross_sections(outer, outer, length, n_steps=1)
+
+
+def _make_faceted_brep(ifc_file, verts, faces, context):
+    """
+    Tạo IfcFacetedBrep từ danh sách đỉnh và mặt.
+    Geometry format Revit hiểu khi mở trực tiếp.
+    """
+    ifc_verts = [
+        ifc_file.createIfcCartesianPoint((float(v[0]), float(v[1]), float(v[2])))
+        for v in verts
+    ]
+
+    ifc_faces = []
+    for f in faces:
+        if len(f) < 3:
+            continue
+        pts = [ifc_verts[i] for i in f]
+        loop = ifc_file.createIfcPolyLoop(pts)
+        bound = ifc_file.createIfcFaceOuterBound(loop, True)
+        ifc_faces.append(ifc_file.createIfcFace([bound]))
+
+    if not ifc_faces:
+        return None
+
+    shell = ifc_file.createIfcClosedShell(ifc_faces)
+    return ifc_file.createIfcFacetedBrep(shell)
+
+
+def _placement(ifc_file, x=0.0, y=0.0, z=0.0,
+               axis=(0, 0, 1), ref_dir=(1, 0, 0)):
+    """Tạo IfcLocalPlacement."""
+    origin = ifc_file.createIfcCartesianPoint((x, y, z))
+    ax     = ifc_file.createIfcDirection(axis)
+    ref    = ifc_file.createIfcDirection(ref_dir)
+    ax2    = ifc_file.createIfcAxis2Placement3D(origin, ax, ref)
+    return ifc_file.createIfcLocalPlacement(None, ax2)
+
+
+# ══════════════════════════════════════════════════════════
+# MAIN EXPORT FUNCTION
+# ══════════════════════════════════════════════════════════
+
+def export_beam_to_ifc(
+    beam_model,
+    design_data: dict,
+    filename: str = "dam_supert.ifc",
+    author:   str = "UTH Bridge AI",
+    project_name: str = "Cầu Super-T",
+) -> bytes:
+    """
+    Xuất BeamModel → IFC4 bytes có thể mở trực tiếp trong Revit.
+
+    Params
+    ------
+    beam_model  : BeamBuilder.BeamModel (đã có sections + segments)
+    design_data : design_data dict từ session_state
+    filename    : tên file (chỉ dùng cho metadata)
+    author      : tên tác giả
+    project_name: tên dự án
+
+    Returns
+    -------
+    bytes: nội dung file IFC (UTF-8 encoded)
+    """
+    if not HAS_IFC:
+        raise ImportError(
+            "ifcopenshell chưa được cài. "
+            "Chạy: pip install ifcopenshell"
+        )
+
+    import sys
+    bb = sys.modules.get("BeamBuilder")
+    if bb is None:
+        raise RuntimeError("BeamBuilder module chưa được load.")
+
+    # ── 1. Tạo file IFC4 ─────────────────────────────────────────────
+    ifc_file = ifcopenshell.file(schema="IFC4")
+
+    # ── 2. IfcOwnerHistory ───────────────────────────────────────────
+    person  = ifc_file.createIfcPerson(
+        None, "UTH", "Bridge AI", None, None, None, None, None)
+    org     = ifc_file.createIfcOrganization(
+        None, "UTH", "University of Transport and Communications",
+        None, None)
+    p_and_o = ifc_file.createIfcPersonAndOrganization(person, org, None)
+    app     = ifc_file.createIfcApplication(
+        org, "1.0", "UTH Bridge AI System", "UTH-AI")
+    ts      = int(time.time())
+    owner_hist = ifc_file.createIfcOwnerHistory(
+        p_and_o, app, "READWRITE", None, None, None, None, ts)
+
+    # ── 3. Units (mm) ────────────────────────────────────────────────
+    mm_unit  = ifc_file.createIfcSIUnit(None, "LENGTHUNIT", "MILLI", "METRE")
+    deg_unit = ifc_file.createIfcSIUnit(None, "PLANEANGLEUNIT", None, "RADIAN")
+    unit_assign = ifc_file.createIfcUnitAssignment([mm_unit, deg_unit])
+
+    # ── 4. Geometric context ─────────────────────────────────────────
+    world_origin = ifc_file.createIfcCartesianPoint((0.0, 0.0, 0.0))
+    world_ax     = ifc_file.createIfcAxis2Placement3D(
+        world_origin,
+        ifc_file.createIfcDirection((0.0, 0.0, 1.0)),
+        ifc_file.createIfcDirection((1.0, 0.0, 0.0)),
+    )
+    ctx = ifc_file.createIfcGeometricRepresentationContext(
+        "Model", "Model", 3, 1.0e-5, world_ax, None)
+    body_ctx = ifc_file.createIfcGeometricRepresentationSubContext(
+        "Body", "Model", None, None, None, None, ctx,
+        None, "MODEL_VIEW", None)
+
+    # ── 5. IfcProject ────────────────────────────────────────────────
+    project = ifc_file.createIfcProject(
+        _new_guid(), owner_hist, project_name,
+        None, None, None, None, [ctx], unit_assign)
+
+    # ── 6. IfcSite ───────────────────────────────────────────────────
+    site_plc = _placement(ifc_file)
+    site = ifc_file.createIfcSite(
+        _new_guid(), owner_hist, "Site", None, None,
+        site_plc, None, None, "ELEMENT", None, None, None, None, None)
+    ifc_file.createIfcRelAggregates(
+        _new_guid(), owner_hist, None, None, project, [site])
+
+    # ── 7. IfcBuilding ───────────────────────────────────────────────
+    bldg_plc = _placement(ifc_file)
+    bldg = ifc_file.createIfcBuilding(
+        _new_guid(), owner_hist, project_name, None, None,
+        bldg_plc, None, None, "ELEMENT", None, None, None)
+    ifc_file.createIfcRelAggregates(
+        _new_guid(), owner_hist, None, None, site, [bldg])
+
+    # ── 8. IfcBuildingStorey (cao độ đáy dầm) ────────────────────────
+    cao_dd     = float(design_data.get("cao_day_dam", 0.0)) * 1000  # m→mm
+    storey_plc = _placement(ifc_file, z=cao_dd)
+    storey = ifc_file.createIfcBuildingStorey(
+        _new_guid(), owner_hist, "Cao độ đáy dầm",
+        None, None, storey_plc, None, None, "ELEMENT", cao_dd)
+    ifc_file.createIfcRelAggregates(
+        _new_guid(), owner_hist, None, None, bldg, [storey])
+
+    # ── 9. Lấy dữ liệu cầu ──────────────────────────────────────────
+    kcn    = design_data.get("kcn_result") or design_data.get("ai_result", {})
+    geo    = design_data.get("geo_logic", {})
+    n_nhip = int(kcn.get("tong_so_nhip", 3))
+    L_nhip = float(kcn.get("chieu_dai",   38.0)) * 1000   # m→mm
+    n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
+    kc_dam = float(kcn.get("khoang_cach_dam", 2.2)) * 1000  # m→mm
+    bc     = float(design_data.get("bc", 12.0)) * 1000     # m→mm
+    oh     = float(kcn.get("overhang", 0.5)) * 1000        # m→mm
+    x0_mm  = float(geo.get("x_mo_trai", -60.0)) * 1000     # m→mm
+
+    x_first_dam = -bc / 2 + oh   # mm từ tim cầu
+
+    # ── 10. Tính segments geometry ───────────────────────────────────
+    secs   = beam_model.sections
+    segs   = beam_model.segments
+    mirror = beam_model.mirror
+    L_full = float(beam_model.length)   # mm (full beam)
+
+    fixed  = sum(
+        float(s.length) for s in segs if s.length != "fill")
+    fills  = sum(1 for s in segs if s.length == "fill")
+    half   = L_full / (2.0 if mirror else 1.0)
+    fill_l = max(0.0, (half - fixed) / fills) if fills else 0.0
+
+    # ── 11. Tạo IfcBeam cho từng dầm × từng nhịp ────────────────────
+    beam_elements = []
+
+    for i_dam in range(n_dam):
+        y_dam = x_first_dam + i_dam * kc_dam   # mm ngang cầu
+
+        for i_nhip in range(n_nhip):
+            x_nhip = x0_mm + i_nhip * L_nhip   # mm dọc cầu
+
+            all_verts = []
+            all_faces = []
+            y_cursor  = 0.0
+
+            def _get_outer(sec_name):
+                s = secs.get(sec_name)
+                return s.outer if s and s.outer else []
+
+            # Expand mirror nếu cần
+            seg_list = list(segs)
+            if mirror:
+                seg_list = seg_list + [
+                    type('_S', (), {
+                        'type':     sg.type,
+                        'section':  getattr(sg, 'section',  None),
+                        'from_sec': getattr(sg, 'to_sec',   None),
+                        'to_sec':   getattr(sg, 'from_sec', None),
+                        'length':   sg.length,
+                    })()
+                    for sg in reversed(segs)
+                ]
+
+            for seg in seg_list:
+                slen = fill_l if seg.length == "fill" else float(seg.length)
+                if slen <= 0:
+                    continue
+
+                if seg.type == "constant":
+                    outer = _get_outer(seg.section)
+                    if not outer:
+                        y_cursor += slen
+                        continue
+                    v, f = _extrude_section(outer, [], slen)
+                else:
+                    outer_f = _get_outer(seg.from_sec)
+                    outer_t = _get_outer(seg.to_sec)
+                    if not outer_f and not outer_t:
+                        y_cursor += slen
+                        continue
+                    outer_f = outer_f or outer_t
+                    outer_t = outer_t or outer_f
+                    v, f = _loft_cross_sections(outer_f, outer_t, slen)
+
+                offset_v = [(vx, vy + y_cursor, vz) for vx, vy, vz in v]
+                offset_f = [[fi + len(all_verts) for fi in face] for face in f]
+                all_verts.extend(offset_v)
+                all_faces.extend(offset_f)
+                y_cursor += slen
+
+            if not all_verts or not all_faces:
+                continue
+
+            brep = _make_faceted_brep(ifc_file, all_verts, all_faces, body_ctx)
+            if brep is None:
+                continue
+
+            shape_rep = ifc_file.createIfcShapeRepresentation(
+                body_ctx, "Body", "Brep", [brep])
+            prod_def = ifc_file.createIfcProductDefinitionShape(
+                None, None, [shape_rep])
+
+            # Placement tương đối với storey
+            _plc_ax2 = ifc_file.createIfcAxis2Placement3D(
+                ifc_file.createIfcCartesianPoint((float(x_nhip), float(y_dam), 0.0)),
+                ifc_file.createIfcDirection((0.0, 0.0, 1.0)),
+                ifc_file.createIfcDirection((1.0, 0.0, 0.0)),
+            )
+            beam_plc_rel = ifc_file.createIfcLocalPlacement(
+                storey_plc, _plc_ax2)
+
+            beam_name = f"Dam_S{i_dam+1}_N{i_nhip+1}"
+            beam_el = ifc_file.createIfcBeam(
+                _new_guid(), owner_hist,
+                beam_name,
+                f"Super-T nhip {i_nhip+1} dam {i_dam+1}",
+                None,
+                beam_plc_rel,
+                prod_def,
+                None, "BEAM",
+            )
+            beam_elements.append(beam_el)
+
+            beam_type = ifc_file.createIfcBeamType(
+                _new_guid(), owner_hist,
+                "Super-T",
+                f"H={kcn.get('chieu_cao_dam', 1.75)*1000:.0f}mm",
+                None, None, None, None, None, "BEAM",
+            )
+            ifc_file.createIfcRelDefinesByType(
+                _new_guid(), owner_hist, None, None,
+                [beam_el], beam_type)
+
+    # ── 12. Gán tất cả dầm vào storey ───────────────────────────────
+    if beam_elements:
+        ifc_file.createIfcRelContainedInSpatialStructure(
+            _new_guid(), owner_hist,
+            "Dam Super-T", None,
+            beam_elements, storey,
+        )
+
+    # ── 13. IfcPropertySet — thông số kỹ thuật ───────────────────────
+    if beam_elements:
+        props = [
+            ifc_file.createIfcPropertySingleValue(
+                "L_nhip_mm", None,
+                ifc_file.createIfcReal(L_nhip), None),
+            ifc_file.createIfcPropertySingleValue(
+                "H_dam_mm", None,
+                ifc_file.createIfcReal(
+                    float(kcn.get("chieu_cao_dam", 1.75)) * 1000), None),
+            ifc_file.createIfcPropertySingleValue(
+                "Loai_dam", None,
+                ifc_file.createIfcText(
+                    str(kcn.get("loai_dam", "Super-T"))), None),
+            ifc_file.createIfcPropertySingleValue(
+                "So_nhip", None,
+                ifc_file.createIfcInteger(n_nhip), None),
+            ifc_file.createIfcPropertySingleValue(
+                "So_dam_tren_MCN", None,
+                ifc_file.createIfcInteger(n_dam), None),
+            ifc_file.createIfcPropertySingleValue(
+                "Khoang_cach_dam_mm", None,
+                ifc_file.createIfcReal(kc_dam), None),
+            ifc_file.createIfcPropertySingleValue(
+                "Cao_do_day_dam_m", None,
+                ifc_file.createIfcReal(
+                    float(design_data.get("cao_day_dam", 0))), None),
+        ]
+        pset = ifc_file.createIfcPropertySet(
+            _new_guid(), owner_hist,
+            "UTH_BridgeBeamProperties", None, props)
+        ifc_file.createIfcRelDefinesByProperties(
+            _new_guid(), owner_hist, None, None,
+            beam_elements, pset)
+
+    # ── 14. Xuất ra bytes ────────────────────────────────────────────
+    buf = io.StringIO()
+    ifc_file.write(buf)
+    return buf.getvalue().encode("utf-8")
+
+
+def check_ifcopenshell() -> tuple[bool, str]:
+    """Kiểm tra ifcopenshell có sẵn không. Trả về (ok, message)."""
+    if not HAS_IFC:
+        return False, (
+            "ifcopenshell chua duoc cai.\n"
+            "Chay lenh: pip install ifcopenshell\n"
+            "Sau do restart app."
+        )
+    try:
+        v = ifcopenshell.version
+        return True, f"ifcopenshell {v} — san sang"
+    except Exception as e:
+        return False, f"ifcopenshell loi: {e}"

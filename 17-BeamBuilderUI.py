@@ -28,6 +28,23 @@ def _get_bb():
     return bb
 
 
+def _get_ifc_exporter():
+    """Lazy-load 18-IFC_Exporter.py."""
+    import importlib.util as _ifc_util
+    _spec = _ifc_util.spec_from_file_location(
+        "ifc_exporter18",
+        pathlib.Path(__file__).parent / "18-IFC_Exporter.py",
+    )
+    if _spec is None:
+        return None
+    mod = _ifc_util.module_from_spec(_spec)
+    try:
+        _spec.loader.exec_module(mod)
+        return mod
+    except Exception:
+        return None
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # PERSISTENCE — lưu/tải mặt cắt mặc định
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -943,6 +960,156 @@ def _dxf_upload_card(pfx: str, bb, secs: dict, cad_state: dict,
             st.caption("Chưa có DXF")
 
 
+def render_ifc_export_card(
+    beam_model,
+    design_data: dict,
+    pfx: str = "spt",
+):
+    """
+    Card xuất IFC — đặt ở cuối cột 3D trong render_cad_spt_tab().
+    Hiển thị nút tải IFC mở được trực tiếp trong Revit.
+    """
+    IFC = _get_ifc_exporter()
+
+    st.markdown(
+        "<div style='background:#0d1a10;border:1px solid #1a4a22;"
+        "border-radius:8px;padding:12px 14px;margin-top:12px'>"
+        "<div style='font-size:10px;color:#2ecc71;text-transform:uppercase;"
+        "letter-spacing:0.5px;margin-bottom:8px'>"
+        "📦 Xuất mô hình IFC — mở trực tiếp trong Revit</div>",
+        unsafe_allow_html=True,
+    )
+
+    if IFC is None:
+        st.error(
+            "Không load được module 18-IFC_Exporter.py. "
+            "Kiểm tra file tồn tại trong cùng thư mục.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    ifc_ok, ifc_msg = IFC.check_ifcopenshell()
+
+    if not ifc_ok:
+        st.warning(f"⚠️ {ifc_msg}")
+        st.code("pip install ifcopenshell", language="bash")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    _has_sections = any(
+        s.outer for s in beam_model.sections.values()
+    ) if beam_model.sections else False
+    _has_segments = bool(beam_model.segments)
+
+    if not _has_sections:
+        st.info("Upload ít nhất 1 mặt cắt DXF để xuất IFC.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    if not _has_segments:
+        st.info("Khai báo ít nhất 1 đoạn dầm để xuất IFC.")
+        st.markdown("</div>", unsafe_allow_html=True)
+        return
+
+    kcn    = design_data.get("kcn_result") or design_data.get("ai_result", {})
+    n_nhip = int(kcn.get("tong_so_nhip", 3))
+    n_dam  = int(kcn.get("so_luong_dam") or 5)
+    L_nhip = float(kcn.get("chieu_dai", 38.0))
+
+    st.markdown(
+        f"<div style='font-size:11px;color:#aaa;margin-bottom:8px'>"
+        f"Schema: <b style='color:#2ecc71'>IFC4</b> &nbsp;|&nbsp; "
+        f"Phần tử: <b style='color:#2ecc71'>"
+        f"{n_nhip * n_dam} IfcBeam</b> &nbsp;|&nbsp; "
+        f"({n_nhip} nhịp × {n_dam} dầm)<br>"
+        f"Mở bằng: <b style='color:#4fc3f7'>Revit → File → Open → IFC</b>"
+        f"</div>",
+        unsafe_allow_html=True,
+    )
+
+    _oa, _ob = st.columns(2)
+    with _oa:
+        _proj_name = st.text_input(
+            "Tên dự án IFC",
+            value=design_data.get("ten_du_an", "Cầu Super-T"),
+            key=f"{pfx}_ifc_projname",
+        )
+    with _ob:
+        _author = st.text_input(
+            "Tác giả",
+            value="UTH Bridge AI",
+            key=f"{pfx}_ifc_author",
+        )
+
+    if f"{pfx}_ifc_bytes" not in st.session_state:
+        st.session_state[f"{pfx}_ifc_bytes"] = None
+
+    if st.button(
+        "⚙️ Tạo file IFC",
+        key=f"{pfx}_gen_ifc",
+        use_container_width=True,
+        type="secondary",
+        help="Tạo IFC từ mô hình dầm hiện tại — thường mất 5-20 giây",
+    ):
+        with st.spinner("Đang xuất IFC…"):
+            try:
+                _ifc_bytes = IFC.export_beam_to_ifc(
+                    beam_model   = beam_model,
+                    design_data  = design_data,
+                    project_name = _proj_name,
+                    author       = _author,
+                )
+                st.session_state[f"{pfx}_ifc_bytes"] = _ifc_bytes
+                st.success(
+                    f"✅ IFC tạo thành công — "
+                    f"{len(_ifc_bytes) / 1024:.0f} KB")
+            except Exception as _ex:
+                st.error(f"❌ Lỗi xuất IFC: {_ex}")
+                import traceback
+                with st.expander("Chi tiết lỗi"):
+                    st.code(traceback.format_exc())
+
+    _ifc_data = st.session_state.get(f"{pfx}_ifc_bytes")
+    if _ifc_data:
+        _fname = (
+            f"dam_supert_{n_nhip}nhip_{int(L_nhip)}m.ifc"
+        ).replace(" ", "_")
+
+        st.download_button(
+            label="⬇️ Tải IFC — Mở được trực tiếp trong Revit",
+            data=_ifc_data,
+            file_name=_fname,
+            mime="application/x-step",
+            use_container_width=True,
+            type="primary",
+            key=f"{pfx}_dl_ifc",
+            help=(
+                "Sau khi tải: Revit → File → Open → chọn file .ifc\n"
+                "(Không dùng Insert → Link IFC)"
+            ),
+        )
+
+        with st.expander("📖 Hướng dẫn mở trong Revit"):
+            st.markdown("""
+**Cách mở IFC trực tiếp trong Revit (không phải Link):**
+
+1. Mở Revit → **File** → **Open** → **IFC**
+2. Chọn file `.ifc` vừa tải về
+3. Revit sẽ chuyển đổi IFC → RVT (mất 30-60 giây tùy kích thước)
+4. Lưu file `.rvt` để làm việc tiếp
+
+**Nếu muốn tùy chỉnh import:**
+- Revit → **File** → **Open** → **IFC Options**
+- Chọn schema mapping phù hợp
+
+**Lưu ý:**
+- IFC4 yêu cầu Revit 2020 trở lên
+- Geometry xuất dạng IfcFacetedBrep (solid mesh)
+- Properties kỹ thuật nằm trong tab Properties của từng element trong Revit
+""")
+
+    st.markdown("</div>", unsafe_allow_html=True)
+
+
 def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     """
     Tab chi tiết dầm Super-T — import mặt cắt ngang từ DXF.
@@ -1287,6 +1454,9 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
                     # Lưu cấu hình đoạn vào file (bao gồm segs + fill_sec)
                     _save_defaults(secs, cad_state)
                     st.toast("✅ Đã cập nhật 3D & lưu cấu hình. Chuyển tab 🏗️ để xem.", icon="✅")
+
+                # Xuất IFC mở được trong Revit
+                render_ifc_export_card(m3d, d, pfx=pfx)
 
         except Exception as _e3d:
             st.error(f"Không tạo được 3D: {_e3d}")
