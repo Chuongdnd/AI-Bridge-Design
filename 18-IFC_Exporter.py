@@ -34,6 +34,39 @@ def _new_guid() -> str:
     return ifcopenshell.guid.compress(uuid.uuid4().hex)
 
 
+def _clean_ring2d(pts, tol: float = 0.05) -> list:
+    """
+    Làm sạch vòng 2D [x,z] trước khi triangulate:
+    - Loại bỏ điểm trùng liên tiếp
+    - Loại bỏ điểm cuối trùng với điểm đầu (closed polygon)
+    """
+    if not pts:
+        return pts
+    result = [list(pts[0])]
+    for p in pts[1:]:
+        if abs(p[0] - result[-1][0]) > tol or abs(p[1] - result[-1][1]) > tol:
+            result.append(list(p))
+    # Remove closing duplicate
+    while (len(result) > 1
+           and abs(result[-1][0] - result[0][0]) < tol
+           and abs(result[-1][1] - result[0][1]) < tol):
+        result.pop()
+    return result
+
+
+def _face_degenerate(verts: list, face: list, tol: float = 0.05) -> bool:
+    """True nếu mặt tam giác có 2 đỉnh trùng vị trí (zero-area face)."""
+    pts = [verts[i] for i in face]
+    for a in range(len(pts)):
+        for b in range(a + 1, len(pts)):
+            pa, pb = pts[a], pts[b]
+            if (abs(pa[0]-pb[0]) < tol
+                    and abs(pa[1]-pb[1]) < tol
+                    and abs(pa[2]-pb[2]) < tol):
+                return True
+    return False
+
+
 def _loft_cross_sections(
     sec_from: list,   # [[x,z], ...] mm
     sec_to:   list,   # [[x,z], ...] mm
@@ -44,17 +77,17 @@ def _loft_cross_sections(
     Nội suy tuyến tính giữa 2 mặt cắt theo chiều dài.
     Trả về (vertices, faces) để tạo IfcFacetedBrep.
     vertices: list of (x, y, z) mm
-    faces:    list of [i0, i1, i2, ...] (index vào vertices)
+    faces:    list of [i0, i1, i2] (triangles, index vào vertices)
     """
-    n = min(len(sec_from), len(sec_to))
+    # Deduplicate both rings before use
+    from_pts = _clean_ring2d(sec_from)
+    to_pts   = _clean_ring2d(sec_to)
+    n = min(len(from_pts), len(to_pts))
     if n < 3:
         return [], []
 
-    from_pts = sec_from[:n]
-    to_pts   = sec_to[:n]
-
-    verts = []
-    faces = []
+    verts: List = []
+    faces: List = []
 
     rings = []
     for step in range(n_steps + 1):
@@ -68,6 +101,7 @@ def _loft_cross_sections(
             verts.append((x, y, z))
         rings.append(ring)
 
+    # Side faces (quads split into 2 triangles)
     for s in range(n_steps):
         r0 = rings[s]
         r1 = rings[s + 1]
@@ -76,7 +110,7 @@ def _loft_cross_sections(
             faces.append([r0[i], r0[j], r1[j]])
             faces.append([r0[i], r1[j], r1[i]])
 
-    # Cap đầu (fan triangulation)
+    # Start cap — centroid fan, normal points toward -Y
     r_start = rings[0]
     cx_s = sum(verts[i][0] for i in r_start) / n
     cz_s = sum(verts[i][2] for i in r_start) / n
@@ -86,7 +120,7 @@ def _loft_cross_sections(
         j = (i + 1) % n
         faces.append([ci_s, r_start[j], r_start[i]])
 
-    # Cap cuối
+    # End cap — centroid fan, normal points toward +Y
     r_end = rings[-1]
     cx_e = sum(verts[i][0] for i in r_end) / n
     cz_e = sum(verts[i][2] for i in r_end) / n
@@ -95,6 +129,9 @@ def _loft_cross_sections(
     for i in range(n):
         j = (i + 1) % n
         faces.append([ci_e, r_end[i], r_end[j]])
+
+    # Remove any zero-area (degenerate) triangles
+    faces = [f for f in faces if not _face_degenerate(verts, f)]
 
     return verts, faces
 
