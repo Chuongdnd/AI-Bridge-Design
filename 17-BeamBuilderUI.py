@@ -1018,9 +1018,8 @@ def render_ifc_export_card(
     st.markdown(
         f"<div style='font-size:11px;color:#aaa;margin-bottom:8px'>"
         f"Schema: <b style='color:#2ecc71'>IFC2X3</b> &nbsp;|&nbsp; "
-        f"Phần tử: <b style='color:#2ecc71'>"
-        f"{n_nhip * n_dam} IfcBeam</b> &nbsp;|&nbsp; "
-        f"({n_nhip} nhịp × {n_dam} dầm)<br>"
+        f"Phần tử: <b style='color:#2ecc71'>1 IfcBeam</b> &nbsp;|&nbsp; "
+        f"L={L_nhip:.0f}m — 1 dầm đơn để kiểm tra trong Revit<br>"
         f"Mở bằng: <b style='color:#4fc3f7'>Revit → File → Open → IFC</b>"
         f"</div>",
         unsafe_allow_html=True,

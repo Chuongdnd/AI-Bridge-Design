@@ -284,18 +284,12 @@ def export_beam_to_ifc(
     ifc_file.createIfcRelAggregates(
         _new_guid(), owner_hist, None, None, bldg, [storey])
 
-    # ── 9. Lấy dữ liệu cầu ──────────────────────────────────────────
+    # ── 9. Lấy thông số kỹ thuật (chỉ dùng cho PropertySet) ─────────
     kcn    = design_data.get("kcn_result") or design_data.get("ai_result", {})
-    geo    = design_data.get("geo_logic", {})
     n_nhip = int(kcn.get("tong_so_nhip", 3))
-    L_nhip = float(kcn.get("chieu_dai",   38.0)) * 1000   # m→mm
+    L_nhip = float(kcn.get("chieu_dai",   38.0))   # m (metadata)
     n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
-    kc_dam = float(kcn.get("khoang_cach_dam", 2.2)) * 1000  # m→mm
-    bc     = float(design_data.get("bc", 12.0)) * 1000     # m→mm
-    oh     = float(kcn.get("overhang", 0.5)) * 1000        # m→mm
-    x0_mm  = float(geo.get("x_mo_trai", -60.0)) * 1000     # m→mm
-
-    x_first_dam = -bc / 2 + oh   # mm từ tim cầu
+    kc_dam = float(kcn.get("khoang_cach_dam", 2.2)) * 1000  # m→mm (metadata)
 
     # ── 10. Tính segments geometry ───────────────────────────────────
     secs   = beam_model.sections
@@ -309,95 +303,81 @@ def export_beam_to_ifc(
     half   = L_full / (2.0 if mirror else 1.0)
     fill_l = max(0.0, (half - fixed) / fills) if fills else 0.0
 
-    # ── 11. Tạo IfcBeam cho từng dầm × từng nhịp ────────────────────
+    # ── 11. Tạo 1 IfcBeam đơn tại gốc tọa độ ───────────────────────
+    # Tab Chi tiết SPT chỉ cần 1 dầm để kiểm tra geometry trong Revit.
+
+    def _get_outer(sec_name):
+        s = secs.get(sec_name)
+        return s.outer if s and s.outer else []
+
+    # Expand mirror
+    seg_list = list(segs)
+    if mirror:
+        seg_list = seg_list + [
+            type('_S', (), {
+                'type':     sg.type,
+                'section':  getattr(sg, 'section',  None),
+                'from_sec': getattr(sg, 'to_sec',   None),
+                'to_sec':   getattr(sg, 'from_sec', None),
+                'length':   sg.length,
+            })()
+            for sg in reversed(segs)
+        ]
+
+    all_verts: List = []
+    all_faces: List = []
+    y_cursor = 0.0
+
+    for seg in seg_list:
+        slen = fill_l if seg.length == "fill" else float(seg.length)
+        if slen <= 0:
+            continue
+
+        if seg.type == "constant":
+            outer = _get_outer(seg.section)
+            if not outer:
+                y_cursor += slen
+                continue
+            v, f = _extrude_section(outer, [], slen)
+        else:
+            outer_f = _get_outer(seg.from_sec)
+            outer_t = _get_outer(seg.to_sec)
+            if not outer_f and not outer_t:
+                y_cursor += slen
+                continue
+            outer_f = outer_f or outer_t
+            outer_t = outer_t or outer_f
+            v, f = _loft_cross_sections(outer_f, outer_t, slen)
+
+        offset_v = [(vx, vy + y_cursor, vz) for vx, vy, vz in v]
+        offset_f = [[fi + len(all_verts) for fi in face] for face in f]
+        all_verts.extend(offset_v)
+        all_faces.extend(offset_f)
+        y_cursor += slen
+
     beam_elements = []
 
-    for i_dam in range(n_dam):
-        y_dam = x_first_dam + i_dam * kc_dam   # mm ngang cầu
-
-        for i_nhip in range(n_nhip):
-            x_nhip = x0_mm + i_nhip * L_nhip   # mm dọc cầu
-
-            all_verts = []
-            all_faces = []
-            y_cursor  = 0.0
-
-            def _get_outer(sec_name):
-                s = secs.get(sec_name)
-                return s.outer if s and s.outer else []
-
-            # Expand mirror nếu cần
-            seg_list = list(segs)
-            if mirror:
-                seg_list = seg_list + [
-                    type('_S', (), {
-                        'type':     sg.type,
-                        'section':  getattr(sg, 'section',  None),
-                        'from_sec': getattr(sg, 'to_sec',   None),
-                        'to_sec':   getattr(sg, 'from_sec', None),
-                        'length':   sg.length,
-                    })()
-                    for sg in reversed(segs)
-                ]
-
-            for seg in seg_list:
-                slen = fill_l if seg.length == "fill" else float(seg.length)
-                if slen <= 0:
-                    continue
-
-                if seg.type == "constant":
-                    outer = _get_outer(seg.section)
-                    if not outer:
-                        y_cursor += slen
-                        continue
-                    v, f = _extrude_section(outer, [], slen)
-                else:
-                    outer_f = _get_outer(seg.from_sec)
-                    outer_t = _get_outer(seg.to_sec)
-                    if not outer_f and not outer_t:
-                        y_cursor += slen
-                        continue
-                    outer_f = outer_f or outer_t
-                    outer_t = outer_t or outer_f
-                    v, f = _loft_cross_sections(outer_f, outer_t, slen)
-
-                offset_v = [(vx, vy + y_cursor, vz) for vx, vy, vz in v]
-                offset_f = [[fi + len(all_verts) for fi in face] for face in f]
-                all_verts.extend(offset_v)
-                all_faces.extend(offset_f)
-                y_cursor += slen
-
-            if not all_verts or not all_faces:
-                continue
-
-            brep = _make_faceted_brep(ifc_file, all_verts, all_faces, body_ctx)
-            if brep is None:
-                continue
-
+    if all_verts and all_faces:
+        brep = _make_faceted_brep(ifc_file, all_verts, all_faces, body_ctx)
+        if brep is not None:
             shape_rep = ifc_file.createIfcShapeRepresentation(
                 body_ctx, "Body", "Brep", [brep])
             prod_def = ifc_file.createIfcProductDefinitionShape(
                 None, None, [shape_rep])
 
-            # Placement tương đối với storey
+            # Đặt dầm tại gốc tọa độ (0, 0, 0) tương đối với storey
             _plc_ax2 = ifc_file.createIfcAxis2Placement3D(
-                ifc_file.createIfcCartesianPoint([float(x_nhip), float(y_dam), 0.0]),
+                ifc_file.createIfcCartesianPoint([0.0, 0.0, 0.0]),
                 ifc_file.createIfcDirection([0.0, 0.0, 1.0]),
                 ifc_file.createIfcDirection([1.0, 0.0, 0.0]),
             )
-            beam_plc_rel = ifc_file.createIfcLocalPlacement(
-                storey_plc, _plc_ax2)
+            beam_plc = ifc_file.createIfcLocalPlacement(storey_plc, _plc_ax2)
 
-            beam_name = f"Dam_S{i_dam+1}_N{i_nhip+1}"
             beam_el = ifc_file.createIfcBeam(
                 _new_guid(), owner_hist,
-                beam_name,
-                f"Super-T nhip {i_nhip+1} dam {i_dam+1}",
-                None,
-                beam_plc_rel,
-                prod_def,
-                None,
-                # IFC2X3 IfcBeam không có PredefinedType (chỉ 8 thuộc tính)
+                "Dam_Super_T",
+                f"Super-T L={L_nhip:.1f}m H={kcn.get('chieu_cao_dam',1.75)*1000:.0f}mm",
+                None, beam_plc, prod_def, None,
             )
             beam_elements.append(beam_el)
 
@@ -424,7 +404,7 @@ def export_beam_to_ifc(
         props = [
             ifc_file.createIfcPropertySingleValue(
                 "L_nhip_mm", None,
-                ifc_file.createIfcReal(L_nhip), None),
+                ifc_file.createIfcReal(L_nhip * 1000), None),   # m→mm
             ifc_file.createIfcPropertySingleValue(
                 "H_dam_mm", None,
                 ifc_file.createIfcReal(
@@ -434,7 +414,7 @@ def export_beam_to_ifc(
                 ifc_file.createIfcText(
                     str(kcn.get("loai_dam", "Super-T"))), None),
             ifc_file.createIfcPropertySingleValue(
-                "So_nhip", None,
+                "So_nhip_thiet_ke", None,
                 ifc_file.createIfcInteger(n_nhip), None),
             ifc_file.createIfcPropertySingleValue(
                 "So_dam_tren_MCN", None,
