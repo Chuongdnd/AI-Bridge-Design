@@ -36,9 +36,36 @@ footer                            { display: none !important; }
 }
 [data-testid="stMetricValue"] { font-size: 16px !important; color: #4fc3f7 !important; }
 
-/* ── Sidebar ── */
-[data-testid="stSidebar"] { min-width: 300px !important; max-width: 300px !important; }
+/* ── Sidebar — kích thước do JS điều khiển qua CSS var ── */
+[data-testid="stSidebar"] {
+    min-width: var(--sidebar-width, 300px) !important;
+    max-width: var(--sidebar-width, 300px) !important;
+    transition: min-width 0.05s, max-width 0.05s;
+    will-change: min-width, max-width;
+}
 [data-testid="stSidebar"] > div:first-child { padding: 56px 14px 32px !important; }
+
+/* Main content tự co giãn theo sidebar */
+section[data-testid="stMain"] {
+    transition: margin-left 0.05s;
+    will-change: margin-left;
+}
+
+/* Right panel — kích thước do JS điều khiển */
+[data-testid="stHorizontalBlock"] > div:last-child {
+    min-width: var(--right-panel-width, 220px) !important;
+    max-width: var(--right-panel-width, 220px) !important;
+    flex: 0 0 var(--right-panel-width, 220px) !important;
+}
+
+/* Ẩn drag handle trên mobile */
+@media (max-width: 768px) {
+    .panel-drag-handle { display: none !important; }
+    [data-testid="stSidebar"] {
+        min-width: 100% !important;
+        max-width: 100% !important;
+    }
+}
 [data-testid="stSidebar"] button {
     font-size: 12px !important; padding: 4px 8px !important;
     height: auto !important; min-height: 32px !important;
@@ -262,6 +289,9 @@ if 'field_errors' not in st.session_state:
 
 if 'field_warnings' not in st.session_state:
     st.session_state.field_warnings = {}
+
+if 'panel_widths' not in st.session_state:
+    st.session_state.panel_widths = {'left': 300, 'right': 220}
 
 # ── Metadata 8 bước pipeline AI ──────────────────────────────────────────────
 PIPELINE_STEPS = [
@@ -605,6 +635,213 @@ def _render_step_status_banner(errors: dict, warnings: dict,
         f"margin-bottom:12px'>{msg_icon} {msg_text}</div>",
         unsafe_allow_html=True,
     )
+
+
+
+# =========================================================================
+# ↔ RESIZABLE PANELS — inject CSS + JS drag handles
+# =========================================================================
+def _inject_resizable_panels() -> None:
+    """Inject drag handles for sidebar and right panel resizing."""
+    st.markdown(
+        """
+<style>
+.panel-drag-handle {
+    position: fixed;
+    top: 44px;
+    bottom: 24px;
+    width: 5px;
+    cursor: col-resize;
+    z-index: 998;
+    background: transparent;
+    transition: background 0.15s;
+    user-select: none;
+    -webkit-user-select: none;
+}
+.panel-drag-handle:hover,
+.panel-drag-handle.dragging {
+    background: #007acc;
+    opacity: 0.6;
+}
+.panel-drag-handle::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 3px;
+    height: 40px;
+    border-left: 1px solid #444;
+    border-right: 1px solid #444;
+}
+.drag-tooltip {
+    position: fixed;
+    background: #007acc;
+    color: #fff;
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    pointer-events: none;
+    z-index: 9999;
+    display: none;
+    white-space: nowrap;
+}
+body.resizing * {
+    user-select: none !important;
+    -webkit-user-select: none !important;
+    cursor: col-resize !important;
+}
+</style>
+
+<div class="panel-drag-handle" id="drag-left"
+     title="Keo de thay doi kich thuoc panel trai"></div>
+<div class="panel-drag-handle" id="drag-right"
+     title="Keo de thay doi kich thuoc panel phai"></div>
+<div class="drag-tooltip" id="drag-tooltip"></div>
+
+<script>
+(function() {
+var LEFT_MIN  = 180, LEFT_MAX  = 480;
+var RIGHT_MIN = 160, RIGHT_MAX = 360;
+var KEY_LEFT  = 'cau_ai_left_w', KEY_RIGHT = 'cau_ai_right_w';
+
+var leftW  = Math.min(Math.max(parseInt(localStorage.getItem(KEY_LEFT)  || '300'), LEFT_MIN),  LEFT_MAX);
+var rightW = Math.min(Math.max(parseInt(localStorage.getItem(KEY_RIGHT) || '220'), RIGHT_MIN), RIGHT_MAX);
+
+function getSidebar()    { return document.querySelector('[data-testid="stSidebar"]'); }
+function getMainContent(){ return document.querySelector('section[data-testid="stMain"]'); }
+function getTopbar()     { return document.getElementById('custom-topbar'); }
+
+function applyWidths(lw, rw) {
+    var sb = getSidebar();
+    if (sb) {
+        sb.style.minWidth = lw + 'px';
+        sb.style.maxWidth = lw + 'px';
+        sb.style.width    = lw + 'px';
+    }
+    document.documentElement.style.setProperty('--sidebar-width', lw + 'px');
+    document.documentElement.style.setProperty('--right-panel-width', rw + 'px');
+    var tb = getTopbar();
+    if (tb) tb.style.left = lw + 'px';
+    var mc = getMainContent();
+    if (mc) { mc.style.marginLeft = lw + 'px'; mc.style.paddingLeft = '0'; }
+}
+
+function applyRightPanel(rw) {
+    var mainBlock = document.querySelector(
+        'section[data-testid="stMain"] .block-container');
+    if (!mainBlock) return;
+    var hBlocks = mainBlock.querySelectorAll('[data-testid="stHorizontalBlock"]');
+    for (var i = 0; i < hBlocks.length; i++) {
+        var cols = hBlocks[i].children;
+        if (cols.length === 2 && !hBlocks[i].closest('[data-testid="stHorizontalBlock"]')) {
+            cols[1].style.minWidth = rw + 'px';
+            cols[1].style.maxWidth = rw + 'px';
+            cols[1].style.flex     = '0 0 ' + rw + 'px';
+            cols[0].style.flex     = '1 1 0';
+            cols[0].style.minWidth = '0';
+            break;
+        }
+    }
+}
+
+function updateHandles(lw, rw) {
+    var hl = document.getElementById('drag-left');
+    var hr = document.getElementById('drag-right');
+    if (hl) hl.style.left  = (lw - 2) + 'px';
+    if (hr) { hr.style.right = (rw - 2) + 'px'; hr.style.left = 'auto'; }
+}
+
+function setupDrag(handleId, isLeft) {
+    var handle  = document.getElementById(handleId);
+    var tooltip = document.getElementById('drag-tooltip');
+    if (!handle) return;
+    var startX = 0, startW = 0, isDragging = false;
+
+    handle.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+        isDragging = true;
+        startX = e.clientX;
+        startW = isLeft ? leftW : rightW;
+        handle.classList.add('dragging');
+        document.body.classList.add('resizing');
+        if (tooltip) tooltip.style.display = 'block';
+    });
+
+    document.addEventListener('mousemove', function(e) {
+        if (!isDragging) return;
+        e.preventDefault();
+        var dx = e.clientX - startX;
+        var newW;
+        if (isLeft) {
+            newW  = Math.min(Math.max(startW + dx, LEFT_MIN), LEFT_MAX);
+            leftW = newW;
+        } else {
+            newW   = Math.min(Math.max(startW - dx, RIGHT_MIN), RIGHT_MAX);
+            rightW = newW;
+        }
+        applyWidths(leftW, rightW);
+        applyRightPanel(rightW);
+        updateHandles(leftW, rightW);
+        if (tooltip) {
+            tooltip.style.left = (e.clientX + 12) + 'px';
+            tooltip.style.top  = (e.clientY - 20) + 'px';
+            tooltip.textContent = (isLeft ? 'Left: ' : 'Right: ') + newW + 'px';
+        }
+    });
+
+    document.addEventListener('mouseup', function() {
+        if (!isDragging) return;
+        isDragging = false;
+        handle.classList.remove('dragging');
+        document.body.classList.remove('resizing');
+        if (tooltip) tooltip.style.display = 'none';
+        localStorage.setItem(KEY_LEFT,  leftW);
+        localStorage.setItem(KEY_RIGHT, rightW);
+    });
+
+    handle.addEventListener('dblclick', function() {
+        if (isLeft) { leftW  = 300; localStorage.setItem(KEY_LEFT,  leftW);  }
+        else        { rightW = 220; localStorage.setItem(KEY_RIGHT, rightW); }
+        applyWidths(leftW, rightW);
+        applyRightPanel(rightW);
+        updateHandles(leftW, rightW);
+    });
+}
+
+function init() {
+    applyWidths(leftW, rightW);
+    applyRightPanel(rightW);
+    updateHandles(leftW, rightW);
+    setupDrag('drag-left',  true);
+    setupDrag('drag-right', false);
+}
+
+var _tries = 0;
+function tryInit() {
+    if (getSidebar() && getMainContent()) {
+        init();
+        var _obs = new MutationObserver(function() {
+            applyWidths(leftW, rightW);
+            applyRightPanel(rightW);
+            updateHandles(leftW, rightW);
+        });
+        _obs.observe(document.body, {childList: true, subtree: true});
+    } else if (_tries < 30) {
+        _tries++;
+        setTimeout(tryInit, 200);
+    }
+}
+tryInit();
+})();
+</script>
+""",
+        unsafe_allow_html=True,
+    )
+
+
+# Gọi ngay sau định nghĩa — trước khi sidebar và columns được render
+_inject_resizable_panels()
 
 
 # =========================================================================
@@ -2287,6 +2524,26 @@ with st.sidebar:
             st.rerun()
         except Exception as e:
             st.error(f"Lỗi AI: {e}")
+
+    # ── Reset kích thước panel ────────────────────────────────────────────
+    st.markdown(
+        "<hr style='border-color:#1a1a28;margin:8px 0'>",
+        unsafe_allow_html=True,
+    )
+    if st.button(
+        "↔ Reset kích thước panel",
+        use_container_width=True,
+        key="btn_reset_panels",
+        help="Khôi phục kích thước mặc định: Left=300px, Right=220px",
+    ):
+        st.markdown(
+            """<script>
+            localStorage.removeItem('cau_ai_left_w');
+            localStorage.removeItem('cau_ai_right_w');
+            window.location.reload();
+            </script>""",
+            unsafe_allow_html=True,
+        )
 
 # =========================================================================
 # VÙNG HIỂN THỊ CHÍNH
