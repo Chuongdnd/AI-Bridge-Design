@@ -3003,10 +3003,17 @@ with _col_main:
                             try:
                                 BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
                                 BVK.apply_render_mode(_fig_t, render_mode_3d)
-                                # Chèn wireframe dầm từ DXF upload (nếu có)
+                                # Thay thế dầm sơ bộ bằng wireframe DXF (nếu đã commit)
                                 try:
-                                    for _spt_t in BBUI.get_beam_model_traces(d):
-                                        _fig_t.add_trace(_spt_t)
+                                    _spt_t_traces = BBUI.get_beam_model_traces(d)
+                                    if _spt_t_traces:
+                                        _fig_t.data = tuple(
+                                            t for t in _fig_t.data
+                                            if not (isinstance(t, go.Mesh3d)
+                                                    and getattr(t, 'color', None) == "#85929e")
+                                        )
+                                        for _spt_t in _spt_t_traces:
+                                            _fig_t.add_trace(_spt_t)
                                 except Exception:
                                     pass
                             except Exception as _oe:
@@ -3042,13 +3049,24 @@ with _col_main:
                     try:
                         fig_3d = BVK.ve_cau_3d(d, df_tim_line=None)
                         BVK.apply_render_mode(fig_3d, _rm_no_terr)
-                        # Chèn wireframe dầm từ DXF upload (nếu có)
+                        # Thay thế dầm sơ bộ bằng wireframe DXF (nếu đã commit)
                         try:
                             _spt_tr = BBUI.get_beam_model_traces(d)
-                            for _tr in _spt_tr:
-                                fig_3d.add_trace(_tr)
                             if _spt_tr:
-                                st.caption("🔩 Wireframe dầm từ mặt cắt DXF đã upload")
+                                # Xóa dầm parametric (Mesh3d màu #85929e + edges màu #1a252f)
+                                fig_3d.data = tuple(
+                                    t for t in fig_3d.data
+                                    if not (isinstance(t, go.Mesh3d)
+                                            and getattr(t, 'color', None) == "#85929e")
+                                    and not (isinstance(t, go.Scatter3d)
+                                             and hasattr(t, 'line')
+                                             and t.line is not None
+                                             and getattr(t.line, 'color', None) == "#1a252f"
+                                             and not t.showlegend)
+                                )
+                                for _tr in _spt_tr:
+                                    fig_3d.add_trace(_tr)
+                                st.caption("🔩 Dầm Super-T thực tế từ DXF (đã thay thế dầm sơ bộ)")
                         except Exception:
                             pass
                         st.plotly_chart(fig_3d, use_container_width=True,
@@ -3069,12 +3087,22 @@ with _col_main:
                     with _btc2:
                         st.markdown("**MCN điển hình**")
                         fig_mcn_btc = BVK.ve_mat_cat_ngang_2d(d)
+                        try:
+                            for _mcn_tr in BBUI.get_mcn_overlay_traces(d):
+                                fig_mcn_btc.add_trace(_mcn_tr)
+                        except Exception:
+                            pass
                         st.plotly_chart(fig_mcn_btc, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     st.markdown("**Trắc dọc cầu**")
                     _dc_data = st.session_state.get("dia_chat_data")
                     fig_td_btc = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim,
                                                        dia_chat_data=_dc_data)
+                    try:
+                        for _td_tr in BBUI.get_elevation_profile_traces(d):
+                            fig_td_btc.add_trace(_td_tr)
+                    except Exception:
+                        pass
                     st.plotly_chart(fig_td_btc, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
                     # Mặt cắt dầm từ DXF (nếu đã upload ở tab SPT)

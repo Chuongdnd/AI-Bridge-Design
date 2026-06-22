@@ -1356,30 +1356,175 @@ def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
     x_first_dam  = -bc / 2 + oh        # vị trí Y dầm đầu tiên (m)
     z_beam_top   = cao_dd + H_dam       # cao độ đỉnh dầm = đáy bản mặt cầu (m)
     L_m          = float(st.session_state.get("spt_L_m", L_nhip))
-    i_dam_center = n_dam // 2           # chỉ vẽ dầm giữa để giảm số trace
+    result  = []
+    _legend = True   # legend only on the very first trace
 
-    result = []
-    beam_y = x_first_dam + i_dam_center * kc_dam
-    for i_nhip in range(n_nhip):
-        span_x0 = x0 + i_nhip * L_nhip
-        for _t in _raw:
-            if not (hasattr(_t, 'x') and _t.x is not None and len(_t.x) > 0):
-                continue
-            _tx = np.array(_t.x, dtype=float)
-            _ty = np.array(_t.y, dtype=float)
-            _tz = np.array(_t.z, dtype=float)
+    for i_dam in range(n_dam):
+        beam_y = x_first_dam + i_dam * kc_dam
+        for i_nhip in range(n_nhip):
+            span_x0 = x0 + i_nhip * L_nhip
+            for _t in _raw:
+                if not (hasattr(_t, 'x') and _t.x is not None and len(_t.x) > 0):
+                    continue
+                _tx = np.array(_t.x, dtype=float)
+                _ty = np.array(_t.y, dtype=float)
+                _tz = np.array(_t.z, dtype=float)
 
-            bx = span_x0 + _ty * (L_nhip / L_m) / 1000.0
-            by = beam_y  + _tx / 1000.0
-            bz = z_beam_top + _tz / 1000.0
+                bx = span_x0 + _ty * (L_nhip / L_m) / 1000.0
+                by = beam_y  + _tx / 1000.0
+                bz = z_beam_top + _tz / 1000.0
 
-            result.append(go.Scatter3d(
-                x=bx.tolist(), y=by.tolist(), z=bz.tolist(),
-                mode="lines",
-                line=_t.line,
-                showlegend=False,
-                hoverinfo="skip",
-            ))
+                result.append(go.Scatter3d(
+                    x=bx.tolist(), y=by.tolist(), z=bz.tolist(),
+                    mode="lines",
+                    line=_t.line,
+                    name="Dầm Super-T (DXF)" if _legend else "",
+                    showlegend=_legend,
+                    hoverinfo="skip",
+                ))
+                _legend = False
 
     st.session_state[_cache_key] = result
+    return result
+
+
+def get_mcn_overlay_traces(d: dict, pfx: str = "spt") -> list:
+    """Trả về go.Scatter traces (2D) overlay mặt cắt A-A thực tế lên MCN điển hình.
+
+    Hệ trục MCN: x = ngang cầu (m), y = cao độ (0=mặt bê tông bản, âm=xuống dưới).
+    Chỉ vẽ khi session_state có mặt cắt A-A với outer polygon đã upload.
+    """
+    secs_st = st.session_state.get(_cad_key(pfx, "sections"), {})
+    sec_aa  = secs_st.get("A-A")
+    if not sec_aa or not sec_aa.outer:
+        return []
+
+    kcn    = d.get("kcn_result") or d.get("ai_result", {})
+    n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
+    kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
+    bc     = float(d.get("bc", 12.0))
+    oh     = float(kcn.get("overhang", 0.5))
+    t_ban  = float(d.get("t_ban_mm", 200)) / 1000.0
+
+    x_first = -bc / 2 + oh
+    outer   = sec_aa.outer   # [[x_mm, z_mm], ...]
+    holes   = sec_aa.holes or []
+    result  = []
+
+    for i_dam in range(n_dam):
+        x_center = x_first + i_dam * kc_dam
+        xs = [x_center + p[0] / 1000.0 for p in outer]
+        ys = [-t_ban   + p[1] / 1000.0 for p in outer]
+        xs.append(xs[0]); ys.append(ys[0])
+        result.append(go.Scatter(
+            x=xs, y=ys,
+            fill="toself",
+            fillcolor="rgba(46,204,113,0.28)",
+            line=dict(color="#27ae60", width=1.8),
+            mode="lines",
+            name="Mặt cắt A-A (DXF)" if i_dam == 0 else "",
+            showlegend=(i_dam == 0),
+            hovertemplate="Mặt cắt A-A thực tế<extra></extra>",
+        ))
+        for hole in holes:
+            if not hole:
+                continue
+            hx = [x_center + p[0] / 1000.0 for p in hole]
+            hy = [-t_ban   + p[1] / 1000.0 for p in hole]
+            hx.append(hx[0]); hy.append(hy[0])
+            result.append(go.Scatter(
+                x=hx, y=hy,
+                fill="toself", fillcolor="rgba(255,255,255,0.82)",
+                line=dict(color="#27ae60", width=0.8),
+                mode="lines", showlegend=False, hoverinfo="skip",
+            ))
+
+    return result
+
+
+def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
+    """Trả về go.Scatter traces overlay profil chiều cao dầm thực tế lên trắc dọc cầu.
+
+    Hệ trục: x = lý trình (m), y = cao độ tuyệt đối (m).
+    Hiển thị dạng haunch profile: cao ở hai đầu (C-C), thấp ở giữa nhịp (A-A).
+    """
+    secs_st   = st.session_state.get(_cad_key(pfx, "sections"), {})
+    cad_state = st.session_state.get(_cad_key(pfx, "state"), {})
+    segs_data = cad_state.get("segs", [])
+    fill_sec  = cad_state.get("fill_sec", "A-A")
+
+    if not segs_data:
+        return []
+
+    def _h_mm(name: str):
+        s = secs_st.get(name)
+        if not s or not s.outer:
+            return None
+        zvals = [p[1] for p in s.outer]
+        return abs(min(zvals)) if zvals else None
+
+    kcn    = d.get("kcn_result") or d.get("ai_result", {})
+    geo    = d.get("geo_logic", {})
+    x0     = float(geo.get("x_mo_trai",    -60.0))
+    L_nhip = float(kcn.get("chieu_dai",     38.0))
+    n_nhip = int(kcn.get("tong_so_nhip",    3))
+    cao_dd = float(d.get("cao_day_dam",      8.0))
+    H_nom  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+    L_m    = float(st.session_state.get("spt_L_m", L_nhip * 1000))  # mm
+
+    beam_top = cao_dd + H_nom   # cao độ đỉnh dầm (m) — cố định theo thiết kế
+
+    # Xây dựng profile (x_mm, h_mm) từ đầu dầm → giữa nhịp
+    pts = []
+    _x  = 0.0
+    for seg in segs_data:
+        slen = float(seg.get("length", 0))
+        if slen <= 0:
+            continue
+        if seg["type"] == "constant":
+            h = _h_mm(seg.get("sec", "A-A")) or H_nom * 1000
+            pts.append((_x, h))
+            pts.append((_x + slen, h))
+        else:
+            h_from = _h_mm(seg.get("from_sec", "C-C")) or H_nom * 1000
+            h_to   = _h_mm(seg.get("to_sec",   "A-A")) or H_nom * 1000
+            pts.append((_x, h_from))
+            pts.append((_x + slen, h_to))
+        _x += slen
+
+    h_fill = _h_mm(fill_sec) or H_nom * 1000
+    L_half = L_m / 2.0
+    if _x < L_half:
+        pts.append((_x, h_fill))
+        pts.append((L_half, h_fill))
+
+    if not pts:
+        return []
+
+    # Mirror cho nửa phải
+    full_pts = pts + [(L_m - p[0], p[1]) for p in reversed(pts[:-1])]
+
+    result = []
+    for i_nhip in range(n_nhip):
+        span_x0 = x0 + i_nhip * L_nhip
+        scale   = L_nhip / L_m
+
+        bot_x = [span_x0 + s * scale for s, _ in full_pts]
+        bot_y = [beam_top - h / 1000.0 for _, h in full_pts]
+
+        # Polygon: top-left → bottom trace → top-right → close
+        px = [bot_x[0]] + bot_x + [bot_x[-1], bot_x[0]]
+        py = [beam_top]  + bot_y + [beam_top,  beam_top]
+
+        result.append(go.Scatter(
+            x=px, y=py,
+            fill="toself",
+            fillcolor="rgba(52,152,219,0.22)",
+            line=dict(color="#2980b9", width=2),
+            mode="lines",
+            name="Profil dầm thực tế (DXF)" if i_nhip == 0 else "",
+            showlegend=(i_nhip == 0),
+            hovertemplate="Dầm SPT — profil thực tế<extra></extra>",
+        ))
+
     return result
