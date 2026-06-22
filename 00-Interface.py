@@ -4,6 +4,8 @@ import numpy as np
 import os
 import importlib
 import time
+import json
+import pathlib
 import google.generativeai as genai
 import fitz
 try:
@@ -186,15 +188,43 @@ except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
     st.stop()
 
+# ── Persistence: lưu / tải thông số khai báo vào JSON ──────────────────────
+_DESIGN_SAVE_FILE = pathlib.Path(__file__).parent / "design_data_saved.json"
+_DESIGN_SAVE_KEYS = [
+    'MNCN','MNTT','MNTC','MNTN','h_tn_tb','x_tim_clearance','goc_giao',
+    'B','H','day_dam','khau_do_ngang','cap_song','loai_doi_tuong_vuot',
+    'vtk','bc','loai_duong','t_ban_mm','i_max_hinh_hoc','R_hinh_hoc',
+    'is_urban','geo_logic','ai_result','kcn_result','tru_result',
+    'mong_result','lop_phu_result', 'cao_day_dam', 'H_tru_est',
+]
+
+def _save_design_inputs(d: dict) -> None:
+    data = {k: d[k] for k in _DESIGN_SAVE_KEYS if k in d}
+    try:
+        _DESIGN_SAVE_FILE.write_text(
+            json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding='utf-8'
+        )
+    except Exception:
+        pass
+
+def _load_design_inputs() -> dict | None:
+    if not _DESIGN_SAVE_FILE.exists():
+        return None
+    try:
+        return json.loads(_DESIGN_SAVE_FILE.read_text(encoding='utf-8'))
+    except Exception:
+        return None
+
 if 'design_data' not in st.session_state:
-    st.session_state.design_data = {
+    _saved_design = _load_design_inputs()
+    _default_design = {
         'day_dam': 0.0, 'khau_do_ngang': 0.0, 'bc': 12.0, 'loai_duong': "Do thi",
         'B': 20.0, 'H': 4.75, 'loai_doi_tuong_vuot': "Vượt sông", 'goc_giao': 90.0,
         'MNCN': 3.5, 'MNTT': 2.0, 'MNTC': 1.5, 'MNTN': 0.5, 'h_tn_tb': 0.0,
         'x_tim_clearance': 0.0,
         'cap_song': 'VI', 'vtk': 60, 'i_max_hinh_hoc': 4.0, 'R_hinh_hoc': 5000,
-        't_ban_mm': 200,       # chiều dày bản mặt cầu (mm), min 175mm theo TCVN 11823
-        'is_urban': 0,         # 1 = khu đông dân cư (ảnh hưởng chọn loại cọc)
+        't_ban_mm': 200,
+        'is_urban': 0,
         'geo_logic': {'L_cau': 120.0, 'x_mo_trai': -60.0, 'x_mo_phai': 60.0, 'y_mo': 1.5, 'h_tn_tb': 2.15, 'y_base_goc': 2.0},
         'ai_result': {'loai_dam': 'Super-T', 'tong_so_nhip': 3, 'chieu_dai': 40.0, 'chieu_cao': 1.75, 'so_luong_dam': 5, 'khoang_cach_dam': 2.2, 'ghi_chu': 'Phương án tối ưu từ AI.'},
         'kcn_result': None,
@@ -202,6 +232,9 @@ if 'design_data' not in st.session_state:
         'mong_result': None,
         'lop_phu_result': None,
     }
+    if _saved_design:
+        _default_design.update(_saved_design)
+    st.session_state.design_data = _default_design
 
 if 'chatbot_context' not in st.session_state:
     st.session_state.chatbot_context = "Chưa tiến hành chạy dự báo tính toán."
@@ -1613,6 +1646,7 @@ def show_options_dialog():
             # Lưu design_data trước khi chạy SSP
             if pipeline_ok:
                 st.session_state.design_data = res
+                _save_design_inputs(res)   # auto-save kết quả pipeline vào JSON
 
             # ══════════════════════════════════════════════════════════════════
             # BƯỚC 8 — SO SÁNH 3 PHƯƠNG ÁN
@@ -1973,39 +2007,98 @@ for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
                 st.session_state.current_tab = _m['key']
                 st.rerun()
 
-# ── Hàng nút OPTIONS + thông số hiện hành ───────────────────────────────────
-ctrl_col1, ctrl_col2 = st.columns([1, 4])
+# ── Hộp khai báo độc lập — mỗi box là @st.fragment để tránh rerun toàn bộ ──
+
+@st.fragment
+def _decl_box_thuy_van():
+    _sd = st.session_state.design_data
+    _has_tv = bool(_sd.get('MNCN') and _sd.get('MNCN') != 3.5 or _sd.get('x_tim_clearance'))
+    with st.expander("🌊 Thủy văn & Vị trí", expanded=not _has_tv):
+        _tc1, _tc2 = st.columns(2)
+        with _tc1:
+            _mn1 = st.number_input("MNCN (m)", value=float(_sd.get('MNCN', 3.5)),
+                                    step=0.1, format="%.2f", key="dinp_MNCN")
+            _mn3 = st.number_input("MNTC (m)", value=float(_sd.get('MNTC', 1.5)),
+                                    step=0.1, format="%.2f", key="dinp_MNTC")
+            _B_tk = st.number_input("Rộng tĩnh không (m)", value=float(_sd.get('B', 20.0)),
+                                     step=0.5, key="dinp_B")
+            _day_dam = st.number_input("Cao trình đáy cầu (m)", value=float(_sd.get('day_dam', 0.0)),
+                                        step=0.1, key="dinp_day_dam")
+            _xtim = st.number_input("Lý trình tim TK (m)", value=float(_sd.get('x_tim_clearance', 0.0)),
+                                     step=1.0, key="dinp_xtim")
+        with _tc2:
+            _mn2 = st.number_input("MNTT (m)", value=float(_sd.get('MNTT', 2.0)),
+                                    step=0.1, format="%.2f", key="dinp_MNTT")
+            _mn4 = st.number_input("MNTN (m)", value=float(_sd.get('MNTN', 0.5)),
+                                    step=0.1, format="%.2f", key="dinp_MNTN")
+            _H_tk = st.number_input("Cao tĩnh không (m)", value=float(_sd.get('H', 4.75)),
+                                     step=0.25, key="dinp_H")
+            _cap_s_opts = ["IV","V","VI","III","II","I"]
+            _cap_idx = _cap_s_opts.index(str(_sd.get('cap_song','VI'))) if str(_sd.get('cap_song','VI')) in _cap_s_opts else 2
+            _cap_song = st.selectbox("Cấp sông", _cap_s_opts, index=_cap_idx, key="dinp_cap_song",
+                                      format_func=lambda x: f"Cấp {x}")
+            _goc_giao = st.number_input("Góc giao (°)", value=float(_sd.get('goc_giao', 90.0)),
+                                         step=5.0, key="dinp_goc_giao")
+        if st.button("✅ Áp dụng & Lưu", use_container_width=True, key="btn_apply_tv"):
+            st.session_state.design_data.update({
+                'MNCN': _mn1, 'MNTT': _mn2, 'MNTC': _mn3, 'MNTN': _mn4,
+                'B': _B_tk, 'H': _H_tk, 'day_dam': _day_dam,
+                'x_tim_clearance': _xtim, 'cap_song': _cap_song, 'goc_giao': _goc_giao,
+            })
+            _save_design_inputs(st.session_state.design_data)
+            st.toast("✅ Đã lưu — Thủy văn & Vị trí", icon="✅")
+
+@st.fragment
+def _decl_box_hinh_hoc():
+    _sd = st.session_state.design_data
+    _has_hh = bool(_sd.get('vtk') and _sd.get('vtk') != 60 or _sd.get('bc') != 12.0)
+    with st.expander("🛣️ Hình học & Giao thông", expanded=not _has_hh):
+        _hc1, _hc2 = st.columns(2)
+        with _hc1:
+            _vtk = st.number_input("Vận tốc TK (km/h)", value=int(_sd.get('vtk', 60)),
+                                    step=10, key="dinp_vtk")
+            _bc = st.number_input("Chiều rộng cầu (m)", value=float(_sd.get('bc', 12.0)),
+                                   step=0.5, key="dinp_bc")
+            _t_ban = st.number_input("Chiều dày bản (mm)", value=int(_sd.get('t_ban_mm', 200)),
+                                      step=25, key="dinp_tban")
+        with _hc2:
+            _ld_opts = ["Do thi", "Ngoai o"]
+            _loai_duong = st.selectbox("Loại đường", _ld_opts, key="dinp_loai_duong",
+                                        index=0 if _sd.get('loai_duong', 'Do thi') == 'Do thi' else 1)
+            _i_max = st.number_input("Dốc dọc max (%)", value=float(_sd.get('i_max_hinh_hoc', 4.0)),
+                                      step=0.5, key="dinp_imax")
+            _R_hh = st.number_input("Bán kính bình đồ (m)", value=float(_sd.get('R_hinh_hoc', 5000.0)),
+                                     step=100.0, key="dinp_Rhh")
+        if st.button("✅ Áp dụng & Lưu", use_container_width=True, key="btn_apply_hh"):
+            st.session_state.design_data.update({
+                'vtk': _vtk, 'bc': _bc, 't_ban_mm': _t_ban,
+                'loai_duong': _loai_duong, 'i_max_hinh_hoc': _i_max, 'R_hinh_hoc': _R_hh,
+            })
+            _save_design_inputs(st.session_state.design_data)
+            st.toast("✅ Đã lưu — Hình học & Giao thông", icon="✅")
+
+# ── Hàng nút OPTIONS + hộp khai báo độc lập ─────────────────────────────────
+ctrl_col1, _dc_col_a, _dc_col_b = st.columns([1, 2, 2])
 with ctrl_col1:
     _has_result = bool(st.session_state.design_data.get('kcn_result'))
-    _btn_label  = "⚙️ CHỈNH SỬA SỐ LIỆU" if _has_result else "⚙️ OPTIONS — KHAI BÁO SỐ LIỆU"
+    _btn_label  = "⚙️ CHỈNH SỬA" if _has_result else "⚙️ Wizard\nKhai báo"
     if st.button(
         _btn_label,
         use_container_width=True,
         type="secondary" if _has_result else "primary",
-        help="Nhấn để mở hộp thoại nhập thông số — bắt buộc trước khi tính toán",
+        help="Mở wizard 3-bước đầy đủ (thay thế: dùng các hộp khai báo ở bên phải)",
         key="btn_options_main",
     ):
-        # Reset validation state để tránh lỗi cũ hiện lại
         st.session_state.field_touched  = set()
         st.session_state.field_errors   = {}
         st.session_state.field_warnings = {}
         if not st.session_state.wizard_draft:
             st.session_state.wizard_step = 1
         show_options_dialog()
-with ctrl_col2:
-    if st.session_state.design_data.get('kcn_result') or (st.session_state.design_data.get('ai_result') or {}).get('loai_dam'):
-        _ai_p  = st.session_state.design_data.get('kcn_result') or (st.session_state.design_data.get('ai_result') or {})
-        _geo_p = st.session_state.design_data.get('geo_logic', {})
-        st.markdown(
-            f"<div style='padding-top:5px; font-size:13px;'>"
-            f"📊 <b>Thông số hiện hành:</b> "
-            f"L = <b>{_geo_p.get('L_cau',0):.2f}m</b> | "
-            f"Kết cấu nhịp: <b>{_ai_p.get('tong_so_nhip','?')} nhịp × {_ai_p.get('chieu_dai','?')}m "
-            f"(Dầm {_ai_p.get('loai_dam','').upper()})</b> | "
-            f"H = <b>{_ai_p.get('chieu_cao_dam') or _ai_p.get('chieu_cao','—')}m</b>"
-            f"</div>",
-            unsafe_allow_html=True
-        )
+with _dc_col_a:
+    _decl_box_thuy_van()
+with _dc_col_b:
+    _decl_box_hinh_hoc()
 
 # --- THANH SIDEBAR TRÍI ---
 with st.sidebar:
@@ -2276,8 +2369,107 @@ with st.sidebar:
 # =========================================================================
 selected_ribbon = st.session_state.get('current_tab', 'THUYẾT MINH')
 
-#  Layout: Main canvas (5 col) + Right panel (2 col) 
-_col_main, _col_right = st.columns([5, 2], gap="small")
+# ── Thanh kéo tỷ lệ panel chính / panel kết quả ─────────────────────────────
+_pw_val = int(st.session_state.get("_main_panel_w", 7))
+st.markdown(
+    "<p style='font-size:10px;color:#555;margin:2px 0 0;text-align:right'>"
+    "⟺ Kéo để điều chỉnh tỷ lệ panel</p>",
+    unsafe_allow_html=True,
+)
+_pw_new = st.slider(
+    "Tỷ lệ panel", min_value=4, max_value=9, value=_pw_val, step=1,
+    key="_main_panel_w_sl", label_visibility="collapsed",
+    help="Kéo trái/phải để điều chỉnh tỷ lệ nội dung ◀▶ kết quả AI",
+)
+st.session_state["_main_panel_w"] = _pw_new
+
+#  Layout: Main canvas + Right panel (tỷ lệ có thể điều chỉnh)
+_col_main, _col_right = st.columns([_pw_new, 10 - _pw_new], gap="small")
+
+# ── Inject CSS/JS kéo dãng cột bằng chuột (visual resize, reset khi rerun) ──
+st.components.v1.html("""
+<style>
+.st-col-drag-handle {
+  width: 6px; min-width: 6px; flex-shrink: 0;
+  cursor: col-resize; background: transparent; border-radius: 3px;
+  margin: 0 -3px; z-index: 200; align-self: stretch;
+  transition: background 0.15s;
+}
+.st-col-drag-handle:hover, .st-col-drag-handle.dragging {
+  background: rgba(68,136,204,0.45);
+}
+</style>
+<script>
+(function() {
+  var MIN_PX = 90;
+  function installHandles(pDoc, pWin) {
+    var blocks = pDoc.querySelectorAll('[data-testid="stHorizontalBlock"]');
+    blocks.forEach(function(block) {
+      if (block.__colDragInstalled) return;
+      var cols = Array.prototype.filter.call(block.children, function(c) {
+        return c.getAttribute('data-testid') === 'column';
+      });
+      if (cols.length < 2) return;
+      block.__colDragInstalled = true;
+      block.style.position = 'relative';
+
+      for (var i = 0; i < cols.length - 1; i++) {
+        (function(A, B) {
+          var h = pDoc.createElement('div');
+          h.className = 'st-col-drag-handle';
+          A.insertAdjacentElement('afterend', h);
+
+          h.addEventListener('mousedown', function(e) {
+            e.preventDefault();
+            h.classList.add('dragging');
+            var startX = e.clientX;
+            var Aw0 = A.getBoundingClientRect().width;
+            var Bw0 = B.getBoundingClientRect().width;
+            var total = Aw0 + Bw0;
+
+            function onMove(e) {
+              var dx = e.clientX - startX;
+              var newA = Math.max(MIN_PX, Math.min(total - MIN_PX, Aw0 + dx));
+              var newB = total - newA;
+              A.style.flex = '0 0 ' + newA + 'px';
+              B.style.flex = '0 0 ' + newB + 'px';
+            }
+            function onUp() {
+              h.classList.remove('dragging');
+              pDoc.removeEventListener('mousemove', onMove);
+              pDoc.removeEventListener('mouseup', onUp);
+            }
+            pDoc.addEventListener('mousemove', onMove);
+            pDoc.addEventListener('mouseup', onUp);
+          });
+        })(cols[i], cols[i+1]);
+      }
+    });
+  }
+
+  function tryInstall(n) {
+    try { installHandles(window.parent.document, window.parent); }
+    catch(e) { if (n < 10) setTimeout(function(){ tryInstall(n+1); }, 500); }
+  }
+  tryInstall(0);
+
+  // Re-install after every Streamlit rerun (DOM replaced)
+  try {
+    var mo = new window.parent.MutationObserver(function(muts) {
+      muts.forEach(function(m) {
+        m.addedNodes.forEach(function(n) {
+          if (n.querySelectorAll &&
+              n.querySelectorAll('[data-testid="stHorizontalBlock"]').length) {
+            setTimeout(function(){ tryInstall(0); }, 200);
+          }
+        });
+      });
+    });
+    mo.observe(window.parent.document.body, { childList: true, subtree: true });
+  } catch(e) {}
+})();
+</script>
+""", height=0, scrolling=False)
 
 with _col_right:
     _render_right_panel(st.session_state.design_data)
