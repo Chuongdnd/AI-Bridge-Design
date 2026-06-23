@@ -1137,7 +1137,36 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
     ys = [p[1] for p in outer_raw]
     xmin, xmax = min(xs), max(xs)
     ymin, ymax = min(ys), max(ys)
-    x_mid  = (xmin + xmax) / 2.0
+
+    # Tim dầm theo TRỌNG TÂM diện tích (centroid) thay vì giữa bbox —
+    # mặt cắt KHÔNG đối xứng vẫn về đúng tim (bbox-mid sẽ bị lệch).
+    def _centroid_x(pts: list[tuple[float, float]]):
+        """Trả về (cx, area) theo công thức trọng tâm đa giác. None nếu suy biến."""
+        n = len(pts) - 1 if pts[0] == pts[-1] else len(pts)
+        a2 = 0.0   # 2·diện tích có dấu
+        cx = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            cross = pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1]
+            a2 += cross
+            cx += (pts[i][0] + pts[j][0]) * cross
+        if abs(a2) < 1e-9:
+            return None
+        return cx / (3.0 * a2), abs(a2) / 2.0
+
+    _co = _centroid_x(outer_raw)
+    if _co is None:
+        x_mid = (xmin + xmax) / 2.0          # fallback: giữa bbox
+    else:
+        _cx_o, _a_o = _co
+        _num, _den = _cx_o * _a_o, _a_o      # trừ phần lỗ (void) cho chính xác
+        for _h in holes_raw:
+            _ch = _centroid_x(_h)
+            if _ch:
+                _cx_h, _a_h = _ch
+                _num -= _cx_h * _a_h
+                _den -= _a_h
+        x_mid = _num / _den if _den > 1e-9 else _cx_o
     y_top  = ymax   # mặt trên → Z = 0
 
     def _center(pts: list[tuple[float, float]]) -> list[list[float]]:
