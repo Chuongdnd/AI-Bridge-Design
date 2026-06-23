@@ -2962,13 +2962,18 @@ def _apply_beam_to_pa(d: dict, pa_key: str, beam: dict, tier: str = "dan") -> No
         _ap[pa_key] = beam["id"]
         d["lib_dam_applied"] = _ap
         st.session_state.design_data["lib_dam_applied"] = _ap
-    # Cập nhật span_layout theo PA
-    _sl = _pa_span_layout(pa_key)
+    # Cập nhật span_layout theo PA (kèm chiều dài dầm nếu đã khai báo)
+    _sl  = _pa_span_layout(pa_key)
+    _len = float(beam.get("chieu_dai", 0) or 0)
     if tier == "main":
         _sl["beam_main"] = beam["id"]
         _sl.setdefault("mode", "two_tier")
+        if _len > 0:
+            _sl["L_main"] = _len
     else:
         _sl["beam_dan"] = beam["id"]
+        if _len > 0:
+            _sl["L_dan"] = _len
     _save_pa_span_layout(pa_key, _sl)
     _lbl = "nhịp chính" if tier == "main" else "nhịp dẫn"
     st.toast(f"Đã áp dụng dầm “{beam.get('ten','')}” ({_lbl}) cho {pa_key}.", icon="✅")
@@ -2988,9 +2993,17 @@ def _render_dam_edit_panel(d: dict) -> None:
         f"và khai báo đoạn (giống tab Chi tiết dầm), đặt tên rồi 💾 Lưu.</div>",
         unsafe_allow_html=True,
     )
-    st.text_input("Tên dầm", key="_lib_dam_name_in",
-                  placeholder="VD: Super-T 38m TEDIS",
-                  help="Tên hiển thị của loại dầm trong thư viện.")
+    _nc1, _nc2 = st.columns([3, 1])
+    with _nc1:
+        st.text_input("Tên dầm", key="_lib_dam_name_in",
+                      placeholder="VD: Super-T 38m TEDIS",
+                      help="Tên hiển thị của loại dầm trong thư viện.")
+    with _nc2:
+        st.session_state.setdefault("_lib_dam_len_in", 33.0)
+        st.number_input("Chiều dài dầm (m)", min_value=1.0, max_value=300.0,
+                        step=0.1, key="_lib_dam_len_in",
+                        help="Chiều dài định hình của dầm — dùng làm chiều dài "
+                             "nhịp gợi ý khi áp dụng vào phương án.")
 
     try:
         BBUI.render_cad_spt_tab(d, pfx=base)
@@ -3017,6 +3030,7 @@ def _render_dam_edit_panel(d: dict) -> None:
             bid   = editing_id or CLIB.make_beam_id(_nm, beams)
             rec = {
                 "id": bid, "ten": _nm, "loai_dam": loai,
+                "chieu_dai": float(st.session_state.get("_lib_dam_len_in", 0) or 0),
                 "sections": data["sections"], "segs": data["segs"],
                 "fill_sec": data["fill_sec"], "nguon": "người dùng",
                 "created_by": (AUTH.current_user() or {}).get("name", ""),
@@ -3058,6 +3072,7 @@ def render_dam_library(d: dict) -> None:
             _reset_dam_edit_state()
             st.session_state.pop("_lib_dam_editing_id", None)
             st.session_state["_lib_dam_name_in"] = ""
+            st.session_state["_lib_dam_len_in"] = 33.0
             st.session_state["_lib_dam_panel"] = "new"
             st.rerun()
 
@@ -3091,7 +3106,8 @@ def render_dam_library(d: dict) -> None:
                 f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
                 f"🌉 {b.get('ten','(không tên)')}</span>"
                 f"<span style='font-size:11px;color:#888;margin-left:10px'>"
-                f"{b.get('loai_dam','')} · {_n_sec} mặt cắt · "
+                f"{b.get('loai_dam','')} · "
+                f"L={b.get('chieu_dai','—')}m · {_n_sec} mặt cắt · "
                 f"{b.get('created_by','') or '—'}</span>"
                 f"<span style='font-size:10px;color:#4fc3f7;margin-left:10px'>"
                 f"📌 {_badge}</span></div>",
@@ -3111,6 +3127,7 @@ def render_dam_library(d: dict) -> None:
             BBUI.import_beam_state(eff, b)
             st.session_state["_lib_dam_editing_id"] = b["id"]
             st.session_state["_lib_dam_name_in"] = b.get("ten", "")
+            st.session_state["_lib_dam_len_in"] = float(b.get("chieu_dai", 0) or 33.0)
             st.session_state["_lib_dam_panel"] = b["id"]
             st.rerun()
         if _a4.button("🗑️", key=f"lib_del_{b['id']}",

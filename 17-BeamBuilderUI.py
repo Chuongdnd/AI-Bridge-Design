@@ -145,8 +145,9 @@ def import_beam_state(pfx: str, data: dict, bb=None) -> None:
         sec.outer = v.get("outer", [])
         sec.holes = v.get("holes", [])
         secs[name] = sec
+    # Chỉ đảm bảo các mặt cắt TỐI THIỂU (A-A, B-B) — không ép tạo lại C-C.
     for sname, (fn, _) in _SEC_PRESETS.items():
-        if sname not in secs:
+        if sname in _MIN_SECS and sname not in secs:
             secs[sname] = getattr(bb, fn)()
     st.session_state[_cad_key(pfx, "sections")] = secs
     st.session_state[_cad_key(pfx, "state")] = {
@@ -793,6 +794,10 @@ _SEC_PRESETS = {
     "C-C": ("preset_supert_CC", False),
 }
 
+# Mặt cắt TỐI THIỂU bắt buộc (không cho xoá) — chỉ 2 mặt cắt.
+# C-C là preset gợi ý nhưng người dùng được phép xoá để còn 2 mặt cắt.
+_MIN_SECS = {"A-A", "B-B"}
+
 _QUICK_CMDS = [
     ("PL",       "Polyline",     "Bắt đầu vẽ polyline — click lưới để thêm điểm"),
     ("G",        "Grip/Dời",    "Chọn đỉnh rồi click điểm mới để dời"),
@@ -818,9 +823,9 @@ def _cad_init(pfx: str, bb):
         _saved = _load_defaults(bb)
         if _saved:
             secs = _saved["secs"]
-            # Đảm bảo 3 mặt cắt gốc luôn tồn tại (dù rỗng)
+            # Đảm bảo các mặt cắt TỐI THIỂU (A-A, B-B) luôn tồn tại (dù rỗng)
             for sname, (fn, _) in _SEC_PRESETS.items():
-                if sname not in secs:
+                if sname in _MIN_SECS and sname not in secs:
                     secs[sname] = getattr(bb, fn)()
         else:
             secs = {sname: getattr(bb, fn)() for sname, (fn, _) in _SEC_PRESETS.items()}
@@ -1370,7 +1375,7 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     )
 
     # ═══ Hàng 1: upload card (fragment — upload không rerun toàn app) ══════════
-    _DEFAULTS = {"A-A", "B-B", "C-C"}
+    _DEFAULTS = set(_MIN_SECS)   # tối thiểu 2 mặt cắt (A-A, B-B) — không cho xoá
 
     @st.fragment
     def _upload_row():
@@ -1423,14 +1428,32 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
             _mtime = _SAVE_FILE.stat().st_mtime
             _dt    = _t.strftime("%d/%m/%Y %H:%M", _t.localtime(_mtime))
             _n_sec = len([k for k, v in secs.items() if v.outer])
-            st.caption(
-                f"💾 Đã lưu lúc {_dt} — {_n_sec} mặt cắt có dữ liệu  "
-                f"| [Xóa file đã lưu]({'#'}) "
-            )
-            if st.button("🗑 Xóa dữ liệu đã lưu", key=f"{pfx}_del_save",
-                         help="Xóa file lưu — lần sau app dùng preset mặc định"):
-                _SAVE_FILE.unlink(missing_ok=True)
-                st.toast("Đã xóa file lưu. Restart app để dùng preset mặc định.")
+            st.caption(f"💾 Đã lưu lúc {_dt} — {_n_sec} mặt cắt có dữ liệu.")
+            # ── Xóa AN TOÀN: 2 bước xác nhận (tránh lỡ tay) ───────────────────
+            _confirm_key = f"{pfx}_del_save_confirm"
+            if not st.session_state.get(_confirm_key):
+                if st.button("🗑 Xóa mặt cắt mặc định đã lưu…",
+                             key=f"{pfx}_del_save",
+                             help="Chỉ xóa BỘ MẶT CẮT MẶC ĐỊNH của trình dựng dầm. "
+                                  "KHÔNG ảnh hưởng các dầm đã lưu trong Thư viện."):
+                    st.session_state[_confirm_key] = True
+                    st.rerun()
+            else:
+                st.warning(
+                    "⚠️ Chỉ xóa **bộ mặt cắt mặc định** của trình dựng dầm "
+                    "(file `spt_sections_saved.json`). Các **dầm trong Thư viện "
+                    "KHÔNG bị ảnh hưởng**. Bạn chắc chắn?")
+                _dc1, _dc2 = st.columns(2)
+                if _dc1.button("✓ Xóa mặc định", key=f"{pfx}_del_save_yes",
+                               type="primary", use_container_width=True):
+                    _SAVE_FILE.unlink(missing_ok=True)
+                    st.session_state.pop(_confirm_key, None)
+                    st.toast("Đã xóa mặt cắt mặc định. Dầm trong Thư viện vẫn còn.")
+                    st.rerun()
+                if _dc2.button("Hủy", key=f"{pfx}_del_save_no",
+                               use_container_width=True):
+                    st.session_state.pop(_confirm_key, None)
+                    st.rerun()
         else:
             st.caption("Chưa có dữ liệu lưu — bấm 💾 Lưu mặc định để lưu.")
 
