@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import os
+import io
 import importlib
 import time
 import json
@@ -2310,6 +2311,67 @@ def _decl_box_hinh_hoc():
             _save_design_inputs(st.session_state.design_data)
             st.toast("✅ Đã lưu — Hình học & Giao thông", icon="✅")
 
+# ── Lưu/nạp địa hình mặc định (giống spt_sections_saved.json cho mặt cắt) ────
+#   File tải lên lần đầu được lưu cạnh script → tự nạp cho lần dùng tiếp theo.
+_TERRAIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                            "terrain_saved")
+_TERRAIN_NTD = os.path.join(_TERRAIN_DIR, "terrain.ntd")
+
+
+def _terrain_coord_path():
+    """Đường dẫn file tọa độ đã lưu (ưu tiên .xlsx, sau đó .csv)."""
+    for _ext in (".xlsx", ".csv"):
+        _p = os.path.join(_TERRAIN_DIR, "terrain_coord" + _ext)
+        if os.path.exists(_p):
+            return _p
+    return None
+
+
+def _save_terrain_defaults(ntd_bytes: bytes, coord_bytes: bytes,
+                           coord_name: str) -> None:
+    """Auto-save file địa hình vừa tải để tái dùng cho lần sau."""
+    try:
+        os.makedirs(_TERRAIN_DIR, exist_ok=True)
+        with open(_TERRAIN_NTD, "wb") as _f:
+            _f.write(ntd_bytes)
+        _ext = ".csv" if str(coord_name).lower().endswith(".csv") else ".xlsx"
+        _coord_path = os.path.join(_TERRAIN_DIR, "terrain_coord" + _ext)
+        # Dọn file tọa độ cũ khác đuôi để tránh nhập nhằng.
+        _other = os.path.join(_TERRAIN_DIR,
+                              "terrain_coord" + (".xlsx" if _ext == ".csv" else ".csv"))
+        if os.path.exists(_other):
+            try:
+                os.remove(_other)
+            except OSError:
+                pass
+        with open(_coord_path, "wb") as _f:
+            _f.write(coord_bytes)
+    except Exception:
+        pass
+
+
+def _load_terrain_defaults():
+    """Đọc dữ liệu địa hình đã lưu → df_geology. None nếu chưa có / lỗi."""
+    _coord_path = _terrain_coord_path()
+    if not (os.path.exists(_TERRAIN_NTD) and _coord_path):
+        return None
+    try:
+        with open(_TERRAIN_NTD, "rb") as _f:
+            _ntd_buf = io.BytesIO(_f.read())
+            _ntd_buf.name = os.path.basename(_TERRAIN_NTD)
+        with open(_coord_path, "rb") as _f:
+            _co_buf = io.BytesIO(_f.read())
+            _co_buf.name = os.path.basename(_coord_path)
+        df_ntd   = TV.parse_ntd_file(_ntd_buf)
+        df_coord = TV.parse_coordinate_file(_co_buf)
+        if df_coord is None or df_ntd.empty:
+            return None
+        _dg = TV.convert_to_vn2000(df_ntd, df_coord)
+        return _dg if not _dg.empty else None
+    except Exception:
+        return None
+
+
 @st.fragment
 def _decl_box_dia_hinh():
     """Hộp khai báo 3 — Dữ liệu địa hình (.NTD + tọa độ VN-2000)."""
@@ -2334,7 +2396,21 @@ def _decl_box_dia_hinh():
                     _tl = (_dg[_dg["Offset"] == 0][["Lý trình", "Z"]]
                            .drop_duplicates("Lý trình").sort_values("Lý trình"))
                     st.session_state.df_tim_line = _tl
-                    st.success(f"✅ Đã đồng bộ {len(_dg)} điểm địa hình theo VN-2000!")
+                    _save_terrain_defaults(file_khao_sat.getvalue(),
+                                           file_toa_do.getvalue(),
+                                           file_toa_do.name)
+                    st.success(f"✅ Đã đồng bộ {len(_dg)} điểm địa hình theo "
+                               "VN-2000! (đã lưu làm mặc định cho lần sau)")
+        elif "df_geology" not in st.session_state:
+            # Chưa tải file → tự nạp dữ liệu địa hình mặc định đã lưu.
+            _dg = _load_terrain_defaults()
+            if _dg is not None and not _dg.empty:
+                st.session_state.df_geology = _dg
+                _tl = (_dg[_dg["Offset"] == 0][["Lý trình", "Z"]]
+                       .drop_duplicates("Lý trình").sort_values("Lý trình"))
+                st.session_state.df_tim_line = _tl
+                st.info(f"🗺️ Đã tự nạp địa hình mặc định ({len(_dg)} điểm). "
+                        "Tải file mới ở trên để thay thế.")
 
 
 def _process_geology_excel(file):
