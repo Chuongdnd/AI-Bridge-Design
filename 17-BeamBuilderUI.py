@@ -1020,8 +1020,11 @@ def _dxf_upload_card(pfx: str, bb, secs: dict, cad_state: dict,
                 cad_state[_fp_key] = _fp
                 _w = _res.get("width_mm", 0)
                 _h = _res.get("height_mm", 0)
+                _tim = ("tim CAD" if _res.get("tim_source") == "cad_line"
+                        else "trọng tâm")
                 hist.append((f"DXF {sec_name}: {uploaded.name}",
-                             f"✓ {len(sec.outer)} đỉnh | {_w:.0f}×{_h:.0f}mm"))
+                             f"✓ {len(sec.outer)} đỉnh | {_w:.0f}×{_h:.0f}mm | "
+                             f"căn theo {_tim}"))
                 # Auto-save sau mỗi lần import thành công
                 _save_defaults(secs, cad_state)
                 st.rerun()

@@ -1055,6 +1055,23 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
     polys: list[list[tuple[float, float]]] = []
     raw_lines: list[tuple[tuple[float, float], tuple[float, float]]] = []
     entity_types: set[str] = set()
+    line_objs: list = []   # (start, end, layer, linetype, color) — dò tim dầm
+
+    def _ent_style(ent):
+        """Lấy (layer, linetype, color ACI), tự giải ByLayer."""
+        lay = str(getattr(ent.dxf, "layer", "") or "")
+        lt  = str(getattr(ent.dxf, "linetype", "") or "")
+        col = int(getattr(ent.dxf, "color", 256) or 256)
+        try:
+            if lt.upper() in ("", "BYLAYER") or col == 256:
+                _lo = doc.layers.get(lay)
+                if lt.upper() in ("", "BYLAYER"):
+                    lt = str(_lo.dxf.linetype or "")
+                if col == 256:
+                    col = int(_lo.dxf.color or 7)
+        except Exception:
+            pass
+        return lay, lt, col
 
     for entity in msp:
         etype = entity.dxftype()
@@ -1078,10 +1095,24 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
 
         elif etype == "LINE":
             try:
-                raw_lines.append((
-                    (float(entity.dxf.start.x), float(entity.dxf.start.y)),
-                    (float(entity.dxf.end.x),   float(entity.dxf.end.y)),
-                ))
+                _s = (float(entity.dxf.start.x), float(entity.dxf.start.y))
+                _e = (float(entity.dxf.end.x),   float(entity.dxf.end.y))
+                raw_lines.append((_s, _e))
+                line_objs.append((_s, _e, *_ent_style(entity)))
+            except Exception:
+                pass
+            continue
+
+        elif etype in ("XLINE", "RAY"):
+            # Đường dựng (construction line) — có thể là tim dầm vẽ kiểu xline
+            try:
+                _b = entity.dxf.base_point
+                _u = entity.dxf.unit_vector
+                if abs(float(_u.x)) < 1e-6 and abs(float(_u.y)) > 1e-6:
+                    _bx = float(_b.x)
+                    line_objs.append((
+                        (_bx, float(_b.y) - 1e6), (_bx, float(_b.y) + 1e6),
+                        *_ent_style(entity)))
             except Exception:
                 pass
             continue
@@ -1138,6 +1169,42 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
     xmin, xmax = min(xs), max(xs)
     ymin, ymax = min(ys), max(ys)
 
+    # ── Ưu tiên TIM DẦM do người dùng vẽ trong CAD ──────────────────────────
+    #   (đường thẳng đứng, linetype CENTER/DASHDOT hoặc layer/màu quy ước).
+    def _detect_tim_line():
+        h = max(ymax - ymin, 1e-6)
+        w = max(xmax - xmin, 1e-6)
+        cands = []
+        for _s, _e, _lay, _lt, _col in line_objs:
+            _dx = abs(_e[0] - _s[0])
+            _dy = abs(_e[1] - _s[1])
+            if _dy < 0.25 * h:                 # đủ dài theo phương đứng
+                continue
+            if _dx > max(2.0, 0.03 * w):       # gần như thẳng đứng
+                continue
+            _xl = (_s[0] + _e[0]) / 2.0
+            if _xl < xmin - 0.5 * w or _xl > xmax + 0.5 * w:
+                continue
+            _U = (str(_lay) + " " + str(_lt)).upper()
+            _score = 0
+            if any(k in _U for k in ("TIM", "CENTER", "AXIS", "DASHDOT", "DASH")):
+                _score += 3
+            if int(_col) == 6:                 # magenta — màu tim quy ước
+                _score += 2
+            cands.append((_score, _xl))
+        if not cands:
+            return None
+        _best = max(s for s, _ in cands)
+        _mid = (xmin + xmax) / 2.0
+        if _best >= 2:                         # có dấu hiệu rõ → chọn ứng viên tốt nhất
+            return min((c for c in cands if c[0] == _best),
+                       key=lambda c: abs(c[1] - _mid))[1]
+        if len(cands) == 1:                    # chỉ 1 đường đứng → coi là tim
+            return cands[0][1]
+        return None
+
+    _x_tim = _detect_tim_line()
+
     # Tim dầm theo TRỌNG TÂM diện tích (centroid) thay vì giữa bbox —
     # mặt cắt KHÔNG đối xứng vẫn về đúng tim (bbox-mid sẽ bị lệch).
     def _centroid_x(pts: list[tuple[float, float]]):
@@ -1154,19 +1221,22 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
             return None
         return cx / (3.0 * a2), abs(a2) / 2.0
 
-    _co = _centroid_x(outer_raw)
-    if _co is None:
-        x_mid = (xmin + xmax) / 2.0          # fallback: giữa bbox
+    if _x_tim is not None:
+        x_mid = _x_tim                       # 1) ưu tiên tim dầm vẽ trong CAD
     else:
-        _cx_o, _a_o = _co
-        _num, _den = _cx_o * _a_o, _a_o      # trừ phần lỗ (void) cho chính xác
-        for _h in holes_raw:
-            _ch = _centroid_x(_h)
-            if _ch:
-                _cx_h, _a_h = _ch
-                _num -= _cx_h * _a_h
-                _den -= _a_h
-        x_mid = _num / _den if _den > 1e-9 else _cx_o
+        _co = _centroid_x(outer_raw)
+        if _co is None:
+            x_mid = (xmin + xmax) / 2.0      # 3) fallback: giữa bbox
+        else:
+            _cx_o, _a_o = _co                # 2) trọng tâm diện tích (trừ lỗ)
+            _num, _den = _cx_o * _a_o, _a_o
+            for _h in holes_raw:
+                _ch = _centroid_x(_h)
+                if _ch:
+                    _cx_h, _a_h = _ch
+                    _num -= _cx_h * _a_h
+                    _den -= _a_h
+            x_mid = _num / _den if _den > 1e-9 else _cx_o
     y_top  = ymax   # mặt trên → Z = 0
 
     def _center(pts: list[tuple[float, float]]) -> list[list[float]]:
@@ -1180,4 +1250,5 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
         "width_mm":  round(xmax - xmin, 1),
         "height_mm": round(ymax - ymin, 1),
         "entities":  sorted(entity_types),
+        "tim_source": "cad_line" if _x_tim is not None else "centroid",
     }
