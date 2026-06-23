@@ -1724,6 +1724,12 @@ def _beam_span_list(d: dict) -> list:
     x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
     B_tk   = float(d.get("B", 20.0))
     bv = _get_banve()
+    if bv is not None and hasattr(bv, "resolve_supports"):
+        try:                              # ĐỒNG BỘ bố trí 2 tầng (nhịp chính/dẫn)
+            supports, _ = bv.resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+            return list(zip(supports[:-1], supports[1:]))
+        except Exception:
+            pass
     if bv is not None and hasattr(bv, "calc_span_layout"):
         try:
             supports, _ = bv.calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
@@ -1731,6 +1737,32 @@ def _beam_span_list(d: dict) -> list:
         except Exception:
             pass
     return [(x0 + i * L_nhip, x0 + (i + 1) * L_nhip) for i in range(n_nhip)]
+
+
+def _main_span_idx(d: dict, spans: list) -> int:
+    """Chỉ số nhịp CHÍNH (chứa tim tĩnh không) trong danh sách spans."""
+    if not spans:
+        return -1
+    geo   = d.get("geo_logic", {})
+    x0    = float(geo.get("x_mo_trai", spans[0][0]))
+    x_end = float(geo.get("x_mo_phai", spans[-1][1]))
+    x_tim = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
+    for i, (a, b) in enumerate(spans):
+        if a - 1e-6 <= x_tim <= b + 1e-6:
+            return i
+    return len(spans) // 2
+
+
+def _span_pfx(d: dict, base_pfx: str, i_span: int, main_idx: int) -> str:
+    """pfx dầm cho nhịp i_span: nhịp chính → '{base}_main' nếu có dầm chính
+    riêng (đã nạp), ngược lại dùng base_pfx (dầm nhịp dẫn)."""
+    sl = (d or {}).get("span_layout") or {}
+    if (sl.get("mode") == "two_tier" and sl.get("beam_main")
+            and i_span == main_idx):
+        main_pfx = f"{base_pfx}_main"
+        if st.session_state.get(_cad_key(main_pfx, "sections")):
+            return main_pfx
+    return base_pfx
 
 
 def _resolve_beam_sections(pfx: str = "spt"):
@@ -2083,24 +2115,6 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     Hệ trục: x = lý trình (m), y = cao độ tuyệt đối (m).
     Hiển thị dạng haunch profile: cao ở hai đầu (C-C), thấp ở giữa nhịp (A-A).
     """
-    cad_state = st.session_state.get(_cad_key(pfx, "state"), {}) or {}
-    segs_data = cad_state.get("segs", [])
-    # Mặt cắt + fill_sec: session → file lưu → preset (luôn có dữ liệu)
-    secs_st, fill_sec = _resolve_beam_sections(pfx)
-    # Đoạn dầm (haunch): chưa khai trong session → thử file lưu; vẫn trống thì để rỗng
-    # và profile sẽ là chiều cao ĐỀU theo mặt cắt giữa nhịp (fallback an toàn).
-    if not segs_data:
-        _saved = _load_defaults(_get_bb())
-        if _saved:
-            segs_data = _saved.get("segs", []) or []
-
-    def _h_mm(name: str):
-        s = secs_st.get(name)
-        if not s or not s.outer:
-            return None
-        zvals = [p[1] for p in s.outer]
-        return abs(min(zvals)) if zvals else None
-
     kcn    = d.get("kcn_result") or d.get("ai_result", {})
     geo    = d.get("geo_logic", {})
     x0     = float(geo.get("x_mo_trai",    -60.0))
@@ -2115,52 +2129,80 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
         L_m = L_nhip * 1000.0              # fallback: L_nhip metres → mm
 
     beam_top = cao_dd + H_nom   # cao độ đỉnh dầm (m) — cố định theo thiết kế
-
-    # Xây dựng profile (x_mm, h_mm) từ đầu dầm → giữa nhịp
-    pts = []
-    _x  = 0.0
-    for seg in segs_data:
-        slen = float(seg.get("length", 0))
-        if slen <= 0:
-            continue
-        if seg["type"] == "constant":
-            h = _h_mm(seg.get("sec", "A-A")) or H_nom * 1000
-            pts.append((_x, h))
-            pts.append((_x + slen, h))
-        else:
-            h_from = _h_mm(seg.get("from_sec", "C-C")) or H_nom * 1000
-            h_to   = _h_mm(seg.get("to_sec",   "A-A")) or H_nom * 1000
-            pts.append((_x, h_from))
-            pts.append((_x + slen, h_to))
-        _x += slen
-
-    h_fill = _h_mm(fill_sec) or H_nom * 1000
     L_half = L_m / 2.0
-    if _x < L_half:
-        pts.append((_x, h_fill))
-        pts.append((L_half, h_fill))
 
-    if not pts:
+    def _full_pts_for(_pfx: str):
+        """Profil dầm (full_pts mm) cho 1 pfx; None nếu không dựng được."""
+        cad_state = st.session_state.get(_cad_key(_pfx, "state"), {}) or {}
+        segs_data = cad_state.get("segs", [])
+        secs_st, fill_sec = _resolve_beam_sections(_pfx)
+        if not segs_data:
+            _saved = _load_defaults(_get_bb())
+            if _saved:
+                segs_data = _saved.get("segs", []) or []
+
+        def _h_mm(name: str):
+            s = secs_st.get(name)
+            if not s or not s.outer:
+                return None
+            zvals = [p[1] for p in s.outer]
+            return abs(min(zvals)) if zvals else None
+
+        pts = []
+        _x  = 0.0
+        for seg in segs_data:
+            slen = float(seg.get("length", 0))
+            if slen <= 0:
+                continue
+            if seg["type"] == "constant":
+                h = _h_mm(seg.get("sec", "A-A")) or H_nom * 1000
+                pts.append((_x, h))
+                pts.append((_x + slen, h))
+            else:
+                h_from = _h_mm(seg.get("from_sec", "C-C")) or H_nom * 1000
+                h_to   = _h_mm(seg.get("to_sec",   "A-A")) or H_nom * 1000
+                pts.append((_x, h_from))
+                pts.append((_x + slen, h_to))
+            _x += slen
+
+        h_fill = _h_mm(fill_sec) or H_nom * 1000
+        if _x < L_half:
+            pts.append((_x, h_fill))
+            pts.append((L_half, h_fill))
+        if not pts:
+            return None
+        return pts + [(L_m - p[0], p[1]) for p in reversed(pts[:-1])]
+
+    base_pts = _full_pts_for(pfx)
+    if base_pts is None:
         return []
 
-    # Mirror cho nửa phải
-    full_pts = pts + [(L_m - p[0], p[1]) for p in reversed(pts[:-1])]
+    # Dầm RIÊNG cho nhịp chính (nếu khai báo dầm chính khác nhịp dẫn)
+    sl       = (d or {}).get("span_layout") or {}
+    main_pfx = f"{pfx}_main"
+    main_pts = None
+    if (sl.get("mode") == "two_tier" and sl.get("beam_main")
+            and st.session_state.get(_cad_key(main_pfx, "sections"))):
+        main_pts = _full_pts_for(main_pfx) or base_pts
 
-    # ── Bố trí nhịp ĐỒNG BỘ với bản vẽ trắc dọc (11-BanVe_KetCau.calc_span_layout):
-    #    nhịp chính căng giữa tĩnh không, mọi nhịp = chiều dài định hình. Phải dùng
-    #    chung supports để dầm khớp đúng mố/trụ/bản mặt cầu (tránh lệch 1 nhịp). ──
+    # ── Bố trí nhịp ĐỒNG BỘ với bản vẽ trắc dọc (resolve_supports — 2 tầng). ──
     _bv       = _get_banve()
     B_tk      = float(d.get("B", 20.0))
     x_end_geo = float(geo.get("x_mo_phai", x0 + max(1, n_nhip) * L_nhip))
     x_tim     = float(geo.get("x_tim_clearance", (x0 + x_end_geo) / 2))
-    if _bv is not None and hasattr(_bv, "calc_span_layout"):
+    if _bv is not None and hasattr(_bv, "resolve_supports"):
+        supports, _ = _bv.resolve_supports(d, x0, x_end_geo, x_tim, B_tk, L_nhip)
+    elif _bv is not None and hasattr(_bv, "calc_span_layout"):
         supports, _ = _bv.calc_span_layout(x0, x_end_geo, x_tim, B_tk, L_nhip)
     else:
         supports = [x0 + i * L_nhip for i in range(n_nhip + 1)]
-    spans = list(zip(supports[:-1], supports[1:]))
+    spans    = list(zip(supports[:-1], supports[1:]))
+    main_idx = _main_span_idx(d, spans)
 
     result = []
     for i_nhip, (span_x0, span_x1) in enumerate(spans):
+        full_pts = (main_pts if (main_pts is not None and i_nhip == main_idx)
+                    else base_pts)
         scale   = (span_x1 - span_x0) / L_m
 
         bot_x = [span_x0 + s * scale for s, _ in full_pts]
@@ -2237,13 +2279,30 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     x_first = -bc / 2 + oh
     _spans  = _beam_span_list(d)
     n_span  = len(_spans)
+    main_idx = _main_span_idx(d, _spans)
+
+    # Dầm RIÊNG cho nhịp chính (nếu có) → precompute rings của pfx chính
+    sl       = (d or {}).get("span_layout") or {}
+    main_pfx = f"{pfx}_main"
+    main_rt  = None
+    if (sl.get("mode") == "two_tier" and sl.get("beam_main")
+            and st.session_state.get(_cad_key(main_pfx, "sections"))):
+        _am, _rm = _build_role_rings(main_pfx, L_mm)
+        if any(_rm.values()):
+            main_rt = (main_pfx, _am, _rm)
+
     result  = []
     _legend = True
     for i_dam in range(n_dam):
         beam_y = x_first + i_dam * kc_dam
         for i_span, (sx0, sx1) in enumerate(_spans):
-            rings, mir = _cell_rings(pfx, active, ringmap,
-                                     i_span, n_span, i_dam, n_dam)
+            if main_rt is not None and i_span == main_idx:
+                _p, _a, _r = main_rt
+                rings, mir = _cell_rings(_p, _a, _r,
+                                         i_span, n_span, i_dam, n_dam)
+            else:
+                rings, mir = _cell_rings(pfx, active, ringmap,
+                                         i_span, n_span, i_dam, n_dam)
             if not rings or len(rings) < 2:
                 continue
             _sgn = -1.0 if mir else 1.0
@@ -2324,13 +2383,30 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
     x_first = -bc / 2 + oh
     spans   = _beam_span_list(d)
     n_span  = len(spans)
+    main_idx = _main_span_idx(d, spans)
+
+    # Dầm RIÊNG cho nhịp chính (nếu có)
+    sl       = (d or {}).get("span_layout") or {}
+    main_pfx = f"{pfx}_main"
+    main_rt  = None
+    if (sl.get("mode") == "two_tier" and sl.get("beam_main")
+            and st.session_state.get(_cad_key(main_pfx, "sections"))):
+        _am, _rm = _build_role_rings(main_pfx, L_mm)
+        if any(_rm.values()):
+            main_rt = (main_pfx, _am, _rm)
+
     result = []
     _legend = True
     for i_dam in range(n_dam):
         beam_y = x_first + i_dam * kc_dam
         for i_span, (sx0, sx1) in enumerate(spans):
-            rings, mir = _cell_rings(pfx, active, ringmap,
-                                     i_span, n_span, i_dam, n_dam)
+            if main_rt is not None and i_span == main_idx:
+                _p, _a, _r = main_rt
+                rings, mir = _cell_rings(_p, _a, _r,
+                                         i_span, n_span, i_dam, n_dam)
+            else:
+                rings, mir = _cell_rings(pfx, active, ringmap,
+                                         i_span, n_span, i_dam, n_dam)
             if not rings or len(rings) < 2:
                 continue
             _sgn = -1.0 if mir else 1.0

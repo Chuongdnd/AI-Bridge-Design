@@ -216,6 +216,79 @@ def _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip=None):
 # Public alias
 calc_span_layout = _calc_span_layout
 
+
+def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
+    """Bố trí mố–trụ theo cấu hình ``d['span_layout']``.
+
+    mode 'two_tier' : nhịp CHÍNH (căng giữa tĩnh không) dài L_main, các nhịp
+                      DẪN dài L_dan rải đều hai phía. Nếu thiếu L_main hoặc
+                      L_main < điều kiện tĩnh không → tự nâng (snap-up).
+    mode khác/thiếu : trả về bố trí ĐỀU như ``_calc_span_layout`` (giữ nguyên
+                      hành vi cũ — tương thích ngược).
+
+    Returns (supports, L_dan) — đồng bộ chữ ký (supports, L_std) cũ.
+    """
+    sl  = (d or {}).get("span_layout") or {}
+    kcn = (d or {}).get("kcn_result") or (d or {}).get("ai_result", {}) or {}
+    if L_nhip is None:
+        L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
+
+    if sl.get("mode") != "two_tier":
+        return _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+
+    L_clear = B_tk + 2.0 * _PIER_SAFETY
+    L_dan   = float(sl.get("L_dan") or L_nhip)
+    if L_dan <= 0:
+        L_dan = L_nhip
+    L_main  = sl.get("L_main")
+    L_main  = float(L_main) if L_main else _snap_up_std(L_clear)
+    if L_main + 1e-6 < L_clear:               # không đủ tĩnh không → tự nâng
+        L_main = _snap_up_std(L_clear)
+
+    main_L = x_tim - L_main / 2.0
+    main_R = x_tim + L_main / 2.0
+    n_left  = max(0, int(np.ceil((main_L - x0)   / L_dan - 1e-6)))
+    n_right = max(0, int(np.ceil((x_end - main_R) / L_dan - 1e-6)))
+    left  = [main_L - i * L_dan for i in range(n_left, 0, -1)]
+    right = [main_R + i * L_dan for i in range(1, n_right + 1)]
+    supports = left + [main_L, main_R] + right
+    return supports, L_dan
+
+
+def main_span_index(supports, x_tim):
+    """Chỉ số nhịp CHÍNH (nhịp chứa tim tĩnh không). -1 nếu rỗng."""
+    spans = list(zip(supports[:-1], supports[1:]))
+    for i, (a, b) in enumerate(spans):
+        if a - 1e-6 <= x_tim <= b + 1e-6:
+            return i
+    return (len(spans) // 2) if spans else -1
+
+
+def validate_span_layout(d, x0, x_end, x_tim, B_tk):
+    """Kiểm tra bố trí 2 tầng → list cảnh báo (rỗng nếu hợp lệ)."""
+    sl = (d or {}).get("span_layout") or {}
+    warns = []
+    if sl.get("mode") != "two_tier":
+        return warns
+    L_clear = B_tk + 2.0 * _PIER_SAFETY
+    L_main  = sl.get("L_main")
+    if L_main and float(L_main) + 1e-6 < L_clear:
+        warns.append(
+            f"Nhịp chính L={float(L_main):.1f}m < tĩnh không yêu cầu "
+            f"{L_clear:.1f}m → đã tự nâng lên {_snap_up_std(L_clear):.1f}m.")
+    supports, _ = resolve_supports(d, x0, x_end, x_tim, B_tk)
+    if supports:
+        if supports[0] > x0 + 1e-6:
+            warns.append(
+                f"Bố trí bắt đầu tại {supports[0]:.1f}m > mố trái {x0:.1f}m "
+                f"— có khoảng hở đầu cầu.")
+        if supports[-1] < x_end - 1e-6:
+            warns.append(
+                f"Bố trí kết thúc tại {supports[-1]:.1f}m < mố phải "
+                f"{x_end:.1f}m — có khoảng hở cuối cầu.")
+    return warns
+
+
 # ===========================================================================
 # 0b. OVERLAY ĐỊA CHẤT — Trắc dọc
 # ===========================================================================
@@ -496,7 +569,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None):
     # ── Bố trí nhịp ĐỀU theo chiều dài định hình catalog, nhịp chính căng
     #    giữa tĩnh không (xem _calc_span_layout) ────────────────────────────
     L_nhip   = float(kcn.get("chieu_dai", 33.0) or 33.0)
-    supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
     x0, x_end = supports[0], supports[-1]
     piers    = supports[1:-1]
     n_nhip   = len(supports) - 1
@@ -1153,7 +1226,7 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None):
     x_tim = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
 
     # Bố trí nhịp đều theo chiều dài định hình catalog, nhịp chính căng giữa tĩnh không
-    supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
     x0, x_end = supports[0], supports[-1]
     piers    = supports[1:-1]
     n_nhip   = len(supports) - 1
@@ -1362,7 +1435,7 @@ def add_bridge_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         H_tk   =  float(d.get("H", 3.0)) * hz
 
         L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
-        supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+        supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
         x0, x_end = supports[0], supports[-1]
         piers = supports[1:-1]
         n_nhip = len(supports) - 1
@@ -1597,7 +1670,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         be_long   = be_W * 0.7
         mo_L      = 3.5
 
-        supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+        supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
         x0, x_end = supports[0], supports[-1]
         piers    = supports[1:-1]
         n_nhip   = len(supports) - 1
@@ -1838,7 +1911,7 @@ def ve_binh_do_2d(d, df_tim_line=None):
     x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
     x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
     L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
-    supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
     x0, x_end = supports[0], supports[-1]
     piers  = supports[1:-1]
     n_nhip = len(supports) - 1
@@ -2023,7 +2096,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None):
     x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
     x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
     L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
-    supports, L_std = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
     x0, x_end = supports[0], supports[-1]
     piers  = supports[1:-1]
     n_nhip = len(supports) - 1

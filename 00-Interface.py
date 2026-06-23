@@ -2933,18 +2933,45 @@ def _reset_dam_edit_state() -> None:
     st.session_state.pop(f"_effpfx_{_DAM_EDIT_PFX}", None)
 
 
-def _apply_beam_to_pa(d: dict, pa_key: str, beam: dict) -> None:
-    """Gán dầm thư viện cho 1 PA + nạp sections vào pfx Chi tiết dầm của PA."""
-    base = _PA_SPT_PFX.get(pa_key, "spt")
-    eff  = BBUI.effective_pfx(base, beam.get("loai_dam"))
+def _pa_span_layout(pa_key: str) -> dict:
+    """Cấu hình bố trí nhịp (span_layout) của 1 PA — lưu theo PA trong design_data."""
+    _all = st.session_state.design_data.get("span_layout_by_pa") or {}
+    return dict(_all.get(pa_key) or {})
+
+
+def _save_pa_span_layout(pa_key: str, sl: dict) -> None:
+    _all = dict(st.session_state.design_data.get("span_layout_by_pa") or {})
+    _all[pa_key] = dict(sl or {})
+    st.session_state.design_data["span_layout_by_pa"] = _all
+
+
+def _apply_beam_to_pa(d: dict, pa_key: str, beam: dict, tier: str = "dan") -> None:
+    """Gán dầm thư viện cho 1 PA + nạp sections vào pfx Chi tiết dầm của PA.
+
+    tier='dan'  → dầm nhịp DẪN (pfx PA, overlay dùng cho nhịp dẫn).
+    tier='main' → dầm nhịp CHÍNH (pfx '{PA}_main', overlay dùng cho nhịp chính).
+    """
+    base0 = _PA_SPT_PFX.get(pa_key, "spt")
+    base  = base0 if tier == "dan" else f"{base0}_main"
+    eff   = BBUI.effective_pfx(base, beam.get("loai_dam"))
     st.session_state[f"{base}_beam_type"] = beam.get("loai_dam", "Super-T")
     BBUI.import_beam_state(eff, beam)
     st.session_state[f"_loaded_beam_{base}"] = beam["id"]
-    _ap = dict(d.get("lib_dam_applied") or {})
-    _ap[pa_key] = beam["id"]
-    d["lib_dam_applied"] = _ap
-    st.session_state.design_data["lib_dam_applied"] = _ap
-    st.toast(f"Đã áp dụng dầm “{beam.get('ten','')}” cho {pa_key}.", icon="✅")
+    if tier == "dan":
+        _ap = dict(d.get("lib_dam_applied") or {})
+        _ap[pa_key] = beam["id"]
+        d["lib_dam_applied"] = _ap
+        st.session_state.design_data["lib_dam_applied"] = _ap
+    # Cập nhật span_layout theo PA
+    _sl = _pa_span_layout(pa_key)
+    if tier == "main":
+        _sl["beam_main"] = beam["id"]
+        _sl.setdefault("mode", "two_tier")
+    else:
+        _sl["beam_dan"] = beam["id"]
+    _save_pa_span_layout(pa_key, _sl)
+    _lbl = "nhịp chính" if tier == "main" else "nhịp dẫn"
+    st.toast(f"Đã áp dụng dầm “{beam.get('ten','')}” ({_lbl}) cho {pa_key}.", icon="✅")
     st.rerun()
 
 
@@ -3886,7 +3913,11 @@ with _col_main:
             _df_geo  = st.session_state.get("df_geology", None)
             _df_tim  = st.session_state.get("df_tim_line", None)
             has_terr = _df_geo is not None and not _df_geo.empty
-    
+            # pfx dầm theo phương án — dùng CHUNG cho mọi sub-tab (overlay theo PA)
+            _spt_pfx = _PA_SPT_PFX.get(selected_ribbon, "spt")
+            # Nạp bố trí nhịp (2 tầng) của PA vào d → mọi bản vẽ đồng bộ
+            d = {**d, "span_layout": _pa_span_layout(selected_ribbon)}
+
             # Thông tin brief
             _geo_d = d.get("geo_logic", {})
             st.caption(
@@ -3984,7 +4015,7 @@ with _col_main:
                                     # Dầm trong HỆ VN-2000 trừ origin (khớp địa hình), KHÔNG dùng
                                     # bản chainage (sẽ lệch hệ → không zoom được).
                                     _spt_t_traces = BBUI.get_beam_model_mesh_traces_vn2000(
-                                        d, _df_geo, he_so_z)
+                                        d, _df_geo, he_so_z, pfx=_spt_pfx)
                                     if _spt_t_traces:
                                         _fig_t.data = tuple(
                                             t for t in _fig_t.data
@@ -4059,7 +4090,7 @@ with _col_main:
                         fig_3d = BVK.ve_cau_3d(d, df_tim_line=None)
                         # Thay thế dầm cũ TRƯỚC apply_render_mode (tránh màu bị đổi)
                         try:
-                            _spt_tr = BBUI.get_beam_model_mesh_traces(d)
+                            _spt_tr = BBUI.get_beam_model_mesh_traces(d, pfx=_spt_pfx)
                             if _spt_tr:
                                 # Xóa dầm cũ: Mesh3d (#85929e) + Scatter3d edges (#1a252f)
                                 fig_3d.data = tuple(
@@ -4089,6 +4120,135 @@ with _col_main:
             # ── TAB 2: Bố trí chung ────────────────────────────────────────
             with tab_btc:
                 st.markdown("##### Bố trí chung")
+
+                # ── 0. Dầm thư viện & bố trí nhịp (theo phương án) ────────────
+                with st.expander(f"🌉 Dầm & bố trí nhịp — {selected_ribbon}",
+                                 expanded=False):
+                    _beams_btc = st.session_state.get("dam_beams") or CLIB.load_beams()
+                    _sl_cur    = _pa_span_layout(selected_ribbon)
+                    _names_btc = [b.get("ten", "(không tên)") for b in _beams_btc]
+                    _Ls_btc    = [float(x) for x in BVK.STD_LENGTHS]
+
+                    def _beam_idx(_bid):
+                        for _k, _b in enumerate(_beams_btc):
+                            if _b.get("id") == _bid:
+                                return _k + 1
+                        return 0
+
+                    def _L_idx(_v, _dflt=33.0):
+                        if _v in _Ls_btc:
+                            return _Ls_btc.index(_v)
+                        return _Ls_btc.index(_dflt) if _dflt in _Ls_btc else 0
+
+                    if not _beams_btc:
+                        st.caption("Chưa có dầm trong **THƯ VIỆN**. Hãy tạo dầm trước "
+                                   "rồi quay lại đây để gán theo nhịp.")
+                    _opts_btc = ["— chọn dầm —"] + _names_btc
+
+                    _mode_lbl = st.radio(
+                        "Kiểu bố trí nhịp:",
+                        ["Đều (1 loại dầm)", "2 tầng (nhịp chính + nhịp dẫn)"],
+                        index=(1 if _sl_cur.get("mode") == "two_tier" else 0),
+                        horizontal=True, key=f"btc_mode_{selected_ribbon}")
+                    _two = _mode_lbl.startswith("2 tầng")
+
+                    if not _two:
+                        _cu1, _cu2 = st.columns([2, 1])
+                        with _cu1:
+                            _seld = st.selectbox(
+                                "Dầm áp dụng (cả cầu):", _opts_btc,
+                                index=_beam_idx(_sl_cur.get("beam_dan")),
+                                key=f"btc_beamu_{selected_ribbon}")
+                        with _cu2:
+                            _Ldu = st.selectbox(
+                                "Chiều dài nhịp (m):", _Ls_btc,
+                                index=_L_idx(_sl_cur.get("L_dan")),
+                                key=f"btc_Lu_{selected_ribbon}")
+                        _ca, _cb = st.columns(2)
+                        if _ca.button("💾 Lưu bố trí đều", use_container_width=True,
+                                      key=f"btc_saveu_{selected_ribbon}"):
+                            _new = dict(_sl_cur)
+                            _new.update({"mode": "uniform", "L_dan": float(_Ldu),
+                                         "L_main": float(_Ldu)})
+                            _save_pa_span_layout(selected_ribbon, _new)
+                            st.rerun()
+                        if _cb.button("✅ Áp dụng dầm", use_container_width=True,
+                                      type="primary", disabled=(_seld == _opts_btc[0]),
+                                      key=f"btc_applyu_{selected_ribbon}"):
+                            _apply_beam_to_pa(
+                                d, selected_ribbon,
+                                _beams_btc[_opts_btc.index(_seld) - 1], "dan")
+                    else:
+                        st.markdown("**Nhịp dẫn** — đồng bộ mọi nhịp dẫn")
+                        _cd1, _cd2 = st.columns([2, 1])
+                        with _cd1:
+                            _seld = st.selectbox(
+                                "Dầm nhịp dẫn:", _opts_btc,
+                                index=_beam_idx(_sl_cur.get("beam_dan")),
+                                key=f"btc_beamd_{selected_ribbon}")
+                        with _cd2:
+                            _Ld = st.selectbox(
+                                "Chiều dài nhịp dẫn (m):", _Ls_btc,
+                                index=_L_idx(_sl_cur.get("L_dan")),
+                                key=f"btc_Ld_{selected_ribbon}")
+                        if st.button("✅ Áp dụng dầm nhịp dẫn", use_container_width=True,
+                                     disabled=(_seld == _opts_btc[0]),
+                                     key=f"btc_applyd_{selected_ribbon}"):
+                            _apply_beam_to_pa(
+                                d, selected_ribbon,
+                                _beams_btc[_opts_btc.index(_seld) - 1], "dan")
+
+                        st.markdown("**Nhịp chính** — căng giữa tĩnh không")
+                        _auto_m = st.checkbox(
+                            "Tự chọn chiều dài theo tĩnh không",
+                            value=(not _sl_cur.get("L_main")),
+                            key=f"btc_autom_{selected_ribbon}")
+                        _cm1, _cm2 = st.columns([2, 1])
+                        with _cm1:
+                            _selm = st.selectbox(
+                                "Dầm nhịp chính:", _opts_btc,
+                                index=_beam_idx(_sl_cur.get("beam_main")),
+                                key=f"btc_beamm_{selected_ribbon}")
+                        with _cm2:
+                            _Lm = st.selectbox(
+                                "Chiều dài nhịp chính (m):", _Ls_btc,
+                                index=_L_idx(_sl_cur.get("L_main"), 38.2),
+                                disabled=_auto_m, key=f"btc_Lm_{selected_ribbon}")
+                        _cs, _cap = st.columns(2)
+                        if _cs.button("💾 Lưu bố trí 2 tầng", use_container_width=True,
+                                      key=f"btc_save2_{selected_ribbon}"):
+                            _new = dict(_sl_cur)
+                            _new.update({"mode": "two_tier", "L_dan": float(_Ld),
+                                         "L_main": (None if _auto_m else float(_Lm))})
+                            _save_pa_span_layout(selected_ribbon, _new)
+                            st.rerun()
+                        if _cap.button("✅ Áp dụng dầm nhịp chính", use_container_width=True,
+                                       type="primary", disabled=(_selm == _opts_btc[0]),
+                                       key=f"btc_applym_{selected_ribbon}"):
+                            _apply_beam_to_pa(
+                                d, selected_ribbon,
+                                _beams_btc[_opts_btc.index(_selm) - 1], "main")
+
+                    # Tóm tắt + cảnh báo tĩnh không
+                    try:
+                        _geo_btc = d.get("geo_logic", {})
+                        _x0b  = float(_geo_btc.get("x_mo_trai", -60))
+                        _xeb  = float(_geo_btc.get("x_mo_phai", 60))
+                        _xtb  = float(_geo_btc.get("x_tim_clearance", (_x0b + _xeb) / 2))
+                        _Btk  = float(d.get("B", 20.0))
+                        _sup, _Ldn = BVK.resolve_supports(d, _x0b, _xeb, _xtb, _Btk)
+                        _nsp = max(0, len(_sup) - 1)
+                        _mid = BVK.main_span_index(_sup, _xtb)
+                        if _nsp:
+                            _Lmn = _sup[_mid + 1] - _sup[_mid]
+                            st.caption(
+                                f"Bố trí: **{_nsp} nhịp** · nhịp dẫn L=**{_Ldn:.1f}m** · "
+                                f"nhịp chính (#{_mid + 1}) L=**{_Lmn:.1f}m**.")
+                        for _w in BVK.validate_span_layout(d, _x0b, _xeb, _xtb, _Btk):
+                            st.warning("⚠️ " + _w)
+                    except Exception:
+                        pass
+
                 try:
                     # ── 1. Trắc dọc cầu ──────────────────────────────────────
                     st.markdown("**Trắc dọc cầu**")
@@ -4096,7 +4256,7 @@ with _col_main:
                     fig_td_btc = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim,
                                                        dia_chat_data=_dc_data)
                     try:
-                        _elev_traces = BBUI.get_elevation_profile_traces(d)
+                        _elev_traces = BBUI.get_elevation_profile_traces(d, pfx=_spt_pfx)
                         if _elev_traces:
                             # Xóa dầm parametric cũ màu #85929e trong trắc dọc
                             fig_td_btc.data = tuple(
@@ -4117,7 +4277,7 @@ with _col_main:
                     st.markdown("**Mặt bằng cầu** (nhìn từ trên)")
                     fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim)
                     try:
-                        for _bd_tr in BBUI.get_plan_beam_traces(d):
+                        for _bd_tr in BBUI.get_plan_beam_traces(d, pfx=_spt_pfx):
                             fig_bd.add_trace(_bd_tr)
                     except Exception:
                         pass
@@ -4128,7 +4288,7 @@ with _col_main:
                     st.markdown("**Mặt cắt ngang điển hình** (kết cấu nhịp)")
                     fig_mcn_btc = BVK.ve_mat_cat_ngang_2d(d)
                     try:
-                        _mcn_traces = BBUI.get_mcn_overlay_traces(d)
+                        _mcn_traces = BBUI.get_mcn_overlay_traces(d, pfx=_spt_pfx)
                         if _mcn_traces:
                             # Xóa dầm parametric cũ (#85929e) khi đã có DXF thực tế
                             fig_mcn_btc.data = tuple(
@@ -4220,8 +4380,7 @@ with _col_main:
             # ── TAB: Chi tiết dầm SPT (CAD Section Sketcher) ─────────────
             with tab_spt:
                 try:
-                    # pfx riêng theo phương án để PA1/PA2 dùng dầm khác nhau
-                    _spt_pfx = _PA_SPT_PFX.get(selected_ribbon, "spt")
+                    # _spt_pfx đã định nghĩa ở đầu khối phương án (dùng chung sub-tab)
                     # Nạp lại dầm thư viện đã áp dụng cho PA này (kể cả sau restart)
                     _applied_id = (d.get("lib_dam_applied") or {}).get(selected_ribbon)
                     if _applied_id and st.session_state.get(f"_loaded_beam_{_spt_pfx}") != _applied_id:
