@@ -58,13 +58,41 @@ section[data-testid="stMain"] {
     flex: 0 0 var(--right-panel-width, 220px) !important;
 }
 
-/* Ẩn drag handle trên mobile */
+/* ── Topbar cố định (vị trí điều khiển qua CSS var để responsive) ── */
+.uth-topbar {
+    position: fixed; top: 0; right: 0;
+    left: var(--sidebar-width, 300px);
+    z-index: 500; height: 44px;
+    background: #0d0d1a; border-bottom: 2px solid #007acc;
+    display: flex; align-items: center; overflow: hidden;
+}
+.uth-topbar .uth-tabs { display: flex; height: 100%; flex: 1; overflow-x: auto; }
+
+/* ── Mobile: gỡ lệch 300px, xếp dọc, chống tràn ngang ── */
 @media (max-width: 768px) {
     .panel-drag-handle { display: none !important; }
     [data-testid="stSidebar"] {
         min-width: 100% !important;
         max-width: 100% !important;
     }
+    /* Topbar + overlay nút ribbon bám mép trái */
+    .uth-topbar { left: 0 !important; }
+    div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) {
+        left: 0 !important;
+    }
+    /* Right panel xuống full-width thay vì cố định 220px */
+    [data-testid="stHorizontalBlock"] > div:last-child {
+        min-width: 100% !important;
+        max-width: 100% !important;
+        flex: 1 1 100% !important;
+    }
+    /* Giảm padding ngang để không tràn */
+    section[data-testid="stMain"] .block-container {
+        padding-left: 8px !important;
+        padding-right: 8px !important;
+    }
+    /* Ẩn phần info dài trong topbar cho gọn */
+    .uth-topbar .uth-info { display: none !important; }
 }
 [data-testid="stSidebar"] button {
     font-size: 12px !important; padding: 4px 8px !important;
@@ -99,7 +127,7 @@ section[data-testid="stMain"] .block-container {
 div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) {
     position: fixed !important;
     top: 0 !important;
-    left: 300px !important;
+    left: var(--sidebar-width, 300px) !important;
     right: 0 !important;
     z-index: 501 !important;
     height: 44px !important;
@@ -208,6 +236,12 @@ try:
         "BeamBuilderUI", os.path.join(_bb_dir, "17-BeamBuilderUI.py"))
     BBUI = _iutil.module_from_spec(_bb_uspec)
     _bb_uspec.loader.exec_module(BBUI)
+
+    # ── Thư viện cấu kiện dùng chung (mố/trụ/dầm/móng) ──────────────────────
+    _cl_spec = _iutil.spec_from_file_location(
+        "component_library", os.path.join(_bb_dir, "utils", "component_library.py"))
+    CLIB = _iutil.module_from_spec(_cl_spec)
+    _cl_spec.loader.exec_module(CLIB)
 
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
@@ -1964,6 +1998,13 @@ _TAB_META = [
         'lock_msg': 'Cần chạy tính toán nhịp trước',
     },
     {
+        'key':      'THƯ VIỆN',
+        'icon':     '📚',
+        'state':    'done',
+        'tip':      'Thư viện cấu kiện dùng chung (mố/trụ/dầm/móng)',
+        'lock_msg': '',
+    },
+    {
         'key':      'VẼ CHI TIẾT DẦM',
         'icon':     '📐',
         'state':    tab_states['tab3'],
@@ -2014,14 +2055,12 @@ def _render_topbar(d: dict, cur_tab: str) -> None:
         )
 
     st.markdown(
-        f"<div style='position:fixed;top:0;left:300px;right:0;z-index:500;"
-        f"height:44px;background:#0d0d1a;border-bottom:2px solid #007acc;"
-        f"display:flex;align-items:center;overflow:hidden'>"
+        f"<div class='uth-topbar'>"
         f"<div style='padding:0 14px;font-size:14px;font-weight:700;"
         f"color:#007acc;white-space:nowrap;border-right:1px solid #1e1e2e;"
         f"height:44px;display:flex;align-items:center'>🏗️ UTH</div>"
-        f"<div style='display:flex;height:100%;flex:1'>{_tabs_h}</div>"
-        f"<div style='border-left:1px solid #1e1e2e;padding:0 12px;"
+        f"<div class='uth-tabs'>{_tabs_h}</div>"
+        f"<div class='uth-info' style='border-left:1px solid #1e1e2e;padding:0 12px;"
         f"font-size:10px;color:#666;white-space:nowrap;"
         f"max-width:260px;overflow:hidden;text-overflow:ellipsis'>{_info}</div>"
         f"<div style='border-left:1px solid #1e1e2e;padding:0 12px;"
@@ -2803,6 +2842,103 @@ _render_floating_chat()
 # =========================================================================
 # VÙNG HIỂN THỊ CHÍNH
 # =========================================================================
+def render_thu_vien() -> None:
+    """Tab Thư viện cấu kiện dùng chung (mố/trụ/dầm/móng).
+    Xem · thêm · sửa · xóa trực tiếp trong bảng; lưu bền vững ra JSON.
+    Độc lập với pipeline AI — luôn truy cập được."""
+    st.markdown("---")
+    st.markdown(
+        DS.section_header(
+            "Thư viện cấu kiện dùng chung",
+            icon="📚",
+            sub=("Mố · Trụ · Dầm · Móng — dùng chung cho cả 3 phương án. "
+                 "Sửa trực tiếp trong bảng, dòng trống cuối để thêm mới, "
+                 "chọn dòng + phím Delete để xóa, rồi bấm 💾 Lưu."),
+        ),
+        unsafe_allow_html=True,
+    )
+
+    # Nạp 1 lần — giữ trong session để chỉnh sửa không mất giữa các rerun
+    if "component_library" not in st.session_state:
+        st.session_state.component_library = CLIB.load_library()
+    lib = st.session_state.component_library
+
+    _order  = ["dam", "tru", "mo", "mong"]
+    _icons  = {"dam": "🌉", "tru": "🏛️", "mo": "🧱", "mong": "🦵"}
+    _tabs   = st.tabs([
+        f"{_icons[c]} {CLIB.TYPE_LABEL[c]} ({len(lib.get(c, []))})"
+        for c in _order
+    ])
+
+    edited = {}
+    for ctype, _tab in zip(_order, _tabs):
+        with _tab:
+            cols = CLIB.SCHEMA[ctype]
+            df   = pd.DataFrame(CLIB.records_for(lib, ctype), columns=cols)
+            colcfg = {}
+            for f in cols:
+                lbl = CLIB.FIELD_LABEL.get(f, f)
+                if f in CLIB.LOAI_OPTIONS:
+                    colcfg[f] = st.column_config.SelectboxColumn(
+                        lbl, options=CLIB.LOAI_OPTIONS[f], required=False)
+                elif f in CLIB.NUMERIC_FIELDS[ctype]:
+                    colcfg[f] = st.column_config.NumberColumn(
+                        lbl, format="%.2f", step=0.1)
+                else:
+                    colcfg[f] = st.column_config.TextColumn(lbl)
+            edited[ctype] = st.data_editor(
+                df, key=f"clib_editor_{ctype}", num_rows="dynamic",
+                use_container_width=True, hide_index=True, column_config=colcfg,
+            )
+
+    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
+    _b1, _b2, _b3 = st.columns([1, 1, 3])
+
+    def _editors_to_lib() -> dict:
+        out = {"version": CLIB.VERSION}
+        for c in _order:
+            recs = edited[c].fillna("").to_dict("records")
+            out[c] = [r for r in recs if str(r.get("ten", "")).strip()]
+        return out
+
+    with _b1:
+        if st.button("💾 Lưu thư viện", type="primary",
+                     use_container_width=True, key="clib_save"):
+            try:
+                _newlib = _editors_to_lib()
+                CLIB.save_library(_newlib)
+                st.session_state.component_library = CLIB.normalize(_newlib)
+                for c in _order:
+                    st.session_state.pop(f"clib_editor_{c}", None)
+                st.success("✅ Đã lưu thư viện.")
+                st.rerun()
+            except Exception as _e:
+                st.error(f"Lỗi lưu thư viện: {_e}")
+    with _b2:
+        if st.button("↺ Khôi phục mẫu", use_container_width=True,
+                     key="clib_reset"):
+            st.session_state["_clib_confirm_reset"] = True
+    with _b3:
+        st.caption(f"📁 `{os.path.relpath(CLIB.LIBRARY_PATH)}` — "
+                   "lưu bền vững, dùng chung mọi phiên & mọi phương án.")
+
+    if st.session_state.get("_clib_confirm_reset"):
+        st.warning("Khôi phục sẽ **ghi đè** toàn bộ thư viện hiện tại "
+                   "bằng mẫu mặc định. Tiếp tục?")
+        _cy, _cn, _ = st.columns([1, 1, 3])
+        if _cy.button("⚠️ Xác nhận", type="primary", key="clib_reset_yes"):
+            _def = CLIB.default_library()
+            CLIB.save_library(_def)
+            st.session_state.component_library = _def
+            st.session_state["_clib_confirm_reset"] = False
+            for c in _order:
+                st.session_state.pop(f"clib_editor_{c}", None)
+            st.rerun()
+        if _cn.button("Hủy", key="clib_reset_no"):
+            st.session_state["_clib_confirm_reset"] = False
+            st.rerun()
+
+
 selected_ribbon = st.session_state.get('current_tab', 'THUYẾT MINH')
 
 # ── Thanh kéo tỷ lệ panel chính / panel kết quả ─────────────────────────────
@@ -4096,6 +4232,14 @@ with _col_main:
                 st.error(f"Lỗi render so sánh phương án: {_ssp_err}")
                 import traceback
                 st.code(traceback.format_exc())
+
+    elif selected_ribbon == "THƯ VIỆN":
+        try:
+            render_thu_vien()
+        except Exception as _cl_err:
+            st.error(f"Lỗi Thư viện cấu kiện: {_cl_err}")
+            import traceback
+            st.code(traceback.format_exc())
 
     elif selected_ribbon == "VẼ CHI TIẾT DẦM":
         try:
