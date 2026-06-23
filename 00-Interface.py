@@ -3038,51 +3038,47 @@ def render_dam_library(d: dict) -> None:
         st.info("Chưa có dầm nào. Bấm **➕ Tạo dầm mới** để bắt đầu.")
         return
 
-    for _i in range(0, len(beams), 2):
-        _cols = st.columns(2)
-        for _j, _col in enumerate(_cols):
-            if _i + _j >= len(beams):
-                break
-            b = beams[_i + _j]
-            with _col:
-                _n_sec = len(b.get("sections", {}))
-                _used  = [pa for pa, bid in applied.items() if bid == b.get("id")]
-                _badge = (" · ".join(_used)) if _used else "chưa áp dụng"
-                st.markdown(
-                    f"<div style='background:#141420;border:1px solid #2a2a3a;"
-                    f"border-top:3px solid {DS.dam_color(b.get('loai_dam',''))};"
-                    f"border-radius:8px;padding:10px 12px'>"
-                    f"<div style='font-size:14px;font-weight:600;color:#f0f0f0'>"
-                    f"🌉 {b.get('ten','(không tên)')}</div>"
-                    f"<div style='font-size:11px;color:#888;margin-top:3px'>"
-                    f"{b.get('loai_dam','')} · {_n_sec} mặt cắt · "
-                    f"{b.get('created_by','') or '—'}</div>"
-                    f"<div style='font-size:10px;color:#4fc3f7;margin-top:4px'>"
-                    f"📌 {_badge}</div></div>",
-                    unsafe_allow_html=True,
-                )
-                _a1, _a2, _a3, _a4 = st.columns(4)
-                if _a1.button("PA1", key=f"lib_apply1_{b['id']}",
-                              use_container_width=True, help="Áp dụng cho Phương án 1"):
-                    _apply_beam_to_pa(d, "Phương án 1", b)
-                if _a2.button("PA2", key=f"lib_apply2_{b['id']}",
-                              use_container_width=True, help="Áp dụng cho Phương án 2"):
-                    _apply_beam_to_pa(d, "Phương án 2", b)
-                if _a3.button("✏️", key=f"lib_edit_{b['id']}",
-                              use_container_width=True, help="Sửa dầm"):
-                    _reset_dam_edit_state()
-                    eff = BBUI.effective_pfx(_DAM_EDIT_PFX, b.get("loai_dam"))
-                    st.session_state[f"{_DAM_EDIT_PFX}_beam_type"] = b.get("loai_dam", "Super-T")
-                    BBUI.import_beam_state(eff, b)
-                    st.session_state["_lib_dam_editing_id"] = b["id"]
-                    st.session_state["_lib_dam_name_in"] = b.get("ten", "")
-                    st.session_state["_lib_dam_panel"] = b["id"]
-                    st.rerun()
-                if _a4.button("🗑️", key=f"lib_del_{b['id']}",
-                              use_container_width=True, help="Xóa dầm"):
-                    st.session_state.dam_beams = CLIB.delete_beam(beams, b["id"])
-                    CLIB.save_beams(st.session_state.dam_beams)
-                    st.rerun()
+    # Mỗi dầm một HÀNG: thông tin bên trái + nút thao tác bên phải.
+    for b in beams:
+        _n_sec = len(b.get("sections", {}))
+        _used  = [pa for pa, bid in applied.items() if bid == b.get("id")]
+        _badge = (" · ".join(_used)) if _used else "chưa áp dụng"
+        _info, _a1, _a2, _a3, _a4 = st.columns([6, 1, 1, 1, 1])
+        with _info:
+            st.markdown(
+                f"<div style='background:#141420;border:1px solid #2a2a3a;"
+                f"border-left:4px solid {DS.dam_color(b.get('loai_dam',''))};"
+                f"border-radius:8px;padding:8px 12px'>"
+                f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
+                f"🌉 {b.get('ten','(không tên)')}</span>"
+                f"<span style='font-size:11px;color:#888;margin-left:10px'>"
+                f"{b.get('loai_dam','')} · {_n_sec} mặt cắt · "
+                f"{b.get('created_by','') or '—'}</span>"
+                f"<span style='font-size:10px;color:#4fc3f7;margin-left:10px'>"
+                f"📌 {_badge}</span></div>",
+                unsafe_allow_html=True,
+            )
+        if _a1.button("PA1", key=f"lib_apply1_{b['id']}",
+                      use_container_width=True, help="Áp dụng cho Phương án 1"):
+            _apply_beam_to_pa(d, "Phương án 1", b)
+        if _a2.button("PA2", key=f"lib_apply2_{b['id']}",
+                      use_container_width=True, help="Áp dụng cho Phương án 2"):
+            _apply_beam_to_pa(d, "Phương án 2", b)
+        if _a3.button("✏️", key=f"lib_edit_{b['id']}",
+                      use_container_width=True, help="Sửa dầm"):
+            _reset_dam_edit_state()
+            eff = BBUI.effective_pfx(_DAM_EDIT_PFX, b.get("loai_dam"))
+            st.session_state[f"{_DAM_EDIT_PFX}_beam_type"] = b.get("loai_dam", "Super-T")
+            BBUI.import_beam_state(eff, b)
+            st.session_state["_lib_dam_editing_id"] = b["id"]
+            st.session_state["_lib_dam_name_in"] = b.get("ten", "")
+            st.session_state["_lib_dam_panel"] = b["id"]
+            st.rerun()
+        if _a4.button("🗑️", key=f"lib_del_{b['id']}",
+                      use_container_width=True, help="Xóa dầm"):
+            st.session_state.dam_beams = CLIB.delete_beam(beams, b["id"])
+            CLIB.save_beams(st.session_state.dam_beams)
+            st.rerun()
 
 
 def render_thu_vien() -> None:
