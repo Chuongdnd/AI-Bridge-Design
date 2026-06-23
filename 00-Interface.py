@@ -3038,12 +3038,24 @@ def render_dam_library(d: dict) -> None:
         st.info("Chưa có dầm nào. Bấm **➕ Tạo dầm mới** để bắt đầu.")
         return
 
-    # Mỗi dầm một HÀNG: thông tin bên trái + nút thao tác bên phải.
-    for b in beams:
+    # Mỗi dầm một HÀNG: nút sắp xếp + thông tin + nút thao tác.
+    st.caption("Dùng ▲ ▼ để sắp xếp lại thứ tự dầm (thứ tự được lưu lại).")
+    for _idx, b in enumerate(beams):
         _n_sec = len(b.get("sections", {}))
         _used  = [pa for pa, bid in applied.items() if bid == b.get("id")]
         _badge = (" · ".join(_used)) if _used else "chưa áp dụng"
-        _info, _a1, _a2, _a3, _a4 = st.columns([6, 1, 1, 1, 1])
+        _ord, _info, _a1, _a2, _a3, _a4 = st.columns([0.7, 5.3, 1, 1, 1, 1])
+        with _ord:
+            if st.button("▲", key=f"lib_up_{b['id']}", use_container_width=True,
+                         help="Lên trên", disabled=(_idx == 0)):
+                st.session_state.dam_beams = CLIB.move_beam(beams, b["id"], -1)
+                CLIB.save_beams(st.session_state.dam_beams)
+                st.rerun()
+            if st.button("▼", key=f"lib_dn_{b['id']}", use_container_width=True,
+                         help="Xuống dưới", disabled=(_idx == len(beams) - 1)):
+                st.session_state.dam_beams = CLIB.move_beam(beams, b["id"], +1)
+                CLIB.save_beams(st.session_state.dam_beams)
+                st.rerun()
         with _info:
             st.markdown(
                 f"<div style='background:#141420;border:1px solid #2a2a3a;"
