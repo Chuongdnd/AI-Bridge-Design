@@ -3892,12 +3892,11 @@ with _col_main:
             # ── Sub-tabs ────────────────────────────────────────────────────
             (tab_3d, tab_btc, tab_mcn_vt,
              tab_spt,
-             tab_dia_chat, tab_export) = st.tabs([
+             tab_export) = st.tabs([
                 "🏗️ 3D Tổng hợp"  + (" 🗺️" if has_terr else " (sơ đồ)"),
                 "📋 Bố trí chung",
                 "✂️ MCN Mố/Trụ",
                 "🔩 Chi tiết dầm",
-                "🪨 Địa chất",
                 "📤 Xuất bản vẽ",
             ])
     
@@ -4232,55 +4231,6 @@ with _col_main:
                     st.error(f"Lỗi tab SPT: {_e}")
                     with st.expander("Chi tiết lỗi"):
                         st.code(traceback.format_exc())
-    
-            # ── TAB: Địa chất & Địa hình chi tiết ─────────────────────────
-            with tab_dia_chat:
-                st.markdown("##### 🪨 Địa hình & Địa chất (dùng chung 3 phương án)")
-                st.info("Khai báo dữ liệu địa hình & địa chất ở nút "
-                        "**🪨 Địa hình & Địa chất** trên cùng — dùng chung cho cả 3 phương án.")
-                _frames = st.session_state.get("dia_chat_frames")
-                df_hk, df_layers, df_spt = _frames if _frames else (None, None, None)
-                hien_mat_lop, hien_khoi_lop, do_trong_dh = True, False, 0.72
-                if df_hk is not None and not df_hk.empty:
-                    st.success(f"✅ Đã có {len(df_hk)} hố khoan (khai báo chung).")
-                    if has_terr:
-                        cdc1, cdc2, cdc3 = st.columns(3)
-                        with cdc1:
-                            hien_mat_lop = st.checkbox("Mặt phẳng lớp đất", True, key="dc_mat")
-                        with cdc2:
-                            hien_khoi_lop = st.checkbox("Khối lớp đất", False, key="dc_khoi")
-                        with cdc3:
-                            do_trong_dh = st.slider("Độ trong suốt:", 0.35, 1.0, 0.72, 0.05, key="dc_trong")
-    
-                # ── Mô hình 3D địa hình + overlay địa chất ───────────────────────
-                if not has_terr:
-                    st.info("📌 Nạp file địa hình (.NTD + tọa độ VN-2000) ở nút **🪨 Địa hình & Địa chất** trên cùng để xem mô hình 3D địa hình tích hợp địa chất.")
-                else:
-                    try:
-                        st.markdown("---")
-                        st.subheader("📊 Mô hình Địa hình 3D chi tiết")
-                        col_d1, col_d2, col_d3 = st.columns(3)
-                        with col_d1:
-                            _che = st.selectbox("Chế độ:", ["Bề mặt mịn","Đường đồng mức","Lưới tam giác"], key="dccd")
-                        with col_d2:
-                            _hz  = st.slider("Phóng đại Z:", 0.05, 3.0, 0.5, 0.05, key="dchz")
-                        with col_d3:
-                            _dm  = st.select_slider("Mịn hoá:", [1,3,5,7], 3, key="dcdm")
-                        _ftmp, _, _, _ = TV.ve_dia_hinh_3d(_df_geo, he_so_z=_hz, che_do=_che, do_min=_dm)
-                        if _ftmp:
-                            if df_hk is not None and not df_hk.empty:
-                                _ftmp = TV.dap_them_ket_cau_dia_chat_3d(
-                                    _ftmp, df_hk, df_layers, df_spt,
-                                    _, _, _,
-                                    he_so_z=_hz,
-                                    hien_mat_phang_lop=hien_mat_lop,
-                                    hien_khoi_lop=hien_khoi_lop,
-                                    do_trong_dia_hinh=do_trong_dh if (hien_mat_lop or hien_khoi_lop) else 1.0
-                                )
-                            st.plotly_chart(_ftmp, use_container_width=True,
-                                            config={"displayModeBar": True})
-                    except Exception as _e:
-                        st.error(f"Lỗi địa chất: {_e}")
     
             # ── TAB: Xuất bản vẽ ───────────────────────────────────────────
             with tab_export:
