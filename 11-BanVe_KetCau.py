@@ -1622,6 +1622,40 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
             )
 
+        def _aswept(s0, s1, oL, oR, zb, zt, color, opacity=0.88,
+                    name="", sl=True, step=5.0):
+            """Tấm 3D (lớp phủ / bản mặt cầu) QUÉT dọc tim tuyến — chia nhỏ theo
+            lý trình để bám đúng đường cong, thay cho hộp thẳng nối đầu–cuối."""
+            m  = max(2, int(abs(s1 - s0) / step))
+            ss = np.linspace(s0, s1, m + 1)
+            vx, vy, vz = [], [], []
+            for s in ss:
+                xL, yL = _vn(s, oL)
+                xR, yR = _vn(s, oR)
+                vx += [xL, xR, xL, xR]
+                vy += [yL, yR, yL, yR]
+                vz += [zb, zb, zt, zt]      # 0=Lđáy 1=Rđáy 2=Lđỉnh 3=Rđỉnh
+            ii, jj, kk = [], [], []
+            def _q(a, b, c, dd):
+                ii.append(a); jj.append(b); kk.append(c)
+                ii.append(a); jj.append(c); kk.append(dd)
+            for i in range(m):
+                b0, b1 = 4 * i, 4 * (i + 1)
+                _q(b0+2, b0+3, b1+3, b1+2)   # mặt trên
+                _q(b0+0, b1+0, b1+1, b0+1)   # mặt dưới
+                _q(b0+0, b0+2, b1+2, b1+0)   # vách trái
+                _q(b0+1, b1+1, b1+3, b0+3)   # vách phải
+            _q(0, 1, 3, 2)                    # bịt đầu
+            _last = 4 * m
+            _q(_last, _last+2, _last+3, _last+1)  # bịt cuối
+            return go.Mesh3d(
+                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
+                color=color, opacity=opacity, flatshading=True,
+                name=name, showlegend=sl and bool(name),
+                lighting=dict(ambient=0.65, diffuse=0.85, specular=0.2),
+                hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
+            )
+
         # =========================================================
         # LỚP 1 — THỦY VĂN & TĨNH KHÔNG
         # =========================================================
@@ -1694,13 +1728,12 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # LỚP 3 — KẾT CẤU NHỊP (Mesh3d KHỐI 3D)
         # =========================================================
 
-        # Lớp phủ BTN
-        fig.add_trace(_abox(x0, x_end, -bc/2, bc/2,
-                            z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
-
-        # Bản mặt cầu
-        fig.add_trace(_abox(x0, x_end, -bc/2, bc/2,
-                            z_bant, z_deck, "#d5d8dc", 0.82, "Bản mặt cầu"))
+        # Lớp phủ BTN + Bản mặt cầu — QUÉT dọc tim tuyến (bám đường cong),
+        # KHÔNG vẽ hộp thẳng nối đầu–cuối.
+        fig.add_trace(_aswept(x0, x_end, -bc/2, bc/2,
+                              z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
+        fig.add_trace(_aswept(x0, x_end, -bc/2, bc/2,
+                              z_bant, z_deck, "#d5d8dc", 0.82, "Bản mặt cầu"))
 
         # Dầm chính: mô hình 3D do người dùng dựng (tab Chi tiết dầm) được chèn
         # ở 00-Interface qua get_beam_model_mesh_traces — KHÔNG vẽ dầm AI tại đây.

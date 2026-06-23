@@ -1,0 +1,48 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Pre-trained model binaries (regenerated at runtime)
+*.pkl
+
+# Streamlit secrets (contains API keys — KHÔNG push lên)
+.streamlit/secrets.toml
+
+# Environment variables (chứa CLAUDE_API_KEY — KHÔNG commit)
+.env
+
+# ChromaDB vector store (tái tạo được từ Knowledge Base)
+Data/chroma_db/
+
+# Test / output files
+Images/test1.jpg
+terrain_output.ifc
+_test_*.ifc
+_test_*.dxf
+
+# Old versions
+OLD/
+
+# Heavy data / khảo sát / extractor — KHÔNG push (vượt giới hạn 100MB/file của GitHub)
+Survey/
+bridge_extractor-API/
+bridge_extractor-Tools/
+Matcat_DXF/
+Data/Output/
+
+# Local agent config & file tạm
+.claude/
+Data/.claude/
+*.drawio.bkp
+~$*
+~WRL*.tmp
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
