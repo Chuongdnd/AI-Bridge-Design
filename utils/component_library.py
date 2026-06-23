@@ -264,18 +264,5 @@ def delete_beam(beams: list, beam_id: str) -> list:
     return [b for b in (beams or []) if b.get("id") != beam_id]
 
 
-def move_beam(beams: list, beam_id: str, delta: int) -> list:
-    """Dời 1 dầm lên/xuống trong danh sách (delta = -1 lên, +1 xuống).
-    Trả về list mới đã hoán vị; giữ nguyên nếu ra ngoài biên."""
-    out = list(beams or [])
-    idx = next((i for i, b in enumerate(out) if b.get("id") == beam_id), None)
-    if idx is None:
-        return out
-    j = idx + delta
-    if 0 <= j < len(out):
-        out[idx], out[j] = out[j], out[idx]
-    return out
-
-
 def get_beam(beams: list, beam_id: str):
     return next((b for b in (beams or []) if b.get("id") == beam_id), None)

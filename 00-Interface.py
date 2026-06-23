@@ -3065,7 +3065,7 @@ def render_dam_library(d: dict) -> None:
     with _h1:
         st.markdown("##### 🌉 Thư viện dầm")
         st.caption("Mỗi dầm tạo qua panel như tab Chi tiết dầm. "
-                   "Áp dụng PA1/PA2 để nạp dầm vào tab Chi tiết dầm của phương án.")
+                   "Chọn & áp dụng dầm vào phương án ở tab **Bố trí chung**.")
     with _h2:
         if st.button("➕ Tạo dầm mới", type="primary", use_container_width=True,
                      key="lib_dam_new"):
@@ -3080,24 +3080,17 @@ def render_dam_library(d: dict) -> None:
         st.info("Chưa có dầm nào. Bấm **➕ Tạo dầm mới** để bắt đầu.")
         return
 
-    # Mỗi dầm một HÀNG: nút sắp xếp + thông tin + nút thao tác.
-    st.caption("Dùng ▲ ▼ để sắp xếp lại thứ tự dầm (thứ tự được lưu lại).")
-    for _idx, b in enumerate(beams):
+    # Mỗi dầm một HÀNG, sắp xếp theo TÊN (như folder desktop) — người dùng
+    # tự đặt tiền tố tên để điều khiển thứ tự. Áp dụng dầm làm ở tab Bố trí chung.
+    st.caption("Danh sách sắp theo tên (A→Z) — đặt tên có tiền tố để xếp theo ý. "
+               "Áp dụng dầm vào phương án ở tab **Bố trí chung**.")
+    _beams_sorted = sorted(
+        beams, key=lambda b: str(b.get("ten", "")).strip().lower())
+    for b in _beams_sorted:
         _n_sec = len(b.get("sections", {}))
         _used  = [pa for pa, bid in applied.items() if bid == b.get("id")]
         _badge = (" · ".join(_used)) if _used else "chưa áp dụng"
-        _ord, _info, _a1, _a2, _a3, _a4 = st.columns([0.7, 5.3, 1, 1, 1, 1])
-        with _ord:
-            if st.button("▲", key=f"lib_up_{b['id']}", use_container_width=True,
-                         help="Lên trên", disabled=(_idx == 0)):
-                st.session_state.dam_beams = CLIB.move_beam(beams, b["id"], -1)
-                CLIB.save_beams(st.session_state.dam_beams)
-                st.rerun()
-            if st.button("▼", key=f"lib_dn_{b['id']}", use_container_width=True,
-                         help="Xuống dưới", disabled=(_idx == len(beams) - 1)):
-                st.session_state.dam_beams = CLIB.move_beam(beams, b["id"], +1)
-                CLIB.save_beams(st.session_state.dam_beams)
-                st.rerun()
+        _info, _a3, _a4 = st.columns([8, 1, 1])
         with _info:
             st.markdown(
                 f"<div style='background:#141420;border:1px solid #2a2a3a;"
@@ -3113,12 +3106,6 @@ def render_dam_library(d: dict) -> None:
                 f"📌 {_badge}</span></div>",
                 unsafe_allow_html=True,
             )
-        if _a1.button("PA1", key=f"lib_apply1_{b['id']}",
-                      use_container_width=True, help="Áp dụng cho Phương án 1"):
-            _apply_beam_to_pa(d, "Phương án 1", b)
-        if _a2.button("PA2", key=f"lib_apply2_{b['id']}",
-                      use_container_width=True, help="Áp dụng cho Phương án 2"):
-            _apply_beam_to_pa(d, "Phương án 2", b)
         if _a3.button("✏️", key=f"lib_edit_{b['id']}",
                       use_container_width=True, help="Sửa dầm"):
             _reset_dam_edit_state()
