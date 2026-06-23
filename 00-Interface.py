@@ -1944,7 +1944,7 @@ def _get_tab_states(d: dict) -> dict:
     else:
         tab2 = 'locked'
 
-    return {'tab0': tab0, 'tab1': tab1, 'tab2': tab2, 'tab3': 'done'}
+    return {'tab0': tab0, 'tab1': tab1, 'tab2': tab2}
 
 
 tab_states = _get_tab_states(st.session_state.design_data)
@@ -2003,13 +2003,6 @@ _TAB_META = [
         'icon':     '📚',
         'state':    'done',
         'tip':      'Thư viện cấu kiện dùng chung (mố/trụ/dầm/móng)',
-        'lock_msg': '',
-    },
-    {
-        'key':      'VẼ CHI TIẾT DẦM',
-        'icon':     '📐',
-        'state':    tab_states['tab3'],
-        'tip':      'Section Sketcher + Beam Builder 3D',
         'lock_msg': '',
     },
 ]
@@ -4391,14 +4384,6 @@ with _col_main:
             render_thu_vien()
         except Exception as _cl_err:
             st.error(f"Lỗi Thư viện cấu kiện: {_cl_err}")
-            import traceback
-            st.code(traceback.format_exc())
-
-    elif selected_ribbon == "VẼ CHI TIẾT DẦM":
-        try:
-            BBUI.render_tab()
-        except Exception as _bb_err:
-            st.error(f"Lỗi Section Sketcher: {_bb_err}")
             import traceback
             st.code(traceback.format_exc())
 
