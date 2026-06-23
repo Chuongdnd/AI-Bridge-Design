@@ -4010,6 +4010,7 @@ with _col_main:
                             _z_cam_ref = float(d.get("cao_mat_cau") or d.get("cao_day_dam", 8.0))
                             _z_cam_sc  = _z_cam_ref * he_so_z
                             _fig_t.update_layout(
+                                showlegend=False,  # ẩn bảng chú thích (đè lên thanh cao độ)
                                 scene_camera=dict(
                                     eye=dict(x=0.0, y=-2.5, z=1.2),
                                     center=dict(x=0.0, y=0.0, z=0.0),

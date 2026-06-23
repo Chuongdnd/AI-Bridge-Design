@@ -268,7 +268,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3,
             show_wireframe = (che_do == "Lưới tam giác")
             fig.add_trace(go.Surface(
                 x=matrix_x, y=matrix_y, z=z_scaled,
-                colorscale='Earth', opacity=0.95,
+                colorscale='Earth', reversescale=True, opacity=0.95,
                 colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
                 hovertemplate="X: %{x:.1f} m<br>Y: %{y:.1f} m<br>Z: %{z:.2f} m<extra></extra>",
                 contours=dict(
