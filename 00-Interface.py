@@ -255,6 +255,7 @@ _DESIGN_SAVE_KEYS = [
     'vtk','bc','loai_duong','t_ban_mm','i_max_hinh_hoc','R_hinh_hoc',
     'is_urban','geo_logic','ai_result','kcn_result','tru_result',
     'mong_result','lop_phu_result', 'cao_day_dam', 'H_tru_est',
+    'lib_dam_applied',
 ]
 
 def _save_design_inputs(d: dict) -> None:
@@ -2842,36 +2843,211 @@ _render_floating_chat()
 # =========================================================================
 # VÙNG HIỂN THỊ CHÍNH
 # =========================================================================
+# ══════════════════════════════════════════════════════════════════════════
+# THƯ VIỆN CẤU KIỆN
+#   • Dầm  : danh sách thẻ + panel tạo/sửa (tái dùng luồng Chi tiết dầm CAD)
+#   • Trụ/Mố/Móng : bảng tham số (st.data_editor)
+# ══════════════════════════════════════════════════════════════════════════
+_DAM_EDIT_PFX = "lib_dam_edit"
+_PA_SPT_PFX   = {"Phương án 1": "spt_pa1",
+                 "Phương án 2": "spt_pa2",
+                 "Phương án 3": "spt_pa3"}
+
+
+def _reset_dam_edit_state() -> None:
+    """Xóa state CAD của pfx soạn thảo → bắt đầu một dầm trắng."""
+    for _suf in ("", "tinv", "ibeam"):
+        _p = f"{_DAM_EDIT_PFX}_{_suf}" if _suf else _DAM_EDIT_PFX
+        for _k in ("sections", "state", "active", "hist", "undo"):
+            st.session_state.pop(f"cad_{_p}_{_k}", None)
+    st.session_state.pop(f"{_DAM_EDIT_PFX}_beam_type", None)
+    st.session_state.pop(f"_effpfx_{_DAM_EDIT_PFX}", None)
+
+
+def _apply_beam_to_pa(d: dict, pa_key: str, beam: dict) -> None:
+    """Gán dầm thư viện cho 1 PA + nạp sections vào pfx Chi tiết dầm của PA."""
+    base = _PA_SPT_PFX.get(pa_key, "spt")
+    eff  = BBUI.effective_pfx(base, beam.get("loai_dam"))
+    st.session_state[f"{base}_beam_type"] = beam.get("loai_dam", "Super-T")
+    BBUI.import_beam_state(eff, beam)
+    st.session_state[f"_loaded_beam_{base}"] = beam["id"]
+    _ap = dict(d.get("lib_dam_applied") or {})
+    _ap[pa_key] = beam["id"]
+    d["lib_dam_applied"] = _ap
+    st.session_state.design_data["lib_dam_applied"] = _ap
+    st.toast(f"Đã áp dụng dầm “{beam.get('ten','')}” cho {pa_key}.", icon="✅")
+    st.rerun()
+
+
+def _render_dam_edit_panel(d: dict) -> None:
+    """Panel tạo/sửa dầm (bung ra khi bấm + / Sửa, thu gọn sau khi Lưu)."""
+    base       = _DAM_EDIT_PFX
+    editing_id = st.session_state.get("_lib_dam_editing_id")
+    _title     = "✏️ Sửa dầm" if editing_id else "➕ Tạo dầm mới"
+
+    st.markdown(
+        f"<div style='background:#0a1f35;border:1px solid #007acc;"
+        f"border-radius:8px;padding:8px 12px;margin:6px 0'>"
+        f"<b style='color:#4fc3f7'>{_title}</b> — chọn loại dầm, upload DXF mặt cắt "
+        f"và khai báo đoạn (giống tab Chi tiết dầm), đặt tên rồi 💾 Lưu.</div>",
+        unsafe_allow_html=True,
+    )
+    st.text_input("Tên dầm", key="_lib_dam_name_in",
+                  placeholder="VD: Super-T 38m TEDIS",
+                  help="Tên hiển thị của loại dầm trong thư viện.")
+
+    try:
+        BBUI.render_cad_spt_tab(d, pfx=base)
+    except Exception as _e:
+        import traceback
+        st.error(f"Lỗi dựng dầm: {_e}")
+        with st.expander("Chi tiết lỗi"):
+            st.code(traceback.format_exc())
+
+    st.markdown("---")
+    _s1, _s2, _ = st.columns([1, 1, 3])
+    if _s1.button("💾 Lưu dầm", type="primary", use_container_width=True,
+                  key="_lib_dam_save_btn"):
+        _nm = (st.session_state.get("_lib_dam_name_in") or "").strip()
+        eff  = st.session_state.get(f"_effpfx_{base}", base)
+        data = BBUI.export_beam_state(eff)
+        if not _nm:
+            st.warning("⚠️ Nhập **tên dầm** trước khi lưu.")
+        elif not data.get("sections"):
+            st.warning("⚠️ Chưa có mặt cắt nào — hãy upload ít nhất 1 file DXF.")
+        else:
+            beams = st.session_state.get("dam_beams", CLIB.load_beams())
+            loai  = st.session_state.get(f"{base}_beam_type", "Super-T")
+            bid   = editing_id or CLIB.make_beam_id(_nm, beams)
+            rec = {
+                "id": bid, "ten": _nm, "loai_dam": loai,
+                "sections": data["sections"], "segs": data["segs"],
+                "fill_sec": data["fill_sec"], "nguon": "người dùng",
+                "created_by": (AUTH.current_user() or {}).get("name", ""),
+                "updated_at": time.strftime("%Y-%m-%d %H:%M"),
+            }
+            st.session_state.dam_beams = CLIB.upsert_beam(beams, rec)
+            CLIB.save_beams(st.session_state.dam_beams)
+            st.session_state["_lib_dam_panel"] = None
+            st.session_state.pop("_lib_dam_editing_id", None)
+            st.toast(f"Đã lưu dầm “{_nm}”.", icon="✅")
+            st.rerun()
+    if _s2.button("Hủy", use_container_width=True, key="_lib_dam_cancel_btn"):
+        st.session_state["_lib_dam_panel"] = None
+        st.session_state.pop("_lib_dam_editing_id", None)
+        st.rerun()
+
+
+def render_dam_library(d: dict) -> None:
+    """Tab Dầm: panel tạo/sửa (nếu đang mở) hoặc danh sách thẻ dầm."""
+    if "dam_beams" not in st.session_state:
+        st.session_state.dam_beams = CLIB.load_beams()
+
+    # Đang mở panel tạo/sửa → ưu tiên hiển thị panel, ẩn danh sách
+    if st.session_state.get("_lib_dam_panel"):
+        _render_dam_edit_panel(d)
+        return
+
+    beams   = st.session_state.dam_beams
+    applied = (d.get("lib_dam_applied") or {})
+
+    _h1, _h2 = st.columns([3, 1])
+    with _h1:
+        st.markdown("##### 🌉 Thư viện dầm")
+        st.caption("Mỗi dầm tạo qua panel như tab Chi tiết dầm. "
+                   "Áp dụng PA1/PA2 để nạp dầm vào tab Chi tiết dầm của phương án.")
+    with _h2:
+        if st.button("➕ Tạo dầm mới", type="primary", use_container_width=True,
+                     key="lib_dam_new"):
+            _reset_dam_edit_state()
+            st.session_state.pop("_lib_dam_editing_id", None)
+            st.session_state["_lib_dam_name_in"] = ""
+            st.session_state["_lib_dam_panel"] = "new"
+            st.rerun()
+
+    if not beams:
+        st.info("Chưa có dầm nào. Bấm **➕ Tạo dầm mới** để bắt đầu.")
+        return
+
+    for _i in range(0, len(beams), 2):
+        _cols = st.columns(2)
+        for _j, _col in enumerate(_cols):
+            if _i + _j >= len(beams):
+                break
+            b = beams[_i + _j]
+            with _col:
+                _n_sec = len(b.get("sections", {}))
+                _used  = [pa for pa, bid in applied.items() if bid == b.get("id")]
+                _badge = (" · ".join(_used)) if _used else "chưa áp dụng"
+                st.markdown(
+                    f"<div style='background:#141420;border:1px solid #2a2a3a;"
+                    f"border-top:3px solid {DS.dam_color(b.get('loai_dam',''))};"
+                    f"border-radius:8px;padding:10px 12px'>"
+                    f"<div style='font-size:14px;font-weight:600;color:#f0f0f0'>"
+                    f"🌉 {b.get('ten','(không tên)')}</div>"
+                    f"<div style='font-size:11px;color:#888;margin-top:3px'>"
+                    f"{b.get('loai_dam','')} · {_n_sec} mặt cắt · "
+                    f"{b.get('created_by','') or '—'}</div>"
+                    f"<div style='font-size:10px;color:#4fc3f7;margin-top:4px'>"
+                    f"📌 {_badge}</div></div>",
+                    unsafe_allow_html=True,
+                )
+                _a1, _a2, _a3, _a4 = st.columns(4)
+                if _a1.button("PA1", key=f"lib_apply1_{b['id']}",
+                              use_container_width=True, help="Áp dụng cho Phương án 1"):
+                    _apply_beam_to_pa(d, "Phương án 1", b)
+                if _a2.button("PA2", key=f"lib_apply2_{b['id']}",
+                              use_container_width=True, help="Áp dụng cho Phương án 2"):
+                    _apply_beam_to_pa(d, "Phương án 2", b)
+                if _a3.button("✏️", key=f"lib_edit_{b['id']}",
+                              use_container_width=True, help="Sửa dầm"):
+                    _reset_dam_edit_state()
+                    eff = BBUI.effective_pfx(_DAM_EDIT_PFX, b.get("loai_dam"))
+                    st.session_state[f"{_DAM_EDIT_PFX}_beam_type"] = b.get("loai_dam", "Super-T")
+                    BBUI.import_beam_state(eff, b)
+                    st.session_state["_lib_dam_editing_id"] = b["id"]
+                    st.session_state["_lib_dam_name_in"] = b.get("ten", "")
+                    st.session_state["_lib_dam_panel"] = b["id"]
+                    st.rerun()
+                if _a4.button("🗑️", key=f"lib_del_{b['id']}",
+                              use_container_width=True, help="Xóa dầm"):
+                    st.session_state.dam_beams = CLIB.delete_beam(beams, b["id"])
+                    CLIB.save_beams(st.session_state.dam_beams)
+                    st.rerun()
+
+
 def render_thu_vien() -> None:
-    """Tab Thư viện cấu kiện dùng chung (mố/trụ/dầm/móng).
-    Xem · thêm · sửa · xóa trực tiếp trong bảng; lưu bền vững ra JSON.
-    Độc lập với pipeline AI — luôn truy cập được."""
+    """Tab Thư viện cấu kiện dùng chung.
+    Dầm: tạo qua panel CAD. Trụ/Mố/Móng: bảng tham số. Luôn truy cập được."""
     st.markdown("---")
     st.markdown(
         DS.section_header(
             "Thư viện cấu kiện dùng chung",
             icon="📚",
-            sub=("Mố · Trụ · Dầm · Móng — dùng chung cho cả 3 phương án. "
-                 "Sửa trực tiếp trong bảng, dòng trống cuối để thêm mới, "
-                 "chọn dòng + phím Delete để xóa, rồi bấm 💾 Lưu."),
+            sub=("Dùng chung cho cả 3 phương án. Dầm tạo qua panel như tab "
+                 "Chi tiết dầm; Trụ/Mố/Móng khai báo bằng bảng tham số."),
         ),
         unsafe_allow_html=True,
     )
 
-    # Nạp 1 lần — giữ trong session để chỉnh sửa không mất giữa các rerun
+    d = st.session_state.design_data
     if "component_library" not in st.session_state:
         st.session_state.component_library = CLIB.load_library()
     lib = st.session_state.component_library
+    if "dam_beams" not in st.session_state:
+        st.session_state.dam_beams = CLIB.load_beams()
 
-    _order  = ["dam", "tru", "mo", "mong"]
-    _icons  = {"dam": "🌉", "tru": "🏛️", "mo": "🧱", "mong": "🦵"}
-    _tabs   = st.tabs([
-        f"{_icons[c]} {CLIB.TYPE_LABEL[c]} ({len(lib.get(c, []))})"
-        for c in _order
-    ])
+    _simple = ["tru", "mo", "mong"]
+    _icons  = {"tru": "🏛️", "mo": "🧱", "mong": "🦵"}
+    _tabs   = st.tabs(
+        [f"🌉 Dầm ({len(st.session_state.dam_beams)})"]
+        + [f"{_icons[c]} {CLIB.TYPE_LABEL[c]} ({len(lib.get(c, []))})" for c in _simple]
+    )
 
-    edited = {}
-    for ctype, _tab in zip(_order, _tabs):
+    with _tabs[0]:
+        render_dam_library(d)
+
+    for ctype, _tab in zip(_simple, _tabs[1:]):
         with _tab:
             cols = CLIB.SCHEMA[ctype]
             df   = pd.DataFrame(CLIB.records_for(lib, ctype), columns=cols)
@@ -2882,61 +3058,25 @@ def render_thu_vien() -> None:
                     colcfg[f] = st.column_config.SelectboxColumn(
                         lbl, options=CLIB.LOAI_OPTIONS[f], required=False)
                 elif f in CLIB.NUMERIC_FIELDS[ctype]:
-                    colcfg[f] = st.column_config.NumberColumn(
-                        lbl, format="%.2f", step=0.1)
+                    colcfg[f] = st.column_config.NumberColumn(lbl, format="%.2f", step=0.1)
                 else:
                     colcfg[f] = st.column_config.TextColumn(lbl)
-            edited[ctype] = st.data_editor(
+            _edited = st.data_editor(
                 df, key=f"clib_editor_{ctype}", num_rows="dynamic",
                 use_container_width=True, hide_index=True, column_config=colcfg,
             )
-
-    st.markdown("<div style='height:8px'></div>", unsafe_allow_html=True)
-    _b1, _b2, _b3 = st.columns([1, 1, 3])
-
-    def _editors_to_lib() -> dict:
-        out = {"version": CLIB.VERSION}
-        for c in _order:
-            recs = edited[c].fillna("").to_dict("records")
-            out[c] = [r for r in recs if str(r.get("ten", "")).strip()]
-        return out
-
-    with _b1:
-        if st.button("💾 Lưu thư viện", type="primary",
-                     use_container_width=True, key="clib_save"):
-            try:
-                _newlib = _editors_to_lib()
-                CLIB.save_library(_newlib)
-                st.session_state.component_library = CLIB.normalize(_newlib)
-                for c in _order:
-                    st.session_state.pop(f"clib_editor_{c}", None)
-                st.success("✅ Đã lưu thư viện.")
-                st.rerun()
-            except Exception as _e:
-                st.error(f"Lỗi lưu thư viện: {_e}")
-    with _b2:
-        if st.button("↺ Khôi phục mẫu", use_container_width=True,
-                     key="clib_reset"):
-            st.session_state["_clib_confirm_reset"] = True
-    with _b3:
-        st.caption(f"📁 `{os.path.relpath(CLIB.LIBRARY_PATH)}` — "
-                   "lưu bền vững, dùng chung mọi phiên & mọi phương án.")
-
-    if st.session_state.get("_clib_confirm_reset"):
-        st.warning("Khôi phục sẽ **ghi đè** toàn bộ thư viện hiện tại "
-                   "bằng mẫu mặc định. Tiếp tục?")
-        _cy, _cn, _ = st.columns([1, 1, 3])
-        if _cy.button("⚠️ Xác nhận", type="primary", key="clib_reset_yes"):
-            _def = CLIB.default_library()
-            CLIB.save_library(_def)
-            st.session_state.component_library = _def
-            st.session_state["_clib_confirm_reset"] = False
-            for c in _order:
-                st.session_state.pop(f"clib_editor_{c}", None)
-            st.rerun()
-        if _cn.button("Hủy", key="clib_reset_no"):
-            st.session_state["_clib_confirm_reset"] = False
-            st.rerun()
+            if st.button(f"💾 Lưu {CLIB.TYPE_LABEL[ctype]}", key=f"clib_save_{ctype}"):
+                try:
+                    recs = _edited.fillna("").to_dict("records")
+                    _newlib = dict(lib)
+                    _newlib[ctype] = [r for r in recs if str(r.get("ten", "")).strip()]
+                    CLIB.save_library(_newlib)
+                    st.session_state.component_library = CLIB.normalize(_newlib)
+                    st.session_state.pop(f"clib_editor_{ctype}", None)
+                    st.success(f"✅ Đã lưu {CLIB.TYPE_LABEL[ctype]}.")
+                    st.rerun()
+                except Exception as _e:
+                    st.error(f"Lỗi lưu: {_e}")
 
 
 selected_ribbon = st.session_state.get('current_tab', 'THUYẾT MINH')
@@ -4003,7 +4143,20 @@ with _col_main:
             # ── TAB: Chi tiết dầm SPT (CAD Section Sketcher) ─────────────
             with tab_spt:
                 try:
-                    BBUI.render_cad_spt_tab(d, pfx="spt")
+                    # pfx riêng theo phương án để PA1/PA2 dùng dầm khác nhau
+                    _spt_pfx = _PA_SPT_PFX.get(selected_ribbon, "spt")
+                    # Nạp lại dầm thư viện đã áp dụng cho PA này (kể cả sau restart)
+                    _applied_id = (d.get("lib_dam_applied") or {}).get(selected_ribbon)
+                    if _applied_id and st.session_state.get(f"_loaded_beam_{_spt_pfx}") != _applied_id:
+                        _bm = CLIB.get_beam(st.session_state.get("dam_beams")
+                                            or CLIB.load_beams(), _applied_id)
+                        if _bm:
+                            st.session_state[f"{_spt_pfx}_beam_type"] = _bm.get("loai_dam", "Super-T")
+                            BBUI.import_beam_state(
+                                BBUI.effective_pfx(_spt_pfx, _bm.get("loai_dam")), _bm)
+                            st.session_state[f"_loaded_beam_{_spt_pfx}"] = _applied_id
+                        st.caption(f"📚 Đang dùng dầm thư viện: **{(_bm or {}).get('ten','?')}**")
+                    BBUI.render_cad_spt_tab(d, pfx=_spt_pfx)
                 except Exception as _e:
                     import traceback
                     st.error(f"Lỗi tab SPT: {_e}")

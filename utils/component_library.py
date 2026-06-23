@@ -208,3 +208,61 @@ def save_library(lib: dict) -> None:
 def records_for(lib: dict, ctype: str) -> list:
     """Danh sách bản ghi của 1 loại (copy an toàn)."""
     return copy.deepcopy((lib or {}).get(ctype, []))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# KHO DẦM (BEAMS) — mỗi dầm là 1 định nghĩa đầy đủ (mặt cắt CAD + đoạn),
+# tạo qua luồng "Chi tiết dầm". Lưu riêng vì cấu trúc khác bảng tham số.
+# Mỗi bản ghi:
+#   { id, ten, loai_dam, sections:{name:{outer,holes}}, segs:[...],
+#     fill_sec, nguon, created_by, updated_at }
+# ══════════════════════════════════════════════════════════════════════════
+BEAMS_PATH = os.path.join(LIBRARY_DIR, "beams.json")
+
+
+def load_beams() -> list:
+    """Đọc danh sách dầm trong thư viện (list). Thiếu file → [] (chưa có dầm)."""
+    if os.path.exists(BEAMS_PATH):
+        try:
+            with open(BEAMS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            beams = data.get("beams", []) if isinstance(data, dict) else data
+            return [b for b in beams if isinstance(b, dict)]
+        except (OSError, json.JSONDecodeError):
+            pass
+    return []
+
+
+def save_beams(beams: list) -> None:
+    """Ghi danh sách dầm ra JSON (UTF-8, giữ dấu)."""
+    _ensure_dir()
+    with open(BEAMS_PATH, "w", encoding="utf-8") as f:
+        json.dump({"version": VERSION, "beams": list(beams or [])},
+                  f, ensure_ascii=False, indent=2)
+
+
+def make_beam_id(ten: str, existing: list = None) -> str:
+    """Sinh id duy nhất từ tên dầm (tránh trùng với danh sách hiện có)."""
+    base = slugify(ten)
+    existing_ids = {b.get("id") for b in (existing or [])}
+    if base not in existing_ids:
+        return base
+    i = 2
+    while f"{base}-{i}" in existing_ids:
+        i += 1
+    return f"{base}-{i}"
+
+
+def upsert_beam(beams: list, beam: dict) -> list:
+    """Thêm mới hoặc cập nhật 1 dầm theo id; trả về list mới."""
+    out = [b for b in (beams or []) if b.get("id") != beam.get("id")]
+    out.append(beam)
+    return out
+
+
+def delete_beam(beams: list, beam_id: str) -> list:
+    return [b for b in (beams or []) if b.get("id") != beam_id]
+
+
+def get_beam(beams: list, beam_id: str):
+    return next((b for b in (beams or []) if b.get("id") == beam_id), None)

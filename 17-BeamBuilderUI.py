@@ -118,6 +118,64 @@ def _load_defaults(bb) -> dict | None:
     }
 
 
+# ── Export / Import state một dầm theo pfx (dùng cho Thư viện cấu kiện) ──────
+def export_beam_state(pfx: str) -> dict:
+    """Chụp (snapshot) state CAD của một dầm (theo pfx) → dict serializable.
+    Định dạng đồng bộ với _save_defaults để tái dùng dễ."""
+    secs = st.session_state.get(_cad_key(pfx, "sections")) or {}
+    cs   = st.session_state.get(_cad_key(pfx, "state")) or {}
+    return {
+        "sections": {
+            name: {"outer": sec.outer, "holes": sec.holes}
+            for name, sec in secs.items() if getattr(sec, "outer", None)
+        },
+        "segs":     cs.get("segs", []),
+        "fill_sec": cs.get("fill_sec", "B-B"),
+    }
+
+
+def import_beam_state(pfx: str, data: dict, bb=None) -> None:
+    """Nạp dict (từ export_beam_state) vào state CAD của một pfx —
+    ghi đè sections + state. Bảo đảm các mặt cắt preset luôn tồn tại."""
+    bb = bb or _get_bb()
+    data = data or {}
+    secs: dict = {}
+    for name, v in (data.get("sections") or {}).items():
+        sec = bb.CrossSection(name=name, outer=[], holes=[], open=False)
+        sec.outer = v.get("outer", [])
+        sec.holes = v.get("holes", [])
+        secs[name] = sec
+    for sname, (fn, _) in _SEC_PRESETS.items():
+        if sname not in secs:
+            secs[sname] = getattr(bb, fn)()
+    st.session_state[_cad_key(pfx, "sections")] = secs
+    st.session_state[_cad_key(pfx, "state")] = {
+        "mode": None, "current_poly": [], "cursor": [0.0, 0.0],
+        "snap": 50.0, "grip_selected": None,
+        "segs":     data.get("segs", []),
+        "fill_sec": data.get("fill_sec", "B-B"),
+    }
+    st.session_state[_cad_key(pfx, "active")] = "A-A"
+    st.session_state[_cad_key(pfx, "hist")] = []
+    st.session_state[_cad_key(pfx, "undo")] = []
+
+
+# Suffix pfx theo loại dầm — PHẢI đồng bộ với _BTYPES trong render_cad_spt_tab
+BTYPE_SUFFIX = {
+    "Super-T":     "",
+    "Dầm T ngược": "tinv",
+    "Dầm I":       "ibeam",
+}
+
+
+def effective_pfx(base_pfx: str, beam_type: str = None) -> str:
+    """pfx thực tế nơi sections của 1 dầm được lưu (gồm suffix theo loại dầm).
+    Bỏ qua biến thể vai trò (dầm biên/nhịp biên) — Thư viện chỉ dùng vai trò gốc."""
+    bt = beam_type or st.session_state.get(f"{base_pfx}_beam_type", "Super-T")
+    suffix = BTYPE_SUFFIX.get(bt, "")
+    return f"{base_pfx}_{suffix}" if suffix else base_pfx
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DRAG-RESIZE — inject CSS + JS để kéo thả thay đổi kích thước khung nhìn
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1208,6 +1266,7 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     d   : design_data dict từ session_state
     pfx : prefix tránh collision session-state key
     """
+    _orig_pfx_arg = pfx     # giữ pfx gốc để cache pfx hiệu dụng (cho Thư viện)
     # ── Loại dầm ─────────────────────────────────────────────────────────────
     # (suffix, label_hiện_thị, fill_sec_mặc_định)
     _BTYPES: dict[str, tuple[str, str, str]] = {
@@ -1286,6 +1345,8 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
 
     _cad_init(pfx, bb)
     _inject_resize_js()
+    # Cache pfx hiệu dụng (đã gồm suffix loại dầm) để Thư viện export đúng chỗ
+    st.session_state[f"_effpfx_{_orig_pfx_arg}"] = pfx
 
     secs      = st.session_state[_cad_key(pfx, "sections")]
     cad_state = st.session_state[_cad_key(pfx, "state")]
