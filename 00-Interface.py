@@ -873,7 +873,10 @@ def _render_step_status_banner(errors: dict, warnings: dict,
 # ↔ RESIZABLE PANELS — inject CSS + JS drag handles
 # =========================================================================
 def _inject_resizable_panels() -> None:
-    """Inject drag handles for sidebar and right panel resizing."""
+    """Tay nắm kéo chỉnh độ rộng sidebar trái & panel phải.
+    CSS + handle divs đặt trong document chính (st.markdown). JS chạy trong
+    components.html và thao tác window.parent.document — vì st.markdown LOẠI BỎ
+    thẻ <script>, nên trước đây con trỏ kéo hiện nhưng KHÔNG kéo được."""
     st.markdown(
         """
 <style>
@@ -929,19 +932,24 @@ body.resizing * {
 <div class="panel-drag-handle" id="drag-right"
      title="Keo de thay doi kich thuoc panel phai"></div>
 <div class="drag-tooltip" id="drag-tooltip"></div>
-
+""",
+        unsafe_allow_html=True,
+    )
+    st.components.v1.html(
+        """
 <script>
 (function() {
+var D = window.parent.document, W = window.parent;
 var LEFT_MIN  = 180, LEFT_MAX  = 480;
 var RIGHT_MIN = 160, RIGHT_MAX = 360;
 var KEY_LEFT  = 'cau_ai_left_w', KEY_RIGHT = 'cau_ai_right_w';
 
-var leftW  = Math.min(Math.max(parseInt(localStorage.getItem(KEY_LEFT)  || '300'), LEFT_MIN),  LEFT_MAX);
-var rightW = Math.min(Math.max(parseInt(localStorage.getItem(KEY_RIGHT) || '220'), RIGHT_MIN), RIGHT_MAX);
+var leftW  = Math.min(Math.max(parseInt(W.localStorage.getItem(KEY_LEFT)  || '300'), LEFT_MIN),  LEFT_MAX);
+var rightW = Math.min(Math.max(parseInt(W.localStorage.getItem(KEY_RIGHT) || '220'), RIGHT_MIN), RIGHT_MAX);
 
-function getSidebar()    { return document.querySelector('[data-testid="stSidebar"]'); }
-function getMainContent(){ return document.querySelector('section[data-testid="stMain"]'); }
-function getTopbar()     { return document.getElementById('custom-topbar'); }
+function getSidebar()    { return D.querySelector('[data-testid="stSidebar"]'); }
+function getMainContent(){ return D.querySelector('section[data-testid="stMain"]'); }
+function getTopbar()     { return D.getElementById('custom-topbar'); }
 
 function applyWidths(lw, rw) {
     var sb = getSidebar();
@@ -950,8 +958,8 @@ function applyWidths(lw, rw) {
         sb.style.maxWidth = lw + 'px';
         sb.style.width    = lw + 'px';
     }
-    document.documentElement.style.setProperty('--sidebar-width', lw + 'px');
-    document.documentElement.style.setProperty('--right-panel-width', rw + 'px');
+    D.documentElement.style.setProperty('--sidebar-width', lw + 'px');
+    D.documentElement.style.setProperty('--right-panel-width', rw + 'px');
     var tb = getTopbar();
     if (tb) tb.style.left = lw + 'px';
     var mc = getMainContent();
@@ -959,7 +967,7 @@ function applyWidths(lw, rw) {
 }
 
 function applyRightPanel(rw) {
-    var mainBlock = document.querySelector(
+    var mainBlock = D.querySelector(
         'section[data-testid="stMain"] .block-container');
     if (!mainBlock) return;
     var hBlocks = mainBlock.querySelectorAll('[data-testid="stHorizontalBlock"]');
@@ -977,15 +985,15 @@ function applyRightPanel(rw) {
 }
 
 function updateHandles(lw, rw) {
-    var hl = document.getElementById('drag-left');
-    var hr = document.getElementById('drag-right');
+    var hl = D.getElementById('drag-left');
+    var hr = D.getElementById('drag-right');
     if (hl) hl.style.left  = (lw - 2) + 'px';
     if (hr) { hr.style.right = (rw - 2) + 'px'; hr.style.left = 'auto'; }
 }
 
 function setupDrag(handleId, isLeft) {
-    var handle  = document.getElementById(handleId);
-    var tooltip = document.getElementById('drag-tooltip');
+    var handle  = D.getElementById(handleId);
+    var tooltip = D.getElementById('drag-tooltip');
     if (!handle) return;
     var startX = 0, startW = 0, isDragging = false;
 
@@ -995,11 +1003,11 @@ function setupDrag(handleId, isLeft) {
         startX = e.clientX;
         startW = isLeft ? leftW : rightW;
         handle.classList.add('dragging');
-        document.body.classList.add('resizing');
+        D.body.classList.add('resizing');
         if (tooltip) tooltip.style.display = 'block';
     });
 
-    document.addEventListener('mousemove', function(e) {
+    D.addEventListener('mousemove', function(e) {
         if (!isDragging) return;
         e.preventDefault();
         var dx = e.clientX - startX;
@@ -1021,19 +1029,19 @@ function setupDrag(handleId, isLeft) {
         }
     });
 
-    document.addEventListener('mouseup', function() {
+    D.addEventListener('mouseup', function() {
         if (!isDragging) return;
         isDragging = false;
         handle.classList.remove('dragging');
-        document.body.classList.remove('resizing');
+        D.body.classList.remove('resizing');
         if (tooltip) tooltip.style.display = 'none';
-        localStorage.setItem(KEY_LEFT,  leftW);
-        localStorage.setItem(KEY_RIGHT, rightW);
+        W.localStorage.setItem(KEY_LEFT,  leftW);
+        W.localStorage.setItem(KEY_RIGHT, rightW);
     });
 
     handle.addEventListener('dblclick', function() {
-        if (isLeft) { leftW  = 300; localStorage.setItem(KEY_LEFT,  leftW);  }
-        else        { rightW = 220; localStorage.setItem(KEY_RIGHT, rightW); }
+        if (isLeft) { leftW  = 300; W.localStorage.setItem(KEY_LEFT,  leftW);  }
+        else        { rightW = 220; W.localStorage.setItem(KEY_RIGHT, rightW); }
         applyWidths(leftW, rightW);
         applyRightPanel(rightW);
         updateHandles(leftW, rightW);
@@ -1052,12 +1060,12 @@ var _tries = 0;
 function tryInit() {
     if (getSidebar() && getMainContent()) {
         init();
-        var _obs = new MutationObserver(function() {
+        var _obs = new W.MutationObserver(function() {
             applyWidths(leftW, rightW);
             applyRightPanel(rightW);
             updateHandles(leftW, rightW);
         });
-        _obs.observe(document.body, {childList: true, subtree: true});
+        _obs.observe(D.body, {childList: true, subtree: true});
     } else if (_tries < 30) {
         _tries++;
         setTimeout(tryInit, 200);
@@ -1067,7 +1075,7 @@ tryInit();
 })();
 </script>
 """,
-        unsafe_allow_html=True,
+        height=0, scrolling=False,
     )
 
 
@@ -2763,15 +2771,15 @@ with st.sidebar:
 
     st.markdown(
         "<div style='background:#1e1e2e;border:1px solid #2a2a3a;"
-        "border-radius:8px;padding:10px 12px;margin:6px 0'>"
-        "<div style='font-size:11px;color:#555;margin-bottom:6px;"
-        "text-transform:uppercase;letter-spacing:0.4px'>Đề tài</div>"
-        "<div style='font-size:12px;color:#ccc;line-height:1.5'>"
+        "border-radius:8px;padding:14px 14px;margin:6px 0'>"
+        "<div style='font-size:12px;color:#777;margin-bottom:8px;"
+        "text-transform:uppercase;letter-spacing:0.6px'>Đề tài</div>"
+        "<div style='font-size:17px;font-weight:700;color:#f0f0f0;line-height:1.45'>"
         "Tích hợp AI và BIM tự động hóa<br>thiết kế cầu đường bộ</div>"
-        "<hr style='border-color:#2a2a3a;margin:8px 0'>"
-        "<div style='font-size:11px;color:#888'>"
-        "👤 <b style='color:#aaa'>SVTH:</b> Chương DND<br>"
-        "👨‍🏫 <b style='color:#aaa'>GVHD:</b> T.S Nguyễn Văn Hiển"
+        "<hr style='border-color:#2a2a3a;margin:11px 0'>"
+        "<div style='font-size:14px;color:#cfcfcf;line-height:1.7'>"
+        "👤 <b style='color:#fff'>SVTH:</b> Chương DND<br>"
+        "👨‍🏫 <b style='color:#fff'>GVHD:</b> T.S Nguyễn Văn Hiển"
         "</div></div>",
         unsafe_allow_html=True,
     )
@@ -2898,121 +2906,6 @@ with st.sidebar:
             unsafe_allow_html=True,
         )
 
-    # ── VÙNG C: Trung tâm xuất file ──────────────────────────────────────
-    st.markdown(
-        "<hr style='border-color:#2a2a3a;margin:10px 0'>"
-        "<p style='font-size:10px;color:#555;margin:0 0 8px;"
-        "text-transform:uppercase;letter-spacing:0.4px'>"
-        "⬇️ Xuất file</p>",
-        unsafe_allow_html=True,
-    )
-
-    _export_ready = bool(_sd.get('kcn_result'))
-
-    if not _export_ready:
-        st.markdown(
-            "<p style='font-size:11px;color:#444;text-align:center;"
-            "padding:8px'>Chạy tính toán để mở khóa xuất file</p>",
-            unsafe_allow_html=True,
-        )
-    else:
-        st.markdown(
-            "<p style='font-size:10px;color:#888;margin:0 0 4px'>"
-            "📄 Bản vẽ CAD (DXF)</p>",
-            unsafe_allow_html=True,
-        )
-        _ecol1, _ecol2 = st.columns(2)
-        with _ecol1:
-            if st.button("Trắc dọc", use_container_width=True, key="sb_dxf_td"):
-                try:
-                    _b = EXP.export_trac_doc_dxf(_sd)
-                    st.download_button(
-                        "💾 Tải DXF", _b, "trac_doc.dxf",
-                        mime="application/octet-stream",
-                        key="sb_dl_td", use_container_width=True,
-                    )
-                except Exception as _ex:
-                    st.error(f"Lỗi: {_ex}")
-        with _ecol2:
-            if st.button("Mặt cắt", use_container_width=True, key="sb_dxf_mc"):
-                try:
-                    _b = EXP.export_mcn_dxf(_sd)
-                    st.download_button(
-                        "💾 Tải DXF", _b, "mat_cat_ngang.dxf",
-                        mime="application/octet-stream",
-                        key="sb_dl_mc", use_container_width=True,
-                    )
-                except Exception as _ex:
-                    st.error(f"Lỗi: {_ex}")
-
-        st.markdown(
-            "<p style='font-size:10px;color:#888;margin:8px 0 4px'>"
-            "🏗️ Mô hình BIM (IFC)</p>",
-            unsafe_allow_html=True,
-        )
-        if st.button("Xuất IFC kết cấu cầu", use_container_width=True, key="sb_ifc_bridge"):
-            try:
-                _b = EXP.export_bridge_ifc(_sd)
-                st.download_button(
-                    "💾 Tải IFC", _b, "bridge.ifc",
-                    mime="application/octet-stream",
-                    key="sb_dl_ifc", use_container_width=True,
-                )
-            except Exception as _ex:
-                st.error(f"Lỗi: {_ex}")
-
-        _df_geo_sb = st.session_state.get('gdf_terrain') or st.session_state.get('df_geo')
-        if _df_geo_sb is not None:
-            if st.button("Xuất IFC địa hình", use_container_width=True, key="sb_ifc_terrain"):
-                with st.spinner("Đang xuất..."):
-                    try:
-                        _, mx, my, mz = TV.ve_dia_hinh_3d(
-                            _df_geo_sb, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3)
-                        _ifc_path = "terrain_output.ifc"
-                        _ok = TV.export_terrain_to_ifc(mx, my, mz, _ifc_path, "DiaHinh_KhaoSat")
-                        if _ok:
-                            with open(_ifc_path, "rb") as _fh:
-                                st.download_button(
-                                    "💾 Tải IFC địa hình", _fh, "terrain.ifc",
-                                    mime="application/octet-stream",
-                                    key="sb_dl_terrifc", use_container_width=True,
-                                )
-                    except Exception as _ex:
-                        st.error(f"Lỗi: {_ex}")
-
-        st.markdown(
-            "<p style='font-size:10px;color:#888;margin:8px 0 4px'>"
-            "📄 Báo cáo (PDF)</p>",
-            unsafe_allow_html=True,
-        )
-        if st.button("Xuất thuyết minh PDF", use_container_width=True, key="sb_pdf"):
-            st.info(
-                "💡 Tính năng xuất PDF đang phát triển. "
-                "Dùng Ctrl+P để in từ trình duyệt tạm thời."
-            )
-
-    # ── (Chatbot AI đã chuyển thành widget NỔI góc dưới phải — xem
-    #     _render_floating_chat() ở cuối, ngoài sidebar) ─────────────────────
-
-    # ── Reset kích thước panel ────────────────────────────────────────────
-    st.markdown(
-        "<hr style='border-color:#1a1a28;margin:8px 0'>",
-        unsafe_allow_html=True,
-    )
-    if st.button(
-        "↔ Reset kích thước panel",
-        use_container_width=True,
-        key="btn_reset_panels",
-        help="Khôi phục kích thước mặc định: Left=300px, Right=220px",
-    ):
-        st.markdown(
-            """<script>
-            localStorage.removeItem('cau_ai_left_w');
-            localStorage.removeItem('cau_ai_right_w');
-            window.location.reload();
-            </script>""",
-            unsafe_allow_html=True,
-        )
 
 # =========================================================================
 # CHATBOT AI — WIDGET NỔI góc dưới phải (thu/phóng kiểu Messenger)
@@ -3938,7 +3831,7 @@ def render_railing_library() -> None:
     if rails:
         st.markdown("**Đã có trong thư viện:**")
         for _r in sorted(rails, key=lambda x: str(x.get("ten", "")).lower()):
-            _info, _del = st.columns([9, 1])
+            _info, _ed, _del = st.columns([8, 1, 1])
             with _info:
                 _lab = CLIB.RAILING_LABEL.get(_r.get("loai"), "—")
                 st.markdown(
@@ -3951,6 +3844,17 @@ def render_railing_library() -> None:
                     f"cao {float(_r.get('cao_mm',0) or 0):.0f}mm · "
                     f"{len(_r.get('outer',[]))} đỉnh</span></div>",
                     unsafe_allow_html=True)
+            if _ed.button("✏️", key=f"rail_edit_{_r['id']}",
+                          use_container_width=True, help="Sửa"):
+                st.session_state["_rail_draft"] = {
+                    "outer": _r.get("outer", []), "holes": _r.get("holes", []),
+                    "rong_mm": _r.get("rong_mm", 0), "cao_mm": _r.get("cao_mm", 0)}
+                st.session_state["rail_ten"] = _r.get("ten", "")
+                st.session_state["rail_loai"] = _r.get("loai", "lan_can")
+                st.session_state["rail_ghi"] = _r.get("ghi_chu", "")
+                st.session_state["_rail_edit_id"] = _r["id"]
+                st.session_state.pop("_rail_sig", None)
+                st.rerun()
             if _del.button("🗑️", key=f"rail_del_{_r['id']}",
                            use_container_width=True, help="Xóa"):
                 st.session_state.lib_railings = CLIB.delete_railing(rails, _r["id"])
@@ -3975,6 +3879,7 @@ def render_railing_library() -> None:
                     st.session_state["_rail_draft"] = {
                         "outer": _o, "holes": _h, "rong_mm": _w, "cao_mm": _ht}
                     st.session_state["_rail_sig"] = _sig
+                    st.session_state.pop("_rail_edit_id", None)  # upload mới = bản ghi mới
                     st.success(f"✅ Đã nạp MCN: {len(_o)} đỉnh · rộng {_w:.0f}mm · "
                                f"cao {_ht:.0f}mm.")
                 else:
@@ -4003,8 +3908,9 @@ def render_railing_library() -> None:
         if not str(_ten).strip():
             st.error("Cần nhập **Tên**.")
         else:
+            _eid = st.session_state.get("_rail_edit_id")
             _rec = {
-                "id":  CLIB.make_railing_id(_ten, rails),
+                "id":  _eid or CLIB.make_railing_id(_ten, rails),
                 "ten": _ten.strip(), "loai": _loai,
                 "outer": _draft["outer"], "holes": _draft.get("holes", []),
                 "rong_mm": float(_draft.get("rong_mm", 0) or 0),
@@ -4013,7 +3919,8 @@ def render_railing_library() -> None:
             }
             st.session_state.lib_railings = CLIB.upsert_railing(rails, _rec)
             CLIB.save_railings(st.session_state.lib_railings)
-            for _k in ("_rail_draft", "_rail_sig"):
+            for _k in ("_rail_draft", "_rail_sig", "_rail_edit_id",
+                       "rail_ten", "rail_ghi"):
                 st.session_state.pop(_k, None)
             st.success(f"✅ Đã lưu **{_rec['ten']}**.")
             st.rerun()
@@ -4088,27 +3995,34 @@ def render_thu_vien() -> None:
         st.session_state.lib_railings = CLIB.load_railings()
 
     # Trụ & Mố: thư viện LẮP GHÉP (upload mặt cắt). Móng: vẫn bảng tham số.
-    _simple = ["mong"]
-    _icons  = {"mong": "🦵"}
-    _tabs   = st.tabs(
-        [f"🌉 Dầm ({len(st.session_state.dam_beams)})",
-         f"🏗️ Trụ ({len(st.session_state.dam_piers)})",
-         f"🧱 Mố ({len(st.session_state.dam_mos)})"]
-        + [f"{_icons[c]} {CLIB.TYPE_LABEL[c]} ({len(lib.get(c, []))})" for c in _simple]
-        + [f"🚧 Lan can/Giải phân cách ({len(st.session_state.lib_railings)})"]
-    )
+    # Dùng option_menu giữ NGUYÊN tab đang chọn sau khi Lưu (st.tabs sẽ reset
+    # về tab đầu mỗi lần rerun — gây nhảy về "Dầm" rất khó chịu).
+    # KEY ỔN ĐỊNH (không kèm số đếm) → st.radio lưu được lựa chọn qua mọi rerun;
+    # số đếm hiển thị qua format_func nên không phá vỡ persistence khi thêm/xóa.
+    _lib_keys  = ["dam", "tru", "mo", "mong", "rail"]
+    _lib_disp  = {"dam": "🌉 Dầm", "tru": "🏗️ Trụ", "mo": "🧱 Mố",
+                  "mong": "🦵 Móng", "rail": "🚧 Lan can/GPC"}
+    _lib_count = {
+        "dam":  len(st.session_state.dam_beams),
+        "tru":  len(st.session_state.dam_piers),
+        "mo":   len(st.session_state.dam_mos),
+        "mong": len(lib.get("mong", [])),
+        "rail": len(st.session_state.lib_railings),
+    }
+    _sel = st.radio(
+        "Nhóm cấu kiện", _lib_keys, horizontal=True, key="_lib_subtab",
+        format_func=lambda k: f"{_lib_disp[k]} ({_lib_count[k]})",
+        label_visibility="collapsed")
 
-    with _tabs[0]:
+    if _sel == "dam":
         render_dam_library(d)
-    with _tabs[1]:
+    elif _sel == "tru":
         render_assembly_library("tru")
-    with _tabs[2]:
+    elif _sel == "mo":
         render_assembly_library("mo")
-
-    with _tabs[3]:
+    elif _sel == "mong":
         render_mong_library(lib)
-
-    with _tabs[4]:
+    else:
         render_railing_library()
 
 
@@ -5499,27 +5413,3 @@ with _col_main:
             st.code(traceback.format_exc())
 
 _render_statusbar(st.session_state.design_data)
-
-
-# ── Sao lưu / khôi phục toàn bộ dữ liệu người dùng (luôn hiện ở sidebar) ─────
-with st.sidebar:
-    _render_data_backup()
-
-# ── Debug Design System panel (bề checkbox trước khi deploy) ─────────────────
-if st.sidebar.checkbox("🔧 Debug DS", value=False, key="ds_debug_toggle"):
-    import inspect
-    with st.expander("🎨 Design System Token Preview", expanded=True):
-        st.caption("Tất cả token màu sắc trong DS.Color — dùng để kiểm tra visual consistency.")
-        _dc_cols = st.columns(2)
-        _dc_items = [(n, v) for n, v in inspect.getmembers(DS.Color)
-                     if not n.startswith('_') and isinstance(v, str) and v.startswith('#')]
-        for i, (name, val) in enumerate(_dc_items):
-            with _dc_cols[i % 2]:
-                st.markdown(
-                    f"<div style='display:flex;gap:8px;align-items:center;padding:3px 0'>"
-                    f"<div style='width:20px;height:20px;background:{val};"
-                    f"border-radius:4px;border:1px solid #333;flex-shrink:0'></div>"
-                    f"<code style='font-size:11px'>Color.{name} = {val}</code>"
-                    f"</div>",
-                    unsafe_allow_html=True,
-                )
