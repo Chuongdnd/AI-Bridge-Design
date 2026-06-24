@@ -3272,8 +3272,16 @@ def render_dam_library(d: dict) -> None:
 
 
 _PIER_WIDGET_KEYS = [
-    "_lib_pier_name", "pf_W", "pf_D", "pf_H", "ps_shape", "ps_W", "ps_D",
-    "ps_H", "pc_W", "pc_W2", "pc_H", "pc_cant", "pc_htip",
+    "_lib_pier_name", "pp_be_H", "pp_than_H", "pp_than_flex", "pp_xa_mu_D",
+    "pier_dxf_be", "pier_dxf_than", "pier_dxf_xa_mu",
+    "_pier_sig_be", "_pier_sig_than", "_pier_sig_xa_mu",
+]
+
+# Thứ tự & nhãn 3 bộ phận trụ (theo yêu cầu: xà mũ → thân → bệ)
+_PIER_PARTS = [
+    ("xa_mu", "Xà mũ", "Mặt cắt = MẶT ĐỨNG NGANG cầu (gồm công xôn) — đùn dọc cầu."),
+    ("than",  "Thân trụ", "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
+    ("be",    "Bệ trụ",  "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
 ]
 
 
@@ -3282,72 +3290,109 @@ def _clear_pier_widgets() -> None:
         st.session_state.pop(_k, None)
 
 
+def _pier_section_fig(section: dict):
+    """Xem trước 2D 1 mặt cắt trụ (tái dùng make_section_fig của BeamBuilder)."""
+    outer = (section or {}).get("outer", [])
+    if len(outer) < 3:
+        return None
+    xs = [p[0] for p in outer]; zs = [p[1] for p in outer]
+    mx = max(200.0, (max(xs) - min(xs)) * 0.08)
+    mz = max(200.0, (max(zs) - min(zs)) * 0.08)
+    sec = _BB_ENGINE.CrossSection("MC", list(outer),
+                                  [list(h) for h in section.get("holes", [])])
+    fig = _BB_ENGINE.make_section_fig(
+        sec, show_grid_pts=False,
+        x_range=(min(xs) - mx, max(xs) + mx),
+        z_range=(min(zs) - mz, max(zs) + mz))
+    fig.update_layout(height=300, margin=dict(l=40, r=10, t=10, b=30))
+    return fig
+
+
+def _render_pier_part_editor(role: str, label: str, hint: str, part: dict) -> dict:
+    """Khối UI 1 bộ phận: upload DXF + xem trước 2D + tham số đùn. Trả part mới."""
+    st.caption(hint)
+    part = dict(part or {})
+    sec = dict(part.get("section") or {})
+
+    _up = st.file_uploader(f"⬆ Upload mặt cắt {label} (DXF/DWG)",
+                           type=["dxf", "dwg"], key=f"pier_dxf_{role}")
+    if _up is not None:
+        _sig = f"{_up.name}:{_up.size}"
+        if st.session_state.get(f"_pier_sig_{role}") != _sig:
+            try:
+                _res = _BB_ENGINE.parse_dxf_bytes(_up.read())
+                if _res.get("error"):
+                    st.error(f"Lỗi đọc DXF: {_res['error']}")
+                elif len(_res.get("outer", [])) >= 3:
+                    sec = {"outer": _res["outer"], "holes": _res.get("holes", [])}
+                    st.session_state[f"_pier_sig_{role}"] = _sig
+                    st.success(f"✅ Đã nạp mặt cắt {label}: {len(sec['outer'])} đỉnh"
+                               f"{', ' + str(len(sec['holes'])) + ' lỗ' if sec['holes'] else ''}.")
+                else:
+                    st.warning("Không tìm thấy biên kín trong DXF.")
+            except Exception as _e:
+                st.error(f"Lỗi xử lý DXF: {_e}")
+    part["section"] = sec
+
+    _pv, _pp = st.columns([3, 2])
+    with _pv:
+        _f = _pier_section_fig(sec)
+        if _f is not None:
+            st.plotly_chart(_f, use_container_width=True, key=f"pier_secfig_{role}")
+        else:
+            st.info("Chưa có mặt cắt — upload DXF để bắt đầu.")
+    with _pp:
+        if role == "xa_mu":
+            part["D"] = st.number_input("Chiều sâu dọc cầu D (m)", 0.3, 10.0,
+                                        float(part.get("D", 1.8)), 0.1,
+                                        key="pp_xa_mu_D")
+            st.caption("Chiều cao xà mũ lấy theo mặt cắt đã vẽ.")
+        else:
+            part["H"] = st.number_input("Chiều cao H (m)", 0.3, 60.0,
+                                        float(part.get("H", 5.0 if role == "than" else 1.5)),
+                                        0.1, key=f"pp_{role}_H")
+            if role == "than":
+                part["flex"] = st.checkbox(
+                    "Co theo chiều cao trụ (khi gắn cầu)",
+                    value=bool(part.get("flex", True)), key="pp_than_flex")
+    return part
+
+
 def _render_pier_edit_panel() -> None:
-    """Panel tạo/sửa 1 TRỤ LẮP GHÉP (bệ + thân + mũ công xôn)."""
+    """Panel tạo/sửa 1 TRỤ LẮP GHÉP — 3 bộ phận, mỗi phần upload mặt cắt riêng."""
     editing_id = st.session_state.get("_lib_pier_editing_id")
-    cur = st.session_state.get("_lib_pier_draft") or PB.default_pier()
+    cur = PB.migrate_pier(st.session_state.get("_lib_pier_draft") or PB.default_pier())
+    parts = dict(cur.get("parts", {}))
 
     st.markdown(
         f"<div style='background:#0a1f35;border:1px solid #007acc;border-radius:8px;"
         f"padding:8px 12px;margin:6px 0'><b style='color:#4fc3f7'>"
-        f"{'✏️ Sửa trụ' if editing_id else '➕ Tạo trụ mới'}</b> — khai báo bệ, "
-        f"thân, xà mũ (công xôn) rồi 💾 Lưu.</div>", unsafe_allow_html=True)
+        f"{'✏️ Sửa trụ' if editing_id else '➕ Tạo trụ mới'}</b> — mỗi bộ phận "
+        f"(xà mũ / thân / bệ) upload MẶT CẮT riêng để dựng khối, rồi 💾 Lưu.</div>",
+        unsafe_allow_html=True)
 
     _nm = st.text_input("Tên trụ", value=cur.get("ten", ""),
                         placeholder="VD: Trụ thân đặc T1", key="_lib_pier_name")
 
-    _cfg, _prev = st.columns([2, 3])
+    _cfg, _prev = st.columns([3, 2])
     with _cfg:
-        st.markdown("**Bệ móng**")
-        _b1, _b2, _b3 = st.columns(3)
-        f = cur.get("footing", {})
-        Wf = _b1.number_input("B ngang (m)", 0.5, 30.0, float(f.get("W", 4.0)), 0.1, key="pf_W")
-        Df = _b2.number_input("B dọc (m)",   0.5, 30.0, float(f.get("D", 3.0)), 0.1, key="pf_D")
-        Hf = _b3.number_input("Cao (m)",      0.3, 10.0, float(f.get("H", 1.5)), 0.1, key="pf_H")
+        _ptabs = st.tabs([f"🧱 {lbl}" for _r, lbl, _h in _PIER_PARTS])
+        for _tab, (role, label, hint) in zip(_ptabs, _PIER_PARTS):
+            with _tab:
+                parts[role] = _render_pier_part_editor(
+                    role, label, hint, parts.get(role, {}))
 
-        st.markdown("**Thân trụ**")
-        s = cur.get("stem", {})
-        _shape = st.radio("Tiết diện", ["rect", "circle"],
-                          index=(1 if s.get("shape") == "circle" else 0),
-                          format_func=lambda x: "Chữ nhật" if x == "rect" else "Tròn",
-                          horizontal=True, key="ps_shape")
-        _s1, _s2, _s3 = st.columns(3)
-        Ws = _s1.number_input(("Đ.kính (m)" if _shape == "circle" else "B ngang (m)"),
-                              0.3, 20.0, float(s.get("W", 1.6)), 0.1, key="ps_W")
-        Ds = _s2.number_input("B dọc (m)", 0.3, 20.0, float(s.get("D", 1.2)), 0.1,
-                              key="ps_D", disabled=(_shape == "circle"))
-        Hs = _s3.number_input("Cao thân (m)", 0.5, 60.0, float(s.get("H", 5.0)), 0.1, key="ps_H")
-
-        st.markdown("**Xà mũ** (công xôn)")
-        c = cur.get("cap", {})
-        _c1, _c2, _c3 = st.columns(3)
-        Wc = _c1.number_input("B ngang (m)", 1.0, 40.0, float(c.get("W", 8.0)), 0.1, key="pc_W")
-        Dc = _c2.number_input("B dọc (m)",   0.5, 10.0, float(c.get("D", 1.8)), 0.1, key="pc_W2")
-        Hc = _c3.number_input("Cao giữa (m)", 0.3, 5.0, float(c.get("H", 1.2)), 0.1, key="pc_H")
-        _c4, _c5 = st.columns(2)
-        Cant = _c4.number_input("Công xôn mỗi bên (m)", 0.0, 10.0,
-                                float(c.get("cant", 2.0)), 0.1, key="pc_cant")
-        Htip = _c5.number_input("Cao tại mút (m)", 0.0, 5.0,
-                                float(c.get("H_tip", 0.6)), 0.1, key="pc_htip")
-
-    pier = {
-        "id": editing_id or "", "ten": _nm, "loai": "tru",
-        "H_ref": round(Hf + Hs + Hc, 2),
-        "footing": {"W": Wf, "D": Df, "H": Hf},
-        "stem": {"shape": _shape, "W": Ws, "D": Ds, "H": Hs},
-        "cap": {"W": Wc, "D": Dc, "H": Hc, "cant": Cant, "H_tip": Htip},
-    }
+    pier = {"id": editing_id or "", "ten": _nm, "loai": "tru", "parts": parts}
+    pier["H_ref"] = PB.pier_total_height(pier)
     st.session_state["_lib_pier_draft"] = pier
 
     with _prev:
-        st.caption("Xem trước 3D — kéo xoay")
+        st.caption(f"Xem trước 3D — kéo xoay · cao trụ ≈ {pier['H_ref']} m")
         try:
             st.plotly_chart(PB.build_pier_preview_fig(pier),
                             use_container_width=True, key="pier_prev3d")
-            st.plotly_chart(PB.pier_front_fig(pier),
-                            use_container_width=True, key="pier_prev2d")
         except Exception as _e:
-            st.error(f"Lỗi xem trước: {_e}")
+            st.error(f"Lỗi xem trước 3D: {_e}")
 
     st.markdown("---")
     _p1, _p2, _ = st.columns([1, 1, 3])
@@ -3404,16 +3449,18 @@ def render_pier_library() -> None:
     for p in sorted(piers, key=lambda x: str(x.get("ten", "")).strip().lower()):
         _info, _e3, _e4 = st.columns([8, 1, 1])
         with _info:
-            _f, _s, _c = p.get("footing", {}), p.get("stem", {}), p.get("cap", {})
+            _pp = PB.migrate_pier(p).get("parts", {})
+            _Hbe = _pp.get("be", {}).get("H", "?")
+            _Hth = _pp.get("than", {}).get("H", "?")
+            _Dxm = _pp.get("xa_mu", {}).get("D", "?")
             st.markdown(
                 f"<div style='background:#141420;border:1px solid #2a2a3a;"
                 f"border-left:4px solid #6d9dc5;border-radius:8px;padding:8px 12px'>"
                 f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
                 f"🏗️ {p.get('ten','(không tên)')}</span>"
                 f"<span style='font-size:11px;color:#888;margin-left:10px'>"
-                f"bệ {_f.get('W','?')}×{_f.get('D','?')}m · "
-                f"thân {('tròn' if _s.get('shape')=='circle' else 'CN')} H={_s.get('H','?')}m · "
-                f"mũ {_c.get('W','?')}m (công xôn {_c.get('cant',0)}m) · "
+                f"bệ H={_Hbe}m · thân H={_Hth}m · xà mũ sâu {_Dxm}m · "
+                f"cao ≈ {PB.pier_total_height(p)}m · "
                 f"{p.get('created_by','') or '—'}</span></div>",
                 unsafe_allow_html=True)
         if _e3.button("✏️", key=f"lib_pier_edit_{p['id']}",
