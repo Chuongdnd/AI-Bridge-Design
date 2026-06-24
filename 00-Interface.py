@@ -2509,6 +2509,7 @@ def _data_file_registry() -> dict:
         "spt_sections_saved.json":      _root / "spt_sections_saved.json",
         "Data/Library/beams.json":      pathlib.Path(CLIB.BEAMS_PATH),
         "Data/Library/piers.json":      pathlib.Path(CLIB.PIERS_PATH),
+        "Data/Library/mos.json":        pathlib.Path(CLIB.MOS_PATH),
         "Data/Library/components.json": pathlib.Path(CLIB.LIBRARY_PATH),
         "terrain_saved/terrain.ntd":        _root / "terrain_saved" / "terrain.ntd",
         "terrain_saved/terrain_coord.xlsx": _root / "terrain_saved" / "terrain_coord.xlsx",
@@ -3271,27 +3272,53 @@ def render_dam_library(d: dict) -> None:
             st.rerun()
 
 
-_PIER_WIDGET_KEYS = [
-    "_lib_pier_name", "pp_be_H", "pp_than_H", "pp_than_flex", "pp_xa_mu_D",
-    "pier_dxf_be", "pier_dxf_than", "pier_dxf_xa_mu",
-    "_pier_sig_be", "_pier_sig_than", "_pier_sig_xa_mu",
-]
+# ══════════════════════════════════════════════════════════════════════════
+# THƯ VIỆN CẤU KIỆN LẮP GHÉP (assembly) — dùng chung cho TRỤ & MỐ.
+# Mỗi loại 3 bộ phận (mũ / thân / bệ), mỗi phần upload mặt cắt DXF riêng.
+# ══════════════════════════════════════════════════════════════════════════
+def _asm_cfg(kind: str) -> dict:
+    if kind == "mo":
+        return {
+            "kind": "mo", "label": "Mố", "icon": "🧱", "ss": "dam_mos",
+            "color": "#c0a06b", "id_key": "abutment_assembly_id",
+            "name_ph": "VD: Mố chữ U M1",
+            "load": CLIB.load_mos, "save": CLIB.save_mos, "upsert": CLIB.upsert_mo,
+            "delete": CLIB.delete_mo, "get": CLIB.get_mo, "mkid": CLIB.make_mo_id,
+            "parts": [
+                ("xa_mu", "Mũ mố", "Mặt cắt = MẶT ĐỨNG NGANG cầu (bệ kê gối) — đùn dọc cầu."),
+                ("than", "Tường thân", "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
+                ("be", "Bệ mố", "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
+            ],
+        }
+    return {
+        "kind": "tru", "label": "Trụ", "icon": "🏗️", "ss": "dam_piers",
+        "color": "#6d9dc5", "id_key": "pier_assembly_id",
+        "name_ph": "VD: Trụ thân đặc T1",
+        "load": CLIB.load_piers, "save": CLIB.save_piers, "upsert": CLIB.upsert_pier,
+        "delete": CLIB.delete_pier, "get": CLIB.get_pier, "mkid": CLIB.make_pier_id,
+        "parts": [
+            ("xa_mu", "Xà mũ", "Mặt cắt = MẶT ĐỨNG NGANG cầu (gồm công xôn) — đùn dọc cầu."),
+            ("than", "Thân trụ", "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
+            ("be", "Bệ trụ", "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
+        ],
+    }
 
-# Thứ tự & nhãn 3 bộ phận trụ (theo yêu cầu: xà mũ → thân → bệ)
-_PIER_PARTS = [
-    ("xa_mu", "Xà mũ", "Mặt cắt = MẶT ĐỨNG NGANG cầu (gồm công xôn) — đùn dọc cầu."),
-    ("than",  "Thân trụ", "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
-    ("be",    "Bệ trụ",  "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
-]
+
+def _asm_labels(cfg: dict) -> dict:
+    return {role: lbl for role, lbl, _ in cfg["parts"]}
 
 
-def _clear_pier_widgets() -> None:
-    for _k in _PIER_WIDGET_KEYS:
+def _clear_asm_widgets(kind: str) -> None:
+    """Xóa giá trị widget cũ khi mở panel tạo/sửa (tránh dính dữ liệu trước)."""
+    _keys = [f"_lib_{kind}_name", f"pp_{kind}_than_flex", f"pp_{kind}_xa_mu_D"]
+    for role in ("be", "than", "xa_mu"):
+        _keys += [f"{kind}_dxf_{role}", f"_{kind}_sig_{role}", f"pp_{kind}_{role}_H"]
+    for _k in _keys:
         st.session_state.pop(_k, None)
 
 
-def _pier_section_fig(section: dict):
-    """Xem trước 2D 1 mặt cắt trụ (tái dùng make_section_fig của BeamBuilder)."""
+def _asm_section_fig(section: dict):
+    """Xem trước 2D 1 mặt cắt (tái dùng make_section_fig của BeamBuilder)."""
     outer = (section or {}).get("outer", [])
     if len(outer) < 3:
         return None
@@ -3308,24 +3335,24 @@ def _pier_section_fig(section: dict):
     return fig
 
 
-def _render_pier_part_editor(role: str, label: str, hint: str, part: dict) -> dict:
+def _render_asm_part_editor(kind, role, label, hint, part) -> dict:
     """Khối UI 1 bộ phận: upload DXF + xem trước 2D + tham số đùn. Trả part mới."""
     st.caption(hint)
     part = dict(part or {})
     sec = dict(part.get("section") or {})
 
     _up = st.file_uploader(f"⬆ Upload mặt cắt {label} (DXF/DWG)",
-                           type=["dxf", "dwg"], key=f"pier_dxf_{role}")
+                           type=["dxf", "dwg"], key=f"{kind}_dxf_{role}")
     if _up is not None:
         _sig = f"{_up.name}:{_up.size}"
-        if st.session_state.get(f"_pier_sig_{role}") != _sig:
+        if st.session_state.get(f"_{kind}_sig_{role}") != _sig:
             try:
                 _res = _BB_ENGINE.parse_dxf_bytes(_up.read())
                 if _res.get("error"):
                     st.error(f"Lỗi đọc DXF: {_res['error']}")
                 elif len(_res.get("outer", [])) >= 3:
                     sec = {"outer": _res["outer"], "holes": _res.get("holes", [])}
-                    st.session_state[f"_pier_sig_{role}"] = _sig
+                    st.session_state[f"_{kind}_sig_{role}"] = _sig
                     st.success(f"✅ Đã nạp mặt cắt {label}: {len(sec['outer'])} đỉnh"
                                f"{', ' + str(len(sec['holes'])) + ' lỗ' if sec['holes'] else ''}.")
                 else:
@@ -3336,117 +3363,154 @@ def _render_pier_part_editor(role: str, label: str, hint: str, part: dict) -> di
 
     _pv, _pp = st.columns([3, 2])
     with _pv:
-        _f = _pier_section_fig(sec)
+        _f = _asm_section_fig(sec)
         if _f is not None:
-            st.plotly_chart(_f, use_container_width=True, key=f"pier_secfig_{role}")
+            st.plotly_chart(_f, use_container_width=True, key=f"{kind}_secfig_{role}")
         else:
             st.info("Chưa có mặt cắt — upload DXF để bắt đầu.")
     with _pp:
         if role == "xa_mu":
             part["D"] = st.number_input("Chiều sâu dọc cầu D (m)", 0.3, 10.0,
                                         float(part.get("D", 1.8)), 0.1,
-                                        key="pp_xa_mu_D")
-            st.caption("Chiều cao xà mũ lấy theo mặt cắt đã vẽ.")
+                                        key=f"pp_{kind}_xa_mu_D")
+            st.caption("Chiều cao lấy theo mặt cắt đã vẽ.")
         else:
-            part["H"] = st.number_input("Chiều cao H (m)", 0.3, 60.0,
-                                        float(part.get("H", 5.0 if role == "than" else 1.5)),
-                                        0.1, key=f"pp_{role}_H")
+            part["H"] = st.number_input(
+                "Chiều cao H (m)", 0.3, 60.0,
+                float(part.get("H", 5.0 if role == "than" else 1.5)),
+                0.1, key=f"pp_{kind}_{role}_H")
             if role == "than":
                 part["flex"] = st.checkbox(
-                    "Co theo chiều cao trụ (khi gắn cầu)",
-                    value=bool(part.get("flex", True)), key="pp_than_flex")
+                    "Co theo chiều cao (khi gắn cầu)",
+                    value=bool(part.get("flex", True)), key=f"pp_{kind}_than_flex")
     return part
 
 
-def _render_pier_edit_panel() -> None:
-    """Panel tạo/sửa 1 TRỤ LẮP GHÉP — 3 bộ phận, mỗi phần upload mặt cắt riêng."""
-    editing_id = st.session_state.get("_lib_pier_editing_id")
-    cur = PB.migrate_pier(st.session_state.get("_lib_pier_draft") or PB.default_pier())
+def _render_asm_edit_panel(cfg: dict) -> None:
+    """Panel tạo/sửa 1 cấu kiện lắp ghép (trụ hoặc mố)."""
+    kind = cfg["kind"]; lab = cfg["label"]; labels = _asm_labels(cfg)
+    editing_id = st.session_state.get(f"_lib_{kind}_editing_id")
+    cur = PB.migrate_pier(st.session_state.get(f"_lib_{kind}_draft") or PB.default_pier())
     parts = dict(cur.get("parts", {}))
 
     st.markdown(
         f"<div style='background:#0a1f35;border:1px solid #007acc;border-radius:8px;"
         f"padding:8px 12px;margin:6px 0'><b style='color:#4fc3f7'>"
-        f"{'✏️ Sửa trụ' if editing_id else '➕ Tạo trụ mới'}</b> — mỗi bộ phận "
-        f"(xà mũ / thân / bệ) upload MẶT CẮT riêng để dựng khối, rồi 💾 Lưu.</div>",
+        f"{'✏️ Sửa ' + lab.lower() if editing_id else '➕ Tạo ' + lab.lower() + ' mới'}"
+        f"</b> — mỗi bộ phận upload MẶT CẮT riêng để dựng khối, rồi 💾 Lưu.</div>",
         unsafe_allow_html=True)
 
-    _nm = st.text_input("Tên trụ", value=cur.get("ten", ""),
-                        placeholder="VD: Trụ thân đặc T1", key="_lib_pier_name")
+    _nm = st.text_input(f"Tên {lab.lower()}", value=cur.get("ten", ""),
+                        placeholder=cfg["name_ph"], key=f"_lib_{kind}_name")
 
     _cfg, _prev = st.columns([3, 2])
     with _cfg:
-        _ptabs = st.tabs([f"🧱 {lbl}" for _r, lbl, _h in _PIER_PARTS])
-        for _tab, (role, label, hint) in zip(_ptabs, _PIER_PARTS):
+        _ptabs = st.tabs([f"🧱 {lbl}" for _r, lbl, _h in cfg["parts"]])
+        for _tab, (role, label, hint) in zip(_ptabs, cfg["parts"]):
             with _tab:
-                parts[role] = _render_pier_part_editor(
-                    role, label, hint, parts.get(role, {}))
+                parts[role] = _render_asm_part_editor(
+                    kind, role, label, hint, parts.get(role, {}))
 
-    pier = {"id": editing_id or "", "ten": _nm, "loai": "tru", "parts": parts}
-    pier["H_ref"] = PB.pier_total_height(pier)
-    st.session_state["_lib_pier_draft"] = pier
+    rec = {"id": editing_id or "", "ten": _nm, "loai": kind, "parts": parts}
+    rec["H_ref"] = PB.pier_total_height(rec)
+    st.session_state[f"_lib_{kind}_draft"] = rec
 
     with _prev:
-        st.caption(f"Xem trước 3D — kéo xoay · cao trụ ≈ {pier['H_ref']} m")
+        st.caption(f"Xem trước 3D — kéo xoay · cao ≈ {rec['H_ref']} m")
         try:
-            st.plotly_chart(PB.build_pier_preview_fig(pier),
-                            use_container_width=True, key="pier_prev3d")
+            st.plotly_chart(PB.build_pier_preview_fig(rec, labels=labels),
+                            use_container_width=True, key=f"{kind}_prev3d")
         except Exception as _e:
             st.error(f"Lỗi xem trước 3D: {_e}")
 
     st.markdown("---")
     _p1, _p2, _ = st.columns([1, 1, 3])
-    if _p1.button("💾 Lưu trụ", type="primary", use_container_width=True,
-                  key="_lib_pier_save"):
+    if _p1.button(f"💾 Lưu {lab.lower()}", type="primary",
+                  use_container_width=True, key=f"_lib_{kind}_save"):
         if not _nm.strip():
-            st.warning("⚠️ Nhập **tên trụ** trước khi lưu.")
+            st.warning(f"⚠️ Nhập **tên {lab.lower()}** trước khi lưu.")
         else:
-            piers = st.session_state.get("dam_piers", CLIB.load_piers())
-            pid = editing_id or CLIB.make_pier_id(_nm, piers)
-            pier["id"] = pid
-            pier["created_by"] = (AUTH.current_user() or {}).get("name", "")
-            pier["updated_at"] = time.strftime("%Y-%m-%d %H:%M")
-            st.session_state.dam_piers = CLIB.upsert_pier(piers, pier)
-            CLIB.save_piers(st.session_state.dam_piers)
-            for _k in ("_lib_pier_panel", "_lib_pier_editing_id", "_lib_pier_draft"):
-                st.session_state.pop(_k, None)
-            st.toast(f"Đã lưu trụ “{_nm}”.", icon="✅")
+            items = st.session_state.get(cfg["ss"], cfg["load"]())
+            rid = editing_id or cfg["mkid"](_nm, items)
+            rec["id"] = rid
+            rec["created_by"] = (AUTH.current_user() or {}).get("name", "")
+            rec["updated_at"] = time.strftime("%Y-%m-%d %H:%M")
+            st.session_state[cfg["ss"]] = cfg["upsert"](items, rec)
+            cfg["save"](st.session_state[cfg["ss"]])
+            for _s in ("panel", "editing_id", "draft"):
+                st.session_state.pop(f"_lib_{kind}_{_s}", None)
+            st.toast(f"Đã lưu {lab.lower()} “{_nm}”.", icon="✅")
             st.rerun()
-    if _p2.button("Hủy", use_container_width=True, key="_lib_pier_cancel"):
-        for _k in ("_lib_pier_panel", "_lib_pier_editing_id", "_lib_pier_draft"):
-            st.session_state.pop(_k, None)
+    if _p2.button("Hủy", use_container_width=True, key=f"_lib_{kind}_cancel"):
+        for _s in ("panel", "editing_id", "draft"):
+            st.session_state.pop(f"_lib_{kind}_{_s}", None)
         st.rerun()
 
 
-def render_pier_library() -> None:
-    """Thư viện TRỤ LẮP GHÉP (Phase 1 — tạo & xem trước, chưa gắn vào cầu)."""
-    if "dam_piers" not in st.session_state:
-        st.session_state.dam_piers = CLIB.load_piers()
+def _resolve_assembly(d, kind: str) -> dict:
+    """Bản ghi trụ/mố lắp ghép đang gán cho cầu (None nếu dùng mặc định)."""
+    cfg = _asm_cfg(kind)
+    rid = (d or {}).get(cfg["id_key"])
+    if not rid:
+        return None
+    items = st.session_state.get(cfg["ss"]) or cfg["load"]()
+    return cfg["get"](items, rid)
 
-    if st.session_state.get("_lib_pier_panel"):
-        _render_pier_edit_panel()
+
+def _assembly_picker(d, kind: str) -> None:
+    """Selectbox chọn trụ/mố lắp ghép áp dụng cho cầu (lưu d[id_key])."""
+    cfg = _asm_cfg(kind); lab = cfg["label"]
+    items = st.session_state.get(cfg["ss"])
+    if items is None:
+        items = st.session_state[cfg["ss"]] = cfg["load"]()
+    if not items:
+        st.caption(f"{cfg['icon']} Chưa có {lab.lower()} trong Thư viện — tạo ở "
+                   f"**THƯ VIỆN → {lab}** rồi quay lại đây để gắn vào cầu.")
+        d[cfg["id_key"]] = None
+        return
+    _opts = [f"({lab} mặc định)"] + [p.get("ten", "(không tên)") for p in items]
+    _cur = d.get(cfg["id_key"])
+    _idx = next((k + 1 for k, p in enumerate(items) if p.get("id") == _cur), 0)
+    _sel = st.selectbox(
+        f"{cfg['icon']} {lab} lắp ghép áp dụng cho cầu", _opts, index=_idx,
+        key=f"{kind}_assembly_sel",
+        help=f"Thay hình {lab.lower()} mặc định trong trắc dọc & 3D bằng {lab.lower()} "
+             f"đã dựng trong Thư viện (tự co chiều cao theo cao độ đáy dầm).")
+    d[cfg["id_key"]] = (None if _sel == _opts[0]
+                        else items[_opts.index(_sel) - 1].get("id"))
+
+
+def render_assembly_library(kind: str) -> None:
+    """Thư viện cấu kiện lắp ghép (trụ hoặc mố)."""
+    cfg = _asm_cfg(kind); lab = cfg["label"]; ss = cfg["ss"]
+    labels = _asm_labels(cfg)
+    if ss not in st.session_state:
+        st.session_state[ss] = cfg["load"]()
+
+    if st.session_state.get(f"_lib_{kind}_panel"):
+        _render_asm_edit_panel(cfg)
         return
 
-    piers = st.session_state.dam_piers
+    items = st.session_state[ss]
     _h1, _h2 = st.columns([3, 1])
     with _h1:
-        st.markdown("##### 🏗️ Trụ lắp ghép")
-        st.caption("Trụ = bệ + thân + xà mũ (công xôn). Tạo & xem trước 3D. "
-                   "Phase 1: chưa gắn tự động vào bản vẽ cầu.")
+        st.markdown(f"##### {cfg['icon']} {lab} lắp ghép")
+        st.caption(f"{lab} = bệ + thân + mũ. Mỗi bộ phận upload mặt cắt riêng. "
+                   f"Gắn vào cầu ở tab **Bố trí chung**.")
     with _h2:
-        if st.button("➕ Tạo trụ mới", type="primary", use_container_width=True,
-                     key="lib_pier_new"):
-            _clear_pier_widgets()
-            st.session_state["_lib_pier_draft"] = PB.default_pier()
-            st.session_state.pop("_lib_pier_editing_id", None)
-            st.session_state["_lib_pier_panel"] = "new"
+        if st.button(f"➕ Tạo {lab.lower()} mới", type="primary",
+                     use_container_width=True, key=f"lib_{kind}_new"):
+            _clear_asm_widgets(kind)
+            st.session_state[f"_lib_{kind}_draft"] = PB.default_pier()
+            st.session_state.pop(f"_lib_{kind}_editing_id", None)
+            st.session_state[f"_lib_{kind}_panel"] = "new"
             st.rerun()
 
-    if not piers:
-        st.info("Chưa có trụ nào. Bấm **➕ Tạo trụ mới** để bắt đầu.")
+    if not items:
+        st.info(f"Chưa có {lab.lower()} nào. Bấm **➕ Tạo {lab.lower()} mới** để bắt đầu.")
         return
 
-    for p in sorted(piers, key=lambda x: str(x.get("ten", "")).strip().lower()):
+    for p in sorted(items, key=lambda x: str(x.get("ten", "")).strip().lower()):
         _info, _e3, _e4 = st.columns([8, 1, 1])
         with _info:
             _pp = PB.migrate_pier(p).get("parts", {})
@@ -3455,25 +3519,25 @@ def render_pier_library() -> None:
             _Dxm = _pp.get("xa_mu", {}).get("D", "?")
             st.markdown(
                 f"<div style='background:#141420;border:1px solid #2a2a3a;"
-                f"border-left:4px solid #6d9dc5;border-radius:8px;padding:8px 12px'>"
+                f"border-left:4px solid {cfg['color']};border-radius:8px;padding:8px 12px'>"
                 f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
-                f"🏗️ {p.get('ten','(không tên)')}</span>"
+                f"{cfg['icon']} {p.get('ten','(không tên)')}</span>"
                 f"<span style='font-size:11px;color:#888;margin-left:10px'>"
-                f"bệ H={_Hbe}m · thân H={_Hth}m · xà mũ sâu {_Dxm}m · "
+                f"bệ H={_Hbe}m · thân H={_Hth}m · mũ sâu {_Dxm}m · "
                 f"cao ≈ {PB.pier_total_height(p)}m · "
                 f"{p.get('created_by','') or '—'}</span></div>",
                 unsafe_allow_html=True)
-        if _e3.button("✏️", key=f"lib_pier_edit_{p['id']}",
-                      use_container_width=True, help="Sửa trụ"):
-            _clear_pier_widgets()
-            st.session_state["_lib_pier_draft"] = dict(p)
-            st.session_state["_lib_pier_editing_id"] = p["id"]
-            st.session_state["_lib_pier_panel"] = p["id"]
+        if _e3.button("✏️", key=f"lib_{kind}_edit_{p['id']}",
+                      use_container_width=True, help=f"Sửa {lab.lower()}"):
+            _clear_asm_widgets(kind)
+            st.session_state[f"_lib_{kind}_draft"] = dict(p)
+            st.session_state[f"_lib_{kind}_editing_id"] = p["id"]
+            st.session_state[f"_lib_{kind}_panel"] = p["id"]
             st.rerun()
-        if _e4.button("🗑️", key=f"lib_pier_del_{p['id']}",
-                      use_container_width=True, help="Xóa trụ"):
-            st.session_state.dam_piers = CLIB.delete_pier(piers, p["id"])
-            CLIB.save_piers(st.session_state.dam_piers)
+        if _e4.button("🗑️", key=f"lib_{kind}_del_{p['id']}",
+                      use_container_width=True, help=f"Xóa {lab.lower()}"):
+            st.session_state[ss] = cfg["delete"](items, p["id"])
+            cfg["save"](st.session_state[ss])
             st.rerun()
 
 
@@ -3500,21 +3564,27 @@ def render_thu_vien() -> None:
 
     if "dam_piers" not in st.session_state:
         st.session_state.dam_piers = CLIB.load_piers()
+    if "dam_mos" not in st.session_state:
+        st.session_state.dam_mos = CLIB.load_mos()
 
-    _simple = ["tru", "mo", "mong"]
-    _icons  = {"tru": "🏛️", "mo": "🧱", "mong": "🦵"}
+    # Trụ & Mố: thư viện LẮP GHÉP (upload mặt cắt). Móng: vẫn bảng tham số.
+    _simple = ["mong"]
+    _icons  = {"mong": "🦵"}
     _tabs   = st.tabs(
         [f"🌉 Dầm ({len(st.session_state.dam_beams)})",
-         f"🏗️ Trụ lắp ghép ({len(st.session_state.dam_piers)})"]
+         f"🏗️ Trụ ({len(st.session_state.dam_piers)})",
+         f"🧱 Mố ({len(st.session_state.dam_mos)})"]
         + [f"{_icons[c]} {CLIB.TYPE_LABEL[c]} ({len(lib.get(c, []))})" for c in _simple]
     )
 
     with _tabs[0]:
         render_dam_library(d)
     with _tabs[1]:
-        render_pier_library()
+        render_assembly_library("tru")
+    with _tabs[2]:
+        render_assembly_library("mo")
 
-    for ctype, _tab in zip(_simple, _tabs[2:]):
+    for ctype, _tab in zip(_simple, _tabs[3:]):
         with _tab:
             cols = CLIB.SCHEMA[ctype]
             df   = pd.DataFrame(CLIB.records_for(lib, ctype), columns=cols)
@@ -4450,7 +4520,10 @@ with _col_main:
                         key="rm3d_noterr"
                     )
                     try:
-                        fig_3d = BVK.ve_cau_3d(d, df_tim_line=None)
+                        fig_3d = BVK.ve_cau_3d(
+                            d, df_tim_line=None,
+                            pier_assembly=_resolve_assembly(d, "tru"),
+                            abutment_assembly=_resolve_assembly(d, "mo"))
                         # Thay thế dầm cũ TRƯỚC apply_render_mode (tránh màu bị đổi)
                         try:
                             _spt_tr = BBUI.get_beam_model_mesh_traces(d, pfx=_spt_pfx)
@@ -4615,9 +4688,18 @@ with _col_main:
                 try:
                     # ── 1. Trắc dọc cầu ──────────────────────────────────────
                     st.markdown("**Trắc dọc cầu**")
+                    _pck1, _pck2 = st.columns(2)
+                    with _pck1:
+                        _assembly_picker(d, "tru")
+                    with _pck2:
+                        _assembly_picker(d, "mo")
+                    _pa_obj = _resolve_assembly(d, "tru")
+                    _ab_obj = _resolve_assembly(d, "mo")
                     _dc_data = st.session_state.get("dia_chat_data")
                     fig_td_btc = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim,
-                                                       dia_chat_data=_dc_data)
+                                                       dia_chat_data=_dc_data,
+                                                       pier_assembly=_pa_obj,
+                                                       abutment_assembly=_ab_obj)
                     try:
                         _elev_traces = BBUI.get_elevation_profile_traces(d, pfx=_spt_pfx)
                         if _elev_traces:

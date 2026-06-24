@@ -418,3 +418,57 @@ def delete_pier(piers: list, pier_id: str) -> list:
 
 def get_pier(piers: list, pier_id: str):
     return next((p for p in (piers or []) if p.get("id") == pier_id), None)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# KHO MỐ LẮP GHÉP (ABUTMENTS) — cùng mô hình assembly như trụ (parts:
+# mũ mố / tường thân / bệ mố), lưu riêng mos.json.
+# ══════════════════════════════════════════════════════════════════════════
+MOS_PATH = os.path.join(LIBRARY_DIR, "mos.json")
+
+
+def load_mos() -> list:
+    if os.path.exists(MOS_PATH):
+        try:
+            with open(MOS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            mos = data.get("mos", []) if isinstance(data, dict) else data
+            return [m for m in mos if isinstance(m, dict)]
+        except (OSError, json.JSONDecodeError):
+            pass
+    return []
+
+
+def save_mos(mos: list) -> None:
+    _ensure_dir()
+    _txt = json.dumps({"version": VERSION, "mos": list(mos or [])},
+                      ensure_ascii=False, indent=2)
+    with open(MOS_PATH, "w", encoding="utf-8") as f:
+        f.write(_txt)
+    _autocommit("Data/Library/mos.json", _txt.encode("utf-8"),
+                "thư viện mố lắp ghép")
+
+
+def make_mo_id(ten: str, existing: list = None) -> str:
+    base = slugify(ten) or "mo"
+    existing_ids = {m.get("id") for m in (existing or [])}
+    if base not in existing_ids:
+        return base
+    i = 2
+    while f"{base}-{i}" in existing_ids:
+        i += 1
+    return f"{base}-{i}"
+
+
+def upsert_mo(mos: list, mo: dict) -> list:
+    out = [m for m in (mos or []) if m.get("id") != mo.get("id")]
+    out.append(mo)
+    return out
+
+
+def delete_mo(mos: list, mo_id: str) -> list:
+    return [m for m in (mos or []) if m.get("id") != mo_id]
+
+
+def get_mo(mos: list, mo_id: str):
+    return next((m for m in (mos or []) if m.get("id") == mo_id), None)
