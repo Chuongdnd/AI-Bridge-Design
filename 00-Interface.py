@@ -2173,8 +2173,61 @@ def _rcard(title: str, icon: str, content_html: str, accent: str = "#007acc") ->
     )
 
 
+def _render_right_panel_kl(base_d: dict, ribbon: str) -> None:
+    """Panel phải khi đang ở 1 phương án: tóm tắt KHỐI LƯỢNG cấu kiện toàn cầu
+    (thay cho các thẻ thông số AISummary)."""
+    st.markdown(
+        "<div style='font-size:10px;color:#555;text-transform:uppercase;"
+        "letter-spacing:0.4px;margin:0 0 8px'>Khối lượng — " + ribbon + "</div>",
+        unsafe_allow_html=True,
+    )
+    d = _build_pa_d(base_d, ribbon)
+    if not (d.get('kcn_result') or d.get('ai_result')):
+        st.markdown("<div style='font-size:11px;color:#444;text-align:center;"
+                    "padding:10px'>Chưa tính toán — mở OPTIONS</div>",
+                    unsafe_allow_html=True)
+        return
+    try:
+        _rows = KL.bang_toan_cau(d, dam_roles=_pa_dam_roles(d, ribbon))
+        _t = KL.tong_hop(_rows)
+    except Exception as _e:
+        st.caption(f"Lỗi khối lượng: {_e}")
+        return
+
+    for _icon, _lbl, _val, _col in (
+        ("🧱", "Bê tông",  f"{_t['bt_m3']:.1f} m³",        "#4fc3f7"),
+        ("🪵", "Ván khuôn", f"{_t['coppha_m2']:.0f} m²",   "#e67e22"),
+        ("⛓️", "Cốt thép", f"{_t['thep_kg']/1000:.2f} tấn", "#2ecc71"),
+    ):
+        st.markdown(
+            f"<div style='background:#141420;border:1px solid #2a2a3a;"
+            f"border-left:3px solid {_col};border-radius:8px;padding:8px 12px;"
+            f"margin-bottom:6px'>"
+            f"<div style='font-size:10px;color:#888'>{_icon} {_lbl}</div>"
+            f"<div style='font-size:18px;font-weight:700;color:{_col}'>{_val}</div>"
+            f"</div>", unsafe_allow_html=True)
+
+    # Top cấu kiện theo bê tông
+    st.markdown("<div style='font-size:10px;color:#555;margin:8px 0 4px'>"
+                "Theo cấu kiện (BT m³)</div>", unsafe_allow_html=True)
+    for _r in sorted(_rows, key=lambda x: -x["bt_m3"])[:7]:
+        st.markdown(
+            f"<div style='display:flex;justify-content:space-between;"
+            f"font-size:11px;padding:2px 0;border-bottom:1px solid #1e1e2e'>"
+            f"<span style='color:#aaa'>{_r['ten'][:22]}</span>"
+            f"<span style='color:#4fc3f7;font-weight:600'>{_r['bt_m3']:.1f}</span>"
+            f"</div>", unsafe_allow_html=True)
+    st.caption("Khối lượng sơ bộ · chi tiết ở tab **Bố trí chung**.")
+
+
 def _render_right_panel(d: dict) -> None:
-    """4 result cards trong right panel (col_right)."""
+    """Panel phải (col_right). Ở các tab phương án → tóm tắt khối lượng;
+    nơi khác → 4 thẻ kết quả AI."""
+    _ribbon = st.session_state.get('current_tab', '')
+    if _ribbon in _PA_KEY_MAP:
+        _render_right_panel_kl(d, _ribbon)
+        return
+
     _kcn  = d.get('kcn_result') or {}
     _geo  = d.get('geo_logic') or {}
     _tru  = d.get('tru_result') or {}
@@ -3068,6 +3121,26 @@ def _pa_dam_roles(d: dict, pa_key: str) -> list:
         roles.append(("toàn cầu", CLIB.get_beam(beams, _bid) if _bid else None,
                       sl.get("L_dan")))
     return roles
+
+
+_PA_KEY_MAP = {"Phương án 1": "pa1_chi_phi",
+               "Phương án 2": "pa2_my_quan",
+               "Phương án 3": "pa3_ai"}
+
+
+def _build_pa_d(base_d: dict, ribbon: str) -> dict:
+    """Dựng design_data riêng cho 1 phương án: đổi kcn_result theo PA + nạp
+    span_layout & lan can (dùng chung cho mọi nơi cần d của PA, kể cả panel phải)."""
+    pa_key = _PA_KEY_MAP.get(ribbon)
+    if not pa_key:
+        return base_d
+    d = dict(base_d)
+    _3pa = base_d.get("kcn_3_pa") or {}
+    if _3pa.get(pa_key):
+        d["kcn_result"] = dict(_3pa[pa_key])
+    d["span_layout"] = _pa_span_layout(ribbon)
+    d["railings"] = _resolve_railings_for_pa(ribbon)
+    return d
 
 
 def _render_kl_table(rows: list, title: str = None, key: str = None) -> None:
@@ -4632,7 +4705,7 @@ with _col_main:
             _spt_pfx = _PA_SPT_PFX.get(selected_ribbon, "spt")
             # Nạp bố trí nhịp (2 tầng) của PA vào d → mọi bản vẽ đồng bộ
             d = {**d, "span_layout": _pa_span_layout(selected_ribbon),
-                 "railings": _resolve_railings_for_pa(_pa_key)}
+                 "railings": _resolve_railings_for_pa(selected_ribbon)}
 
             # Thông tin brief
             _geo_d = d.get("geo_logic", {})
@@ -5123,8 +5196,34 @@ with _col_main:
                         st.caption("Khối lượng **sơ bộ** — cơ sở lập **dự toán**. "
                                    "Hệ số cốt thép (kg/m³) theo cấu kiện; cọc khoan nhồi "
                                    "không tính ván khuôn.")
+
+                        # ── 5. DỰ TOÁN sơ bộ — từ bảng khối lượng × đơn giá ──
+                        st.markdown("### 💰 Dự toán sơ bộ (từ bảng khối lượng)")
+                        _dgc1, _dgc2, _dgc3 = st.columns(3)
+                        _dg_bt = _dgc1.number_input(
+                            "Đơn giá bê tông (đ/m³)", 0, 20_000_000,
+                            KL.DON_GIA_MAC_DINH["bt"], 50_000, key=f"dg_bt_{selected_ribbon}")
+                        _dg_vk = _dgc2.number_input(
+                            "Đơn giá ván khuôn (đ/m²)", 0, 5_000_000,
+                            KL.DON_GIA_MAC_DINH["vk"], 10_000, key=f"dg_vk_{selected_ribbon}")
+                        _dg_th = _dgc3.number_input(
+                            "Đơn giá cốt thép (đ/kg)", 0, 200_000,
+                            KL.DON_GIA_MAC_DINH["thep"], 500, key=f"dg_th_{selected_ribbon}")
+                        _dt_rows, _tong_tien = KL.du_toan(_kl_rows, _dg_bt, _dg_vk, _dg_th)
+                        _df_dt = pd.DataFrame([{
+                            "Cấu kiện":      r["ten"],
+                            "Bê tông (m³)":  r["bt_m3"],
+                            "Ván khuôn (m²)": r["coppha_m2"],
+                            "Cốt thép (kg)": r["thep_kg"],
+                            "Thành tiền (đ)": f"{r['thanh_tien']:,.0f}",
+                        } for r in _dt_rows])
+                        st.dataframe(_df_dt, use_container_width=True, hide_index=True,
+                                     key=f"dt_table_{selected_ribbon}")
+                        st.success(f"**Σ Tổng dự toán sơ bộ: {_tong_tien:,.0f} đ "
+                                   f"≈ {_tong_tien/1e9:.3f} tỷ đồng** "
+                                   f"(chưa gồm phụ trợ, thiết bị, hệ số).")
                     except Exception as _ekl:
-                        st.error(f"Lỗi bảng khối lượng: {_ekl}")
+                        st.error(f"Lỗi bảng khối lượng / dự toán: {_ekl}")
 
                 except Exception as _e:
                     st.error(f"Lỗi tab Bố trí chung: {_e}")

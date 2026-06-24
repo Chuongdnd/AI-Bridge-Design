@@ -380,3 +380,25 @@ def tong_hop(rows):
         "coppha_m2": round(sum(_f(r["coppha_m2"]) for r in rows), 1),
         "thep_kg":   round(sum(_f(r["thep_kg"]) for r in rows), 0),
     }
+
+
+# ── DỰ TOÁN: từ bảng khối lượng × đơn giá → thành tiền ───────────────────────
+# Đơn giá tham khảo (đồng): bê tông đ/m³, ván khuôn đ/m², cốt thép đ/kg.
+DON_GIA_MAC_DINH = {"bt": 1_800_000, "vk": 280_000, "thep": 22_000}
+
+
+def du_toan(rows, dg_bt=None, dg_vk=None, dg_thep=None):
+    """Từ list rows khối lượng → list rows dự toán (thêm thanh_tien) + tổng tiền.
+    Trả về (rows_dt, tong_tien). Đơn giá None → dùng mặc định."""
+    dg_bt   = DON_GIA_MAC_DINH["bt"]   if dg_bt   is None else dg_bt
+    dg_vk   = DON_GIA_MAC_DINH["vk"]   if dg_vk   is None else dg_vk
+    dg_thep = DON_GIA_MAC_DINH["thep"] if dg_thep is None else dg_thep
+    out = []
+    tong = 0.0
+    for r in rows:
+        tien = (_f(r["bt_m3"]) * dg_bt + _f(r["coppha_m2"]) * dg_vk
+                + _f(r["thep_kg"]) * dg_thep)
+        tong += tien
+        out.append({**r, "thanh_tien": round(tien, 0)})
+    return out, round(tong, 0)
+
