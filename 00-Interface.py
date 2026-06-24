@@ -3780,21 +3780,49 @@ def render_mong_library(lib: dict) -> None:
                "và các hình mố–trụ.")
     recs = list(CLIB.records_for(lib, "mong"))
 
-    # Danh sách chi tiết cọc hiện có
+    # ── Danh sách thẻ chi tiết cọc (giống Dầm/Trụ/Mố) — ✏️ sửa · 🗑️ xóa ──
     if recs:
         st.markdown("**Đã có trong thư viện:**")
-        for _r in recs:
+        for _r in sorted(recs, key=lambda x: str(x.get("ten", "")).strip().lower()):
             _shp = _r.get("tiet_dien", "") or "—"
             _b = _r.get("canh_b", 0); _h = _r.get("canh_h", 0); _n = _r.get("so_canh", 0)
             _desc = (PS.describe(_shp, _b, _h, _n) if _shp not in ("", "—") else "MC chưa khai")
-            st.markdown(
-                f"- **{_r.get('ten','(cọc)')}** · {_r.get('loai_mong','—')} · "
-                f"{_desc} · Ø_tđ={float(_r.get('duong_kinh_coc',0) or 0):.2f}m · "
-                f"L={float(_r.get('chieu_dai_coc',0) or 0):.0f}m")
+            _nm = _r.get("ten", "(cọc)")
+            _info, _e3, _e4 = st.columns([8, 1, 1])
+            with _info:
+                st.markdown(
+                    f"<div style='background:#141420;border:1px solid #2a2a3a;"
+                    f"border-left:4px solid #7d5a32;border-radius:8px;padding:8px 12px'>"
+                    f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
+                    f"🦵 {_nm}</span>"
+                    f"<span style='font-size:11px;color:#888;margin-left:10px'>"
+                    f"{_r.get('loai_mong','—')} · {_desc} · "
+                    f"Ø_tđ={float(_r.get('duong_kinh_coc',0) or 0):.2f}m · "
+                    f"L={float(_r.get('chieu_dai_coc',0) or 0):.0f}m</span></div>",
+                    unsafe_allow_html=True)
+            if _e3.button("✏️", key=f"mong_edit_{_r.get('id', _nm)}",
+                          use_container_width=True, help="Sửa chi tiết cọc"):
+                st.session_state["mong_pick"] = _nm
+                st.rerun()
+            if _e4.button("🗑️", key=f"mong_delcard_{_r.get('id', _nm)}",
+                          use_container_width=True, help="Xóa chi tiết cọc"):
+                _keep = [r for r in recs if r.get("ten") != _nm]
+                _newlib = dict(lib); _newlib["mong"] = _keep
+                try:
+                    CLIB.save_library(_newlib)
+                    st.session_state.component_library = CLIB.normalize(_newlib)
+                    if st.session_state.get("mong_pick") == _nm:
+                        st.session_state["mong_pick"] = "— Tạo mới —"
+                    st.rerun()
+                except Exception as _e:
+                    st.error(f"Lỗi xóa: {_e}")
 
     st.markdown("---")
     st.markdown("**➕ Thêm / sửa chi tiết cọc**")
     _names = ["— Tạo mới —"] + [r.get("ten", "") for r in recs]
+    # mong_pick có thể trỏ tới record vừa bị xóa → ép về hợp lệ trước khi render
+    if st.session_state.get("mong_pick") not in _names:
+        st.session_state["mong_pick"] = _names[0]
     _pick = st.selectbox("Chọn để sửa", _names, index=0, key="mong_pick")
     _cur = {}
     if _pick != _names[0]:
