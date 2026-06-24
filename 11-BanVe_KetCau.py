@@ -688,8 +688,10 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         # Phần nổi trên mặt đất (thân mố từ terrain → deck)
         if abutment_assembly:
             _PB = _get_PB()
+            # Đỉnh mố (vai kê gối) = ĐÁY DẦM (z_cap_t); thân co theo chiều
+            # cao cầu để chạm đáy dầm.
             for _pl in _PB.abutment_elevation_polys(
-                    abutment_assembly, H_tru=(z_deck - z_be_b),
+                    abutment_assembly, H_tru=(z_cap_t - z_be_b),
                     x_face=xm, out_dir=-sign, z_base=z_be_b):
                 _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
                       (_pl["name"] if side == "Trái" else ""),
@@ -1353,8 +1355,9 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
             [(x0, -1.0, "Mố trái", x0-mo_W), (x_end, 1.0, "Mố phải", x_end)]):
         if abutment_assembly:
             _PB = _get_PB()
+            # Đỉnh mố (vai kê gối) = ĐÁY DẦM (z_cap_t = cao_dd).
             for _at in _PB.build_abutment_mesh_traces(
-                    abutment_assembly, H_tru=(z_deck - z_be_b),
+                    abutment_assembly, H_tru=(z_cap_t - z_be_b),
                     x_face=x_face, out_dir=out_dir, z_base=z_be_b):
                 _at.showlegend = bool(_im == 0)
                 traces.append(_at)
