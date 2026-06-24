@@ -5157,11 +5157,10 @@ with _col_main:
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt cắt dọc: {_e}")
     
-            # ── TAB: Chi tiết dầm SPT (CAD Section Sketcher) ─────────────
+            # ── TAB: Chi tiết dầm — HIỂN THỊ KẾT QUẢ (không khai báo) ────
             with tab_spt:
                 try:
-                    # _spt_pfx đã định nghĩa ở đầu khối phương án (dùng chung sub-tab)
-                    # Nạp lại dầm thư viện đã áp dụng cho PA này (kể cả sau restart)
+                    # Nạp dầm thư viện đã áp dụng cho PA (để mặt bằng/overlay đúng)
                     _applied_id = (d.get("lib_dam_applied") or {}).get(selected_ribbon)
                     if _applied_id and st.session_state.get(f"_loaded_beam_{_spt_pfx}") != _applied_id:
                         _bm = CLIB.get_beam(st.session_state.get("dam_beams")
@@ -5171,11 +5170,87 @@ with _col_main:
                             BBUI.import_beam_state(
                                 BBUI.effective_pfx(_spt_pfx, _bm.get("loai_dam")), _bm)
                             st.session_state[f"_loaded_beam_{_spt_pfx}"] = _applied_id
-                        st.caption(f"📚 Đang dùng dầm thư viện: **{(_bm or {}).get('ten','?')}**")
-                    BBUI.render_cad_spt_tab(d, pfx=_spt_pfx)
+
+                    st.markdown("##### 🔩 Chi tiết dầm — Kết quả")
+                    st.caption("Tab này HIỂN THỊ kết quả chi tiết dầm của phương án "
+                               "(việc dựng/khai báo dầm làm ở **📚 Thư viện → Dầm**).")
+
+                    # ① Mặt bằng bố trí dầm theo từng nhịp
+                    st.markdown("**① Mặt bằng bố trí dầm theo nhịp**")
+                    try:
+                        _fig_plan = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim)
+                        try:
+                            for _ptr in BBUI.get_plan_beam_traces(d, pfx=_spt_pfx):
+                                _fig_plan.add_trace(_ptr)
+                        except Exception:
+                            pass
+                        st.plotly_chart(_fig_plan, use_container_width=True,
+                                        config={"scrollZoom": True, "displayModeBar": True},
+                                        key=f"ctd_plan_{selected_ribbon}")
+                    except Exception as _ep:
+                        st.error(f"Lỗi mặt bằng bố trí dầm: {_ep}")
+
+                    # ② Chi tiết MCN · mặt cắt dọc · mặt bằng theo từng loại dầm
+                    st.markdown("---")
+                    st.markdown("**② Mặt cắt ngang · mặt cắt dọc · mặt bằng — theo từng loại dầm**")
+                    _sl_ctd    = _pa_span_layout(selected_ribbon)
+                    _beams_ctd = st.session_state.get("dam_beams") or CLIB.load_beams()
+                    _kcn_ctd   = dict(d.get("kcn_result") or d.get("ai_result") or {})
+
+                    # Thu thập vai trò dầm (nhịp dẫn / nhịp chính) + bản ghi thư viện
+                    _roles = []
+                    if _sl_ctd.get("mode") == "two_tier":
+                        _roles.append(("Nhịp dẫn",
+                                       CLIB.get_beam(_beams_ctd, _sl_ctd.get("beam_dan")),
+                                       _sl_ctd.get("L_dan")))
+                        _roles.append(("Nhịp chính",
+                                       CLIB.get_beam(_beams_ctd, _sl_ctd.get("beam_main")),
+                                       _sl_ctd.get("L_main")))
+                    else:
+                        _bid = _sl_ctd.get("beam_dan") or _applied_id
+                        _roles.append(("Dầm",
+                                       CLIB.get_beam(_beams_ctd, _bid) if _bid else None,
+                                       _sl_ctd.get("L_dan")))
+
+                    # Khử trùng theo (loại, chiều dài) để không vẽ lặp
+                    _seen = set(); _shown = 0
+                    for _ri, (_lbl, _brec, _Lr) in enumerate(_roles):
+                        _loai_r = ((_brec.get("loai_dam") if _brec else None)
+                                   or _kcn_ctd.get("loai_dam") or "Super-T")
+                        _Lval = float(_Lr or (_brec or {}).get("chieu_dai")
+                                      or _kcn_ctd.get("chieu_dai", 38.0) or 38.0)
+                        _sig = (str(_loai_r).lower(), round(_Lval, 1))
+                        if _sig in _seen:
+                            continue
+                        _seen.add(_sig)
+                        _ten_r = (_brec or {}).get("ten", "")
+                        st.markdown(f"#### 🌉 {_lbl}"
+                                    + (f" — {_ten_r}" if _ten_r else "")
+                                    + f"  ·  *{_loai_r}* · L={_Lval:.1f}m")
+                        _kcn_r = dict(_kcn_ctd)
+                        _kcn_r["loai_dam"]  = _loai_r
+                        _kcn_r["chieu_dai"] = _Lval
+                        if _brec:
+                            if _brec.get("chieu_cao"):
+                                _kcn_r["chieu_cao_dam"] = float(_brec["chieu_cao"])
+                            if _brec.get("khoang_cach_dam"):
+                                _kcn_r["khoang_cach_dam"] = float(_brec["khoang_cach_dam"])
+                            if _brec.get("so_luong_dam"):
+                                _kcn_r["so_luong_dam"] = int(_brec["so_luong_dam"])
+                        _d_role = {**d, "kcn_result": _kcn_r, "ai_result": _kcn_r}
+                        try:
+                            CTD.render_chi_tiet_loai(
+                                _d_role, st, _loai_r,
+                                key_prefix=f"ctd_{selected_ribbon}_{_ri}")
+                            _shown += 1
+                        except Exception as _er:
+                            st.error(f"Lỗi chi tiết {_lbl}: {_er}")
+                    if _shown == 0:
+                        st.info("Chưa xác định được loại dầm. Áp dụng dầm cho phương án "
+                                "ở tab **📋 Bố trí chung**, hoặc tạo dầm trong **📚 Thư viện**.")
                 except Exception as _e:
                     import traceback
-                    st.error(f"Lỗi tab SPT: {_e}")
+                    st.error(f"Lỗi tab Chi tiết dầm: {_e}")
                     with st.expander("Chi tiết lỗi"):
                         st.code(traceback.format_exc())
     
