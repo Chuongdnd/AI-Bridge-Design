@@ -5256,21 +5256,106 @@ with _col_main:
     
             # ── TAB: Xuất bản vẽ ───────────────────────────────────────────
             with tab_export:
-                st.subheader("📤 Xuất bản vẽ kỹ thuật")
-                st.markdown(
-                    "<div style='background:#141420;border:1px solid #2a2a3a;"
-                    "border-radius:8px;padding:12px 14px;"
-                    "display:flex;align-items:center;gap:10px'>"
-                    "<span style='font-size:20px'>⬇️</span>"
-                    "<div>"
-                    "<div style='font-size:12px;color:#ccc;font-weight:600'>"
-                    "Xuất DXF / IFC / PDF</div>"
-                    "<div style='font-size:11px;color:#666;margin-top:2px'>"
-                    "Tất cả tùy chọn xuất file nằm trong "
-                    "<b style='color:#4fc3f7'>thanh bên trái ↖</b></div>"
-                    "</div></div>",
-                    unsafe_allow_html=True,
-                )
+                st.subheader("📤 Xuất hồ sơ — chọn theo cây thư mục")
+                st.caption("Tích chọn các phần cần lấy theo **thư mục**, rồi "
+                           "**📦 Đóng gói (.zip)** — cấu trúc thư mục được giữ "
+                           "nguyên trong gói tải về. Tệp nặng (IFC/địa hình) chỉ "
+                           "được tạo khi bấm đóng gói.")
+                _PA_TAG = selected_ribbon.replace(" ", "_")
+
+                def _terrain_ifc_bytes():
+                    if _df_geo is None or getattr(_df_geo, "empty", True):
+                        return None
+                    import tempfile as _tmp
+                    _, _mx, _my, _mz = TV.ve_dia_hinh_3d(
+                        _df_geo, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3)
+                    _p = os.path.join(_tmp.gettempdir(), "terrain_export.ifc")
+                    if TV.export_terrain_to_ifc(_mx, _my, _mz, _p, "DiaHinh_KhaoSat"):
+                        with open(_p, "rb") as _fh:
+                            return _fh.read()
+                    return None
+
+                # Cây xuất: (nhãn thư mục, tên thư mục trong zip, [(id, nhãn, tệp, producer)])
+                _exp_tree = [
+                    ("📐 Bản vẽ CAD (DXF)", "BanVe_CAD", [
+                        ("td",  "Trắc dọc cầu",   "trac_doc.dxf",      lambda: EXP.export_trac_doc_dxf(d)),
+                        ("mcn", "Mặt cắt ngang",  "mat_cat_ngang.dxf", lambda: EXP.export_mcn_dxf(d)),
+                        ("tru", "Trụ cầu",        "tru.dxf",           lambda: EXP.export_tru_dxf(d)),
+                    ]),
+                    ("🏗️ Mô hình BIM (IFC)", "MoHinh_IFC", [
+                        ("bifc", "Kết cấu cầu",       "ket_cau_cau.ifc", lambda: EXP.export_bridge_ifc(d)),
+                        ("pifc", "Trụ cầu",           "tru.ifc",         lambda: EXP.export_pier_ifc(d)),
+                        ("tifc", "Địa hình khảo sát", "dia_hinh.ifc",    _terrain_ifc_bytes),
+                    ]),
+                    ("📚 Dữ liệu / Thư viện", "DuLieu", [
+                        ("lib", "Toàn bộ thư viện cấu kiện", "thu_vien.json",
+                         lambda: json.dumps(CLIB.export_bundle(), ensure_ascii=False,
+                                            indent=2).encode("utf-8")),
+                        ("par", "Thông số & kết quả phương án", "thong_so_phuong_an.json",
+                         lambda: json.dumps(
+                             {k: d.get(k) for k in
+                              ("bc", "B", "H", "vtk", "kcn_result", "tru_result",
+                               "mong_result", "lop_phu_result", "geo_logic", "span_layout")},
+                             ensure_ascii=False, indent=2, default=str).encode("utf-8")),
+                    ]),
+                ]
+
+                # Danh sách key tất cả mục — phục vụ nút chọn/bỏ chọn tất cả
+                _all_keys = [f"exp_{_PA_TAG}_{_id}"
+                             for _, _, _items in _exp_tree for _id, *_ in _items]
+                _bt1, _bt2, _ = st.columns([1, 1, 3])
+                if _bt1.button("✅ Chọn tất cả", key=f"exp_selall_{_PA_TAG}",
+                               use_container_width=True):
+                    for _k in _all_keys:
+                        st.session_state[_k] = True
+                    st.rerun()
+                if _bt2.button("⬜ Bỏ chọn", key=f"exp_selnone_{_PA_TAG}",
+                               use_container_width=True):
+                    for _k in _all_keys:
+                        st.session_state[_k] = False
+                    st.rerun()
+
+                _sel_items = []     # (subdir, fname, producer, label)
+                for _flabel, _fdir, _items in _exp_tree:
+                    _n_on = sum(1 for _id, *_ in _items
+                                if st.session_state.get(f"exp_{_PA_TAG}_{_id}"))
+                    with st.expander(f"{_flabel}  ({_n_on}/{len(_items)})", expanded=True):
+                        for _id, _lbl, _fn, _mk in _items:
+                            if st.checkbox(f"{_lbl}  ·  `{_fdir}/{_fn}`",
+                                           key=f"exp_{_PA_TAG}_{_id}"):
+                                _sel_items.append((_fdir, _fn, _mk, _lbl))
+
+                st.markdown("---")
+                _cz1, _cz2 = st.columns([1, 1])
+                if _cz1.button(f"📦 Đóng gói {len(_sel_items)} mục đã chọn (.zip)",
+                               type="primary", use_container_width=True,
+                               disabled=(not _sel_items), key=f"exp_zip_{_PA_TAG}"):
+                    _buf = io.BytesIO(); _ok = []; _err = []
+                    with zipfile.ZipFile(_buf, "w", zipfile.ZIP_DEFLATED) as _zf:
+                        for _fdir, _fn, _mk, _lbl in _sel_items:
+                            try:
+                                _b = _mk()
+                                if _b:
+                                    _zf.writestr(f"{_fdir}/{_fn}", _b); _ok.append(_lbl)
+                                else:
+                                    _err.append(f"{_lbl} (không có dữ liệu)")
+                            except Exception as _ex:
+                                _err.append(f"{_lbl}: {_ex}")
+                    st.session_state[f"_exp_zip_{_PA_TAG}"] = _buf.getvalue()
+                    st.session_state[f"_exp_zip_sum_{_PA_TAG}"] = (_ok, _err)
+                    st.rerun()
+
+                _zbytes = st.session_state.get(f"_exp_zip_{_PA_TAG}")
+                if _zbytes:
+                    _ok, _err = st.session_state.get(f"_exp_zip_sum_{_PA_TAG}", ([], []))
+                    if _ok:
+                        st.success("✅ Đã đóng gói: " + ", ".join(_ok))
+                    if _err:
+                        st.warning("⚠️ Bỏ qua: " + "; ".join(_err))
+                    _cz2.download_button(
+                        "⬇️ Tải gói .zip", data=_zbytes,
+                        file_name=f"ho_so_{_PA_TAG}.zip", mime="application/zip",
+                        use_container_width=True, key=f"exp_dl_{_PA_TAG}")
     
     # =========================================================================
     # SO SÁNH PHƯƠNG ÁN
