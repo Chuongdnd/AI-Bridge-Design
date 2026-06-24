@@ -3075,6 +3075,50 @@ def render_dam_library(d: dict) -> None:
             st.session_state["_lib_dam_panel"] = "new"
             st.rerun()
 
+    # ── Sao lưu / khôi phục thư viện (lưu vĩnh viễn thủ công) ─────────────────
+    with st.expander("💾 Sao lưu / khôi phục thư viện dầm", expanded=False):
+        st.caption(
+            "Thư viện lưu tại `Data/Library/beams.json` (đã có trong repo). "
+            "Để lưu **VĨNH VIỄN** qua các lần deploy: bấm **Tải về**, rồi commit "
+            "file đó vào repo (hoặc gửi cho người quản trị commit). Sau khi server "
+            "reset, dùng **Nạp lại** để khôi phục.")
+        _bk1, _bk2 = st.columns(2)
+        with _bk1:
+            _payload = json.dumps({"version": 1, "beams": beams},
+                                  ensure_ascii=False, indent=2)
+            st.download_button(
+                "⬇️ Tải về beams.json", data=_payload.encode("utf-8"),
+                file_name="beams.json", mime="application/json",
+                use_container_width=True, key="lib_export_json")
+        with _bk2:
+            _up = st.file_uploader("⬆️ Nạp lại từ file (.json)", type=["json"],
+                                   key="lib_import_json")
+        if _up is not None:
+            try:
+                _data = json.loads(_up.read().decode("utf-8"))
+                _imp  = _data.get("beams", []) if isinstance(_data, dict) else _data
+                _imp  = [b for b in _imp if isinstance(b, dict) and b.get("id")]
+            except Exception as _e:
+                _imp = None
+                st.error(f"File không hợp lệ: {_e}")
+            if _imp is not None:
+                _mode = st.radio(
+                    "Cách nạp:", ["Gộp (giữ dầm hiện có)", "Thay thế toàn bộ"],
+                    horizontal=True, key="lib_import_mode")
+                if st.button(f"✅ Xác nhận nạp {len(_imp)} dầm",
+                             type="primary", key="lib_import_apply"):
+                    if _mode.startswith("Thay"):
+                        _new = _imp
+                    else:
+                        _byid = {b["id"]: b for b in beams}
+                        for _b in _imp:
+                            _byid[_b["id"]] = _b
+                        _new = list(_byid.values())
+                    st.session_state.dam_beams = _new
+                    CLIB.save_beams(_new)
+                    st.success(f"Đã nạp {len(_imp)} dầm vào thư viện.")
+                    st.rerun()
+
     if not beams:
         st.info("Chưa có dầm nào. Bấm **➕ Tạo dầm mới** để bắt đầu.")
         return
