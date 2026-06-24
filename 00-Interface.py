@@ -3418,8 +3418,39 @@ def _render_pier_edit_panel() -> None:
         st.rerun()
 
 
+def _resolve_pier_assembly(d) -> dict:
+    """Trả về bản ghi trụ lắp ghép đang gán cho cầu (None nếu dùng trụ mặc định)."""
+    pid = (d or {}).get("pier_assembly_id")
+    if not pid:
+        return None
+    piers = st.session_state.get("dam_piers") or CLIB.load_piers()
+    return CLIB.get_pier(piers, pid)
+
+
+def _pier_assembly_picker(d) -> None:
+    """Selectbox chọn trụ lắp ghép áp dụng cho cầu (lưu d['pier_assembly_id'])."""
+    piers = st.session_state.get("dam_piers")
+    if piers is None:
+        piers = st.session_state.dam_piers = CLIB.load_piers()
+    if not piers:
+        st.caption("🏗️ Chưa có trụ trong Thư viện — tạo ở **THƯ VIỆN → Trụ lắp ghép** "
+                   "rồi quay lại đây để gắn vào cầu.")
+        d["pier_assembly_id"] = None
+        return
+    _opts = ["(Trụ mặc định)"] + [p.get("ten", "(không tên)") for p in piers]
+    _cur = d.get("pier_assembly_id")
+    _idx = next((k + 1 for k, p in enumerate(piers) if p.get("id") == _cur), 0)
+    _sel = st.selectbox(
+        "🏗️ Trụ lắp ghép áp dụng cho cầu", _opts, index=_idx,
+        key="pier_assembly_sel",
+        help="Thay hình trụ mặc định trong trắc dọc & mô hình 3D bằng trụ đã "
+             "dựng trong Thư viện (tự co chiều cao theo cao độ đáy dầm).")
+    d["pier_assembly_id"] = (None if _sel == "(Trụ mặc định)"
+                             else piers[_opts.index(_sel) - 1].get("id"))
+
+
 def render_pier_library() -> None:
-    """Thư viện TRỤ LẮP GHÉP (Phase 1 — tạo & xem trước, chưa gắn vào cầu)."""
+    """Thư viện TRỤ LẮP GHÉP (tạo, xem trước; gắn vào cầu ở tab Bố trí chung)."""
     if "dam_piers" not in st.session_state:
         st.session_state.dam_piers = CLIB.load_piers()
 
@@ -4450,7 +4481,9 @@ with _col_main:
                         key="rm3d_noterr"
                     )
                     try:
-                        fig_3d = BVK.ve_cau_3d(d, df_tim_line=None)
+                        fig_3d = BVK.ve_cau_3d(
+                            d, df_tim_line=None,
+                            pier_assembly=_resolve_pier_assembly(d))
                         # Thay thế dầm cũ TRƯỚC apply_render_mode (tránh màu bị đổi)
                         try:
                             _spt_tr = BBUI.get_beam_model_mesh_traces(d, pfx=_spt_pfx)
@@ -4615,9 +4648,12 @@ with _col_main:
                 try:
                     # ── 1. Trắc dọc cầu ──────────────────────────────────────
                     st.markdown("**Trắc dọc cầu**")
+                    _pier_assembly_picker(d)
+                    _pa_obj = _resolve_pier_assembly(d)
                     _dc_data = st.session_state.get("dia_chat_data")
                     fig_td_btc = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim,
-                                                       dia_chat_data=_dc_data)
+                                                       dia_chat_data=_dc_data,
+                                                       pier_assembly=_pa_obj)
                     try:
                         _elev_traces = BBUI.get_elevation_profile_traces(d, pfx=_spt_pfx)
                         if _elev_traces:

@@ -13,6 +13,24 @@ Hàm xuất:
 import numpy as np
 import plotly.graph_objects as go
 
+# ── Engine trụ lắp ghép (nạp trễ, dùng chung) ────────────────────────────────
+_PB_ENGINE = None
+
+
+def _get_PB():
+    """Nạp 19-PierBuilder.py một lần (tránh phụ thuộc vòng)."""
+    global _PB_ENGINE
+    if _PB_ENGINE is None:
+        import importlib.util as _iu
+        import os as _os
+        _d = _os.path.dirname(_os.path.abspath(__file__))
+        _s = _iu.spec_from_file_location("PierBuilder",
+                                         _os.path.join(_d, "19-PierBuilder.py"))
+        _m = _iu.module_from_spec(_s)
+        _s.loader.exec_module(_m)
+        _PB_ENGINE = _m
+    return _PB_ENGINE
+
 # ── Bảng màu ─────────────────────────────────────────────────────────────────
 _C = {
     "btong":    "#c8d6c0",
@@ -512,7 +530,7 @@ def _draw_dia_chat_trac_doc(fig, dia_chat_data, x0, x_end, h_tn, z_min, mg=20):
 # ===========================================================================
 # 1. SƠ ĐỒ BỐ TRÍ NHỊP (2D) — Trụ đặt NGOÀI tĩnh không
 # ===========================================================================
-def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None):
+def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None, pier_assembly=None):
     """
     Sơ đồ nhịp 2D từ design_data.
     - Trụ được đặt tại biên tĩnh không, KHÔNG vi phạm vùng thông thuyền.
@@ -703,6 +721,34 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None):
     for i, xt in enumerate(piers):
         sl = (i == 0)
         z_terr_tru = _tz(xt)   # cao độ địa hình tại vị trí trụ (thực tế)
+
+        # Trụ LẮP GHÉP từ thư viện: vẽ bóng mặt đứng dọc theo mặt cắt thật
+        if pier_assembly:
+            _PB = _get_PB()
+            for _rc in _PB.pier_elevation_rects(
+                    pier_assembly, H_tru=(z_cap_t - z_be_b),
+                    x_ctr=xt, z_base=z_be_b):
+                _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["dam_dk"],
+                      (_rc["name"] if sl else ""), showlegend=sl)
+            fig.add_annotation(
+                x=xt, y=z_terr_tru, text=f"Z={z_terr_tru:.2f}m",
+                showarrow=True, arrowhead=2, arrowcolor="#27ae60",
+                ax=25, ay=-15, font=dict(size=7, color="#27ae60"),
+                bgcolor="rgba(255,255,255,0.7)")
+            n_show = max(2, min(n_coc_row, 4))
+            coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
+            for j, xc in enumerate(coc_xs_tru):
+                fig.add_trace(go.Scatter(
+                    x=[xc, xc], y=[z_be_b, z_be_b - L_coc], mode="lines",
+                    line=dict(color=_C["be_dk"], width=max(2, int(D_coc_m * 12))),
+                    name=(f"Cọc trụ Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
+                          if (sl and j == 0) else ""),
+                    showlegend=(sl and j == 0)))
+            fig.add_trace(go.Scatter(
+                x=list(coc_xs_tru), y=[z_be_b - L_coc] * n_show, mode="markers",
+                marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
+                showlegend=False, hoverinfo="skip"))
+            continue
 
         # Phần NGẦM: bệ cọc + thân trụ dưới mặt đất → nét đứt mờ
         z_underground_top = min(z_sh_b, z_terr_tru)  # thân trụ ngập đến terrain
@@ -1190,7 +1236,7 @@ def ve_mat_dung_tru_2d(d):
 # ===========================================================================
 # 4. MÔ HÌNH 3D — Kết cấu + địa hình (nếu có df_tim_line)
 # ===========================================================================
-def ve_cau_3d(d, df_tim_line=None, beam_params=None):
+def ve_cau_3d(d, df_tim_line=None, beam_params=None, pier_assembly=None):
     """
     Mô hình 3D kết cấu cầu với trụ đặt đúng ngoài tĩnh không.
     Nếu có df_tim_line: thêm surface địa hình dọc cầu.
@@ -1298,6 +1344,14 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None):
     # ── Trụ (đặt NGOÀI tĩnh không) ────────────────────────────────────────
     for i, xt in enumerate(piers):
         sl = (i == 0)
+        if pier_assembly:
+            _PB = _get_PB()
+            for _pt in _PB.build_pier_mesh_traces(
+                    pier_assembly, H_tru=(z_cap_t - z_be_b),
+                    x_ctr=xt, z_base=z_be_b):
+                _pt.showlegend = bool(sl)   # chỉ chú giải ở trụ đầu
+                traces.append(_pt)
+            continue
         traces.append(_box3d(xt-be_W, -be_W*0.6, z_be_b, xt+be_W, be_W*0.6, z_be_t,
                              color="#aab7b8", name="Bệ cọc" if sl else "", sl=sl))
         traces.append(_box3d(xt-W_tru/2, -W_tru*0.8, z_sh_b,

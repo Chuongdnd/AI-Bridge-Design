@@ -278,6 +278,42 @@ def build_pier_preview_fig(pier: dict, H_tru: float = None) -> go.Figure:
     return fig
 
 
+def _plan_doc_width_m(section: dict) -> float:
+    """Bề rộng theo phương DỌC cầu (m) của mặt cắt mặt bằng (= v-extent)."""
+    _, _, vmin, vmax = _bbox_ab((section or {}).get("outer", [[0, 0]]))
+    return max(0.05, (vmax - vmin) * MM)
+
+
+def pier_elevation_rects(pier: dict, H_tru: float = None,
+                         x_ctr: float = 0.0, z_base: float = 0.0) -> list:
+    """Bóng MẶT ĐỨNG DỌC cầu (x-z) của trụ → list {name,color,xs,zs}.
+    Dùng để vẽ trụ trong trắc dọc 2D. Mỗi bộ phận là 1 chữ nhật:
+      bệ/thân rộng = bề rộng dọc cầu mặt cắt; xà mũ rộng = chiều sâu D.
+    """
+    p = migrate_pier(pier or {})
+    parts = p.get("parts", {})
+    be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
+    H_be = float(be.get("H", 1.5))
+    H_cap = _part_height_m(cap, "xa_mu")
+    H_than = float(than.get("H", 5.0))
+    if H_tru is not None:
+        H_than = max(0.3, float(H_tru) - H_be - H_cap)
+
+    def _rect(name, color, w, z0, h):
+        return {"name": name, "color": color,
+                "xs": [x_ctr - w / 2, x_ctr + w / 2, x_ctr + w / 2, x_ctr - w / 2],
+                "zs": [z0, z0, z0 + h, z0 + h]}
+
+    z = z_base
+    rects = [_rect("Bệ trụ", _COL["be"], _plan_doc_width_m(be.get("section")), z, H_be)]
+    z += H_be
+    rects.append(_rect("Thân trụ", _COL["than"],
+                       _plan_doc_width_m(than.get("section")), z, H_than))
+    z += H_than
+    rects.append(_rect("Xà mũ", _COL["xa_mu"], float(cap.get("D", 1.8)), z, H_cap))
+    return rects
+
+
 def pier_total_height(pier: dict, H_tru: float = None) -> float:
     p = migrate_pier(pier or {})
     parts = p.get("parts", {})
