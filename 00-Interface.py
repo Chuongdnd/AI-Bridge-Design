@@ -343,19 +343,30 @@ def _render_so_do_coc_ui(d, pos_key, pos_label):
                 key=f"coc_dxf_{pos_key}")
         with _c2:
             _swap = st.checkbox("Xoay 90° (dọc cầu nằm trục X)", key=f"coc_swap_{pos_key}")
+            _unit_lbl = st.selectbox(
+                "Đơn vị bản vẽ", ["Tự động", "mm", "cm", "m"], index=0,
+                key=f"coc_unit_{pos_key}",
+                help="Bản vẽ CAD cầu thường vẽ bằng mm. 'Tự động' đọc $INSUNITS.")
             _Ldef = st.number_input("L mặc định (m)", 5.0, 120.0, 30.0, 1.0,
                                     key=f"coc_Ldef_{pos_key}")
+        _unit = {"Tự động": "auto"}.get(_unit_lbl, _unit_lbl)
 
         if _up is not None and st.button("📥 Đọc cọc từ DXF", key=f"coc_read_{pos_key}"):
             try:
                 _res = PP.parse_pile_plan_bytes(
-                    _up.getvalue(), swap_xy=_swap, default_L=float(_Ldef))
+                    _up.getvalue(), swap_xy=_swap, default_L=float(_Ldef), unit=_unit)
                 for _w in _res["warnings"]:
                     st.warning(_w)
                 if _res["n"]:
                     st.session_state[_sk] = _coc_piles_to_df(_res["piles"])
-                    st.success(f"Đọc được **{_res['n']} cọc**. "
-                               "Chỉnh L & độ xiên ở bảng dưới rồi bấm Lưu.")
+                    _Dmin = min(p["D"] for p in _res["piles"])
+                    _Dmax = max(p["D"] for p in _res["piles"])
+                    st.success(
+                        f"Đọc được **{_res['n']} cọc** · Ø{_Dmin:.2f}–{_Dmax:.2f}m · "
+                        f"đơn vị: {_res['unit']} (×{_res['scale']:g}). "
+                        "Chỉnh L & độ xiên ở bảng dưới rồi bấm Lưu.")
+                    st.caption("⚠️ Nếu đường kính/khoảng cách cọc sai → chọn lại "
+                               "**Đơn vị bản vẽ** rồi đọc lại.")
                 else:
                     st.error("Không tìm thấy đối tượng CIRCLE nào trong DXF.")
             except Exception as _e:

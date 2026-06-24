@@ -42,6 +42,40 @@ DEFAULT_D = 1.0     # m — đường kính cọc mặc định khi bản vẽ k
 DEFAULT_L = 30.0    # m — chiều dài cọc mặc định
 PILE_KEYS = ("x", "y", "D", "L", "ix", "iy")
 
+# Hệ số quy đổi đơn vị bản vẽ → MÉT
+UNIT_TO_M = {"mm": 0.001, "cm": 0.01, "dm": 0.1, "m": 1.0}
+# Mã $INSUNITS (DXF) → tên đơn vị
+_INSUNITS_NAME = {1: "in", 2: "ft", 4: "mm", 5: "cm", 6: "m", 14: "dm"}
+_INSUNITS_TO_M = {1: 0.0254, 2: 0.3048, 4: 0.001, 5: 0.01, 6: 1.0, 14: 0.1}
+
+
+def _resolve_scale(doc, raw_pts, unit):
+    """Xác định hệ số quy đổi bản vẽ → mét và mô tả nguồn gốc.
+
+    unit: 'auto' | 'mm' | 'cm' | 'dm' | 'm'. 'auto' → đọc $INSUNITS, nếu không
+    có thì đoán theo độ lớn kích thước (bệ cọc thực tế chỉ vài… vài chục mét)."""
+    u = str(unit or "auto").strip().lower()
+    if u in UNIT_TO_M:
+        return UNIT_TO_M[u], u
+    # auto: thử $INSUNITS
+    try:
+        ins = int(getattr(doc, "units", 0) or 0)
+    except Exception:
+        ins = 0
+    if ins in _INSUNITS_TO_M:
+        return _INSUNITS_TO_M[ins], f"auto·$INSUNITS={_INSUNITS_NAME.get(ins, ins)}"
+    # heuristic theo độ lớn extent
+    if raw_pts:
+        xs = [p[0] for p in raw_pts]; ys = [p[1] for p in raw_pts]
+        extent = max(max(xs) - min(xs), max(ys) - min(ys), 2.0 * max(p[2] for p in raw_pts))
+    else:
+        extent = 0.0
+    if extent > 1000:      # >1000 đơn vị → chắc chắn mm
+        return 0.001, "auto·đoán mm"
+    if extent > 100:       # 100…1000 → cm
+        return 0.01, "auto·đoán cm"
+    return 1.0, "auto·đoán m"
+
 
 def make_pile(x=0.0, y=0.0, D=DEFAULT_D, L=DEFAULT_L, ix=0.0, iy=0.0) -> dict:
     """Tạo 1 cọc với đầy đủ trường, ép kiểu float an toàn."""
@@ -82,6 +116,31 @@ def _read_doc(dxf_bytes: bytes):
     return doc
 
 
+def _dedupe_concentric(raw, tol_m):
+    """Gộp các vòng tròn ĐỒNG TÂM (cùng tâm trong dung sai tol_m) thành 1 cọc —
+    giữ bán kính LỚN NHẤT (vòng ngoài = chu vi cọc). raw: [(x,y,r)] đã quy về m."""
+    used = [False] * len(raw)
+    out = []
+    for i, (xi, yi, ri) in enumerate(raw):
+        if used[i]:
+            continue
+        group = [(xi, yi, ri)]
+        used[i] = True
+        for j in range(i + 1, len(raw)):
+            if used[j]:
+                continue
+            xj, yj, rj = raw[j]
+            if abs(xj - xi) <= tol_m and abs(yj - yi) <= tol_m:
+                group.append((xj, yj, rj))
+                used[j] = True
+        # tâm trung bình, bán kính lớn nhất
+        gx = sum(g[0] for g in group) / len(group)
+        gy = sum(g[1] for g in group) / len(group)
+        gr = max(g[2] for g in group)
+        out.append((gx, gy, gr))
+    return out, (len(raw) - len(out))
+
+
 def parse_pile_plan_bytes(
     dxf_bytes: bytes,
     *,
@@ -89,6 +148,8 @@ def parse_pile_plan_bytes(
     center: bool = True,
     default_L: float = DEFAULT_L,
     layers: list | None = None,
+    unit: str = "auto",
+    merge_concentric: bool = True,
 ) -> dict:
     """
     Đọc các CIRCLE trong DXF mặt bằng → danh sách cọc.
@@ -98,13 +159,14 @@ def parse_pile_plan_bytes(
       center    : True → căn tọa độ về trọng tâm nhóm cọc (gốc = tâm bệ).
       default_L : chiều dài cọc gán mặc định (mặt bằng không thể hiện L).
       layers    : nếu cho danh sách tên layer → chỉ lấy CIRCLE thuộc layer đó.
+      unit      : 'auto' | 'mm' | 'cm' | 'dm' | 'm' — đơn vị bản vẽ (quy về mét).
+      merge_concentric : gộp vòng tròn đồng tâm (cọc vẽ 2 vòng) thành 1.
 
     Trả về dict:
       {
-        "piles": [ {pile}, ... ],     # đã sắp xếp theo (y, x)
-        "n":     int,
-        "warnings": [str, ...],
-        "bbox":  (xmin, ymin, xmax, ymax)   # theo tọa độ đã căn tâm
+        "piles": [...], "n": int, "warnings": [...],
+        "bbox": (xmin,ymin,xmax,ymax),   # theo m, đã căn tâm
+        "scale": float, "unit": str,     # hệ số quy đổi & mô tả đơn vị
       }
     """
     warnings: list[str] = []
@@ -113,7 +175,7 @@ def parse_pile_plan_bytes(
 
     want_layers = {str(l).strip().lower() for l in layers} if layers else None
 
-    raw = []  # (cx, cy, r)
+    raw_u = []  # (cx, cy, r) theo đơn vị bản vẽ
     for e in msp.query("CIRCLE"):
         if want_layers is not None:
             lname = str(getattr(e.dxf, "layer", "")).strip().lower()
@@ -123,11 +185,25 @@ def parse_pile_plan_bytes(
         r = float(e.dxf.radius)
         if r <= 0:
             continue
-        raw.append((float(c.x), float(c.y), r))
+        raw_u.append((float(c.x), float(c.y), r))
 
-    if not raw:
+    if not raw_u:
         warnings.append("Không tìm thấy đối tượng CIRCLE nào trong bản vẽ.")
-        return {"piles": [], "n": 0, "warnings": warnings, "bbox": (0, 0, 0, 0)}
+        return {"piles": [], "n": 0, "warnings": warnings, "bbox": (0, 0, 0, 0),
+                "scale": 1.0, "unit": "—"}
+
+    # Quy đổi đơn vị → mét
+    scale, unit_desc = _resolve_scale(doc, raw_u, unit)
+    raw = [(x * scale, y * scale, r * scale) for (x, y, r) in raw_u]
+
+    # Gộp vòng tròn đồng tâm (cọc vẽ bằng 2 vòng tròn)
+    if merge_concentric:
+        # dung sai = 1/4 bán kính nhỏ nhất, tối thiểu 5cm
+        rmin = min(r for _, _, r in raw)
+        tol = max(0.05, rmin * 0.25)
+        raw, n_merged = _dedupe_concentric(raw, tol)
+        if n_merged:
+            warnings.append(f"Đã gộp {n_merged} vòng tròn đồng tâm (cọc vẽ 2 vòng).")
 
     # Xoay 90° nếu cần (DỌC cầu nằm trên trục X của bản vẽ)
     pts = []
@@ -152,14 +228,20 @@ def parse_pile_plan_bytes(
     ys = [p["y"] for p in piles]
     bbox = (min(xs), min(ys), max(xs), max(ys))
 
-    # Cảnh báo nếu đường kính các cọc chênh nhau nhiều (có thể parse nhầm circle khác)
+    # Cảnh báo nếu đường kính cọc bất thường (có thể đọc nhầm vòng tròn khác)
     ds = sorted(p["D"] for p in piles)
     if ds and ds[-1] > 2.5 * ds[0]:
         warnings.append(
             f"Đường kính cọc chênh lệch lớn (Ø{ds[0]:.2f}…{ds[-1]:.2f}m) — "
-            "kiểm tra xem có vòng tròn không phải cọc bị đọc nhầm không."
+            "kiểm tra vòng tròn không phải cọc bị đọc nhầm không."
         )
-    return {"piles": piles, "n": len(piles), "warnings": warnings, "bbox": bbox}
+    if ds and (ds[0] < 0.2 or ds[-1] > 4.0):
+        warnings.append(
+            f"Đường kính cọc = Ø{ds[0]:.2f}…{ds[-1]:.2f}m sau quy đổi ({unit_desc}). "
+            "Nếu sai, chọn lại đơn vị bản vẽ."
+        )
+    return {"piles": piles, "n": len(piles), "warnings": warnings, "bbox": bbox,
+            "scale": scale, "unit": unit_desc}
 
 
 # ── Truy cập / lưu bố trí cọc trong design_data ──────────────────────────────
