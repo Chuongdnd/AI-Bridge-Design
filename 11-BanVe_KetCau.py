@@ -17,9 +17,6 @@ import plotly.graph_objects as go
 _PB_ENGINE = None
 
 
-_MO_LABELS = {"be": "Bệ mố", "than": "Tường thân", "xa_mu": "Mũ mố"}
-
-
 def _get_PB():
     """Nạp 19-PierBuilder.py một lần (tránh phụ thuộc vòng)."""
     global _PB_ENGINE
@@ -691,12 +688,13 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         # Phần nổi trên mặt đất (thân mố từ terrain → deck)
         if abutment_assembly:
             _PB = _get_PB()
-            _xc = xm + sign * W_mo / 2.0
-            for _rc in _PB.pier_elevation_rects(
-                    abutment_assembly, H_tru=(z_deck - z_be_b),
-                    x_ctr=_xc, z_base=z_be_b, labels=_MO_LABELS):
-                _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["be_dk"],
-                      (_rc["name"] if side == "Trái" else ""),
+            # Đỉnh mố (vai kê gối) = ĐÁY DẦM (z_cap_t); thân co theo chiều
+            # cao cầu để chạm đáy dầm.
+            for _pl in _PB.abutment_elevation_polys(
+                    abutment_assembly, H_tru=(z_cap_t - z_be_b),
+                    x_face=xm, out_dir=-sign, z_base=z_be_b):
+                _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
+                      (_pl["name"] if side == "Trái" else ""),
                       showlegend=(side == "Trái"))
         else:
             _poly(fig,
@@ -1352,12 +1350,15 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
         ))
 
     # ── Mố ────────────────────────────────────────────────────────────────
-    for _im, (xm, nm) in enumerate([(x0-mo_W, "Mố trái"), (x_end, "Mố phải")]):
+    #   x_face = lý trình mặt trước (đỡ gối); out_dir = hướng RA sau lưng.
+    for _im, (x_face, out_dir, nm, xm) in enumerate(
+            [(x0, -1.0, "Mố trái", x0-mo_W), (x_end, 1.0, "Mố phải", x_end)]):
         if abutment_assembly:
             _PB = _get_PB()
-            for _at in _PB.build_pier_mesh_traces(
-                    abutment_assembly, H_tru=(z_deck - z_be_b),
-                    x_ctr=xm + mo_W / 2.0, z_base=z_be_b, labels=_MO_LABELS):
+            # Đỉnh mố (vai kê gối) = ĐÁY DẦM (z_cap_t = cao_dd).
+            for _at in _PB.build_abutment_mesh_traces(
+                    abutment_assembly, H_tru=(z_cap_t - z_be_b),
+                    x_face=x_face, out_dir=out_dir, z_base=z_be_b):
                 _at.showlegend = bool(_im == 0)
                 traces.append(_at)
             continue

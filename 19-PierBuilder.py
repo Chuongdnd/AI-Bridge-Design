@@ -138,7 +138,8 @@ def _extrude(outer_ab, holes_ab, plane: str, c0: float, clen: float):
     """Đùn mặt cắt (a,b) dọc trục thứ 3 c0..c0+clen → (X,Y,Z,I,J,K).
 
     plane='xy' → (a,b)=(x,y) đùn theo z (bệ/thân, đứng).
-    plane='yz' → (a,b)=(y,z) đùn theo x (xà mũ, dọc cầu).
+    plane='yz' → (a,b)=(y,z) đùn theo x (xà mũ trụ, dọc cầu).
+    plane='xz' → (a,b)=(x,z) đùn theo y (thân+mũ mố, ngang cầu).
     """
     outer_ab = _clean_ring(outer_ab)
     holes_ab = [_clean_ring(h) for h in (holes_ab or [])]
@@ -151,7 +152,11 @@ def _extrude(outer_ab, holes_ab, plane: str, c0: float, clen: float):
     X, Y, Z = [], [], []
 
     def _xyz(a, b, c):
-        return (a, b, c) if plane == "xy" else (c, a, b)
+        if plane == "xy":
+            return (a, b, c)
+        if plane == "yz":
+            return (c, a, b)
+        return (a, c, b)        # 'xz': đùn theo y
 
     for (a, b) in flat:                          # ring đáy 0..n-1
         x, y, z = _xyz(a, b, c0); X.append(x); Y.append(y); Z.append(z)
@@ -329,3 +334,151 @@ def pier_total_height(pier: dict, H_tru: float = None) -> float:
     if H_tru is not None:
         H_than = max(0.3, float(H_tru) - H_be - H_cap)
     return round(H_be + H_than + H_cap, 3)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# MỐ CHỮ U BTCT (abutment) — KẾT CẤU KHÁC TRỤ.
+#   • Bệ mố (be)        : mặt cắt MẶT BẰNG (ngang × dọc) → đùn ĐỨNG (cao H).
+#   • Thân + mũ mố(than): mặt cắt DỌC cầu (hình L: tường thân + vai kê gối)
+#                         → đùn NGANG cầu theo bề rộng B.
+# Mố đặt ở đầu cầu: mặt trước (đỡ gối) quay vào nhịp, thân vươn ra phía đất
+# đắp (out_dir). Mặt cắt dọc lưu [u, w] mm: u = dọc cầu (0 ở mặt trước, +u ra
+# sau lưng), w = cao (0 ở mặt trên/đáy dầm, âm xuống).
+# ══════════════════════════════════════════════════════════════════════════
+_MO_LABEL = {"be": "Bệ mố", "than": "Thân + mũ mố"}
+
+
+def _abut_long_mm(Wbody=1500.0, Lseat=900.0, Hbody=5000.0, Hseat=900.0) -> dict:
+    """Mặt cắt dọc mố chữ L (mm): thân tường + vai kê gối nhô về phía nhịp."""
+    return {"outer": [[-Lseat, 0.0], [Wbody, 0.0], [Wbody, -Hbody],
+                      [0.0, -Hbody], [0.0, -Hseat], [-Lseat, -Hseat]],
+            "holes": []}
+
+
+def default_abutment(ten: str = "Mố mẫu") -> dict:
+    return {
+        "id": "", "ten": ten, "loai": "mo", "H_ref": 6.5,
+        "parts": {
+            "be":   {"section": _rect_mm(6000, 4000), "H": 1.5},
+            "than": {"section": _abut_long_mm(), "B": 8.0, "flex": True},
+        },
+    }
+
+
+def migrate_abutment(mo: dict) -> dict:
+    """Đảm bảo bản ghi mố đúng schema (be plan + than longitudinal có B)."""
+    if not isinstance(mo, dict):
+        return default_abutment()
+    out = dict(mo)
+    parts = dict(out.get("parts") or {})
+    base = default_abutment()["parts"]
+    be = dict(parts.get("be") or {})
+    if len(be.get("section", {}).get("outer", [])) < 3:
+        be["section"] = base["be"]["section"]
+    be.setdefault("H", 1.5)
+    than = dict(parts.get("than") or {})
+    if len(than.get("section", {}).get("outer", [])) < 3:
+        than["section"] = base["than"]["section"]
+    than.setdefault("B", 8.0)
+    than.setdefault("flex", True)
+    out["parts"] = {"be": be, "than": than}
+    out["loai"] = "mo"
+    return out
+
+
+def _abut_body_height_m(than: dict, H_tru: float = None, H_be: float = 1.5) -> float:
+    sec = than.get("section") or _abut_long_mm()
+    _, _, wmin, wmax = _bbox_ab(sec["outer"])
+    raw = (wmax - wmin) * MM
+    if H_tru is not None:
+        return max(0.5, float(H_tru) - H_be)
+    return raw
+
+
+def abutment_total_height(mo: dict, H_tru: float = None) -> float:
+    p = migrate_abutment(mo)
+    H_be = float(p["parts"]["be"].get("H", 1.5))
+    if H_tru is not None:
+        return round(float(H_tru), 3)
+    return round(H_be + _abut_body_height_m(p["parts"]["than"], None, H_be), 3)
+
+
+def build_abutment_mesh_traces(mo: dict, H_tru: float = None, x_face: float = 0.0,
+                               out_dir: float = 1.0, z_base: float = 0.0,
+                               labels: dict = None) -> list:
+    """list go.Mesh3d của 1 mố. x_face: lý trình mặt trước (đỡ gối);
+    out_dir: +1/−1 hướng RA sau lưng (xa nhịp); z_base: cao độ đáy bệ."""
+    L = labels or _MO_LABEL
+    p = migrate_abutment(mo)
+    be, than = p["parts"]["be"], p["parts"]["than"]
+    H_be = float(be.get("H", 1.5))
+    B = float(than.get("B", 8.0))
+    sec = than.get("section") or _abut_long_mm()
+    umin, umax, wmin, wmax = _bbox_ab(sec["outer"])
+    raw_h = (wmax - wmin) * MM
+    body_h = _abut_body_height_m(than, H_tru, H_be)
+    vsc = body_h / raw_h if raw_h > 1e-6 else 1.0
+    z_body0 = z_base + H_be
+
+    traces = []
+    # BỆ: mặt bằng đùn đứng, căn tâm dưới thân
+    u_ctr = (umin + umax) / 2.0
+    x_be = x_face + out_dir * u_ctr * MM
+    traces.append(_plan_mesh(be.get("section"), z_base, H_be, x_be, _COL["be"], L["be"]))
+
+    # THÂN+MŨ: mặt cắt dọc (u,w) → (x = x_face+out_dir*u, z = z_body0+(w-wmin)*vsc),
+    # đùn theo ngang cầu y trong [-B/2, B/2].
+    def _conv(pts):
+        return [(x_face + out_dir * u * MM, z_body0 + (w - wmin) * MM * vsc)
+                for (u, w) in pts]
+
+    outer = _conv(sec["outer"])
+    holes = [_conv(h) for h in sec.get("holes", [])]
+    mesh = _extrude(outer, holes, "xz", -B / 2.0, B)
+    traces.append(_mesh(mesh, _COL["than"], L["than"]))
+    return [t for t in traces if t is not None]
+
+
+def abutment_elevation_polys(mo: dict, H_tru: float = None, x_face: float = 0.0,
+                             out_dir: float = 1.0, z_base: float = 0.0,
+                             labels: dict = None) -> list:
+    """Bóng MẶT ĐỨNG DỌC cầu (x-z) của mố → list {name,color,xs,zs}.
+    Thân+mũ là ĐÚNG mặt cắt dọc (vì mặt phẳng trắc dọc trùng mặt cắt dọc mố)."""
+    L = labels or _MO_LABEL
+    p = migrate_abutment(mo)
+    be, than = p["parts"]["be"], p["parts"]["than"]
+    H_be = float(be.get("H", 1.5))
+    sec = than.get("section") or _abut_long_mm()
+    umin, umax, wmin, wmax = _bbox_ab(sec["outer"])
+    raw_h = (wmax - wmin) * MM
+    body_h = _abut_body_height_m(than, H_tru, H_be)
+    vsc = body_h / raw_h if raw_h > 1e-6 else 1.0
+    z_body0 = z_base + H_be
+
+    polys = []
+    # Bệ: chữ nhật rộng theo dọc cầu (v-extent mặt bằng), căn tâm dưới thân
+    u_ctr = (umin + umax) / 2.0
+    x_be = x_face + out_dir * u_ctr * MM
+    w_be = _plan_doc_width_m(be.get("section"))
+    polys.append({"name": L["be"], "color": _COL["be"],
+                  "xs": [x_be - w_be/2, x_be + w_be/2, x_be + w_be/2, x_be - w_be/2],
+                  "zs": [z_base, z_base, z_base + H_be, z_base + H_be]})
+    # Thân+mũ: đúng đa giác mặt cắt dọc
+    polys.append({"name": L["than"], "color": _COL["than"],
+                  "xs": [x_face + out_dir * u * MM for (u, w) in sec["outer"]],
+                  "zs": [z_body0 + (w - wmin) * MM * vsc for (u, w) in sec["outer"]]})
+    return polys
+
+
+def build_abutment_preview_fig(mo: dict, H_tru: float = None,
+                               labels: dict = None) -> go.Figure:
+    """Figure 3D xem trước 1 mố (panel thư viện)."""
+    fig = go.Figure(build_abutment_mesh_traces(mo, H_tru=H_tru, labels=labels))
+    fig.update_layout(
+        scene=dict(xaxis_title="Dọc cầu (m)", yaxis_title="Ngang cầu (m)",
+                   zaxis_title="Cao độ (m)", aspectmode="data"),
+        template="plotly_dark", height=520,
+        margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor="#0e1117",
+        scene_camera=dict(eye=dict(x=1.7, y=-1.5, z=0.9)),
+    )
+    return fig
