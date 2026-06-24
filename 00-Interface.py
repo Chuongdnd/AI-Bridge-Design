@@ -3,6 +3,7 @@ import pandas as pd
 import numpy as np
 import os
 import io
+import zipfile
 import importlib
 import time
 import json
@@ -2493,6 +2494,65 @@ elif _od == "geodata":
 #  Hộp khai báo địa hình nằm trong tab BẢN VẼ KỸ THUẬT.)
 
 # --- THANH SIDEBAR TRÍI ---
+def _data_file_registry() -> dict:
+    """Mọi file dữ liệu NGƯỜI DÙNG cần lưu bền (arcname → đường dẫn)."""
+    _root = pathlib.Path(__file__).parent
+    return {
+        "auth_users.json":              _root / "auth_users.json",
+        "design_data_saved.json":       _DESIGN_SAVE_FILE,
+        "spt_sections_saved.json":      _root / "spt_sections_saved.json",
+        "Data/Library/beams.json":      pathlib.Path(CLIB.BEAMS_PATH),
+        "Data/Library/components.json": pathlib.Path(CLIB.LIBRARY_PATH),
+        "terrain_saved/terrain.ntd":        _root / "terrain_saved" / "terrain.ntd",
+        "terrain_saved/terrain_coord.xlsx": _root / "terrain_saved" / "terrain_coord.xlsx",
+    }
+
+
+def _render_data_backup() -> None:
+    """Sao lưu/khôi phục TOÀN BỘ dữ liệu người dùng dưới dạng 1 file .zip."""
+    reg = _data_file_registry()
+    with st.expander("💾 Sao lưu / Khôi phục dữ liệu", expanded=False):
+        st.caption(
+            "Sao lưu TOÀN BỘ dữ liệu người dùng (tài khoản, thư viện dầm & cấu "
+            "kiện, thông số dự án, mặt cắt mặc định, địa hình). Tải về để commit/"
+            "giữ; nạp lại để khôi phục sau khi server reset.")
+        _buf = io.BytesIO()
+        _present = []
+        with zipfile.ZipFile(_buf, "w", zipfile.ZIP_DEFLATED) as _zf:
+            for _arc, _p in reg.items():
+                try:
+                    if _p and pathlib.Path(_p).exists():
+                        _zf.write(str(_p), arcname=_arc)
+                        _present.append(_arc)
+                except Exception:
+                    pass
+        st.download_button(
+            f"⬇️ Tải về sao lưu ({len(_present)} mục)", data=_buf.getvalue(),
+            file_name="aibridge_backup.zip", mime="application/zip",
+            use_container_width=True, key="data_backup_dl",
+            disabled=(not _present))
+        _upz = st.file_uploader("⬆️ Khôi phục từ .zip", type=["zip"],
+                                key="data_restore_zip")
+        if _upz is not None and st.button(
+                "✅ Khôi phục dữ liệu", key="data_restore_apply",
+                type="primary", use_container_width=True):
+            try:
+                _n = 0
+                with zipfile.ZipFile(io.BytesIO(_upz.read())) as _zf:
+                    _names = set(_zf.namelist())
+                    for _arc, _p in reg.items():       # chỉ nhận file hợp lệ
+                        if _arc in _names:
+                            _bytes = _zf.read(_arc)
+                            pathlib.Path(_p).parent.mkdir(parents=True, exist_ok=True)
+                            pathlib.Path(_p).write_bytes(_bytes)
+                            _n += 1
+                st.session_state.pop("dam_beams", None)   # nạp lại từ file
+                st.success(f"Đã khôi phục {_n} mục. Tải lại trang để áp dụng.")
+                st.rerun()
+            except Exception as _e:
+                st.error(f"File sao lưu không hợp lệ: {_e}")
+
+
 with st.sidebar:
 
     # ── VÙNG A: Thông tin dự án ──────────────────────────────────────────
@@ -4630,6 +4690,10 @@ with _col_main:
 
 _render_statusbar(st.session_state.design_data)
 
+
+# ── Sao lưu / khôi phục toàn bộ dữ liệu người dùng (luôn hiện ở sidebar) ─────
+with st.sidebar:
+    _render_data_backup()
 
 # ── Debug Design System panel (bề checkbox trước khi deploy) ─────────────────
 if st.sidebar.checkbox("🔧 Debug DS", value=False, key="ds_debug_toggle"):

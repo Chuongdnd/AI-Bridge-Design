@@ -1,0 +1,142 @@
+{
+  "version": 1,
+  "dam": [
+    {
+      "ten": "Super-T 38m",
+      "loai_dam": "Super-T",
+      "chieu_dai": 38.2,
+      "chieu_cao": 1.75,
+      "khoang_cach_dam": 2.2,
+      "so_luong_dam": 5.0,
+      "be_rong_canh": 1.2,
+      "ghi_chu": "Nhịp giản đơn phổ biến",
+      "id": "super-t-38m",
+      "nguon": "mặc định"
+    },
+    {
+      "ten": "Super-T 24m",
+      "loai_dam": "Super-T",
+      "chieu_dai": 24.7,
+      "chieu_cao": 1.2,
+      "khoang_cach_dam": 2.0,
+      "so_luong_dam": 6.0,
+      "be_rong_canh": 1.0,
+      "ghi_chu": "",
+      "id": "super-t-24m",
+      "nguon": "mặc định"
+    },
+    {
+      "ten": "Dầm I 33m",
+      "loai_dam": "Dầm I",
+      "chieu_dai": 33.0,
+      "chieu_cao": 1.65,
+      "khoang_cach_dam": 2.4,
+      "so_luong_dam": 5.0,
+      "be_rong_canh": 0.65,
+      "ghi_chu": "",
+      "id": "dam-i-33m",
+      "nguon": "mặc định"
+    },
+    {
+      "ten": "Bản rỗng 18m",
+      "loai_dam": "Bản rỗng",
+      "chieu_dai": 18.0,
+      "chieu_cao": 0.9,
+      "khoang_cach_dam": 0.0,
+      "so_luong_dam": 1.0,
+      "be_rong_canh": 0.0,
+      "ghi_chu": "Bản rỗng đổ tại chỗ",
+      "id": "ban-rong-18m",
+      "nguon": "mặc định"
+    }
+  ],
+  "tru": [
+    {
+      "ten": "Trụ thân đặc",
+      "loai_tru": "Trụ thân đặc",
+      "B_tru": 1.6,
+      "D_than": 1.2,
+      "H_than": 8.0,
+      "be_rong_xa_mu": 2.0,
+      "ghi_chu": "H ≤ 10m",
+      "id": "tru-than-dac",
+      "nguon": "mặc định"
+    },
+    {
+      "ten": "Trụ 2 cột",
+      "loai_tru": "Trụ thân cột",
+      "B_tru": 1.2,
+      "D_than": 1.0,
+      "H_than": 9.0,
+      "be_rong_xa_mu": 1.8,
+      "ghi_chu": "Trụ thân cột tròn/đa giác",
+      "id": "tru-2-cot",
+      "nguon": "mặc định"
+    },
+    {
+      "ten": "Trụ thân hẹp",
+      "loai_tru": "Trụ thân hẹp",
+      "B_tru": 1.0,
+      "D_than": 0.8,
+      "H_than": 7.0,
+      "be_rong_xa_mu": 1.6,
+      "ghi_chu": "",
+      "id": "tru-than-hep",
+      "nguon": "mặc định"
+    }
+  ],
+  "mo": [
+    {
+      "ten": "Mố chữ U",
+      "loai_mo": "Mố chữ U",
+      "chieu_cao": 6.0,
+      "be_rong": 10.0,
+      "be_day_tuong": 0.5,
+      "ghi_chu": "Mố trọng lực chữ U",
+      "id": "mo-chu-u",
+      "nguon": "mặc định"
+    },
+    {
+      "ten": "Mố vùi",
+      "loai_mo": "Mố vùi",
+      "chieu_cao": 4.0,
+      "be_rong": 9.0,
+      "be_day_tuong": 0.4,
+      "ghi_chu": "",
+      "id": "mo-vui",
+      "nguon": "mặc định"
+    }
+  ],
+  "mong": [
+    {
+      "ten": "Cọc khoan nhồi D1.0",
+      "loai_mong": "Cọc khoan nhồi",
+      "duong_kinh_coc": 1.0,
+      "so_coc": 6.0,
+      "chieu_dai_coc": 30.0,
+      "ghi_chu": "Đất yếu, tải lớn",
+      "id": "coc-khoan-nhoi-d1-0",
+      "nguon": "mặc định"
+    },
+    {
+      "ten": "Cọc ép D0.4",
+      "loai_mong": "Cọc ép",
+      "duong_kinh_coc": 0.4,
+      "so_coc": 12.0,
+      "chieu_dai_coc": 20.0,
+      "ghi_chu": "",
+      "id": "coc-ep-d0-4",
+      "nguon": "mặc định"
+    },
+    {
+      "ten": "Móng nông",
+      "loai_mong": "Móng nông",
+      "duong_kinh_coc": 0.0,
+      "so_coc": 0.0,
+      "chieu_dai_coc": 0.0,
+      "ghi_chu": "Nền đá / đất tốt",
+      "id": "mong-nong",
+      "nguon": "mặc định"
+    }
+  ]
+}
