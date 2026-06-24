@@ -2620,15 +2620,17 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None):
         _dim_h(fig, z_deck + 2.2, -cap_W, cap_W, f"B_xà mũ = {cap_W*2:.1f} m",
                color="#8e44ad", dy=0)
 
+    # Khung nhìn: bám theo kết cấu (không để địa hình rộng kéo dãn khung)
+    _Xv = max(bc / 2, B_tk / 2, be_W, cap_W) + 4.0
     fig.update_layout(
         title=dict(
             text=f"MẶT CẮT NGANG — {title_vt} | Lý trình ≈ {x_cut:.1f} m",
             x=0.5, font=dict(size=12)
         ),
-        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1"),
-        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1",
-                   scaleanchor="x", scaleratio=1),
-        height=540, template="plotly_white",
+        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
+                   range=[-_Xv, _Xv], constrain="domain"),
+        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1"),
+        height=560, template="plotly_white",
         legend=dict(orientation="h", y=-0.20, font=dict(size=9)),
         margin=dict(l=65, r=40, t=60, b=100),
     )
@@ -2790,11 +2792,15 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
     _dim_v(fig, -bhn - 0.5, -bhd, bhd, f"L_bệ={2*bhd:.2f}m", dx=-0.2)
 
     _src = "sơ đồ DXF" if declared else "tự động (chưa khai DXF)"
+    _R = max(bhn, bhd, *( [abs(p["x"]) for p in piles] or [0] ),
+             *( [abs(p["y"]) for p in piles] or [0] )) + 1.5
     fig.update_layout(
         title=dict(text=f"MẶT BẰNG CỌC — {g['title_vt']} | {len(piles)} cọc · {_src}",
                    x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1"),
+        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
+                   range=[-_R, _R], constrain="domain"),
         yaxis=dict(title="Dọc cầu (m)", scaleanchor="x", scaleratio=1,
+                   range=[-_R, _R], constrain="domain",
                    showgrid=True, gridcolor="#ecf0f1"),
         height=460, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
@@ -2850,10 +2856,15 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai'):
     _dim_h(fig, bhd + 0.5, -bhn, bhn, f"B_bệ={2*bhn:.2f}m", dy=0)
     _dim_v(fig, -bhn - 0.5, -bhd, bhd, f"L_bệ={2*bhd:.2f}m", dx=-0.2)
 
+    _struct_x = max(bhn, g["cap_W"], (bc / 2 + 0.5) if g["is_mo"] else 0)
+    _struct_y = max(bhd, g.get("cap_half_doc", 0))
+    _R = max(_struct_x, _struct_y) + 1.5
     fig.update_layout(
         title=dict(text=f"MẶT BẰNG KẾT CẤU — {g['title_vt']}", x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1"),
+        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
+                   range=[-_R, _R], constrain="domain"),
         yaxis=dict(title="Dọc cầu (m)", scaleanchor="x", scaleratio=1,
+                   range=[-_R, _R], constrain="domain",
                    showgrid=True, gridcolor="#ecf0f1"),
         height=460, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
@@ -2922,10 +2933,10 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai'):
     fig.update_layout(
         title=dict(text=f"MẶT CẮT DỌC — {g['title_vt']} | Lý trình ≈ {g['x_cut']:.1f} m",
                    x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Dọc cầu (m)", showgrid=True, gridcolor="#ecf0f1"),
-        yaxis=dict(title="Cao độ (m)", scaleanchor="x", scaleratio=1,
-                   showgrid=True, gridcolor="#ecf0f1"),
-        height=540, template="plotly_white",
+        xaxis=dict(title="Dọc cầu (m)", showgrid=True, gridcolor="#ecf0f1",
+                   range=[-x_span, x_span], constrain="domain"),
+        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1"),
+        height=560, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=65, r=40, t=60, b=80),
     )
