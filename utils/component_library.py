@@ -359,3 +359,62 @@ def delete_beam(beams: list, beam_id: str) -> list:
 
 def get_beam(beams: list, beam_id: str):
     return next((b for b in (beams or []) if b.get("id") == beam_id), None)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# KHO TRỤ LẮP GHÉP (PIERS) — mỗi trụ là 1 ASSEMBLY nhiều bộ phận
+# (bệ / thân / xà mũ…), mỗi bộ phận có mặt cắt + trục đùn riêng.
+#   { id, ten, loai:"tru", H_ref, components:[ {ten, role, kind, ...} ],
+#     created_by, updated_at }
+# Lưu riêng (piers.json) vì cấu trúc khác bảng tham số components.json.
+# ══════════════════════════════════════════════════════════════════════════
+PIERS_PATH = os.path.join(LIBRARY_DIR, "piers.json")
+
+
+def load_piers() -> list:
+    """Đọc danh sách trụ lắp ghép. Thiếu file → []."""
+    if os.path.exists(PIERS_PATH):
+        try:
+            with open(PIERS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            piers = data.get("piers", []) if isinstance(data, dict) else data
+            return [p for p in piers if isinstance(p, dict)]
+        except (OSError, json.JSONDecodeError):
+            pass
+    return []
+
+
+def save_piers(piers: list) -> None:
+    """Ghi danh sách trụ ra JSON + tự đồng bộ GitHub (nếu bật)."""
+    _ensure_dir()
+    _txt = json.dumps({"version": VERSION, "piers": list(piers or [])},
+                      ensure_ascii=False, indent=2)
+    with open(PIERS_PATH, "w", encoding="utf-8") as f:
+        f.write(_txt)
+    _autocommit("Data/Library/piers.json", _txt.encode("utf-8"),
+                "thư viện trụ lắp ghép")
+
+
+def make_pier_id(ten: str, existing: list = None) -> str:
+    base = slugify(ten) or "tru"
+    existing_ids = {p.get("id") for p in (existing or [])}
+    if base not in existing_ids:
+        return base
+    i = 2
+    while f"{base}-{i}" in existing_ids:
+        i += 1
+    return f"{base}-{i}"
+
+
+def upsert_pier(piers: list, pier: dict) -> list:
+    out = [p for p in (piers or []) if p.get("id") != pier.get("id")]
+    out.append(pier)
+    return out
+
+
+def delete_pier(piers: list, pier_id: str) -> list:
+    return [p for p in (piers or []) if p.get("id") != pier_id]
+
+
+def get_pier(piers: list, pier_id: str):
+    return next((p for p in (piers or []) if p.get("id") == pier_id), None)
