@@ -250,6 +250,12 @@ try:
     CLIB = _iutil.module_from_spec(_cl_spec)
     _cl_spec.loader.exec_module(CLIB)
 
+    # ── Sơ đồ cọc: đọc DXF mặt bằng + schema bố trí cọc ─────────────────────
+    _pp_spec = _iutil.spec_from_file_location(
+        "pile_plan", os.path.join(_bb_dir, "utils", "pile_plan.py"))
+    PP = _iutil.module_from_spec(_pp_spec)
+    _pp_spec.loader.exec_module(PP)
+
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
     st.stop()
@@ -262,7 +268,7 @@ _DESIGN_SAVE_KEYS = [
     'vtk','bc','loai_duong','t_ban_mm','i_max_hinh_hoc','R_hinh_hoc',
     'is_urban','geo_logic','ai_result','kcn_result','tru_result',
     'mong_result','lop_phu_result', 'cao_day_dam', 'H_tru_est',
-    'lib_dam_applied',
+    'lib_dam_applied', 'pile_layouts',
 ]
 
 def _save_design_inputs(d: dict) -> None:
@@ -281,6 +287,121 @@ def _load_design_inputs() -> dict | None:
         return json.loads(_DESIGN_SAVE_FILE.read_text(encoding='utf-8'))
     except Exception:
         return None
+
+
+# ── Sơ đồ cọc: UI khai báo theo từng vị trí (upload DXF mặt bằng + cọc xiên) ──
+_COC_COLS = ["x (ngang, m)", "y (dọc, m)", "D (m)", "L (m)", "Xiên dọc", "Xiên ngang"]
+
+
+def _coc_piles_to_df(piles):
+    rows = [{
+        _COC_COLS[0]: round(float(p["x"]), 3),  _COC_COLS[1]: round(float(p["y"]), 3),
+        _COC_COLS[2]: round(float(p["D"]), 3),  _COC_COLS[3]: round(float(p["L"]), 2),
+        _COC_COLS[4]: round(float(p.get("ix", 0.0)), 4),
+        _COC_COLS[5]: round(float(p.get("iy", 0.0)), 4),
+    } for p in piles]
+    return pd.DataFrame(rows, columns=_COC_COLS)
+
+
+def _coc_df_to_piles(df):
+    out = []
+    for _, r in df.iterrows():
+        if pd.isna(r[_COC_COLS[0]]) or pd.isna(r[_COC_COLS[1]]):
+            continue  # bỏ hàng trống (data_editor thêm hàng NaN)
+        try:
+            x = float(r[_COC_COLS[0]]); y = float(r[_COC_COLS[1]])
+        except (TypeError, ValueError):
+            continue  # bỏ hàng lỗi
+        out.append(PP.make_pile(
+            x=x, y=y, D=r[_COC_COLS[2]], L=r[_COC_COLS[3]],
+            ix=r[_COC_COLS[4]], iy=r[_COC_COLS[5]]))
+    return out
+
+
+def _render_so_do_coc_ui(d, pos_key, pos_label):
+    """Khai báo Sơ đồ cọc cho 1 vị trí: upload DXF mặt bằng (CIRCLE) → bảng cọc
+    (chỉnh L & độ xiên) → lưu vào d['pile_layouts'][pos_key]."""
+    with st.expander(f"🔵 Sơ đồ cọc — {pos_label} (upload DXF mặt bằng)", expanded=False):
+        _lay  = PP.get_layout(d, pos_key)
+        _ncur = len(_lay["piles"]) if _lay else 0
+        st.caption(
+            "Upload **DXF mặt bằng bệ cọc**: mỗi cọc là một **đường tròn (CIRCLE)** "
+            "(tâm = vị trí cọc, bán kính = đường kính). Hệ tự **căn tâm** về trọng tâm nhóm cọc. "
+            "Cột **Xiên dọc / Xiên ngang** = độ nghiêng (m ngang trên 1 m sâu; "
+            "**0 = thẳng đứng**, 0.1 ≈ độ xiên 1:10)."
+        )
+        if _ncur:
+            st.success(f"Đang dùng sơ đồ cọc đã khai: **{_ncur} cọc** cho {pos_label}.")
+        else:
+            st.info("Chưa khai sơ đồ cọc — bản vẽ đang rải cọc tự động (mặc định).")
+
+        _sk = f"coc_tbl_{pos_key}"
+        _c1, _c2 = st.columns([3, 2])
+        with _c1:
+            _up = st.file_uploader(
+                f"DXF mặt bằng cọc — {pos_label}", type=["dxf"],
+                key=f"coc_dxf_{pos_key}")
+        with _c2:
+            _swap = st.checkbox("Xoay 90° (dọc cầu nằm trục X)", key=f"coc_swap_{pos_key}")
+            _Ldef = st.number_input("L mặc định (m)", 5.0, 120.0, 30.0, 1.0,
+                                    key=f"coc_Ldef_{pos_key}")
+
+        if _up is not None and st.button("📥 Đọc cọc từ DXF", key=f"coc_read_{pos_key}"):
+            try:
+                _res = PP.parse_pile_plan_bytes(
+                    _up.getvalue(), swap_xy=_swap, default_L=float(_Ldef))
+                for _w in _res["warnings"]:
+                    st.warning(_w)
+                if _res["n"]:
+                    st.session_state[_sk] = _coc_piles_to_df(_res["piles"])
+                    st.success(f"Đọc được **{_res['n']} cọc**. "
+                               "Chỉnh L & độ xiên ở bảng dưới rồi bấm Lưu.")
+                else:
+                    st.error("Không tìm thấy đối tượng CIRCLE nào trong DXF.")
+            except Exception as _e:
+                st.error(f"Lỗi đọc DXF: {_e}")
+
+        # Khởi tạo bảng: session (đang sửa) → layout đã lưu → rỗng
+        if _sk in st.session_state:
+            _df0 = st.session_state[_sk]
+        elif _lay:
+            _df0 = _coc_piles_to_df(_lay["piles"])
+        else:
+            _df0 = pd.DataFrame(columns=_COC_COLS)
+
+        _edited = st.data_editor(
+            _df0, num_rows="dynamic", use_container_width=True,
+            key=f"coc_editor_{pos_key}",
+            column_config={
+                _COC_COLS[2]: st.column_config.NumberColumn(format="%.3f", min_value=0.1),
+                _COC_COLS[3]: st.column_config.NumberColumn(format="%.2f", min_value=0.0),
+                _COC_COLS[4]: st.column_config.NumberColumn(
+                    help="Độ xiên theo phương DỌC cầu (m/m). 0 = thẳng đứng."),
+                _COC_COLS[5]: st.column_config.NumberColumn(
+                    help="Độ xiên theo phương NGANG cầu (m/m). 0 = thẳng đứng."),
+            },
+        )
+
+        _b1, _b2, _b3 = st.columns(3)
+        if _b1.button("💾 Lưu vào vị trí này", type="primary", key=f"coc_save_{pos_key}"):
+            _piles = _coc_df_to_piles(_edited)
+            if _piles:
+                PP.set_layout(d, pos_key, _piles)
+                _save_design_inputs(d)
+                st.session_state[_sk] = _coc_piles_to_df(_piles)
+                st.success(f"Đã lưu **{len(_piles)} cọc** cho {pos_label}.")
+                st.rerun()
+            else:
+                st.error("Bảng cọc rỗng — chưa có gì để lưu.")
+        if _b2.button("🧹 Bỏ chỉnh sửa", key=f"coc_reset_{pos_key}"):
+            st.session_state.pop(_sk, None)
+            st.rerun()
+        if _b3.button("🗑 Xóa khai báo", key=f"coc_del_{pos_key}"):
+            if isinstance(d.get("pile_layouts"), dict):
+                if d["pile_layouts"].pop(pos_key, None) is not None:
+                    _save_design_inputs(d)
+            st.session_state.pop(_sk, None)
+            st.rerun()
 
 if 'design_data' not in st.session_state:
     _saved_design = _load_design_inputs()
@@ -4837,6 +4958,11 @@ with _col_main:
                     st.metric("Lý trình vị trí cắt", f"{_x_cut_show:.2f} m")
                     st.metric("Cao độ đáy dầm", f"{d.get('cao_day_dam', 0):.3f} m")
                     st.metric("H trụ ước tính", f"{d.get('H_tru_est', 0):.2f} m")
+
+                # ── 🔵 Sơ đồ cọc tại vị trí — upload DXF mặt bằng + cọc xiên ──
+                _vt_label_cur = _vi_tri_labels[_vt_idx]
+                _render_so_do_coc_ui(d, _selected_vt, _vt_label_cur)
+
                 try:
                     fig_mcn_vt = BVK.ve_mcn_vi_tri(d, vi_tri=_selected_vt, df_geology=_df_geo)
                     st.plotly_chart(fig_mcn_vt, use_container_width=True,
