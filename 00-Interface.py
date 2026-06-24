@@ -3284,10 +3284,18 @@ def _asm_cfg(kind: str) -> dict:
             "name_ph": "VD: Mố chữ U M1",
             "load": CLIB.load_mos, "save": CLIB.save_mos, "upsert": CLIB.upsert_mo,
             "delete": CLIB.delete_mo, "get": CLIB.get_mo, "mkid": CLIB.make_mo_id,
+            "default": PB.default_abutment, "migrate": PB.migrate_abutment,
+            "preview": PB.build_abutment_preview_fig, "total_h": PB.abutment_total_height,
             "parts": [
-                ("xa_mu", "Mũ mố", "Mặt cắt = MẶT ĐỨNG NGANG cầu (bệ kê gối) — đùn dọc cầu."),
-                ("than", "Tường thân", "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
-                ("be", "Bệ mố", "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
+                {"role": "than", "label": "Thân + mũ mố",
+                 "hint": "Mặt cắt = MẶT CẮT DỌC cầu (hình bên: tường thân + vai kê "
+                         "gối) — đùn NGANG cầu theo bề rộng.",
+                 "param": "B", "plabel": "Bề rộng ngang cầu B (m)",
+                 "pmin": 1.0, "pmax": 40.0, "pdef": 8.0, "flex": True},
+                {"role": "be", "label": "Bệ mố",
+                 "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao.",
+                 "param": "H", "plabel": "Chiều cao H (m)",
+                 "pmin": 0.3, "pmax": 10.0, "pdef": 1.5, "flex": False},
             ],
         }
     return {
@@ -3296,23 +3304,36 @@ def _asm_cfg(kind: str) -> dict:
         "name_ph": "VD: Trụ thân đặc T1",
         "load": CLIB.load_piers, "save": CLIB.save_piers, "upsert": CLIB.upsert_pier,
         "delete": CLIB.delete_pier, "get": CLIB.get_pier, "mkid": CLIB.make_pier_id,
+        "default": PB.default_pier, "migrate": PB.migrate_pier,
+        "preview": PB.build_pier_preview_fig, "total_h": PB.pier_total_height,
         "parts": [
-            ("xa_mu", "Xà mũ", "Mặt cắt = MẶT ĐỨNG NGANG cầu (gồm công xôn) — đùn dọc cầu."),
-            ("than", "Thân trụ", "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
-            ("be", "Bệ trụ", "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao."),
+            {"role": "xa_mu", "label": "Xà mũ",
+             "hint": "Mặt cắt = MẶT ĐỨNG NGANG cầu (gồm công xôn) — đùn dọc cầu.",
+             "param": "D", "plabel": "Chiều sâu dọc cầu D (m)",
+             "pmin": 0.3, "pmax": 10.0, "pdef": 1.8, "flex": False},
+            {"role": "than", "label": "Thân trụ",
+             "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao.",
+             "param": "H", "plabel": "Chiều cao H (m)",
+             "pmin": 0.3, "pmax": 60.0, "pdef": 5.0, "flex": True},
+            {"role": "be", "label": "Bệ trụ",
+             "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao.",
+             "param": "H", "plabel": "Chiều cao H (m)",
+             "pmin": 0.3, "pmax": 10.0, "pdef": 1.5, "flex": False},
         ],
     }
 
 
 def _asm_labels(cfg: dict) -> dict:
-    return {role: lbl for role, lbl, _ in cfg["parts"]}
+    return {pt["role"]: pt["label"] for pt in cfg["parts"]}
 
 
 def _clear_asm_widgets(kind: str) -> None:
     """Xóa giá trị widget cũ khi mở panel tạo/sửa (tránh dính dữ liệu trước)."""
-    _keys = [f"_lib_{kind}_name", f"pp_{kind}_than_flex", f"pp_{kind}_xa_mu_D"]
+    _keys = [f"_lib_{kind}_name", f"pp_{kind}_than_flex"]
     for role in ("be", "than", "xa_mu"):
-        _keys += [f"{kind}_dxf_{role}", f"_{kind}_sig_{role}", f"pp_{kind}_{role}_H"]
+        _keys += [f"{kind}_dxf_{role}", f"_{kind}_sig_{role}"]
+        for pp in ("H", "B", "D"):
+            _keys.append(f"pp_{kind}_{role}_{pp}")
     for _k in _keys:
         st.session_state.pop(_k, None)
 
@@ -3335,9 +3356,10 @@ def _asm_section_fig(section: dict):
     return fig
 
 
-def _render_asm_part_editor(kind, role, label, hint, part) -> dict:
+def _render_asm_part_editor(kind, spec, part) -> dict:
     """Khối UI 1 bộ phận: upload DXF + xem trước 2D + tham số đùn. Trả part mới."""
-    st.caption(hint)
+    role = spec["role"]; label = spec["label"]
+    st.caption(spec["hint"])
     part = dict(part or {})
     sec = dict(part.get("section") or {})
 
@@ -3369,20 +3391,15 @@ def _render_asm_part_editor(kind, role, label, hint, part) -> dict:
         else:
             st.info("Chưa có mặt cắt — upload DXF để bắt đầu.")
     with _pp:
-        if role == "xa_mu":
-            part["D"] = st.number_input("Chiều sâu dọc cầu D (m)", 0.3, 10.0,
-                                        float(part.get("D", 1.8)), 0.1,
-                                        key=f"pp_{kind}_xa_mu_D")
-            st.caption("Chiều cao lấy theo mặt cắt đã vẽ.")
-        else:
-            part["H"] = st.number_input(
-                "Chiều cao H (m)", 0.3, 60.0,
-                float(part.get("H", 5.0 if role == "than" else 1.5)),
-                0.1, key=f"pp_{kind}_{role}_H")
-            if role == "than":
-                part["flex"] = st.checkbox(
-                    "Co theo chiều cao (khi gắn cầu)",
-                    value=bool(part.get("flex", True)), key=f"pp_{kind}_than_flex")
+        _pm = spec["param"]
+        part[_pm] = st.number_input(
+            spec["plabel"], spec["pmin"], spec["pmax"],
+            float(part.get(_pm, spec["pdef"])), 0.1,
+            key=f"pp_{kind}_{role}_{_pm}")
+        if spec.get("flex"):
+            part["flex"] = st.checkbox(
+                "Co theo chiều cao (khi gắn cầu)",
+                value=bool(part.get("flex", True)), key=f"pp_{kind}_than_flex")
     return part
 
 
@@ -3390,7 +3407,7 @@ def _render_asm_edit_panel(cfg: dict) -> None:
     """Panel tạo/sửa 1 cấu kiện lắp ghép (trụ hoặc mố)."""
     kind = cfg["kind"]; lab = cfg["label"]; labels = _asm_labels(cfg)
     editing_id = st.session_state.get(f"_lib_{kind}_editing_id")
-    cur = PB.migrate_pier(st.session_state.get(f"_lib_{kind}_draft") or PB.default_pier())
+    cur = cfg["migrate"](st.session_state.get(f"_lib_{kind}_draft") or cfg["default"]())
     parts = dict(cur.get("parts", {}))
 
     st.markdown(
@@ -3405,20 +3422,20 @@ def _render_asm_edit_panel(cfg: dict) -> None:
 
     _cfg, _prev = st.columns([3, 2])
     with _cfg:
-        _ptabs = st.tabs([f"🧱 {lbl}" for _r, lbl, _h in cfg["parts"]])
-        for _tab, (role, label, hint) in zip(_ptabs, cfg["parts"]):
+        _ptabs = st.tabs([f"🧱 {pt['label']}" for pt in cfg["parts"]])
+        for _tab, spec in zip(_ptabs, cfg["parts"]):
             with _tab:
-                parts[role] = _render_asm_part_editor(
-                    kind, role, label, hint, parts.get(role, {}))
+                parts[spec["role"]] = _render_asm_part_editor(
+                    kind, spec, parts.get(spec["role"], {}))
 
     rec = {"id": editing_id or "", "ten": _nm, "loai": kind, "parts": parts}
-    rec["H_ref"] = PB.pier_total_height(rec)
+    rec["H_ref"] = cfg["total_h"](rec)
     st.session_state[f"_lib_{kind}_draft"] = rec
 
     with _prev:
         st.caption(f"Xem trước 3D — kéo xoay · cao ≈ {rec['H_ref']} m")
         try:
-            st.plotly_chart(PB.build_pier_preview_fig(rec, labels=labels),
+            st.plotly_chart(cfg["preview"](rec, labels=labels),
                             use_container_width=True, key=f"{kind}_prev3d")
         except Exception as _e:
             st.error(f"Lỗi xem trước 3D: {_e}")
@@ -3493,15 +3510,17 @@ def render_assembly_library(kind: str) -> None:
 
     items = st.session_state[ss]
     _h1, _h2 = st.columns([3, 1])
+    _part_txt = ("bệ + thân + xà mũ (công xôn)" if kind == "tru"
+                 else "bệ + thân + mũ kê gối (mố chữ U)")
     with _h1:
         st.markdown(f"##### {cfg['icon']} {lab} lắp ghép")
-        st.caption(f"{lab} = bệ + thân + mũ. Mỗi bộ phận upload mặt cắt riêng. "
+        st.caption(f"{lab} = {_part_txt}. Mỗi bộ phận upload mặt cắt riêng. "
                    f"Gắn vào cầu ở tab **Bố trí chung**.")
     with _h2:
         if st.button(f"➕ Tạo {lab.lower()} mới", type="primary",
                      use_container_width=True, key=f"lib_{kind}_new"):
             _clear_asm_widgets(kind)
-            st.session_state[f"_lib_{kind}_draft"] = PB.default_pier()
+            st.session_state[f"_lib_{kind}_draft"] = cfg["default"]()
             st.session_state.pop(f"_lib_{kind}_editing_id", None)
             st.session_state[f"_lib_{kind}_panel"] = "new"
             st.rerun()
@@ -3513,18 +3532,21 @@ def render_assembly_library(kind: str) -> None:
     for p in sorted(items, key=lambda x: str(x.get("ten", "")).strip().lower()):
         _info, _e3, _e4 = st.columns([8, 1, 1])
         with _info:
-            _pp = PB.migrate_pier(p).get("parts", {})
-            _Hbe = _pp.get("be", {}).get("H", "?")
-            _Hth = _pp.get("than", {}).get("H", "?")
-            _Dxm = _pp.get("xa_mu", {}).get("D", "?")
+            _pp = cfg["migrate"](p).get("parts", {})
+            if kind == "tru":
+                _sub = (f"bệ H={_pp.get('be',{}).get('H','?')}m · "
+                        f"thân H={_pp.get('than',{}).get('H','?')}m · "
+                        f"mũ sâu {_pp.get('xa_mu',{}).get('D','?')}m")
+            else:
+                _sub = (f"bệ H={_pp.get('be',{}).get('H','?')}m · "
+                        f"thân+mũ rộng B={_pp.get('than',{}).get('B','?')}m")
             st.markdown(
                 f"<div style='background:#141420;border:1px solid #2a2a3a;"
                 f"border-left:4px solid {cfg['color']};border-radius:8px;padding:8px 12px'>"
                 f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
                 f"{cfg['icon']} {p.get('ten','(không tên)')}</span>"
                 f"<span style='font-size:11px;color:#888;margin-left:10px'>"
-                f"bệ H={_Hbe}m · thân H={_Hth}m · mũ sâu {_Dxm}m · "
-                f"cao ≈ {PB.pier_total_height(p)}m · "
+                f"{_sub} · cao ≈ {cfg['total_h'](p)}m · "
                 f"{p.get('created_by','') or '—'}</span></div>",
                 unsafe_allow_html=True)
         if _e3.button("✏️", key=f"lib_{kind}_edit_{p['id']}",
