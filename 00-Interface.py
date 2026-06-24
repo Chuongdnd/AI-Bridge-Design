@@ -873,205 +873,88 @@ def _render_step_status_banner(errors: dict, warnings: dict,
 # ↔ RESIZABLE PANELS — inject CSS + JS drag handles
 # =========================================================================
 def _inject_resizable_panels() -> None:
-    """Tay nắm kéo chỉnh độ rộng sidebar trái & panel phải.
-    CSS + handle divs đặt trong document chính (st.markdown). JS chạy trong
-    components.html và thao tác window.parent.document — vì st.markdown LOẠI BỎ
-    thẻ <script>, nên trước đây con trỏ kéo hiện nhưng KHÔNG kéo được."""
+    """Kéo CẠNH PHẢI của sidebar trái để chỉnh độ rộng.
+    Chỉ thay đổi WIDTH của sidebar — KHÔNG đụng vùng nội dung chính (Streamlit
+    tự dồn theo flex). JS chạy trong components.html, thao tác
+    window.parent.document (st.markdown loại bỏ <script>)."""
     st.markdown(
         """
 <style>
-.panel-drag-handle {
-    position: fixed;
-    top: 44px;
-    bottom: 24px;
-    width: 5px;
-    cursor: col-resize;
-    z-index: 998;
-    background: transparent;
-    transition: background 0.15s;
-    user-select: none;
-    -webkit-user-select: none;
+#cau-sb-drag {
+    position: fixed; top: 0; bottom: 0; width: 7px; z-index: 99990;
+    cursor: col-resize; background: transparent; transition: background .15s;
 }
-.panel-drag-handle:hover,
-.panel-drag-handle.dragging {
-    background: #007acc;
-    opacity: 0.6;
+#cau-sb-drag:hover, #cau-sb-drag.dragging { background: rgba(0,122,204,0.55); }
+body.cau-resizing, body.cau-resizing * {
+    cursor: col-resize !important; user-select: none !important;
 }
-.panel-drag-handle::after {
-    content: '';
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 3px;
-    height: 40px;
-    border-left: 1px solid #444;
-    border-right: 1px solid #444;
-}
-.drag-tooltip {
-    position: fixed;
-    background: #007acc;
-    color: #fff;
-    font-size: 11px;
-    padding: 3px 8px;
-    border-radius: 4px;
-    pointer-events: none;
-    z-index: 9999;
-    display: none;
-    white-space: nowrap;
-}
-body.resizing * {
-    user-select: none !important;
-    -webkit-user-select: none !important;
-    cursor: col-resize !important;
-}
+@media (max-width: 768px) { #cau-sb-drag { display: none !important; } }
 </style>
-
-<div class="panel-drag-handle" id="drag-left"
-     title="Keo de thay doi kich thuoc panel trai"></div>
-<div class="panel-drag-handle" id="drag-right"
-     title="Keo de thay doi kich thuoc panel phai"></div>
-<div class="drag-tooltip" id="drag-tooltip"></div>
+<div id="cau-sb-drag" title="Kéo để chỉnh rộng sidebar · nháy đúp để đặt lại"></div>
 """,
         unsafe_allow_html=True,
     )
     st.components.v1.html(
         """
 <script>
-(function() {
-var D = window.parent.document, W = window.parent;
-var LEFT_MIN  = 180, LEFT_MAX  = 480;
-var RIGHT_MIN = 160, RIGHT_MAX = 360;
-var KEY_LEFT  = 'cau_ai_left_w', KEY_RIGHT = 'cau_ai_right_w';
+(function(){
+  var D = window.parent.document, W = window.parent;
+  var MINW = 180, MAXW = 560, KEY = 'cau_ai_left_w';
+  function sb(){ return D.querySelector('[data-testid="stSidebar"]'); }
+  function handle(){ return D.getElementById('cau-sb-drag'); }
+  var curW = parseInt(W.localStorage.getItem(KEY) || '') || 0;
 
-var leftW  = Math.min(Math.max(parseInt(W.localStorage.getItem(KEY_LEFT)  || '300'), LEFT_MIN),  LEFT_MAX);
-var rightW = Math.min(Math.max(parseInt(W.localStorage.getItem(KEY_RIGHT) || '220'), RIGHT_MIN), RIGHT_MAX);
+  function placeHandle(){
+    var s = sb(), h = handle();
+    if (s && h) { var r = s.getBoundingClientRect(); h.style.left = (r.right - 3) + 'px'; }
+  }
+  function applyW(w){
+    // Đổi biến CSS --sidebar-width: sidebar + topbar + thanh ribbon đều bám
+    // theo (xem global CSS). KHÔNG đụng margin-left của nội dung chính.
+    D.documentElement.style.setProperty('--sidebar-width', w + 'px');
+    placeHandle();
+  }
+  function refresh(){ if (curW >= MINW) applyW(curW); else placeHandle(); }
 
-function getSidebar()    { return D.querySelector('[data-testid="stSidebar"]'); }
-function getMainContent(){ return D.querySelector('section[data-testid="stMain"]'); }
-function getTopbar()     { return D.getElementById('custom-topbar'); }
-
-function applyWidths(lw, rw) {
-    var sb = getSidebar();
-    if (sb) {
-        sb.style.minWidth = lw + 'px';
-        sb.style.maxWidth = lw + 'px';
-        sb.style.width    = lw + 'px';
-    }
-    D.documentElement.style.setProperty('--sidebar-width', lw + 'px');
-    D.documentElement.style.setProperty('--right-panel-width', rw + 'px');
-    var tb = getTopbar();
-    if (tb) tb.style.left = lw + 'px';
-    var mc = getMainContent();
-    if (mc) { mc.style.marginLeft = lw + 'px'; mc.style.paddingLeft = '0'; }
-}
-
-function applyRightPanel(rw) {
-    var mainBlock = D.querySelector(
-        'section[data-testid="stMain"] .block-container');
-    if (!mainBlock) return;
-    var hBlocks = mainBlock.querySelectorAll('[data-testid="stHorizontalBlock"]');
-    for (var i = 0; i < hBlocks.length; i++) {
-        var cols = hBlocks[i].children;
-        if (cols.length === 2 && !hBlocks[i].closest('[data-testid="stHorizontalBlock"]')) {
-            cols[1].style.minWidth = rw + 'px';
-            cols[1].style.maxWidth = rw + 'px';
-            cols[1].style.flex     = '0 0 ' + rw + 'px';
-            cols[0].style.flex     = '1 1 0';
-            cols[0].style.minWidth = '0';
-            break;
-        }
-    }
-}
-
-function updateHandles(lw, rw) {
-    var hl = D.getElementById('drag-left');
-    var hr = D.getElementById('drag-right');
-    if (hl) hl.style.left  = (lw - 2) + 'px';
-    if (hr) { hr.style.right = (rw - 2) + 'px'; hr.style.left = 'auto'; }
-}
-
-function setupDrag(handleId, isLeft) {
-    var handle  = D.getElementById(handleId);
-    var tooltip = D.getElementById('drag-tooltip');
-    if (!handle) return;
-    var startX = 0, startW = 0, isDragging = false;
-
-    handle.addEventListener('mousedown', function(e) {
-        e.preventDefault();
-        isDragging = true;
-        startX = e.clientX;
-        startW = isLeft ? leftW : rightW;
-        handle.classList.add('dragging');
-        D.body.classList.add('resizing');
-        if (tooltip) tooltip.style.display = 'block';
+  function setup(){
+    var h = handle(), s = sb();
+    if (!h || !s) return false;
+    refresh();
+    if (h.__bound) return true;
+    h.__bound = true;
+    var dragging = false, startX = 0, startW = 0;
+    h.addEventListener('mousedown', function(e){
+      e.preventDefault(); dragging = true; startX = e.clientX;
+      startW = sb().getBoundingClientRect().width;
+      h.classList.add('dragging'); D.body.classList.add('cau-resizing');
     });
-
-    D.addEventListener('mousemove', function(e) {
-        if (!isDragging) return;
-        e.preventDefault();
-        var dx = e.clientX - startX;
-        var newW;
-        if (isLeft) {
-            newW  = Math.min(Math.max(startW + dx, LEFT_MIN), LEFT_MAX);
-            leftW = newW;
-        } else {
-            newW   = Math.min(Math.max(startW - dx, RIGHT_MIN), RIGHT_MAX);
-            rightW = newW;
-        }
-        applyWidths(leftW, rightW);
-        applyRightPanel(rightW);
-        updateHandles(leftW, rightW);
-        if (tooltip) {
-            tooltip.style.left = (e.clientX + 12) + 'px';
-            tooltip.style.top  = (e.clientY - 20) + 'px';
-            tooltip.textContent = (isLeft ? 'Left: ' : 'Right: ') + newW + 'px';
-        }
+    D.addEventListener('mousemove', function(e){
+      if (!dragging) return;
+      var w = Math.min(MAXW, Math.max(MINW, startW + (e.clientX - startX)));
+      curW = w; applyW(w);
     });
-
-    D.addEventListener('mouseup', function() {
-        if (!isDragging) return;
-        isDragging = false;
-        handle.classList.remove('dragging');
-        D.body.classList.remove('resizing');
-        if (tooltip) tooltip.style.display = 'none';
-        W.localStorage.setItem(KEY_LEFT,  leftW);
-        W.localStorage.setItem(KEY_RIGHT, rightW);
+    D.addEventListener('mouseup', function(){
+      if (!dragging) return;
+      dragging = false; h.classList.remove('dragging');
+      D.body.classList.remove('cau-resizing');
+      W.localStorage.setItem(KEY, curW);
     });
-
-    handle.addEventListener('dblclick', function() {
-        if (isLeft) { leftW  = 300; W.localStorage.setItem(KEY_LEFT,  leftW);  }
-        else        { rightW = 220; W.localStorage.setItem(KEY_RIGHT, rightW); }
-        applyWidths(leftW, rightW);
-        applyRightPanel(rightW);
-        updateHandles(leftW, rightW);
+    h.addEventListener('dblclick', function(){
+      curW = 0; W.localStorage.removeItem(KEY);
+      D.documentElement.style.removeProperty('--sidebar-width');  // về 300px mặc định
+      placeHandle();
     });
-}
+    return true;
+  }
 
-function init() {
-    applyWidths(leftW, rightW);
-    applyRightPanel(rightW);
-    updateHandles(leftW, rightW);
-    setupDrag('drag-left',  true);
-    setupDrag('drag-right', false);
-}
-
-var _tries = 0;
-function tryInit() {
-    if (getSidebar() && getMainContent()) {
-        init();
-        var _obs = new W.MutationObserver(function() {
-            applyWidths(leftW, rightW);
-            applyRightPanel(rightW);
-            updateHandles(leftW, rightW);
-        });
-        _obs.observe(D.body, {childList: true, subtree: true});
-    } else if (_tries < 30) {
-        _tries++;
-        setTimeout(tryInit, 200);
-    }
-}
-tryInit();
+  var tries = 0;
+  (function tryInit(){
+    if (setup()){
+      var mo = new W.MutationObserver(function(){ refresh(); });
+      mo.observe(D.body, {childList: true, subtree: true});
+      W.addEventListener('resize', placeHandle);
+    } else if (tries < 40){ tries++; setTimeout(tryInit, 200); }
+  })();
 })();
 </script>
 """,
