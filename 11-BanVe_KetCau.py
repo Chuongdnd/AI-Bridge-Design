@@ -13,6 +13,12 @@ Hàm xuất:
 import numpy as np
 import plotly.graph_objects as go
 
+# ── Sơ đồ cọc khai báo từ DXF (utils/pile_plan.py) ───────────────────────────
+try:
+    import utils.pile_plan as PP
+except Exception:  # pragma: no cover - giữ chạy được nếu thiếu module
+    PP = None
+
 # ── Engine trụ lắp ghép (nạp trễ, dùng chung) ────────────────────────────────
 _PB_ENGINE = None
 
@@ -110,6 +116,107 @@ def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=Tr
         lighting=dict(ambient=0.65, diffuse=0.85, specular=0.2),
         hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
     )
+
+
+# ===========================================================================
+# SƠ ĐỒ CỌC khai báo từ DXF (utils/pile_plan.py) — vẽ theo tọa độ thật + cọc xiên
+# ===========================================================================
+def _layout_piles(d, pos_key):
+    """Trả về list cọc đã khai cho 1 vị trí (mố/trụ) hoặc None nếu chưa khai."""
+    if PP is None or not isinstance(d, dict):
+        return None
+    try:
+        lay = PP.get_layout(d, pos_key)
+        return lay["piles"] if lay else None
+    except Exception:
+        return None
+
+
+def _pile_w(D_m):
+    """Bề rộng nét vẽ cọc 2D theo đường kính (m) — đồng bộ cách cũ."""
+    return max(2, int(float(D_m) * 12))
+
+
+def _draw_piles_elevation(fig, piles, x_center, z_top, color, legend_name=None):
+    """
+    Vẽ cọc lên TRẮC DỌC (trục ngang figure = DỌC cầu).
+      đỉnh cọc tại x_center + y(dọc); đáy lệch thêm ix*L (cọc xiên trong mp dọc).
+    """
+    if not piles:
+        return
+    tip_x, tip_z = [], []
+    for j, p in enumerate(piles):
+        L = float(p["L"])
+        xt = x_center + float(p["y"])
+        xb = xt + float(p.get("ix", 0.0)) * L
+        zb = z_top - L
+        fig.add_trace(go.Scatter(
+            x=[xt, xb], y=[z_top, zb], mode="lines",
+            line=dict(color=color, width=_pile_w(p["D"])),
+            name=(legend_name if (legend_name and j == 0) else ""),
+            showlegend=(bool(legend_name) and j == 0),
+            hoverinfo="skip"))
+        tip_x.append(xb); tip_z.append(zb)
+    fig.add_trace(go.Scatter(
+        x=tip_x, y=tip_z, mode="markers",
+        marker=dict(symbol="triangle-down", size=5, color=color),
+        showlegend=False, hoverinfo="skip"))
+
+
+def _draw_piles_section(fig, piles, x_center, z_top, color, legend_name=None):
+    """
+    Vẽ cọc lên MẶT CẮT NGANG (trục ngang figure = NGANG cầu).
+      đỉnh cọc tại x_center + x(ngang); đáy lệch thêm iy*L (cọc xiên trong mp ngang).
+    """
+    if not piles:
+        return
+    tip_x, tip_z = [], []
+    for j, p in enumerate(piles):
+        L = float(p["L"])
+        xt = x_center + float(p["x"])
+        xb = xt + float(p.get("iy", 0.0)) * L
+        zb = z_top - L
+        fig.add_trace(go.Scatter(
+            x=[xt, xb], y=[z_top, zb], mode="lines",
+            line=dict(color=color, width=_pile_w(p["D"])),
+            name=(legend_name if (legend_name and j == 0) else ""),
+            showlegend=(bool(legend_name) and j == 0),
+            hoverinfo="skip"))
+        tip_x.append(xb); tip_z.append(zb)
+    fig.add_trace(go.Scatter(
+        x=tip_x, y=tip_z, mode="markers",
+        marker=dict(symbol="triangle-down", size=5, color=color),
+        showlegend=False, hoverinfo="skip"))
+
+
+def _pile_traces_3d(piles, x_center, y_center, z_top, color, legend_name=None):
+    """
+    Trả về list Scatter3d các cọc trong mô hình 3D.
+    Trục: X = DỌC cầu (chainage), Y = NGANG cầu, Z = cao độ.
+      đỉnh = (x_center + y_dọc, y_center + x_ngang, z_top)
+      đáy  = đỉnh + (ix*L theo X, iy*L theo Y, -L theo Z)
+    """
+    out = []
+    for j, p in enumerate(piles or []):
+        L = float(p["L"])
+        x0 = x_center + float(p["y"])
+        y0 = y_center + float(p["x"])
+        x1 = x0 + float(p.get("ix", 0.0)) * L
+        y1 = y0 + float(p.get("iy", 0.0)) * L
+        out.append(go.Scatter3d(
+            x=[x0, x1], y=[y0, y1], z=[z_top, z_top - L],
+            mode="lines",
+            line=dict(color=color, width=max(3, int(float(p["D"]) * 6))),
+            name=(legend_name if (legend_name and j == 0) else ""),
+            showlegend=(bool(legend_name) and j == 0),
+            hoverinfo="skip"))
+    return out
+
+
+def _draw_piles_3d(fig, piles, x_center, y_center, z_top, color, legend_name=None):
+    """Thêm cọc 3D trực tiếp vào fig (bọc _pile_traces_3d)."""
+    for t in _pile_traces_3d(piles, x_center, y_center, z_top, color, legend_name):
+        fig.add_trace(t)
 
 
 # ===========================================================================
@@ -711,23 +818,32 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         )
 
         # ── Cọc tại mố ──────────────────────────────────────────────────────
-        n_mo = max(2, min(3, n_coc_row))
-        coc_xs_mo = np.linspace(xm + sign*W_mo*0.2, xm + sign*W_mo*0.8, n_mo)
-        for j, xc in enumerate(coc_xs_mo):
+        _mo_key = "mo_trai" if side == "Trái" else "mo_phai"
+        _piles_mo = _layout_piles(d, _mo_key)
+        if _piles_mo:
+            # Sơ đồ cọc khai báo từ DXF → vẽ theo tọa độ thật (đỉnh cọc = đáy bệ)
+            _draw_piles_elevation(
+                fig, _piles_mo, x_center=xm, z_top=z_mo_bot,
+                color="rgba(120,90,50,0.75)",
+                legend_name=(f"Cọc mố ({len(_piles_mo)} cọc)" if side == "Trái" else None))
+        else:
+            n_mo = max(2, min(3, n_coc_row))
+            coc_xs_mo = np.linspace(xm + sign*W_mo*0.2, xm + sign*W_mo*0.8, n_mo)
+            for j, xc in enumerate(coc_xs_mo):
+                fig.add_trace(go.Scatter(
+                    x=[xc, xc], y=[z_mo_bot, z_mo_bot - L_coc],
+                    mode="lines",
+                    line=dict(color="rgba(120,90,50,0.65)", width=max(2, int(D_coc_m * 12))),
+                    name=f"Cọc mố Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
+                         if (side == "Trái" and j == 0) else "",
+                    showlegend=(side == "Trái" and j == 0),
+                ))
             fig.add_trace(go.Scatter(
-                x=[xc, xc], y=[z_mo_bot, z_mo_bot - L_coc],
-                mode="lines",
-                line=dict(color="rgba(120,90,50,0.65)", width=max(2, int(D_coc_m * 12))),
-                name=f"Cọc mố Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
-                     if (side == "Trái" and j == 0) else "",
-                showlegend=(side == "Trái" and j == 0),
+                x=list(coc_xs_mo), y=[z_mo_bot - L_coc] * n_mo,
+                mode="markers",
+                marker=dict(symbol="triangle-down", size=5, color="rgba(120,90,50,0.8)"),
+                showlegend=False, hoverinfo="skip",
             ))
-        fig.add_trace(go.Scatter(
-            x=list(coc_xs_mo), y=[z_mo_bot - L_coc] * n_mo,
-            mode="markers",
-            marker=dict(symbol="triangle-down", size=5, color="rgba(120,90,50,0.8)"),
-            showlegend=False, hoverinfo="skip",
-        ))
 
     # ── Trụ giữa (đặt NGOÀI tĩnh không + 2m an toàn) ─────────────────────
     for i, xt in enumerate(piers):
@@ -747,19 +863,25 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                 showarrow=True, arrowhead=2, arrowcolor="#27ae60",
                 ax=25, ay=-15, font=dict(size=7, color="#27ae60"),
                 bgcolor="rgba(255,255,255,0.7)")
-            n_show = max(2, min(n_coc_row, 4))
-            coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
-            for j, xc in enumerate(coc_xs_tru):
+            _piles_tru = _layout_piles(d, f"tru_{i+1}")
+            if _piles_tru:
+                _draw_piles_elevation(
+                    fig, _piles_tru, x_center=xt, z_top=z_be_b, color=_C["be_dk"],
+                    legend_name=(f"Cọc trụ ({len(_piles_tru)} cọc)" if sl else None))
+            else:
+                n_show = max(2, min(n_coc_row, 4))
+                coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
+                for j, xc in enumerate(coc_xs_tru):
+                    fig.add_trace(go.Scatter(
+                        x=[xc, xc], y=[z_be_b, z_be_b - L_coc], mode="lines",
+                        line=dict(color=_C["be_dk"], width=max(2, int(D_coc_m * 12))),
+                        name=(f"Cọc trụ Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
+                              if (sl and j == 0) else ""),
+                        showlegend=(sl and j == 0)))
                 fig.add_trace(go.Scatter(
-                    x=[xc, xc], y=[z_be_b, z_be_b - L_coc], mode="lines",
-                    line=dict(color=_C["be_dk"], width=max(2, int(D_coc_m * 12))),
-                    name=(f"Cọc trụ Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
-                          if (sl and j == 0) else ""),
-                    showlegend=(sl and j == 0)))
-            fig.add_trace(go.Scatter(
-                x=list(coc_xs_tru), y=[z_be_b - L_coc] * n_show, mode="markers",
-                marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
-                showlegend=False, hoverinfo="skip"))
+                    x=list(coc_xs_tru), y=[z_be_b - L_coc] * n_show, mode="markers",
+                    marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
+                    showlegend=False, hoverinfo="skip"))
             continue
 
         # Phần NGẦM: bệ cọc + thân trụ dưới mặt đất → nét đứt mờ
@@ -804,23 +926,29 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         )
 
         # ── Cọc tại trụ (bên dưới bệ cọc) ──────────────────────────────────
-        n_show = max(2, min(n_coc_row, 4))
-        coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
-        for j, xc in enumerate(coc_xs_tru):
+        _piles_tru = _layout_piles(d, f"tru_{i+1}")
+        if _piles_tru:
+            _draw_piles_elevation(
+                fig, _piles_tru, x_center=xt, z_top=z_be_b, color=_C["be_dk"],
+                legend_name=(f"Cọc trụ ({len(_piles_tru)} cọc)" if sl else None))
+        else:
+            n_show = max(2, min(n_coc_row, 4))
+            coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
+            for j, xc in enumerate(coc_xs_tru):
+                fig.add_trace(go.Scatter(
+                    x=[xc, xc], y=[z_be_b, z_be_b - L_coc],
+                    mode="lines",
+                    line=dict(color=_C["be_dk"], width=max(2, int(D_coc_m * 12))),
+                    name=f"Cọc trụ Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
+                         if (sl and j == 0) else "",
+                    showlegend=(sl and j == 0),
+                ))
             fig.add_trace(go.Scatter(
-                x=[xc, xc], y=[z_be_b, z_be_b - L_coc],
-                mode="lines",
-                line=dict(color=_C["be_dk"], width=max(2, int(D_coc_m * 12))),
-                name=f"Cọc trụ Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
-                     if (sl and j == 0) else "",
-                showlegend=(sl and j == 0),
+                x=list(coc_xs_tru), y=[z_be_b - L_coc] * n_show,
+                mode="markers",
+                marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
+                showlegend=False, hoverinfo="skip",
             ))
-        fig.add_trace(go.Scatter(
-            x=list(coc_xs_tru), y=[z_be_b - L_coc] * n_show,
-            mode="markers",
-            marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
-            showlegend=False, hoverinfo="skip",
-        ))
 
     # ── Bản mặt cầu theo từng nhịp + nhãn chiều dài ──────────────────────
     # Biên dạng DẦM do người dùng dựng (tab Chi tiết dầm) chèn ở 00-Interface
@@ -1353,6 +1481,13 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
     #   x_face = lý trình mặt trước (đỡ gối); out_dir = hướng RA sau lưng.
     for _im, (x_face, out_dir, nm, xm) in enumerate(
             [(x0, -1.0, "Mố trái", x0-mo_W), (x_end, 1.0, "Mố phải", x_end)]):
+        # Cọc khai báo từ DXF (nếu có) — đặt tại tâm bệ mố
+        _piles_mo3d = _layout_piles(d, "mo_trai" if _im == 0 else "mo_phai")
+        if _piles_mo3d:
+            traces.extend(_pile_traces_3d(
+                _piles_mo3d, x_center=xm + mo_W/2, y_center=0.0,
+                z_top=z_be_b, color="#7d5a32",
+                legend_name=(f"Cọc mố ({len(_piles_mo3d)})" if _im == 0 else None)))
         if abutment_assembly:
             _PB = _get_PB()
             # Đỉnh mố (vai kê gối) = ĐÁY DẦM (z_cap_t = cao_dd).
@@ -1368,6 +1503,13 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
     # ── Trụ (đặt NGOÀI tĩnh không) ────────────────────────────────────────
     for i, xt in enumerate(piers):
         sl = (i == 0)
+        # Cọc khai báo từ DXF (nếu có) — đặt tại tâm bệ trụ
+        _piles_tru3d = _layout_piles(d, f"tru_{i+1}")
+        if _piles_tru3d:
+            traces.extend(_pile_traces_3d(
+                _piles_tru3d, x_center=xt, y_center=0.0,
+                z_top=z_be_b, color="#566573",
+                legend_name=(f"Cọc trụ ({len(_piles_tru3d)})" if sl else None)))
         if pier_assembly:
             _PB = _get_PB()
             for _pt in _PB.build_pier_mesh_traces(
@@ -2258,6 +2400,12 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None):
                   [z_min, z_min, h_tn, h_tn],
                   "rgba(192,160,107,0.35)", _C["be_dk"],
                   "Tường cánh" if sy == -1 else "", showlegend=(sy == -1))
+        # Cọc khai báo từ DXF (nếu có) — đỉnh cọc tại đáy thân mố
+        _piles_mo_vt = _layout_piles(d, vi_tri)
+        if _piles_mo_vt:
+            _draw_piles_section(
+                fig, _piles_mo_vt, x_center=0.0, z_top=h_tn,
+                color="#7d5a32", legend_name=f"Cọc ({len(_piles_mo_vt)} cọc)")
     else:
         # Bệ cọc
         cap_H  = 0.80; be_H = 1.50
@@ -2286,18 +2434,24 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None):
               [z_capb, z_capb, cao_dd, cao_dd],
               _C["btong"], _C["dam_dk"], "Xà mũ")
 
-        # Cọc
-        D_coc = float(mong.get("D_coc_mm", 600)) / 1000.0 if mong else 0.6
-        L_coc = float(mong.get("L_coc_tu", 35)) if mong else 35
-        n_coc = 3 if be_W >= 2.5 else 2
-        for i_coc, xc in enumerate(np.linspace(-be_W * 0.7, be_W * 0.7, n_coc)):
-            fig.add_trace(go.Scatter(
-                x=[xc, xc], y=[z_beb, z_beb - L_coc],
-                mode="lines",
-                line=dict(color=_C["be_dk"], width=max(3, int(D_coc * 6))),
-                name=f"Cọc Ø{int(D_coc*1000)}mm" if i_coc == 0 else "",
-                showlegend=(i_coc == 0)
-            ))
+        # Cọc — ưu tiên sơ đồ cọc khai báo từ DXF (mặt cắt ngang: chiếu trục ngang)
+        _piles_vt = _layout_piles(d, vi_tri)
+        if _piles_vt:
+            _draw_piles_section(
+                fig, _piles_vt, x_center=0.0, z_top=z_beb, color=_C["be_dk"],
+                legend_name=f"Cọc ({len(_piles_vt)} cọc)")
+        else:
+            D_coc = float(mong.get("D_coc_mm", 600)) / 1000.0 if mong else 0.6
+            L_coc = float(mong.get("L_coc_tu", 35)) if mong else 35
+            n_coc = 3 if be_W >= 2.5 else 2
+            for i_coc, xc in enumerate(np.linspace(-be_W * 0.7, be_W * 0.7, n_coc)):
+                fig.add_trace(go.Scatter(
+                    x=[xc, xc], y=[z_beb, z_beb - L_coc],
+                    mode="lines",
+                    line=dict(color=_C["be_dk"], width=max(3, int(D_coc * 6))),
+                    name=f"Cọc Ø{int(D_coc*1000)}mm" if i_coc == 0 else "",
+                    showlegend=(i_coc == 0)
+                ))
 
         # Dimensions trụ
         _dim_v(fig, cap_W + 0.6, z_shb, z_capb, f"H_trụ={H_tru:.1f}m", dx=0.2)
