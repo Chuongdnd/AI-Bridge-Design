@@ -2404,6 +2404,7 @@ def _decl_box_hinh_hoc():
 _TERRAIN_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                             "terrain_saved")
 _TERRAIN_NTD = os.path.join(_TERRAIN_DIR, "terrain.ntd")
+_DIA_CHAT_SAVED = os.path.join(_TERRAIN_DIR, "dia_chat.xlsx")  # địa chất mặc định
 
 
 def _terrain_coord_path():
@@ -2501,9 +2502,11 @@ def _decl_box_dia_hinh():
                         "Tải file mới ở trên để thay thế.")
 
 
-def _process_geology_excel(file):
+def _process_geology_excel(file, persist=True):
     """Đọc file Excel địa chất 3 sheet → lưu session (dùng chung 3 phương án).
-    Lưu cả dia_chat_data (cho trắc dọc) và dia_chat_frames (df thô cho 3D)."""
+    Lưu cả dia_chat_data (cho trắc dọc) và dia_chat_frames (df thô cho 3D).
+    persist=True → ghi file ra terrain_saved/dia_chat.xlsx làm MẶC ĐỊNH cho
+    lần sau (tự nạp lúc khởi động, không cần mở hộp khai báo)."""
     df_hk, df_layers, df_spt = TV.doc_excel_dia_chat_3_sheet(file)
     if df_hk is None or df_hk.empty:
         return None
@@ -2534,7 +2537,43 @@ def _process_geology_excel(file):
         "dac_trung_tong_hop": {},
     }
     st.session_state["dia_chat_frames"] = (df_hk, df_layers, df_spt)
+    if persist:
+        try:
+            os.makedirs(_TERRAIN_DIR, exist_ok=True)
+            _b = file.getvalue() if hasattr(file, "getvalue") else None
+            if _b:
+                with open(_DIA_CHAT_SAVED, "wb") as _fp:
+                    _fp.write(_b)
+        except Exception:
+            pass
     return df_hk, df_layers, df_spt
+
+
+def _autoload_geo_defaults() -> None:
+    """Tự nạp địa hình + địa chất MẶC ĐỊNH (đã lưu) vào phiên NGAY khi khởi động
+    — để tab 3D có dữ liệu mà KHÔNG cần mở hộp khai báo địa chất trước.
+    Chỉ chạy 1 lần/phiên (đã có trong session thì bỏ qua)."""
+    if "df_geology" not in st.session_state:
+        try:
+            _dg = _load_terrain_defaults()
+            if _dg is not None and not _dg.empty:
+                st.session_state.df_geology = _dg
+                _tl = (_dg[_dg["Offset"] == 0][["Lý trình", "Z"]]
+                       .drop_duplicates("Lý trình").sort_values("Lý trình"))
+                st.session_state.df_tim_line = _tl
+        except Exception:
+            pass
+    if "dia_chat_frames" not in st.session_state and os.path.exists(_DIA_CHAT_SAVED):
+        try:
+            with open(_DIA_CHAT_SAVED, "rb") as _fp:
+                _buf = io.BytesIO(_fp.read())
+            _buf.name = "dia_chat.xlsx"
+            _process_geology_excel(_buf, persist=False)
+        except Exception:
+            pass
+
+
+_autoload_geo_defaults()
 
 
 @st.dialog("🪨 Địa hình & Địa chất (dùng chung 3 phương án)", width="large")
@@ -2568,15 +2607,21 @@ def dialog_geo_data():
 
 
 # ── Dialog dispatcher ────────────────────────────────────────────────────────
+# TIÊU THỤ cờ NGAY trước khi mở: st.dialog là fragment (tự rerun nội bộ) nên chỉ
+# cần gọi 1 lần để mở; Streamlit tự giữ mở. Nếu KHÔNG xoá cờ, khi người dùng bấm
+# X đóng lại → full-rerun thấy cờ vẫn còn → mở lại liên tục (gây khó chịu, nhất
+# là trên điện thoại). Xoá cờ trước khi gọi để đóng là đóng hẳn.
 _od = st.session_state.get('open_dialog')
-if _od == "step1":
-    dialog_step1()
-elif _od == "step2":
-    dialog_step2()
-elif _od == "step3":
-    dialog_step3()
-elif _od == "geodata":
-    dialog_geo_data()
+if _od:
+    st.session_state.open_dialog = None
+    if _od == "step1":
+        dialog_step1()
+    elif _od == "step2":
+        dialog_step2()
+    elif _od == "step3":
+        dialog_step3()
+    elif _od == "geodata":
+        dialog_geo_data()
 
 # (3 hộp khai báo đã chuyển LÊN TRÊN ribbon — xem khối "3 HỘP KHAI BÁO ĐỘC LẬP".
 #  Hộp khai báo địa hình nằm trong tab BẢN VẼ KỸ THUẬT.)
@@ -4752,182 +4797,191 @@ with _col_main:
             with tab_btc:
                 st.markdown("##### Bố trí chung")
 
-                # ── 0a. Lan can / Giải phân cách (theo phương án) ────────────
-                with st.expander(f"🚧 Lan can / Giải phân cách — {selected_ribbon}",
-                                 expanded=False):
-                    _rails_lib = st.session_state.get("lib_railings")
-                    if _rails_lib is None:
-                        _rails_lib = CLIB.load_railings()
-                        st.session_state.lib_railings = _rails_lib
-                    if not _rails_lib:
-                        st.info("Chưa có MCN lan can/giải phân cách nào. Vào tab "
-                                "**📚 Thư viện → 🚧 Lan can/Giải phân cách** để upload "
-                                "mặt cắt ngang (DXF).")
-                    else:
-                        _sel_cur = _pa_railing(selected_ribbon)
-                        _rc1, _rc2 = st.columns(2)
-                        _new_sel = {}
-                        for _col, _t in ((_rc1, "lan_can"),
-                                         (_rc2, "giai_phan_cach")):
-                            _opts = [r for r in _rails_lib if r.get("loai") == _t]
-                            _ids  = ["— Không dùng —"] + [r["id"] for r in _opts]
-                            _names = {r["id"]: r.get("ten", r["id"]) for r in _opts}
-                            _cur = _sel_cur.get(_t)
-                            _idx = _ids.index(_cur) if _cur in _ids else 0
-                            with _col:
-                                _pick = st.selectbox(
-                                    CLIB.RAILING_LABEL[_t], _ids, index=_idx,
-                                    format_func=lambda k: ("— Không dùng —"
-                                                           if k.startswith("—")
-                                                           else _names.get(k, k)),
-                                    key=f"rail_sel_{_t}_{selected_ribbon}")
-                            if not _pick.startswith("—"):
-                                _new_sel[_t] = _pick
-                        if st.button("💾 Áp dụng lan can cho phương án",
-                                     key=f"rail_apply_{selected_ribbon}",
-                                     use_container_width=True):
-                            _save_pa_railing(selected_ribbon, _new_sel)
-                            st.success("Đã áp dụng. Mô hình 3D sẽ kéo MCN dọc toàn cầu.")
-                            st.rerun()
-                        st.caption("MCN đã chọn sẽ được **kéo chạy dọc toàn cầu** trong "
-                                   "mô hình 3D (lan can ở 2 mép cầu, giải phân cách ở tim).")
+                _pa3 = (selected_ribbon == "Phương án 3")
+                if _pa3:
+                    st.info(
+                        "🤖 **Phương án 3** — cấu kiện do **AI dự báo kết luận** "
+                        "(đang phát triển, làm sau). Tạm thời vẽ theo cấu kiện mặc "
+                        "định; chưa cho khai báo thủ công lan can / dầm / mố trụ.")
 
-                # ── 0. Dầm thư viện & bố trí nhịp (theo phương án) ────────────
-                with st.expander(f"🌉 Dầm & bố trí nhịp — {selected_ribbon}",
-                                 expanded=False):
-                    _beams_btc = st.session_state.get("dam_beams") or CLIB.load_beams()
-                    _sl_cur    = _pa_span_layout(selected_ribbon)
-                    _names_btc = [b.get("ten", "(không tên)") for b in _beams_btc]
-                    _Ls_btc    = [float(x) for x in BVK.STD_LENGTHS]
+                if not _pa3:
+                    # ── 0a. Lan can / Giải phân cách (theo phương án) ────────────
+                    with st.expander(f"🚧 Lan can / Giải phân cách — {selected_ribbon}",
+                                     expanded=False):
+                        _rails_lib = st.session_state.get("lib_railings")
+                        if _rails_lib is None:
+                            _rails_lib = CLIB.load_railings()
+                            st.session_state.lib_railings = _rails_lib
+                        if not _rails_lib:
+                            st.info("Chưa có MCN lan can/giải phân cách nào. Vào tab "
+                                    "**📚 Thư viện → 🚧 Lan can/Giải phân cách** để upload "
+                                    "mặt cắt ngang (DXF).")
+                        else:
+                            _sel_cur = _pa_railing(selected_ribbon)
+                            _rc1, _rc2 = st.columns(2)
+                            _new_sel = {}
+                            for _col, _t in ((_rc1, "lan_can"),
+                                             (_rc2, "giai_phan_cach")):
+                                _opts = [r for r in _rails_lib if r.get("loai") == _t]
+                                _ids  = ["— Không dùng —"] + [r["id"] for r in _opts]
+                                _names = {r["id"]: r.get("ten", r["id"]) for r in _opts}
+                                _cur = _sel_cur.get(_t)
+                                _idx = _ids.index(_cur) if _cur in _ids else 0
+                                with _col:
+                                    _pick = st.selectbox(
+                                        CLIB.RAILING_LABEL[_t], _ids, index=_idx,
+                                        format_func=lambda k: ("— Không dùng —"
+                                                               if k.startswith("—")
+                                                               else _names.get(k, k)),
+                                        key=f"rail_sel_{_t}_{selected_ribbon}")
+                                if not _pick.startswith("—"):
+                                    _new_sel[_t] = _pick
+                            if st.button("💾 Áp dụng lan can cho phương án",
+                                         key=f"rail_apply_{selected_ribbon}",
+                                         use_container_width=True):
+                                _save_pa_railing(selected_ribbon, _new_sel)
+                                st.success("Đã áp dụng. Mô hình 3D sẽ kéo MCN dọc toàn cầu.")
+                                st.rerun()
+                            st.caption("MCN đã chọn sẽ được **kéo chạy dọc toàn cầu** trong "
+                                       "mô hình 3D (lan can ở 2 mép cầu, giải phân cách ở tim).")
 
-                    def _beam_idx(_bid):
-                        for _k, _b in enumerate(_beams_btc):
-                            if _b.get("id") == _bid:
-                                return _k + 1
-                        return 0
+                    # ── 0. Dầm thư viện & bố trí nhịp (theo phương án) ────────────
+                    with st.expander(f"🌉 Dầm & bố trí nhịp — {selected_ribbon}",
+                                     expanded=False):
+                        _beams_btc = st.session_state.get("dam_beams") or CLIB.load_beams()
+                        _sl_cur    = _pa_span_layout(selected_ribbon)
+                        _names_btc = [b.get("ten", "(không tên)") for b in _beams_btc]
+                        _Ls_btc    = [float(x) for x in BVK.STD_LENGTHS]
 
-                    def _L_idx(_v, _dflt=33.0):
-                        if _v in _Ls_btc:
-                            return _Ls_btc.index(_v)
-                        return _Ls_btc.index(_dflt) if _dflt in _Ls_btc else 0
+                        def _beam_idx(_bid):
+                            for _k, _b in enumerate(_beams_btc):
+                                if _b.get("id") == _bid:
+                                    return _k + 1
+                            return 0
 
-                    if not _beams_btc:
-                        st.caption("Chưa có dầm trong **THƯ VIỆN**. Hãy tạo dầm trước "
-                                   "rồi quay lại đây để gán theo nhịp.")
-                    _opts_btc = ["— chọn dầm —"] + _names_btc
+                        def _L_idx(_v, _dflt=33.0):
+                            if _v in _Ls_btc:
+                                return _Ls_btc.index(_v)
+                            return _Ls_btc.index(_dflt) if _dflt in _Ls_btc else 0
 
-                    _mode_lbl = st.radio(
-                        "Kiểu bố trí nhịp:",
-                        ["Đều (1 loại dầm)", "2 tầng (nhịp chính + nhịp dẫn)"],
-                        index=(1 if _sl_cur.get("mode") == "two_tier" else 0),
-                        horizontal=True, key=f"btc_mode_{selected_ribbon}")
-                    _two = _mode_lbl.startswith("2 tầng")
+                        if not _beams_btc:
+                            st.caption("Chưa có dầm trong **THƯ VIỆN**. Hãy tạo dầm trước "
+                                       "rồi quay lại đây để gán theo nhịp.")
+                        _opts_btc = ["— chọn dầm —"] + _names_btc
 
-                    if not _two:
-                        _cu1, _cu2 = st.columns([2, 1])
-                        with _cu1:
-                            _seld = st.selectbox(
-                                "Dầm áp dụng (cả cầu):", _opts_btc,
-                                index=_beam_idx(_sl_cur.get("beam_dan")),
-                                key=f"btc_beamu_{selected_ribbon}")
-                        with _cu2:
-                            _Ldu = st.selectbox(
-                                "Chiều dài nhịp (m):", _Ls_btc,
-                                index=_L_idx(_sl_cur.get("L_dan")),
-                                key=f"btc_Lu_{selected_ribbon}")
-                        _ca, _cb = st.columns(2)
-                        if _ca.button("💾 Lưu bố trí đều", use_container_width=True,
-                                      key=f"btc_saveu_{selected_ribbon}"):
-                            _new = dict(_sl_cur)
-                            _new.update({"mode": "uniform", "L_dan": float(_Ldu),
-                                         "L_main": float(_Ldu)})
-                            _save_pa_span_layout(selected_ribbon, _new)
-                            st.rerun()
-                        if _cb.button("✅ Áp dụng dầm", use_container_width=True,
-                                      type="primary", disabled=(_seld == _opts_btc[0]),
-                                      key=f"btc_applyu_{selected_ribbon}"):
-                            _apply_beam_to_pa(
-                                d, selected_ribbon,
-                                _beams_btc[_opts_btc.index(_seld) - 1], "dan")
-                    else:
-                        st.markdown("**Nhịp dẫn** — đồng bộ mọi nhịp dẫn")
-                        _cd1, _cd2 = st.columns([2, 1])
-                        with _cd1:
-                            _seld = st.selectbox(
-                                "Dầm nhịp dẫn:", _opts_btc,
-                                index=_beam_idx(_sl_cur.get("beam_dan")),
-                                key=f"btc_beamd_{selected_ribbon}")
-                        with _cd2:
-                            _Ld = st.selectbox(
-                                "Chiều dài nhịp dẫn (m):", _Ls_btc,
-                                index=_L_idx(_sl_cur.get("L_dan")),
-                                key=f"btc_Ld_{selected_ribbon}")
-                        if st.button("✅ Áp dụng dầm nhịp dẫn", use_container_width=True,
-                                     disabled=(_seld == _opts_btc[0]),
-                                     key=f"btc_applyd_{selected_ribbon}"):
-                            _apply_beam_to_pa(
-                                d, selected_ribbon,
-                                _beams_btc[_opts_btc.index(_seld) - 1], "dan")
+                        _mode_lbl = st.radio(
+                            "Kiểu bố trí nhịp:",
+                            ["Đều (1 loại dầm)", "2 tầng (nhịp chính + nhịp dẫn)"],
+                            index=(1 if _sl_cur.get("mode") == "two_tier" else 0),
+                            horizontal=True, key=f"btc_mode_{selected_ribbon}")
+                        _two = _mode_lbl.startswith("2 tầng")
 
-                        st.markdown("**Nhịp chính** — căng giữa tĩnh không")
-                        _auto_m = st.checkbox(
-                            "Tự chọn chiều dài theo tĩnh không",
-                            value=(not _sl_cur.get("L_main")),
-                            key=f"btc_autom_{selected_ribbon}")
-                        _cm1, _cm2 = st.columns([2, 1])
-                        with _cm1:
-                            _selm = st.selectbox(
-                                "Dầm nhịp chính:", _opts_btc,
-                                index=_beam_idx(_sl_cur.get("beam_main")),
-                                key=f"btc_beamm_{selected_ribbon}")
-                        with _cm2:
-                            _Lm = st.selectbox(
-                                "Chiều dài nhịp chính (m):", _Ls_btc,
-                                index=_L_idx(_sl_cur.get("L_main"), 38.2),
-                                disabled=_auto_m, key=f"btc_Lm_{selected_ribbon}")
-                        _cs, _cap = st.columns(2)
-                        if _cs.button("💾 Lưu bố trí 2 tầng", use_container_width=True,
-                                      key=f"btc_save2_{selected_ribbon}"):
-                            _new = dict(_sl_cur)
-                            _new.update({"mode": "two_tier", "L_dan": float(_Ld),
-                                         "L_main": (None if _auto_m else float(_Lm))})
-                            _save_pa_span_layout(selected_ribbon, _new)
-                            st.rerun()
-                        if _cap.button("✅ Áp dụng dầm nhịp chính", use_container_width=True,
-                                       type="primary", disabled=(_selm == _opts_btc[0]),
-                                       key=f"btc_applym_{selected_ribbon}"):
-                            _apply_beam_to_pa(
-                                d, selected_ribbon,
-                                _beams_btc[_opts_btc.index(_selm) - 1], "main")
+                        if not _two:
+                            _cu1, _cu2 = st.columns([2, 1])
+                            with _cu1:
+                                _seld = st.selectbox(
+                                    "Dầm áp dụng (cả cầu):", _opts_btc,
+                                    index=_beam_idx(_sl_cur.get("beam_dan")),
+                                    key=f"btc_beamu_{selected_ribbon}")
+                            with _cu2:
+                                _Ldu = st.selectbox(
+                                    "Chiều dài nhịp (m):", _Ls_btc,
+                                    index=_L_idx(_sl_cur.get("L_dan")),
+                                    key=f"btc_Lu_{selected_ribbon}")
+                            _ca, _cb = st.columns(2)
+                            if _ca.button("💾 Lưu bố trí đều", use_container_width=True,
+                                          key=f"btc_saveu_{selected_ribbon}"):
+                                _new = dict(_sl_cur)
+                                _new.update({"mode": "uniform", "L_dan": float(_Ldu),
+                                             "L_main": float(_Ldu)})
+                                _save_pa_span_layout(selected_ribbon, _new)
+                                st.rerun()
+                            if _cb.button("✅ Áp dụng dầm", use_container_width=True,
+                                          type="primary", disabled=(_seld == _opts_btc[0]),
+                                          key=f"btc_applyu_{selected_ribbon}"):
+                                _apply_beam_to_pa(
+                                    d, selected_ribbon,
+                                    _beams_btc[_opts_btc.index(_seld) - 1], "dan")
+                        else:
+                            st.markdown("**Nhịp dẫn** — đồng bộ mọi nhịp dẫn")
+                            _cd1, _cd2 = st.columns([2, 1])
+                            with _cd1:
+                                _seld = st.selectbox(
+                                    "Dầm nhịp dẫn:", _opts_btc,
+                                    index=_beam_idx(_sl_cur.get("beam_dan")),
+                                    key=f"btc_beamd_{selected_ribbon}")
+                            with _cd2:
+                                _Ld = st.selectbox(
+                                    "Chiều dài nhịp dẫn (m):", _Ls_btc,
+                                    index=_L_idx(_sl_cur.get("L_dan")),
+                                    key=f"btc_Ld_{selected_ribbon}")
+                            if st.button("✅ Áp dụng dầm nhịp dẫn", use_container_width=True,
+                                         disabled=(_seld == _opts_btc[0]),
+                                         key=f"btc_applyd_{selected_ribbon}"):
+                                _apply_beam_to_pa(
+                                    d, selected_ribbon,
+                                    _beams_btc[_opts_btc.index(_seld) - 1], "dan")
 
-                    # Tóm tắt + cảnh báo tĩnh không
-                    try:
-                        _geo_btc = d.get("geo_logic", {})
-                        _x0b  = float(_geo_btc.get("x_mo_trai", -60))
-                        _xeb  = float(_geo_btc.get("x_mo_phai", 60))
-                        _xtb  = float(_geo_btc.get("x_tim_clearance", (_x0b + _xeb) / 2))
-                        _Btk  = float(d.get("B", 20.0))
-                        _sup, _Ldn = BVK.resolve_supports(d, _x0b, _xeb, _xtb, _Btk)
-                        _nsp = max(0, len(_sup) - 1)
-                        _mid = BVK.main_span_index(_sup, _xtb)
-                        if _nsp:
-                            _Lmn = _sup[_mid + 1] - _sup[_mid]
-                            st.caption(
-                                f"Bố trí: **{_nsp} nhịp** · nhịp dẫn L=**{_Ldn:.1f}m** · "
-                                f"nhịp chính (#{_mid + 1}) L=**{_Lmn:.1f}m**.")
-                        for _w in BVK.validate_span_layout(d, _x0b, _xeb, _xtb, _Btk):
-                            st.warning("⚠️ " + _w)
-                    except Exception:
-                        pass
+                            st.markdown("**Nhịp chính** — căng giữa tĩnh không")
+                            _auto_m = st.checkbox(
+                                "Tự chọn chiều dài theo tĩnh không",
+                                value=(not _sl_cur.get("L_main")),
+                                key=f"btc_autom_{selected_ribbon}")
+                            _cm1, _cm2 = st.columns([2, 1])
+                            with _cm1:
+                                _selm = st.selectbox(
+                                    "Dầm nhịp chính:", _opts_btc,
+                                    index=_beam_idx(_sl_cur.get("beam_main")),
+                                    key=f"btc_beamm_{selected_ribbon}")
+                            with _cm2:
+                                _Lm = st.selectbox(
+                                    "Chiều dài nhịp chính (m):", _Ls_btc,
+                                    index=_L_idx(_sl_cur.get("L_main"), 38.2),
+                                    disabled=_auto_m, key=f"btc_Lm_{selected_ribbon}")
+                            _cs, _cap = st.columns(2)
+                            if _cs.button("💾 Lưu bố trí 2 tầng", use_container_width=True,
+                                          key=f"btc_save2_{selected_ribbon}"):
+                                _new = dict(_sl_cur)
+                                _new.update({"mode": "two_tier", "L_dan": float(_Ld),
+                                             "L_main": (None if _auto_m else float(_Lm))})
+                                _save_pa_span_layout(selected_ribbon, _new)
+                                st.rerun()
+                            if _cap.button("✅ Áp dụng dầm nhịp chính", use_container_width=True,
+                                           type="primary", disabled=(_selm == _opts_btc[0]),
+                                           key=f"btc_applym_{selected_ribbon}"):
+                                _apply_beam_to_pa(
+                                    d, selected_ribbon,
+                                    _beams_btc[_opts_btc.index(_selm) - 1], "main")
+
+                        # Tóm tắt + cảnh báo tĩnh không
+                        try:
+                            _geo_btc = d.get("geo_logic", {})
+                            _x0b  = float(_geo_btc.get("x_mo_trai", -60))
+                            _xeb  = float(_geo_btc.get("x_mo_phai", 60))
+                            _xtb  = float(_geo_btc.get("x_tim_clearance", (_x0b + _xeb) / 2))
+                            _Btk  = float(d.get("B", 20.0))
+                            _sup, _Ldn = BVK.resolve_supports(d, _x0b, _xeb, _xtb, _Btk)
+                            _nsp = max(0, len(_sup) - 1)
+                            _mid = BVK.main_span_index(_sup, _xtb)
+                            if _nsp:
+                                _Lmn = _sup[_mid + 1] - _sup[_mid]
+                                st.caption(
+                                    f"Bố trí: **{_nsp} nhịp** · nhịp dẫn L=**{_Ldn:.1f}m** · "
+                                    f"nhịp chính (#{_mid + 1}) L=**{_Lmn:.1f}m**.")
+                            for _w in BVK.validate_span_layout(d, _x0b, _xeb, _xtb, _Btk):
+                                st.warning("⚠️ " + _w)
+                        except Exception:
+                            pass
 
                 try:
                     # ── 1. Trắc dọc cầu ──────────────────────────────────────
                     st.markdown("**Trắc dọc cầu**")
-                    _pck1, _pck2 = st.columns(2)
-                    with _pck1:
-                        _assembly_picker(d, "tru")
-                    with _pck2:
-                        _assembly_picker(d, "mo")
+                    if not _pa3:        # PA3: cấu kiện do AI dự báo, không cho chọn
+                        _pck1, _pck2 = st.columns(2)
+                        with _pck1:
+                            _assembly_picker(d, "tru")
+                        with _pck2:
+                            _assembly_picker(d, "mo")
                     _pa_obj = _resolve_assembly(d, "tru")
                     _ab_obj = _resolve_assembly(d, "mo")
                     _dc_data = st.session_state.get("dia_chat_data")
@@ -4964,46 +5018,58 @@ with _col_main:
                     st.plotly_chart(fig_bd, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
 
-                    # ── 3. MCN điển hình (chỉ phần trên — từ đáy dầm trở lên) ──
-                    st.markdown("**Mặt cắt ngang điển hình** (kết cấu nhịp)")
-                    fig_mcn_btc = BVK.ve_mat_cat_ngang_2d(d)
-                    try:
-                        _mcn_traces = BBUI.get_mcn_overlay_traces(d, pfx=_spt_pfx)
-                        if _mcn_traces:
-                            # Xóa dầm parametric cũ (#85929e) khi đã có DXF thực tế
-                            fig_mcn_btc.data = tuple(
-                                t for t in fig_mcn_btc.data
-                                if not (
-                                    getattr(t, 'fill', None) == 'toself'
-                                    and '#85929e' in str(getattr(t, 'fillcolor', ''))
-                                )
-                                and not (
-                                    'BTCT DƯL' in str(getattr(t, 'name', ''))
-                                    and getattr(t, 'mode', '') == 'markers'
-                                )
-                            )
-                            # Xóa annotation nhãn "DẦM ... BTCT DƯL"
-                            fig_mcn_btc.layout.annotations = tuple(
-                                a for a in (fig_mcn_btc.layout.annotations or [])
-                                if 'BTCT DƯL' not in str(getattr(a, 'text', ''))
-                            )
-                            for _mcn_tr in _mcn_traces:
-                                fig_mcn_btc.add_trace(_mcn_tr)
-                    except Exception:
-                        pass
-                    # Clip y-axis: chỉ hiện từ đáy dầm trở lên (bỏ trụ, cọc, mố)
+                    # ── 3. MCN điển hình tại ĐẦU DẦM & GIỮA DẦM ─────────────────
+                    st.markdown("**Mặt cắt ngang cầu** (kết cấu nhịp) — tại "
+                                "**đầu dầm** và **giữa dầm**")
+                    # Thông số clip trục y (dùng chung cho 2 hình)
                     _kcn_btc = d.get("kcn_result") or d.get("ai_result", {})
                     _H_dam_btc = float(_kcn_btc.get("chieu_cao_dam") or _kcn_btc.get("chieu_cao", 1.75))
                     _t_ban_btc = float(d.get("t_ban_mm", 200)) / 1000.0
                     _t_phu_btc = float((d.get("lop_phu_result") or {}).get("tong_day_tt", 70)) / 1000.0
                     _y_bot_btc = -(_H_dam_btc + _t_ban_btc + 0.15)   # ngay dưới đáy dầm
                     _y_top_btc = _t_phu_btc + 1.40                    # trên đỉnh lan can
-                    fig_mcn_btc.update_layout(
-                        yaxis=dict(range=[_y_bot_btc, _y_top_btc], autorange=False),
-                        height=420,
-                    )
-                    st.plotly_chart(fig_mcn_btc, use_container_width=True,
-                                    config={"scrollZoom": True, "displayModeBar": True})
+
+                    def _build_mcn_fig(_which):
+                        _fig = BVK.ve_mat_cat_ngang_2d(d)
+                        try:
+                            _trs = BBUI.get_mcn_overlay_traces(d, pfx=_spt_pfx, which=_which)
+                            if _trs:
+                                _fig.data = tuple(
+                                    t for t in _fig.data
+                                    if not (
+                                        getattr(t, 'fill', None) == 'toself'
+                                        and '#85929e' in str(getattr(t, 'fillcolor', ''))
+                                    )
+                                    and not (
+                                        'BTCT DƯL' in str(getattr(t, 'name', ''))
+                                        and getattr(t, 'mode', '') == 'markers'
+                                    )
+                                )
+                                _fig.layout.annotations = tuple(
+                                    a for a in (_fig.layout.annotations or [])
+                                    if 'BTCT DƯL' not in str(getattr(a, 'text', ''))
+                                )
+                                for _tr in _trs:
+                                    _fig.add_trace(_tr)
+                        except Exception:
+                            pass
+                        _fig.update_layout(
+                            yaxis=dict(range=[_y_bot_btc, _y_top_btc], autorange=False),
+                            height=420,
+                        )
+                        return _fig
+
+                    _mc1, _mc2 = st.columns(2)
+                    with _mc1:
+                        st.caption("📍 MCN tại **đầu dầm** (trên gối)")
+                        st.plotly_chart(_build_mcn_fig("end"), use_container_width=True,
+                                        config={"scrollZoom": True, "displayModeBar": True},
+                                        key="mcn_btc_end")
+                    with _mc2:
+                        st.caption("📍 MCN tại **giữa dầm** (giữa nhịp)")
+                        st.plotly_chart(_build_mcn_fig("mid"), use_container_width=True,
+                                        config={"scrollZoom": True, "displayModeBar": True},
+                                        key="mcn_btc_mid")
 
                 except Exception as _e:
                     st.error(f"Lỗi tab Bố trí chung: {_e}")
