@@ -290,15 +290,17 @@ def _load_design_inputs() -> dict | None:
 
 
 # ── Sơ đồ cọc: UI khai báo theo từng vị trí (upload DXF mặt bằng + cọc xiên) ──
-_COC_COLS = ["x (ngang, m)", "y (dọc, m)", "D (m)", "L (m)", "Xiên dọc", "Xiên ngang"]
+_COC_COLS = ["x (ngang, m)", "y (dọc, m)", "D (m)", "L (m)",
+             "Xiên dọc (n:1)", "Xiên ngang (n:1)"]
 
 
 def _coc_piles_to_df(piles):
     rows = [{
         _COC_COLS[0]: round(float(p["x"]), 3),  _COC_COLS[1]: round(float(p["y"]), 3),
         _COC_COLS[2]: round(float(p["D"]), 3),  _COC_COLS[3]: round(float(p["L"]), 2),
-        _COC_COLS[4]: round(float(p.get("ix", 0.0)), 4),
-        _COC_COLS[5]: round(float(p.get("iy", 0.0)), 4),
+        # ix/iy (tan) → n của 'n:1' (0 = thẳng đứng)
+        _COC_COLS[4]: round(PP.tan_to_slope_ratio(p.get("ix", 0.0)), 2),
+        _COC_COLS[5]: round(PP.tan_to_slope_ratio(p.get("iy", 0.0)), 2),
     } for p in piles]
     return pd.DataFrame(rows, columns=_COC_COLS)
 
@@ -312,23 +314,43 @@ def _coc_df_to_piles(df):
             x = float(r[_COC_COLS[0]]); y = float(r[_COC_COLS[1]])
         except (TypeError, ValueError):
             continue  # bỏ hàng lỗi
+        # 'n:1' → tan (n=0/để trống = thẳng đứng)
+        _nx = 0.0 if pd.isna(r[_COC_COLS[4]]) else r[_COC_COLS[4]]
+        _ny = 0.0 if pd.isna(r[_COC_COLS[5]]) else r[_COC_COLS[5]]
         out.append(PP.make_pile(
             x=x, y=y, D=r[_COC_COLS[2]], L=r[_COC_COLS[3]],
-            ix=r[_COC_COLS[4]], iy=r[_COC_COLS[5]]))
+            ix=PP.slope_ratio_to_tan(_nx), iy=PP.slope_ratio_to_tan(_ny)))
     return out
 
 
+def _coc_lib_options():
+    """Danh sách chi tiết cọc từ thư viện móng (CLIB) → [(nhãn, D_m, L_m)]."""
+    try:
+        mongs = CLIB.load_library().get("mong", [])
+    except Exception:
+        mongs = []
+    opts = []
+    for m in mongs:
+        D = float(m.get("duong_kinh_coc", 0) or 0)
+        L = float(m.get("chieu_dai_coc", 0) or 0)
+        if D > 0:
+            opts.append((f"{m.get('ten','(cọc)')} — Ø{D:.2f}m, L={L:.0f}m", D, L))
+    return opts
+
+
 def _render_so_do_coc_ui(d, pos_key, pos_label):
-    """Khai báo Sơ đồ cọc cho 1 vị trí: upload DXF mặt bằng (CIRCLE) → bảng cọc
-    (chỉnh L & độ xiên) → lưu vào d['pile_layouts'][pos_key]."""
+    """Khai báo Sơ đồ cọc cho 1 vị trí: upload DXF mặt bằng → nhận TIM CỌC (dấu '+'),
+    đường kính/chiều dài lấy từ THƯ VIỆN CHI TIẾT CỌC → bảng cọc (chỉnh L & độ
+    xiên 'n:1') → lưu vào d['pile_layouts'][pos_key]."""
     with st.expander(f"🔵 Sơ đồ cọc — {pos_label} (upload DXF mặt bằng)", expanded=False):
         _lay  = PP.get_layout(d, pos_key)
         _ncur = len(_lay["piles"]) if _lay else 0
         st.caption(
-            "Upload **DXF mặt bằng bệ cọc**: mỗi cọc là một **đường tròn (CIRCLE)** "
-            "(tâm = vị trí cọc, bán kính = đường kính). Hệ tự **căn tâm** về trọng tâm nhóm cọc. "
-            "Cột **Xiên dọc / Xiên ngang** = độ nghiêng (m ngang trên 1 m sâu; "
-            "**0 = thẳng đứng**, 0.1 ≈ độ xiên 1:10)."
+            "Upload **DXF mặt bằng bệ cọc**. Hệ nhận **TIM CỌC** qua **dấu '+'** "
+            "(hình dáng/đường kính cọc lấy từ **Thư viện chi tiết cọc**, không phụ "
+            "thuộc vòng tròn trên bản vẽ). Tự **căn tâm** về trọng tâm nhóm cọc. "
+            "Cột **Xiên dọc/ngang (n:1)** = độ xiên dạng n:1 (n phần đứng / 1 phần "
+            "ngang; **0 = thẳng đứng**; n=10 ≈ 1 ngang trên 10 sâu)."
         )
         if _ncur:
             st.success(f"Đang dùng sơ đồ cọc đã khai: **{_ncur} cọc** cho {pos_label}.")
@@ -341,23 +363,58 @@ def _render_so_do_coc_ui(d, pos_key, pos_label):
             _up = st.file_uploader(
                 f"DXF mặt bằng cọc — {pos_label}", type=["dxf"],
                 key=f"coc_dxf_{pos_key}")
+            # Chi tiết cọc (D, L) từ thư viện móng + giá trị từ móng đã thiết kế
+            _mong = d.get("mong_result", {}) or {}
+            _D_def = float(_mong.get("D_coc_mm", 1000) or 1000) / 1000.0
+            _L_def = float(_mong.get("L_coc_tu", 30) or 30)
+            _lib = _coc_lib_options()
+            _lib_lbls = ["— nhập tay —"] + [o[0] for o in _lib]
+            _lib_sel = st.selectbox(
+                "Chi tiết cọc (thư viện)", _lib_lbls, index=0,
+                key=f"coc_lib_{pos_key}",
+                help="Đường kính & chiều dài cọc lấy từ Thư viện chi tiết cọc "
+                     "(tab Thư viện cấu kiện → Móng).")
+            if _lib_sel != _lib_lbls[0]:
+                _o = _lib[_lib_lbls.index(_lib_sel) - 1]
+                _D_def, _L_def = _o[1], _o[2]
+            _cd1, _cd2 = st.columns(2)
+            _pileD = _cd1.number_input("Ø cọc (m)", 0.2, 4.0, float(_D_def), 0.1,
+                                       key=f"coc_D_{pos_key}")
+            _pileL = _cd2.number_input("L cọc (m)", 5.0, 120.0, float(_L_def), 1.0,
+                                       key=f"coc_L_{pos_key}")
         with _c2:
+            _mode_lbl = st.radio(
+                "Nhận diện cọc theo:", ["Tim cọc (dấu +)", "Vòng tròn"],
+                index=0, key=f"coc_mode_{pos_key}",
+                help="Mặc định lấy TIM CỌC từ dấu '+'. Hình dáng cọc lấy từ thư viện.")
+            _source = "cross" if _mode_lbl.startswith("Tim") else "circle"
             _swap = st.checkbox("Xoay 90° (dọc cầu nằm trục X)", key=f"coc_swap_{pos_key}")
-            _Ldef = st.number_input("L mặc định (m)", 5.0, 120.0, 30.0, 1.0,
-                                    key=f"coc_Ldef_{pos_key}")
+            _unit_lbl = st.selectbox(
+                "Đơn vị bản vẽ", ["mm", "cm", "m", "Tự động"], index=0,
+                key=f"coc_unit_{pos_key}",
+                help="Bản vẽ CAD cầu thường vẽ bằng mm.")
+        _unit = {"Tự động": "auto"}.get(_unit_lbl, _unit_lbl)
 
         if _up is not None and st.button("📥 Đọc cọc từ DXF", key=f"coc_read_{pos_key}"):
             try:
                 _res = PP.parse_pile_plan_bytes(
-                    _up.getvalue(), swap_xy=_swap, default_L=float(_Ldef))
+                    _up.getvalue(), swap_xy=_swap, unit=_unit, source=_source,
+                    pile_D=float(_pileD), pile_L=float(_pileL))
                 for _w in _res["warnings"]:
                     st.warning(_w)
                 if _res["n"]:
                     st.session_state[_sk] = _coc_piles_to_df(_res["piles"])
-                    st.success(f"Đọc được **{_res['n']} cọc**. "
-                               "Chỉnh L & độ xiên ở bảng dưới rồi bấm Lưu.")
+                    _kind = "tim cọc (dấu +)" if _res["source"] == "cross" else "vòng tròn"
+                    st.success(
+                        f"Đọc được **{_res['n']} cọc** từ {_kind} · "
+                        f"Ø{float(_pileD):.2f}m, L={float(_pileL):.0f}m · "
+                        f"đơn vị: {_res['unit']} (×{_res['scale']:g}). "
+                        "Chỉnh L & độ xiên ở bảng dưới rồi bấm Lưu.")
+                    st.caption("⚠️ Nếu khoảng cách cọc sai → chọn lại **Đơn vị bản vẽ** "
+                               "rồi đọc lại. Cọc xiên: nhập **n** của n:1 (0 = thẳng).")
                 else:
-                    st.error("Không tìm thấy đối tượng CIRCLE nào trong DXF.")
+                    st.error("Không nhận được tim cọc nào — thử đổi cách nhận diện "
+                             "hoặc kiểm tra layer/đơn vị.")
             except Exception as _e:
                 st.error(f"Lỗi đọc DXF: {_e}")
 
@@ -376,9 +433,13 @@ def _render_so_do_coc_ui(d, pos_key, pos_label):
                 _COC_COLS[2]: st.column_config.NumberColumn(format="%.3f", min_value=0.1),
                 _COC_COLS[3]: st.column_config.NumberColumn(format="%.2f", min_value=0.0),
                 _COC_COLS[4]: st.column_config.NumberColumn(
-                    help="Độ xiên theo phương DỌC cầu (m/m). 0 = thẳng đứng."),
+                    format="%.2f", min_value=0.0,
+                    help="Cọc xiên theo phương DỌC cầu, dạng n:1 (n phần ĐỨNG ứng 1 "
+                         "phần NGANG; n càng lớn càng đứng). 0 = thẳng đứng. VD n=10 "
+                         "→ 1 ngang trên 10 sâu."),
                 _COC_COLS[5]: st.column_config.NumberColumn(
-                    help="Độ xiên theo phương NGANG cầu (m/m). 0 = thẳng đứng."),
+                    format="%.2f", min_value=0.0,
+                    help="Cọc xiên theo phương NGANG cầu, dạng n:1. 0 = thẳng đứng."),
             },
         )
 
