@@ -2492,6 +2492,303 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None):
 
 
 # ===========================================================================
+# 8b. BỐ HÌNH MỐ – TRỤ THEO VỊ TRÍ — 4 hình: mặt bằng KC, mặt bằng cọc,
+#     mặt cắt ngang (ở trên), mặt cắt dọc. Dùng chung 1 bộ hình học _pos_geometry.
+# ===========================================================================
+def _pos_geometry(d, vi_tri):
+    """Tập hợp toàn bộ kích thước/hình học cho 1 vị trí (mố/trụ) — dùng chung
+    cho cả 4 hình để đảm bảo nhất quán. Kích thước theo DỌC cầu suy từ sơ đồ
+    cọc khai báo (nếu có), nếu không dùng mặc định."""
+    kcn   = d.get("kcn_result") or d.get("ai_result", {})
+    geo   = d.get("geo_logic", {})
+    tru_r = d.get("tru_result", {}) or {}
+    mong  = d.get("mong_result", {}) or {}
+
+    bc     = float(d.get("bc", 12.0))
+    B_tk   = float(d.get("B", 20.0))
+    H_tru  = float(d.get("H_tru_est", 5.0))
+    cao_dd = float(d.get("cao_day_dam", H_tru + 5.0))
+    H_dam  = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
+    t_ban  = float(d.get("t_ban_mm", 200)) / 1000.0
+    h_tn   = float(d.get("h_tn_tb", 2.0))
+    L_cau  = float(geo.get("L_cau", 120))
+    x0     = float(geo.get("x_mo_trai", -L_cau / 2))
+    x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
+    x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
+    L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
+    supports, _ = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+    x0, x_end = supports[0], supports[-1]
+    piers = supports[1:-1]
+
+    cap_W = max(2.0, bc * 0.18 + 1.0)   # nửa BỀ RỘNG xà mũ (ngang)
+    be_W  = cap_W + 0.8                  # nửa BỀ RỘNG bệ cọc (ngang)
+    cap_H = 0.80; be_H = 1.50
+
+    is_mo = str(vi_tri).startswith("mo")
+    if vi_tri == "mo_trai":
+        x_cut = x0;   title_vt = "MỐ TRÁI"
+    elif vi_tri == "mo_phai":
+        x_cut = x_end; title_vt = "MỐ PHẢI"
+    else:
+        idx = int(str(vi_tri).replace("tru_", "")) - 1
+        x_cut = piers[idx] if idx < len(piers) else x_tim
+        title_vt = f"TRỤ T{idx + 1}"
+
+    z_deck = cao_dd + H_dam + t_ban
+    z_capb = cao_dd - cap_H
+    z_shb  = z_capb - H_tru
+    z_beb  = z_shb - be_H
+
+    # Thân cột (trụ)
+    loai_t = str(tru_r.get("loai_tru", "Thân cột 2 trụ"))
+    n_cot  = 3 if "3" in loai_t else (2 if "cột" in loai_t.lower() else 1)
+    W_cot  = min(1.0, bc * 0.06 + 0.4)
+    col_offs = list(np.linspace(-cap_W * 0.6, cap_W * 0.6, n_cot))
+
+    # Cọc khai báo + kích thước theo DỌC cầu
+    piles = _layout_piles(d, vi_tri)
+    D_coc = float(mong.get("D_coc_mm", 600)) / 1000.0 if mong else 0.6
+    L_coc = float(mong.get("L_coc_tu", 35)) if mong else 35.0
+    if piles:
+        Dmax = max(p["D"] for p in piles)
+        ys = [p["y"] for p in piles]; xs = [p["x"] for p in piles]
+        be_half_doc   = max(abs(min(ys)), abs(max(ys))) + 0.75 * Dmax
+        be_half_ngang = max(be_W, max(abs(min(xs)), abs(max(xs))) + 0.75 * Dmax)
+    else:
+        be_half_doc   = max(1.6, be_W * 0.5)
+        be_half_ngang = be_W
+    cap_half_doc = max(0.8, min(be_half_doc * 0.85, H_dam * 0.55 + 0.45))
+
+    return dict(
+        bc=bc, B_tk=B_tk, H_tru=H_tru, H_dam=H_dam, t_ban=t_ban, h_tn=h_tn,
+        cao_dd=cao_dd, z_deck=z_deck, z_capb=z_capb, z_shb=z_shb, z_beb=z_beb,
+        cap_W=cap_W, be_W=be_W, cap_H=cap_H, be_H=be_H,
+        is_mo=is_mo, x_cut=x_cut, title_vt=title_vt,
+        n_cot=n_cot, W_cot=W_cot, col_offs=col_offs, loai_t=loai_t,
+        piles=piles, D_coc=D_coc, L_coc=L_coc,
+        be_half_doc=be_half_doc, be_half_ngang=be_half_ngang,
+        cap_half_doc=cap_half_doc,
+    )
+
+
+def _circle(fig, xc, yc, r, line_c, fill, name="", showlegend=False):
+    fig.add_shape(type="circle", xref="x", yref="y",
+                  x0=xc - r, y0=yc - r, x1=xc + r, y1=yc + r,
+                  line=dict(color=line_c, width=1.5), fillcolor=fill, layer="above")
+    if name:
+        fig.add_trace(go.Scatter(
+            x=[xc], y=[yc], mode="markers",
+            marker=dict(size=0.1, color=fill),
+            name=name, showlegend=showlegend, hoverinfo="skip"))
+
+
+def _auto_pile_grid(g):
+    """Sinh lưới cọc tự động (khi chưa khai DXF) để vẫn có hình minh hoạ."""
+    n_ng = 3 if g["be_W"] >= 2.5 else 2
+    n_dc = 2
+    xs = np.linspace(-g["be_W"] * 0.7, g["be_W"] * 0.7, n_ng)
+    ys = np.linspace(-g["be_half_doc"] * 0.6, g["be_half_doc"] * 0.6, n_dc)
+    out = []
+    for yy in ys:
+        for xx in xs:
+            out.append({"x": float(xx), "y": float(yy), "D": g["D_coc"],
+                        "L": g["L_coc"], "ix": 0.0, "iy": 0.0})
+    return out
+
+
+def ve_mat_bang_coc(d, vi_tri='mo_trai'):
+    """MẶT BẰNG CỌC — nhìn từ trên xuống: x = ngang cầu, y = dọc cầu.
+    Vẽ vòng tròn từng cọc theo tọa độ thật (ưu tiên sơ đồ DXF), kèm bệ & kích thước."""
+    g = _pos_geometry(d, vi_tri)
+    fig = go.Figure()
+
+    piles = g["piles"]
+    declared = bool(piles)
+    if not piles:
+        piles = _auto_pile_grid(g)
+
+    bhn, bhd = g["be_half_ngang"], g["be_half_doc"]
+    # Bệ cọc (hình chiếu bằng)
+    _poly(fig, [-bhn, bhn, bhn, -bhn], [-bhd, -bhd, bhd, bhd],
+          "rgba(170,183,184,0.25)", _C["be_dk"], "Bệ cọc", lw=1.8)
+
+    # Vòng tròn cọc
+    for j, p in enumerate(piles):
+        _circle(fig, p["x"], p["y"], p["D"] / 2.0, _C["be_dk"],
+                "rgba(86,101,115,0.30)",
+                name=(f"Cọc Ø{int(round(p['D']*1000))}mm" if j == 0 else ""),
+                showlegend=(j == 0))
+        fig.add_trace(go.Scatter(
+            x=[p["x"]], y=[p["y"]], mode="markers+text",
+            marker=dict(size=4, color=_C["be_dk"]),
+            text=[str(j + 1)], textposition="middle center",
+            textfont=dict(size=8, color="#2c3e50"),
+            showlegend=False, hoverinfo="text",
+            hovertext=[f"Cọc {j+1}: x={p['x']:.2f} y={p['y']:.2f} "
+                       f"Ø{p['D']:.2f}m L={p['L']:.1f}m"]))
+
+    # Trục tim
+    fig.add_shape(type="line", x0=0, y0=-bhd - 0.6, x1=0, y1=bhd + 0.6,
+                  line=dict(color="#aab7b8", width=1, dash="dashdot"))
+    fig.add_shape(type="line", x0=-bhn - 0.6, y0=0, x1=bhn + 0.6, y1=0,
+                  line=dict(color="#aab7b8", width=1, dash="dashdot"))
+
+    # Khoảng cách cọc (nếu lưới đều)
+    xs_u = sorted({round(p["x"], 2) for p in piles})
+    ys_u = sorted({round(p["y"], 2) for p in piles})
+    if len(xs_u) >= 2:
+        _dim_h(fig, -bhd - 0.5, xs_u[0], xs_u[1],
+               f"a={abs(xs_u[1]-xs_u[0]):.2f}m", dy=0)
+    if len(ys_u) >= 2:
+        _dim_v(fig, bhn + 0.5, ys_u[0], ys_u[1],
+               f"b={abs(ys_u[1]-ys_u[0]):.2f}m", dx=0.2)
+    _dim_h(fig, bhd + 0.5, -bhn, bhn, f"B_bệ={2*bhn:.2f}m", dy=0)
+    _dim_v(fig, -bhn - 0.5, -bhd, bhd, f"L_bệ={2*bhd:.2f}m", dx=-0.2)
+
+    _src = "sơ đồ DXF" if declared else "tự động (chưa khai DXF)"
+    fig.update_layout(
+        title=dict(text=f"MẶT BẰNG CỌC — {g['title_vt']} | {len(piles)} cọc · {_src}",
+                   x=0.5, font=dict(size=12)),
+        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1"),
+        yaxis=dict(title="Dọc cầu (m)", scaleanchor="x", scaleratio=1,
+                   showgrid=True, gridcolor="#ecf0f1"),
+        height=460, template="plotly_white",
+        legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
+        margin=dict(l=60, r=40, t=60, b=80),
+    )
+    return fig
+
+
+def ve_mat_bang_mo_tru(d, vi_tri='mo_trai'):
+    """MẶT BẰNG KẾT CẤU MỐ/TRỤ — nhìn từ trên: x = ngang cầu, y = dọc cầu."""
+    g = _pos_geometry(d, vi_tri)
+    fig = go.Figure()
+    bhn, bhd = g["be_half_ngang"], g["be_half_doc"]
+    bc = g["bc"]
+
+    # Bệ cọc (chung)
+    _poly(fig, [-bhn, bhn, bhn, -bhn], [-bhd, -bhd, bhd, bhd],
+          "rgba(170,183,184,0.30)", _C["be_dk"], "Bệ cọc", lw=1.8)
+
+    if g["is_mo"]:
+        # Thân mố (tường thân) + tường cánh kéo về phía sau (dọc cầu)
+        body_ng = bc / 2 + 0.5
+        body_dc = max(0.8, bhd * 0.35)
+        _poly(fig, [-body_ng, body_ng, body_ng, -body_ng],
+              [-body_dc, -body_dc, body_dc, body_dc],
+              _C["moc"], _C["be_dk"], "Thân mố")
+        wing_len = bhd  # tường cánh trải theo dọc
+        for sy in (-1, 1):
+            xw = sy * body_ng
+            _poly(fig, [xw - sy*0.4, xw, xw, xw - sy*0.4],
+                  [-wing_len, -wing_len, wing_len, wing_len],
+                  "rgba(192,160,107,0.45)", _C["be_dk"],
+                  "Tường cánh" if sy == -1 else "", showlegend=(sy == -1))
+    else:
+        # Xà mũ (chạy ngang) + thân cột
+        _poly(fig, [-g["cap_W"], g["cap_W"], g["cap_W"], -g["cap_W"]],
+              [-g["cap_half_doc"], -g["cap_half_doc"], g["cap_half_doc"], g["cap_half_doc"]],
+              "rgba(133,146,158,0.45)", _C["dam_dk"], "Xà mũ", lw=1.5)
+        r_col = g["W_cot"] / 2.0
+        for ic, off_c in enumerate(g["col_offs"]):
+            _circle(fig, off_c, 0.0, r_col, _C["btong_dk"], "rgba(200,214,192,0.85)",
+                    name=("Thân cột" if ic == 0 else ""), showlegend=(ic == 0))
+
+    # Cọc (chấm tròn mờ để định vị)
+    _piles = g["piles"] or _auto_pile_grid(g)
+    for j, p in enumerate(_piles):
+        _circle(fig, p["x"], p["y"], p["D"] / 2.0, "rgba(86,101,115,0.55)",
+                "rgba(86,101,115,0.12)",
+                name=("Cọc" if j == 0 else ""), showlegend=(j == 0))
+
+    fig.add_shape(type="line", x0=0, y0=-bhd - 0.6, x1=0, y1=bhd + 0.6,
+                  line=dict(color="#aab7b8", width=1, dash="dashdot"))
+    _dim_h(fig, bhd + 0.5, -bhn, bhn, f"B_bệ={2*bhn:.2f}m", dy=0)
+    _dim_v(fig, -bhn - 0.5, -bhd, bhd, f"L_bệ={2*bhd:.2f}m", dx=-0.2)
+
+    fig.update_layout(
+        title=dict(text=f"MẶT BẰNG KẾT CẤU — {g['title_vt']}", x=0.5, font=dict(size=12)),
+        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1"),
+        yaxis=dict(title="Dọc cầu (m)", scaleanchor="x", scaleratio=1,
+                   showgrid=True, gridcolor="#ecf0f1"),
+        height=460, template="plotly_white",
+        legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
+        margin=dict(l=60, r=40, t=60, b=80),
+    )
+    return fig
+
+
+def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai'):
+    """MẶT CẮT DỌC tại vị trí — cắt dọc tim cầu qua mố/trụ: x = dọc cầu, y = cao độ."""
+    g = _pos_geometry(d, vi_tri)
+    fig = go.Figure()
+    bhd = g["be_half_doc"]
+    h_tn = g["h_tn"]
+
+    # Địa hình (phẳng) + đất nền
+    x_span = max(bhd + 3.0, 5.0)
+    z_min = min(g["z_beb"], h_tn) - 3.0
+    fig.add_trace(go.Scatter(
+        x=[-x_span, x_span, x_span, -x_span],
+        y=[h_tn, h_tn, z_min, z_min],
+        fill="toself", fillcolor=_C["dat"],
+        line=dict(color="#6d4c41", width=1.5), mode="lines",
+        name="Địa hình"))
+
+    if g["is_mo"]:
+        # Thân mố + tường cánh (mặt cắt dọc)
+        body_dc = max(0.8, bhd * 0.35)
+        _poly(fig, [-body_dc, body_dc, body_dc, -body_dc],
+              [h_tn, h_tn, g["z_deck"], g["z_deck"]],
+              _C["moc"], _C["be_dk"], "Thân mố")
+        _poly(fig, [-bhd, bhd, bhd, -bhd],
+              [g["z_beb"], g["z_beb"], h_tn, h_tn],
+              "rgba(170,183,184,0.30)", _C["be_dk"], "Bệ cọc")
+        z_top_pile = g["z_beb"]
+    else:
+        # Bệ + thân trụ + xà mũ (mặt cắt dọc)
+        _poly(fig, [-bhd, bhd, bhd, -bhd],
+              [g["z_beb"], g["z_beb"], g["z_shb"], g["z_shb"]],
+              _C["be"], _C["be_dk"], "Bệ cọc")
+        col_dc = max(g["W_cot"], g["cap_half_doc"] * 0.8)
+        _poly(fig, [-col_dc, col_dc, col_dc, -col_dc],
+              [g["z_shb"], g["z_shb"], g["z_capb"], g["z_capb"]],
+              _C["btong"], _C["btong_dk"], "Thân trụ")
+        _poly(fig, [-g["cap_half_doc"], g["cap_half_doc"],
+                    g["cap_half_doc"], -g["cap_half_doc"]],
+              [g["z_capb"], g["z_capb"], g["cao_dd"], g["cao_dd"]],
+              _C["btong"], _C["dam_dk"], "Xà mũ")
+        z_top_pile = g["z_beb"]
+
+    # Cọc (chiếu lên mặt phẳng dọc, có độ xiên ix)
+    _piles = g["piles"] or _auto_pile_grid(g)
+    _draw_piles_elevation(fig, _piles, x_center=0.0, z_top=z_top_pile,
+                          color=_C["be_dk"], legend_name=f"Cọc ({len(_piles)})")
+
+    # Bản mặt cầu (ký hiệu)
+    _poly(fig, [-x_span, x_span, x_span, -x_span],
+          [g["cao_dd"] + g["H_dam"], g["cao_dd"] + g["H_dam"],
+           g["z_deck"], g["z_deck"]],
+          _C["ban"], _C["btong_dk"], "Bản mặt cầu")
+
+    _dim_h(fig, g["z_beb"] - 0.6, -bhd, bhd, f"L_bệ={2*bhd:.2f}m", dy=0)
+    fig.add_shape(type="line", x0=0, y0=z_min, x1=0, y1=g["z_deck"] + 0.5,
+                  line=dict(color="#aab7b8", width=1, dash="dashdot"))
+
+    fig.update_layout(
+        title=dict(text=f"MẶT CẮT DỌC — {g['title_vt']} | Lý trình ≈ {g['x_cut']:.1f} m",
+                   x=0.5, font=dict(size=12)),
+        xaxis=dict(title="Dọc cầu (m)", showgrid=True, gridcolor="#ecf0f1"),
+        yaxis=dict(title="Cao độ (m)", scaleanchor="x", scaleratio=1,
+                   showgrid=True, gridcolor="#ecf0f1"),
+        height=540, template="plotly_white",
+        legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
+        margin=dict(l=65, r=40, t=60, b=80),
+    )
+    return fig
+
+
+# ===========================================================================
 # 9. CHẾ ĐỘ HIỂN THỊ 3D (tương tự Revit: Shaded / Wireframe / X-Ray / Realistic)
 # ===========================================================================
 def apply_render_mode(fig, mode="Shaded"):
