@@ -192,12 +192,15 @@ def _part_height_m(part: dict, role: str) -> float:
 
 
 def build_pier_mesh_traces(pier: dict, H_tru: float = None,
-                           x_ctr: float = 0.0, z_base: float = 0.0) -> list:
-    """Trả về list go.Mesh3d của 1 trụ (3 bộ phận).
+                           x_ctr: float = 0.0, z_base: float = 0.0,
+                           labels: dict = None) -> list:
+    """Trả về list go.Mesh3d của 1 trụ/mố (3 bộ phận).
 
     H_tru : nếu cho (m), chiều cao THÂN tự co để (đáy bệ→đỉnh mũ) = H_tru.
-    x_ctr : lý trình tâm trụ (m).   z_base: cao độ đáy bệ (m).
+    x_ctr : lý trình tâm (m).   z_base: cao độ đáy bệ (m).
+    labels: ghi đè tên bộ phận {be,than,xa_mu} (mặc định: nhãn trụ).
     """
+    L = labels or _ROLE_LABEL
     p = migrate_pier(pier or {})
     parts = p.get("parts", {})
     be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
@@ -211,15 +214,15 @@ def build_pier_mesh_traces(pier: dict, H_tru: float = None,
     z = z_base
 
     # 1) BỆ — mặt bằng đùn đứng. section(u,v): u→ngang(y), v→dọc(x).
-    traces.append(_plan_mesh(be.get("section"), z, H_be, x_ctr, _COL["be"], "Bệ trụ"))
+    traces.append(_plan_mesh(be.get("section"), z, H_be, x_ctr, _COL["be"], L["be"]))
     z += H_be
     # 2) THÂN
     traces.append(_plan_mesh(than.get("section"), z, H_than, x_ctr,
-                             _COL["than"], "Thân trụ"))
+                             _COL["than"], L["than"]))
     z += H_than
     # 3) XÀ MŨ — mặt đứng ngang (u→ngang y, v→cao z) đùn dọc cầu (x) sâu D.
     traces.append(_cap_mesh(cap.get("section"), z, float(cap.get("D", 1.8)),
-                            x_ctr, _COL["xa_mu"], "Xà mũ"))
+                            x_ctr, _COL["xa_mu"], L["xa_mu"]))
     return [t for t in traces if t is not None]
 
 
@@ -265,9 +268,10 @@ def _mesh(parts, color, name, opacity=0.96):
                      hovertemplate=f"{name}<extra></extra>")
 
 
-def build_pier_preview_fig(pier: dict, H_tru: float = None) -> go.Figure:
-    """Figure 3D xem trước 1 trụ (panel thư viện)."""
-    fig = go.Figure(build_pier_mesh_traces(pier, H_tru=H_tru))
+def build_pier_preview_fig(pier: dict, H_tru: float = None,
+                           labels: dict = None) -> go.Figure:
+    """Figure 3D xem trước 1 trụ/mố (panel thư viện)."""
+    fig = go.Figure(build_pier_mesh_traces(pier, H_tru=H_tru, labels=labels))
     fig.update_layout(
         scene=dict(xaxis_title="Dọc cầu (m)", yaxis_title="Ngang cầu (m)",
                    zaxis_title="Cao độ (m)", aspectmode="data"),
@@ -285,11 +289,13 @@ def _plan_doc_width_m(section: dict) -> float:
 
 
 def pier_elevation_rects(pier: dict, H_tru: float = None,
-                         x_ctr: float = 0.0, z_base: float = 0.0) -> list:
-    """Bóng MẶT ĐỨNG DỌC cầu (x-z) của trụ → list {name,color,xs,zs}.
-    Dùng để vẽ trụ trong trắc dọc 2D. Mỗi bộ phận là 1 chữ nhật:
+                         x_ctr: float = 0.0, z_base: float = 0.0,
+                         labels: dict = None) -> list:
+    """Bóng MẶT ĐỨNG DỌC cầu (x-z) của trụ/mố → list {name,color,xs,zs}.
+    Dùng để vẽ trong trắc dọc 2D. Mỗi bộ phận là 1 chữ nhật:
       bệ/thân rộng = bề rộng dọc cầu mặt cắt; xà mũ rộng = chiều sâu D.
     """
+    L = labels or _ROLE_LABEL
     p = migrate_pier(pier or {})
     parts = p.get("parts", {})
     be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
@@ -305,12 +311,12 @@ def pier_elevation_rects(pier: dict, H_tru: float = None,
                 "zs": [z0, z0, z0 + h, z0 + h]}
 
     z = z_base
-    rects = [_rect("Bệ trụ", _COL["be"], _plan_doc_width_m(be.get("section")), z, H_be)]
+    rects = [_rect(L["be"], _COL["be"], _plan_doc_width_m(be.get("section")), z, H_be)]
     z += H_be
-    rects.append(_rect("Thân trụ", _COL["than"],
+    rects.append(_rect(L["than"], _COL["than"],
                        _plan_doc_width_m(than.get("section")), z, H_than))
     z += H_than
-    rects.append(_rect("Xà mũ", _COL["xa_mu"], float(cap.get("D", 1.8)), z, H_cap))
+    rects.append(_rect(L["xa_mu"], _COL["xa_mu"], float(cap.get("D", 1.8)), z, H_cap))
     return rects
 
 

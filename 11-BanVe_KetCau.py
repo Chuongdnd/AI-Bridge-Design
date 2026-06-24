@@ -17,6 +17,9 @@ import plotly.graph_objects as go
 _PB_ENGINE = None
 
 
+_MO_LABELS = {"be": "Bệ mố", "than": "Tường thân", "xa_mu": "Mũ mố"}
+
+
 def _get_PB():
     """Nạp 19-PierBuilder.py một lần (tránh phụ thuộc vòng)."""
     global _PB_ENGINE
@@ -530,7 +533,8 @@ def _draw_dia_chat_trac_doc(fig, dia_chat_data, x0, x_end, h_tn, z_min, mg=20):
 # ===========================================================================
 # 1. SƠ ĐỒ BỐ TRÍ NHỊP (2D) — Trụ đặt NGOÀI tĩnh không
 # ===========================================================================
-def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None, pier_assembly=None):
+def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
+                     pier_assembly=None, abutment_assembly=None):
     """
     Sơ đồ nhịp 2D từ design_data.
     - Trụ được đặt tại biên tĩnh không, KHÔNG vi phạm vùng thông thuyền.
@@ -685,10 +689,20 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None, pier_assembly=None
             "", showlegend=False, lw=1)
 
         # Phần nổi trên mặt đất (thân mố từ terrain → deck)
-        _poly(fig,
-            [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
-            [z_terr_mo, z_terr_mo, z_deck, z_deck],
-            _C["moc"], _C["be_dk"], f"Mố {side}")
+        if abutment_assembly:
+            _PB = _get_PB()
+            _xc = xm + sign * W_mo / 2.0
+            for _rc in _PB.pier_elevation_rects(
+                    abutment_assembly, H_tru=(z_deck - z_be_b),
+                    x_ctr=_xc, z_base=z_be_b, labels=_MO_LABELS):
+                _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["be_dk"],
+                      (_rc["name"] if side == "Trái" else ""),
+                      showlegend=(side == "Trái"))
+        else:
+            _poly(fig,
+                [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
+                [z_terr_mo, z_terr_mo, z_deck, z_deck],
+                _C["moc"], _C["be_dk"], f"Mố {side}")
 
         # Đường địa hình tại mố (chỉ thị)
         fig.add_annotation(
@@ -1236,7 +1250,8 @@ def ve_mat_dung_tru_2d(d):
 # ===========================================================================
 # 4. MÔ HÌNH 3D — Kết cấu + địa hình (nếu có df_tim_line)
 # ===========================================================================
-def ve_cau_3d(d, df_tim_line=None, beam_params=None, pier_assembly=None):
+def ve_cau_3d(d, df_tim_line=None, beam_params=None,
+              pier_assembly=None, abutment_assembly=None):
     """
     Mô hình 3D kết cấu cầu với trụ đặt đúng ngoài tĩnh không.
     Nếu có df_tim_line: thêm surface địa hình dọc cầu.
@@ -1337,7 +1352,15 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None, pier_assembly=None):
         ))
 
     # ── Mố ────────────────────────────────────────────────────────────────
-    for xm, nm in [(x0-mo_W, "Mố trái"), (x_end, "Mố phải")]:
+    for _im, (xm, nm) in enumerate([(x0-mo_W, "Mố trái"), (x_end, "Mố phải")]):
+        if abutment_assembly:
+            _PB = _get_PB()
+            for _at in _PB.build_pier_mesh_traces(
+                    abutment_assembly, H_tru=(z_deck - z_be_b),
+                    x_ctr=xm + mo_W / 2.0, z_base=z_be_b, labels=_MO_LABELS):
+                _at.showlegend = bool(_im == 0)
+                traces.append(_at)
+            continue
         traces.append(_box3d(xm, -bc/2-0.5, z_be_b, xm+mo_W, bc/2+0.5, z_deck,
                              color="#c0a06b", name=nm))
 
