@@ -2074,11 +2074,23 @@ def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
     return result
 
 
-def get_mcn_overlay_traces(d: dict, pfx: str = "spt") -> list:
-    """Trả về go.Scatter traces (2D) overlay mặt cắt A-A thực tế lên MCN điển hình.
+def _beam_end_section_name(vpfx: str):
+    """Tên mặt cắt tại ĐẦU DẦM (đoạn đầu tiên dọc nửa dầm). None nếu không có segs."""
+    cad_state = st.session_state.get(_cad_key(vpfx, "state"), {}) or {}
+    segs = cad_state.get("segs") or []
+    if segs:
+        s0 = segs[0]
+        return s0.get("sec") or s0.get("from_sec")
+    return None
+
+
+def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> list:
+    """Trả về go.Scatter traces (2D) overlay mặt cắt dầm thực tế lên MCN điển hình.
+
+    which="mid" → mặt cắt GIỮA dầm (fill_sec, mặc định);
+    which="end" → mặt cắt tại ĐẦU dầm (đoạn segment đầu — thường đặc/vách dày).
 
     Hệ trục MCN: x = ngang cầu (m), y = cao độ (0=mặt bê tông bản, âm=xuống dưới).
-    Chỉ vẽ khi session_state có mặt cắt A-A với outer polygon đã upload.
     """
     active, secmap = _build_role_sections(pfx)
     if not any(s and getattr(s, "outer", None) for s in secmap.values()):
@@ -2098,6 +2110,15 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt") -> list:
     _leg = True
     for i_dam in range(n_dam):
         sec, mir = _cell_section(pfx, active, secmap, 1, 3, i_dam, n_dam)
+        if which == "end":
+            # Mặt cắt tại đầu dầm của đúng cây dầm (variant) ở vị trí ngang này.
+            _T = "B" if (i_dam == 0 or i_dam == n_dam - 1) else "G"
+            _vpfx = _variant_pfx(pfx, "G", _T, active)
+            _secs_v, _fill_v = _resolve_beam_sections(_vpfx)
+            _en = _beam_end_section_name(_vpfx)
+            _sec_end = (_secs_v or {}).get(_en) if _en else None
+            if _sec_end is not None and getattr(_sec_end, "outer", None):
+                sec = _sec_end
         if sec is None or not getattr(sec, "outer", None):
             continue
         _sgn = -1.0 if mir else 1.0
@@ -2111,7 +2132,7 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt") -> list:
             fillcolor="rgba(46,204,113,0.28)",
             line=dict(color="#27ae60", width=1.8),
             mode="lines",
-            name="Mặt cắt dầm (DXF)" if _leg else "",
+            name=("Mặt cắt đầu dầm" if which == "end" else "Mặt cắt giữa dầm") if _leg else "",
             showlegend=_leg,
             hovertemplate="Mặt cắt dầm thực tế<extra></extra>",
         ))
