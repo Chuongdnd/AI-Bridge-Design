@@ -238,6 +238,12 @@ try:
     BBUI = _iutil.module_from_spec(_bb_uspec)
     _bb_uspec.loader.exec_module(BBUI)
 
+    # ── Pier Builder (trụ lắp ghép — Phase 1) ───────────────────────────────
+    _pb_spec = _iutil.spec_from_file_location(
+        "PierBuilder", os.path.join(_bb_dir, "19-PierBuilder.py"))
+    PB = _iutil.module_from_spec(_pb_spec)
+    _pb_spec.loader.exec_module(PB)
+
     # ── Thư viện cấu kiện dùng chung (mố/trụ/dầm/móng) ──────────────────────
     _cl_spec = _iutil.spec_from_file_location(
         "component_library", os.path.join(_bb_dir, "utils", "component_library.py"))
@@ -2502,6 +2508,7 @@ def _data_file_registry() -> dict:
         "design_data_saved.json":       _DESIGN_SAVE_FILE,
         "spt_sections_saved.json":      _root / "spt_sections_saved.json",
         "Data/Library/beams.json":      pathlib.Path(CLIB.BEAMS_PATH),
+        "Data/Library/piers.json":      pathlib.Path(CLIB.PIERS_PATH),
         "Data/Library/components.json": pathlib.Path(CLIB.LIBRARY_PATH),
         "terrain_saved/terrain.ntd":        _root / "terrain_saved" / "terrain.ntd",
         "terrain_saved/terrain_coord.xlsx": _root / "terrain_saved" / "terrain_coord.xlsx",
@@ -3264,6 +3271,165 @@ def render_dam_library(d: dict) -> None:
             st.rerun()
 
 
+_PIER_WIDGET_KEYS = [
+    "_lib_pier_name", "pf_W", "pf_D", "pf_H", "ps_shape", "ps_W", "ps_D",
+    "ps_H", "pc_W", "pc_W2", "pc_H", "pc_cant", "pc_htip",
+]
+
+
+def _clear_pier_widgets() -> None:
+    for _k in _PIER_WIDGET_KEYS:
+        st.session_state.pop(_k, None)
+
+
+def _render_pier_edit_panel() -> None:
+    """Panel tạo/sửa 1 TRỤ LẮP GHÉP (bệ + thân + mũ công xôn)."""
+    editing_id = st.session_state.get("_lib_pier_editing_id")
+    cur = st.session_state.get("_lib_pier_draft") or PB.default_pier()
+
+    st.markdown(
+        f"<div style='background:#0a1f35;border:1px solid #007acc;border-radius:8px;"
+        f"padding:8px 12px;margin:6px 0'><b style='color:#4fc3f7'>"
+        f"{'✏️ Sửa trụ' if editing_id else '➕ Tạo trụ mới'}</b> — khai báo bệ, "
+        f"thân, xà mũ (công xôn) rồi 💾 Lưu.</div>", unsafe_allow_html=True)
+
+    _nm = st.text_input("Tên trụ", value=cur.get("ten", ""),
+                        placeholder="VD: Trụ thân đặc T1", key="_lib_pier_name")
+
+    _cfg, _prev = st.columns([2, 3])
+    with _cfg:
+        st.markdown("**Bệ móng**")
+        _b1, _b2, _b3 = st.columns(3)
+        f = cur.get("footing", {})
+        Wf = _b1.number_input("B ngang (m)", 0.5, 30.0, float(f.get("W", 4.0)), 0.1, key="pf_W")
+        Df = _b2.number_input("B dọc (m)",   0.5, 30.0, float(f.get("D", 3.0)), 0.1, key="pf_D")
+        Hf = _b3.number_input("Cao (m)",      0.3, 10.0, float(f.get("H", 1.5)), 0.1, key="pf_H")
+
+        st.markdown("**Thân trụ**")
+        s = cur.get("stem", {})
+        _shape = st.radio("Tiết diện", ["rect", "circle"],
+                          index=(1 if s.get("shape") == "circle" else 0),
+                          format_func=lambda x: "Chữ nhật" if x == "rect" else "Tròn",
+                          horizontal=True, key="ps_shape")
+        _s1, _s2, _s3 = st.columns(3)
+        Ws = _s1.number_input(("Đ.kính (m)" if _shape == "circle" else "B ngang (m)"),
+                              0.3, 20.0, float(s.get("W", 1.6)), 0.1, key="ps_W")
+        Ds = _s2.number_input("B dọc (m)", 0.3, 20.0, float(s.get("D", 1.2)), 0.1,
+                              key="ps_D", disabled=(_shape == "circle"))
+        Hs = _s3.number_input("Cao thân (m)", 0.5, 60.0, float(s.get("H", 5.0)), 0.1, key="ps_H")
+
+        st.markdown("**Xà mũ** (công xôn)")
+        c = cur.get("cap", {})
+        _c1, _c2, _c3 = st.columns(3)
+        Wc = _c1.number_input("B ngang (m)", 1.0, 40.0, float(c.get("W", 8.0)), 0.1, key="pc_W")
+        Dc = _c2.number_input("B dọc (m)",   0.5, 10.0, float(c.get("D", 1.8)), 0.1, key="pc_W2")
+        Hc = _c3.number_input("Cao giữa (m)", 0.3, 5.0, float(c.get("H", 1.2)), 0.1, key="pc_H")
+        _c4, _c5 = st.columns(2)
+        Cant = _c4.number_input("Công xôn mỗi bên (m)", 0.0, 10.0,
+                                float(c.get("cant", 2.0)), 0.1, key="pc_cant")
+        Htip = _c5.number_input("Cao tại mút (m)", 0.0, 5.0,
+                                float(c.get("H_tip", 0.6)), 0.1, key="pc_htip")
+
+    pier = {
+        "id": editing_id or "", "ten": _nm, "loai": "tru",
+        "H_ref": round(Hf + Hs + Hc, 2),
+        "footing": {"W": Wf, "D": Df, "H": Hf},
+        "stem": {"shape": _shape, "W": Ws, "D": Ds, "H": Hs},
+        "cap": {"W": Wc, "D": Dc, "H": Hc, "cant": Cant, "H_tip": Htip},
+    }
+    st.session_state["_lib_pier_draft"] = pier
+
+    with _prev:
+        st.caption("Xem trước 3D — kéo xoay")
+        try:
+            st.plotly_chart(PB.build_pier_preview_fig(pier),
+                            use_container_width=True, key="pier_prev3d")
+            st.plotly_chart(PB.pier_front_fig(pier),
+                            use_container_width=True, key="pier_prev2d")
+        except Exception as _e:
+            st.error(f"Lỗi xem trước: {_e}")
+
+    st.markdown("---")
+    _p1, _p2, _ = st.columns([1, 1, 3])
+    if _p1.button("💾 Lưu trụ", type="primary", use_container_width=True,
+                  key="_lib_pier_save"):
+        if not _nm.strip():
+            st.warning("⚠️ Nhập **tên trụ** trước khi lưu.")
+        else:
+            piers = st.session_state.get("dam_piers", CLIB.load_piers())
+            pid = editing_id or CLIB.make_pier_id(_nm, piers)
+            pier["id"] = pid
+            pier["created_by"] = (AUTH.current_user() or {}).get("name", "")
+            pier["updated_at"] = time.strftime("%Y-%m-%d %H:%M")
+            st.session_state.dam_piers = CLIB.upsert_pier(piers, pier)
+            CLIB.save_piers(st.session_state.dam_piers)
+            for _k in ("_lib_pier_panel", "_lib_pier_editing_id", "_lib_pier_draft"):
+                st.session_state.pop(_k, None)
+            st.toast(f"Đã lưu trụ “{_nm}”.", icon="✅")
+            st.rerun()
+    if _p2.button("Hủy", use_container_width=True, key="_lib_pier_cancel"):
+        for _k in ("_lib_pier_panel", "_lib_pier_editing_id", "_lib_pier_draft"):
+            st.session_state.pop(_k, None)
+        st.rerun()
+
+
+def render_pier_library() -> None:
+    """Thư viện TRỤ LẮP GHÉP (Phase 1 — tạo & xem trước, chưa gắn vào cầu)."""
+    if "dam_piers" not in st.session_state:
+        st.session_state.dam_piers = CLIB.load_piers()
+
+    if st.session_state.get("_lib_pier_panel"):
+        _render_pier_edit_panel()
+        return
+
+    piers = st.session_state.dam_piers
+    _h1, _h2 = st.columns([3, 1])
+    with _h1:
+        st.markdown("##### 🏗️ Trụ lắp ghép")
+        st.caption("Trụ = bệ + thân + xà mũ (công xôn). Tạo & xem trước 3D. "
+                   "Phase 1: chưa gắn tự động vào bản vẽ cầu.")
+    with _h2:
+        if st.button("➕ Tạo trụ mới", type="primary", use_container_width=True,
+                     key="lib_pier_new"):
+            _clear_pier_widgets()
+            st.session_state["_lib_pier_draft"] = PB.default_pier()
+            st.session_state.pop("_lib_pier_editing_id", None)
+            st.session_state["_lib_pier_panel"] = "new"
+            st.rerun()
+
+    if not piers:
+        st.info("Chưa có trụ nào. Bấm **➕ Tạo trụ mới** để bắt đầu.")
+        return
+
+    for p in sorted(piers, key=lambda x: str(x.get("ten", "")).strip().lower()):
+        _info, _e3, _e4 = st.columns([8, 1, 1])
+        with _info:
+            _f, _s, _c = p.get("footing", {}), p.get("stem", {}), p.get("cap", {})
+            st.markdown(
+                f"<div style='background:#141420;border:1px solid #2a2a3a;"
+                f"border-left:4px solid #6d9dc5;border-radius:8px;padding:8px 12px'>"
+                f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
+                f"🏗️ {p.get('ten','(không tên)')}</span>"
+                f"<span style='font-size:11px;color:#888;margin-left:10px'>"
+                f"bệ {_f.get('W','?')}×{_f.get('D','?')}m · "
+                f"thân {('tròn' if _s.get('shape')=='circle' else 'CN')} H={_s.get('H','?')}m · "
+                f"mũ {_c.get('W','?')}m (công xôn {_c.get('cant',0)}m) · "
+                f"{p.get('created_by','') or '—'}</span></div>",
+                unsafe_allow_html=True)
+        if _e3.button("✏️", key=f"lib_pier_edit_{p['id']}",
+                      use_container_width=True, help="Sửa trụ"):
+            _clear_pier_widgets()
+            st.session_state["_lib_pier_draft"] = dict(p)
+            st.session_state["_lib_pier_editing_id"] = p["id"]
+            st.session_state["_lib_pier_panel"] = p["id"]
+            st.rerun()
+        if _e4.button("🗑️", key=f"lib_pier_del_{p['id']}",
+                      use_container_width=True, help="Xóa trụ"):
+            st.session_state.dam_piers = CLIB.delete_pier(piers, p["id"])
+            CLIB.save_piers(st.session_state.dam_piers)
+            st.rerun()
+
+
 def render_thu_vien() -> None:
     """Tab Thư viện cấu kiện dùng chung.
     Dầm: tạo qua panel CAD. Trụ/Mố/Móng: bảng tham số. Luôn truy cập được."""
@@ -3285,17 +3451,23 @@ def render_thu_vien() -> None:
     if "dam_beams" not in st.session_state:
         st.session_state.dam_beams = CLIB.load_beams()
 
+    if "dam_piers" not in st.session_state:
+        st.session_state.dam_piers = CLIB.load_piers()
+
     _simple = ["tru", "mo", "mong"]
     _icons  = {"tru": "🏛️", "mo": "🧱", "mong": "🦵"}
     _tabs   = st.tabs(
-        [f"🌉 Dầm ({len(st.session_state.dam_beams)})"]
+        [f"🌉 Dầm ({len(st.session_state.dam_beams)})",
+         f"🏗️ Trụ lắp ghép ({len(st.session_state.dam_piers)})"]
         + [f"{_icons[c]} {CLIB.TYPE_LABEL[c]} ({len(lib.get(c, []))})" for c in _simple]
     )
 
     with _tabs[0]:
         render_dam_library(d)
+    with _tabs[1]:
+        render_pier_library()
 
-    for ctype, _tab in zip(_simple, _tabs[1:]):
+    for ctype, _tab in zip(_simple, _tabs[2:]):
         with _tab:
             cols = CLIB.SCHEMA[ctype]
             df   = pd.DataFrame(CLIB.records_for(lib, ctype), columns=cols)
