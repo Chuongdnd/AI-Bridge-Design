@@ -11,8 +11,11 @@ mong_result) để Phase 2 ghép cấu kiện vào 3D / bố trí chung được
 import os
 import re
 import json
+import base64
 import unicodedata
 import copy
+import urllib.request
+import urllib.error
 
 # ── Đường dẫn lưu trữ ────────────────────────────────────────────────────────
 _THIS_DIR    = os.path.dirname(os.path.abspath(__file__))
@@ -22,6 +25,90 @@ LIBRARY_PATH = os.path.join(LIBRARY_DIR, "components.json")
 
 VERSION = 1
 COMPONENT_TYPES = ("dam", "tru", "mo", "mong")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# TỰ ĐỘNG LƯU LÊN GITHUB (tùy chọn) — cấu hình qua st.secrets hoặc biến môi
+# trường: GITHUB_TOKEN, GITHUB_REPO ("owner/name"), GITHUB_BRANCH (mặc định
+# "main"). Không cấu hình → chỉ lưu file cục bộ (hành vi cũ).
+# ══════════════════════════════════════════════════════════════════════════
+def _gh_config() -> dict:
+    cfg = {}
+    try:
+        import streamlit as st          # ưu tiên Streamlit secrets
+        for k in ("GITHUB_TOKEN", "GITHUB_REPO", "GITHUB_BRANCH"):
+            try:
+                if k in st.secrets:
+                    cfg[k] = st.secrets[k]
+            except Exception:
+                pass
+    except Exception:
+        pass
+    for k in ("GITHUB_TOKEN", "GITHUB_REPO", "GITHUB_BRANCH"):
+        cfg.setdefault(k, os.environ.get(k))
+    return cfg
+
+
+def github_enabled() -> bool:
+    c = _gh_config()
+    return bool(c.get("GITHUB_TOKEN") and c.get("GITHUB_REPO"))
+
+
+def commit_file_to_github(relpath: str, content_bytes: bytes,
+                          message: str) -> tuple:
+    """Commit/cập nhật 1 file lên GitHub qua Contents API.
+    Trả về (ok: bool, thông điệp: str). Best-effort, không raise."""
+    c = _gh_config()
+    token  = c.get("GITHUB_TOKEN")
+    repo   = c.get("GITHUB_REPO")
+    branch = c.get("GITHUB_BRANCH") or "main"
+    if not (token and repo):
+        return (False, "Chưa cấu hình GITHUB_TOKEN/GITHUB_REPO")
+    api = f"https://api.github.com/repos/{repo}/contents/{relpath}"
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.github+json",
+        "User-Agent": "ai-bridge-design",
+    }
+    sha = None                                   # SHA hiện tại (nếu file đã có)
+    try:
+        req = urllib.request.Request(api + f"?ref={branch}", headers=headers)
+        with urllib.request.urlopen(req, timeout=15) as r:
+            sha = json.loads(r.read().decode()).get("sha")
+    except urllib.error.HTTPError as e:
+        if e.code != 404:
+            return (False, f"GET lỗi {e.code}")
+    except Exception as e:
+        return (False, f"Mạng/khác: {e}")
+    body = {
+        "message": message,
+        "content": base64.b64encode(content_bytes).decode("ascii"),
+        "branch":  branch,
+    }
+    if sha:
+        body["sha"] = sha
+    try:
+        req = urllib.request.Request(
+            api, data=json.dumps(body).encode("utf-8"),
+            headers={**headers, "Content-Type": "application/json"},
+            method="PUT")
+        with urllib.request.urlopen(req, timeout=20):
+            return (True, "Đã đồng bộ lên GitHub")
+    except urllib.error.HTTPError as e:
+        return (False, f"PUT lỗi {e.code}: {e.read().decode()[:160]}")
+    except Exception as e:
+        return (False, f"Mạng/khác: {e}")
+
+
+def _autocommit(relpath: str, content_bytes: bytes, label: str) -> None:
+    """Tự commit nếu đã bật GitHub sync (best-effort, nuốt lỗi)."""
+    if not github_enabled():
+        return
+    try:
+        commit_file_to_github(relpath, content_bytes,
+                              f"App tự lưu {label}")
+    except Exception:
+        pass
 
 # Nhãn hiển thị cho từng loại
 TYPE_LABEL = {
@@ -198,11 +285,14 @@ def load_library() -> dict:
 
 
 def save_library(lib: dict) -> None:
-    """Ghi thư viện ra JSON (UTF-8, giữ dấu tiếng Việt)."""
+    """Ghi thư viện ra JSON (UTF-8, giữ dấu tiếng Việt) + tự đồng bộ GitHub."""
     _ensure_dir()
     data = normalize(lib)
+    _txt = json.dumps(data, ensure_ascii=False, indent=2)
     with open(LIBRARY_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
+        f.write(_txt)
+    _autocommit("Data/Library/components.json", _txt.encode("utf-8"),
+                "thư viện cấu kiện")
 
 
 def records_for(lib: dict, ctype: str) -> list:
@@ -234,11 +324,14 @@ def load_beams() -> list:
 
 
 def save_beams(beams: list) -> None:
-    """Ghi danh sách dầm ra JSON (UTF-8, giữ dấu)."""
+    """Ghi danh sách dầm ra JSON (UTF-8, giữ dấu) + tự đồng bộ GitHub."""
     _ensure_dir()
+    _txt = json.dumps({"version": VERSION, "beams": list(beams or [])},
+                      ensure_ascii=False, indent=2)
     with open(BEAMS_PATH, "w", encoding="utf-8") as f:
-        json.dump({"version": VERSION, "beams": list(beams or [])},
-                  f, ensure_ascii=False, indent=2)
+        f.write(_txt)
+    _autocommit("Data/Library/beams.json", _txt.encode("utf-8"),
+                "thư viện dầm")
 
 
 def make_beam_id(ten: str, existing: list = None) -> str:

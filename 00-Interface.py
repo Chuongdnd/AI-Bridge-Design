@@ -2512,6 +2512,43 @@ def _render_data_backup() -> None:
     """Sao lưu/khôi phục TOÀN BỘ dữ liệu người dùng dưới dạng 1 file .zip."""
     reg = _data_file_registry()
     with st.expander("💾 Sao lưu / Khôi phục dữ liệu", expanded=False):
+        # ── Tự động lưu lên GitHub ───────────────────────────────────────────
+        _gh_on = False
+        try:
+            _gh_on = CLIB.github_enabled()
+        except Exception:
+            pass
+        if _gh_on:
+            st.success("☁️ Tự lưu GitHub: **ĐANG BẬT** — thư viện dầm & cấu kiện "
+                       "tự commit lên repo mỗi khi thay đổi.")
+            if st.button("☁️ Đồng bộ TẤT CẢ lên GitHub ngay",
+                         use_container_width=True, key="gh_sync_all"):
+                _ok = _fail = 0
+                for _arc, _p in reg.items():
+                    try:
+                        if _p and pathlib.Path(_p).exists():
+                            _b = pathlib.Path(_p).read_bytes()
+                            _r, _m = CLIB.commit_file_to_github(
+                                _arc, _b, f"App đồng bộ {_arc}")
+                            _ok += int(bool(_r)); _fail += int(not _r)
+                    except Exception:
+                        _fail += 1
+                st.success(f"Đã đồng bộ {_ok} file" +
+                           (f", lỗi {_fail}" if _fail else "") + ".")
+        else:
+            st.info("☁️ Tự lưu GitHub: **CHƯA BẬT**. Thêm `GITHUB_TOKEN` và "
+                    "`GITHUB_REPO` vào Secrets/biến môi trường để app tự commit "
+                    "thư viện lên repo (xem hướng dẫn bên dưới).")
+            with st.popover("Hướng dẫn bật tự lưu GitHub"):
+                st.markdown(
+                    "1. Tạo **GitHub Personal Access Token** (Fine-grained, quyền "
+                    "**Contents: Read and write** cho repo này).\n"
+                    "2. Thêm vào `.streamlit/secrets.toml` (hoặc biến môi trường):\n"
+                    "```toml\nGITHUB_TOKEN = \"ghp_xxx\"\n"
+                    "GITHUB_REPO  = \"Chuongdnd/AI-Bridge-Design\"\n"
+                    "GITHUB_BRANCH = \"main\"\n```\n"
+                    "3. Khởi động lại app — mục này sẽ chuyển sang **ĐANG BẬT**.")
+        st.markdown("---")
         st.caption(
             "Sao lưu TOÀN BỘ dữ liệu người dùng (tài khoản, thư viện dầm & cấu "
             "kiện, thông số dự án, mặt cắt mặc định, địa hình). Tải về để commit/"
