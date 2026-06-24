@@ -274,7 +274,7 @@ _DESIGN_SAVE_KEYS = [
     'vtk','bc','loai_duong','t_ban_mm','i_max_hinh_hoc','R_hinh_hoc',
     'is_urban','geo_logic','ai_result','kcn_result','tru_result',
     'mong_result','lop_phu_result', 'cao_day_dam', 'H_tru_est',
-    'lib_dam_applied', 'pile_layouts',
+    'lib_dam_applied', 'pile_layouts', 'railing_by_pa', 'span_layout_by_pa',
 ]
 
 def _save_design_inputs(d: dict) -> None:
@@ -2701,6 +2701,7 @@ def _data_file_registry() -> dict:
         "Data/Library/beams.json":      pathlib.Path(CLIB.BEAMS_PATH),
         "Data/Library/piers.json":      pathlib.Path(CLIB.PIERS_PATH),
         "Data/Library/mos.json":        pathlib.Path(CLIB.MOS_PATH),
+        "Data/Library/railings.json":   pathlib.Path(CLIB.RAILINGS_PATH),
         "Data/Library/components.json": pathlib.Path(CLIB.LIBRARY_PATH),
         "terrain_saved/terrain.ntd":        _root / "terrain_saved" / "terrain.ntd",
         "terrain_saved/terrain_coord.xlsx": _root / "terrain_saved" / "terrain_coord.xlsx",
@@ -2711,43 +2712,6 @@ def _render_data_backup() -> None:
     """Sao lưu/khôi phục TOÀN BỘ dữ liệu người dùng dưới dạng 1 file .zip."""
     reg = _data_file_registry()
     with st.expander("💾 Sao lưu / Khôi phục dữ liệu", expanded=False):
-        # ── Tự động lưu lên GitHub ───────────────────────────────────────────
-        _gh_on = False
-        try:
-            _gh_on = CLIB.github_enabled()
-        except Exception:
-            pass
-        if _gh_on:
-            st.success("☁️ Tự lưu GitHub: **ĐANG BẬT** — thư viện dầm & cấu kiện "
-                       "tự commit lên repo mỗi khi thay đổi.")
-            if st.button("☁️ Đồng bộ TẤT CẢ lên GitHub ngay",
-                         use_container_width=True, key="gh_sync_all"):
-                _ok = _fail = 0
-                for _arc, _p in reg.items():
-                    try:
-                        if _p and pathlib.Path(_p).exists():
-                            _b = pathlib.Path(_p).read_bytes()
-                            _r, _m = CLIB.commit_file_to_github(
-                                _arc, _b, f"App đồng bộ {_arc}")
-                            _ok += int(bool(_r)); _fail += int(not _r)
-                    except Exception:
-                        _fail += 1
-                st.success(f"Đã đồng bộ {_ok} file" +
-                           (f", lỗi {_fail}" if _fail else "") + ".")
-        else:
-            st.info("☁️ Tự lưu GitHub: **CHƯA BẬT**. Thêm `GITHUB_TOKEN` và "
-                    "`GITHUB_REPO` vào Secrets/biến môi trường để app tự commit "
-                    "thư viện lên repo (xem hướng dẫn bên dưới).")
-            with st.popover("Hướng dẫn bật tự lưu GitHub"):
-                st.markdown(
-                    "1. Tạo **GitHub Personal Access Token** (Fine-grained, quyền "
-                    "**Contents: Read and write** cho repo này).\n"
-                    "2. Thêm vào `.streamlit/secrets.toml` (hoặc biến môi trường):\n"
-                    "```toml\nGITHUB_TOKEN = \"ghp_xxx\"\n"
-                    "GITHUB_REPO  = \"Chuongdnd/AI-Bridge-Design\"\n"
-                    "GITHUB_BRANCH = \"main\"\n```\n"
-                    "3. Khởi động lại app — mục này sẽ chuyển sang **ĐANG BẬT**.")
-        st.markdown("---")
         st.caption(
             "Sao lưu TOÀN BỘ dữ liệu người dùng (tài khoản, thư viện dầm & cấu "
             "kiện, thông số dự án, mặt cắt mặc định, địa hình). Tải về để commit/"
@@ -3238,6 +3202,30 @@ def _save_pa_span_layout(pa_key: str, sl: dict) -> None:
     _all = dict(st.session_state.design_data.get("span_layout_by_pa") or {})
     _all[pa_key] = dict(sl or {})
     st.session_state.design_data["span_layout_by_pa"] = _all
+
+
+def _pa_railing(pa_key: str) -> dict:
+    """Lựa chọn lan can/giải phân cách của 1 PA → {'lan_can': id, 'giai_phan_cach': id}."""
+    _all = st.session_state.design_data.get("railing_by_pa") or {}
+    return dict(_all.get(pa_key) or {})
+
+
+def _save_pa_railing(pa_key: str, sel: dict) -> None:
+    _all = dict(st.session_state.design_data.get("railing_by_pa") or {})
+    _all[pa_key] = {k: v for k, v in (sel or {}).items() if v}
+    st.session_state.design_data["railing_by_pa"] = _all
+
+
+def _resolve_railings_for_pa(pa_key: str) -> dict:
+    """Trả về {'lan_can': rec|None, 'giai_phan_cach': rec|None} đã giải từ thư viện."""
+    rails = st.session_state.get("lib_railings")
+    if rails is None:
+        rails = CLIB.load_railings()
+    sel = _pa_railing(pa_key)
+    out = {}
+    for _t in CLIB.RAILING_TYPES:
+        out[_t] = CLIB.get_railing(rails, sel.get(_t)) if sel.get(_t) else None
+    return out
 
 
 def _apply_beam_to_pa(d: dict, pa_key: str, beam: dict, tier: str = "dan") -> None:
@@ -3895,10 +3883,158 @@ def render_mong_library(lib: dict) -> None:
             st.error(f"Lỗi xóa: {_e}")
 
 
+def _normalize_railing_section(outer, holes):
+    """Chuẩn hoá MCN lan can: y giữ nguyên (ngang), z dời sao cho ĐÁY z=0
+    (chân lan can đặt trên mặt cầu, vươn lên trên). Trả (outer, holes, rộng, cao)."""
+    if not outer or len(outer) < 3:
+        return [], [], 0.0, 0.0
+    zs = [p[1] for p in outer]
+    z_min = min(zs)
+    def _shift(pts):
+        return [[float(p[0]), float(p[1]) - z_min] for p in pts]
+    o2 = _shift(outer)
+    h2 = [_shift(h) for h in (holes or []) if len(h) >= 3]
+    ys = [p[0] for p in o2]; zz = [p[1] for p in o2]
+    return o2, h2, (max(ys) - min(ys)), (max(zz) - min(zz))
+
+
+def render_railing_library() -> None:
+    """Thư viện LAN CAN / GIẢI PHÂN CÁCH — upload MCN (DXF) chạy dọc toàn cầu."""
+    rails = st.session_state.lib_railings
+    st.markdown("##### 🚧 Lan can / Giải phân cách")
+    st.caption("Upload **mặt cắt ngang** chi tiết (DXF). Khi khai báo ở phương án "
+               "(tab **Bố trí chung**), chọn loại MCN này — mô hình 3D sẽ kéo MCN "
+               "đó **chạy dọc toàn cầu**.")
+
+    # ── Danh sách đã có ──────────────────────────────────────────────────
+    if rails:
+        st.markdown("**Đã có trong thư viện:**")
+        for _r in sorted(rails, key=lambda x: str(x.get("ten", "")).lower()):
+            _info, _del = st.columns([9, 1])
+            with _info:
+                _lab = CLIB.RAILING_LABEL.get(_r.get("loai"), "—")
+                st.markdown(
+                    f"<div style='background:#141420;border:1px solid #2a2a3a;"
+                    f"border-left:4px solid #e67e22;border-radius:8px;padding:8px 12px'>"
+                    f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
+                    f"🚧 {_r.get('ten','(không tên)')}</span>"
+                    f"<span style='font-size:11px;color:#888;margin-left:10px'>"
+                    f"{_lab} · rộng {float(_r.get('rong_mm',0) or 0):.0f}mm · "
+                    f"cao {float(_r.get('cao_mm',0) or 0):.0f}mm · "
+                    f"{len(_r.get('outer',[]))} đỉnh</span></div>",
+                    unsafe_allow_html=True)
+            if _del.button("🗑️", key=f"rail_del_{_r['id']}",
+                           use_container_width=True, help="Xóa"):
+                st.session_state.lib_railings = CLIB.delete_railing(rails, _r["id"])
+                CLIB.save_railings(st.session_state.lib_railings)
+                st.rerun()
+        st.markdown("---")
+
+    # ── Thêm mới ─────────────────────────────────────────────────────────
+    st.markdown("**➕ Thêm lan can / giải phân cách mới**")
+    _up = st.file_uploader("⬆ Upload mặt cắt ngang (DXF)", type=["dxf", "dwg"],
+                           key="rail_dxf")
+    if _up is not None:
+        _sig = f"{_up.name}:{_up.size}"
+        if st.session_state.get("_rail_sig") != _sig:
+            try:
+                _res = _BB_ENGINE.parse_dxf_bytes(_up.read())
+                if _res.get("error"):
+                    st.error(f"Lỗi đọc DXF: {_res['error']}")
+                elif len(_res.get("outer", [])) >= 3:
+                    _o, _h, _w, _ht = _normalize_railing_section(
+                        _res["outer"], _res.get("holes", []))
+                    st.session_state["_rail_draft"] = {
+                        "outer": _o, "holes": _h, "rong_mm": _w, "cao_mm": _ht}
+                    st.session_state["_rail_sig"] = _sig
+                    st.success(f"✅ Đã nạp MCN: {len(_o)} đỉnh · rộng {_w:.0f}mm · "
+                               f"cao {_ht:.0f}mm.")
+                else:
+                    st.warning("Không tìm thấy biên kín trong DXF.")
+            except Exception as _e:
+                st.error(f"Lỗi xử lý DXF: {_e}")
+
+    _draft = st.session_state.get("_rail_draft") or {}
+    _pv, _pp = st.columns([3, 2])
+    with _pv:
+        _f = _asm_section_fig(_draft) if _draft.get("outer") else None
+        if _f is not None:
+            st.plotly_chart(_f, use_container_width=True, key="rail_secfig")
+        else:
+            st.info("Chưa có mặt cắt — upload DXF để bắt đầu.")
+    with _pp:
+        _ten = st.text_input("Tên", key="rail_ten",
+                             placeholder="VD: Lan can BT cốt thép H1.1m")
+        _loai = st.selectbox(
+            "Loại", list(CLIB.RAILING_TYPES),
+            format_func=lambda k: CLIB.RAILING_LABEL.get(k, k), key="rail_loai")
+        _ghi = st.text_input("Ghi chú", key="rail_ghi")
+
+    if st.button("💾 Lưu vào thư viện", type="primary", key="rail_save",
+                 disabled=(not _draft.get("outer"))):
+        if not str(_ten).strip():
+            st.error("Cần nhập **Tên**.")
+        else:
+            _rec = {
+                "id":  CLIB.make_railing_id(_ten, rails),
+                "ten": _ten.strip(), "loai": _loai,
+                "outer": _draft["outer"], "holes": _draft.get("holes", []),
+                "rong_mm": float(_draft.get("rong_mm", 0) or 0),
+                "cao_mm":  float(_draft.get("cao_mm", 0) or 0),
+                "ghi_chu": _ghi, "created_by": AUTH.current_user().get("username", ""),
+            }
+            st.session_state.lib_railings = CLIB.upsert_railing(rails, _rec)
+            CLIB.save_railings(st.session_state.lib_railings)
+            for _k in ("_rail_draft", "_rail_sig"):
+                st.session_state.pop(_k, None)
+            st.success(f"✅ Đã lưu **{_rec['ten']}**.")
+            st.rerun()
+
+
+def _render_library_io() -> None:
+    """Nút TẢI TOÀN BỘ thư viện về (.json) + UPLOAD thư viện đã tạo để dùng.
+    Người dùng tự tạo → tải về giữ → upload lại khi làm (không tự lưu GitHub)."""
+    _io1, _io2 = st.columns(2)
+    with _io1:
+        try:
+            _bundle = CLIB.export_bundle()
+            _n = (sum(len(_bundle.get("components", {}).get(c, []))
+                      for c in CLIB.COMPONENT_TYPES)
+                  + len(_bundle.get("beams", [])) + len(_bundle.get("piers", []))
+                  + len(_bundle.get("mos", [])) + len(_bundle.get("railings", [])))
+            _data = json.dumps(_bundle, ensure_ascii=False, indent=2).encode("utf-8")
+            st.download_button(
+                f"⬇️ Tải toàn bộ thư viện ({_n} mục)", data=_data,
+                file_name="thu_vien_cau_kien.json", mime="application/json",
+                use_container_width=True, key="lib_export_all")
+        except Exception as _e:
+            st.error(f"Lỗi xuất thư viện: {_e}")
+    with _io2:
+        _up = st.file_uploader(
+            "⬆️ Upload thư viện (.json)", type=["json"],
+            key="lib_import_all", label_visibility="collapsed")
+        if _up is not None and st.button(
+                "✅ Nạp thư viện đã upload", type="primary",
+                use_container_width=True, key="lib_import_apply"):
+            try:
+                _bundle = json.loads(_up.read().decode("utf-8"))
+                _counts = CLIB.import_bundle(_bundle)
+                # Xóa cache session để nạp lại từ file vừa ghi
+                for _k in ("component_library", "dam_beams", "dam_piers",
+                           "dam_mos", "lib_railings"):
+                    st.session_state.pop(_k, None)
+                st.success("Đã nạp thư viện: " + ", ".join(
+                    f"{k}={v}" for k, v in _counts.items()) + ".")
+                st.rerun()
+            except Exception as _e:
+                st.error(f"File thư viện không hợp lệ: {_e}")
+
+
 def render_thu_vien() -> None:
     """Tab Thư viện cấu kiện dùng chung.
     Dầm: tạo qua panel CAD. Trụ/Mố/Móng: bảng tham số. Luôn truy cập được."""
     st.markdown("---")
+    _render_library_io()
     st.markdown(
         DS.section_header(
             "Thư viện cấu kiện dùng chung",
@@ -3920,6 +4056,8 @@ def render_thu_vien() -> None:
         st.session_state.dam_piers = CLIB.load_piers()
     if "dam_mos" not in st.session_state:
         st.session_state.dam_mos = CLIB.load_mos()
+    if "lib_railings" not in st.session_state:
+        st.session_state.lib_railings = CLIB.load_railings()
 
     # Trụ & Mố: thư viện LẮP GHÉP (upload mặt cắt). Móng: vẫn bảng tham số.
     _simple = ["mong"]
@@ -3929,6 +4067,7 @@ def render_thu_vien() -> None:
          f"🏗️ Trụ ({len(st.session_state.dam_piers)})",
          f"🧱 Mố ({len(st.session_state.dam_mos)})"]
         + [f"{_icons[c]} {CLIB.TYPE_LABEL[c]} ({len(lib.get(c, []))})" for c in _simple]
+        + [f"🚧 Lan can/Giải phân cách ({len(st.session_state.lib_railings)})"]
     )
 
     with _tabs[0]:
@@ -3941,110 +4080,14 @@ def render_thu_vien() -> None:
     with _tabs[3]:
         render_mong_library(lib)
 
+    with _tabs[4]:
+        render_railing_library()
+
 
 selected_ribbon = st.session_state.get('current_tab', 'THUYẾT MINH')
 
-# ── Thanh kéo tỷ lệ panel chính / panel kết quả ─────────────────────────────
-_pw_val = int(st.session_state.get("_main_panel_w", 7))
-st.markdown(
-    "<p style='font-size:10px;color:#555;margin:2px 0 0;text-align:right'>"
-    "⟺ Kéo để điều chỉnh tỷ lệ panel</p>",
-    unsafe_allow_html=True,
-)
-_pw_new = st.slider(
-    "Tỷ lệ panel", min_value=4, max_value=9, value=_pw_val, step=1,
-    key="_main_panel_w_sl", label_visibility="collapsed",
-    help="Kéo trái/phải để điều chỉnh tỷ lệ nội dung ◀▶ kết quả AI",
-)
-st.session_state["_main_panel_w"] = _pw_new
-
-#  Layout: Main canvas + Right panel (tỷ lệ có thể điều chỉnh)
-_col_main, _col_right = st.columns([_pw_new, 10 - _pw_new], gap="small")
-
-# ── Inject CSS/JS kéo dãng cột bằng chuột (visual resize, reset khi rerun) ──
-st.components.v1.html("""
-<style>
-.st-col-drag-handle {
-  width: 6px; min-width: 6px; flex-shrink: 0;
-  cursor: col-resize; background: transparent; border-radius: 3px;
-  margin: 0 -3px; z-index: 200; align-self: stretch;
-  transition: background 0.15s;
-}
-.st-col-drag-handle:hover, .st-col-drag-handle.dragging {
-  background: rgba(68,136,204,0.45);
-}
-</style>
-<script>
-(function() {
-  var MIN_PX = 90;
-  function installHandles(pDoc, pWin) {
-    var blocks = pDoc.querySelectorAll('[data-testid="stHorizontalBlock"]');
-    blocks.forEach(function(block) {
-      if (block.__colDragInstalled) return;
-      var cols = Array.prototype.filter.call(block.children, function(c) {
-        return c.getAttribute('data-testid') === 'column';
-      });
-      if (cols.length < 2) return;
-      block.__colDragInstalled = true;
-      block.style.position = 'relative';
-
-      for (var i = 0; i < cols.length - 1; i++) {
-        (function(A, B) {
-          var h = pDoc.createElement('div');
-          h.className = 'st-col-drag-handle';
-          A.insertAdjacentElement('afterend', h);
-
-          h.addEventListener('mousedown', function(e) {
-            e.preventDefault();
-            h.classList.add('dragging');
-            var startX = e.clientX;
-            var Aw0 = A.getBoundingClientRect().width;
-            var Bw0 = B.getBoundingClientRect().width;
-            var total = Aw0 + Bw0;
-
-            function onMove(e) {
-              var dx = e.clientX - startX;
-              var newA = Math.max(MIN_PX, Math.min(total - MIN_PX, Aw0 + dx));
-              var newB = total - newA;
-              A.style.flex = '0 0 ' + newA + 'px';
-              B.style.flex = '0 0 ' + newB + 'px';
-            }
-            function onUp() {
-              h.classList.remove('dragging');
-              pDoc.removeEventListener('mousemove', onMove);
-              pDoc.removeEventListener('mouseup', onUp);
-            }
-            pDoc.addEventListener('mousemove', onMove);
-            pDoc.addEventListener('mouseup', onUp);
-          });
-        })(cols[i], cols[i+1]);
-      }
-    });
-  }
-
-  function tryInstall(n) {
-    try { installHandles(window.parent.document, window.parent); }
-    catch(e) { if (n < 10) setTimeout(function(){ tryInstall(n+1); }, 500); }
-  }
-  tryInstall(0);
-
-  // Re-install after every Streamlit rerun (DOM replaced)
-  try {
-    var mo = new window.parent.MutationObserver(function(muts) {
-      muts.forEach(function(m) {
-        m.addedNodes.forEach(function(n) {
-          if (n.querySelectorAll &&
-              n.querySelectorAll('[data-testid="stHorizontalBlock"]').length) {
-            setTimeout(function(){ tryInstall(0); }, 200);
-          }
-        });
-      });
-    });
-    mo.observe(window.parent.document.body, { childList: true, subtree: true });
-  } catch(e) {}
-})();
-</script>
-""", height=0, scrolling=False)
+#  Layout: Main canvas + Right panel (tỷ lệ cố định 7:3)
+_col_main, _col_right = st.columns([7, 3], gap="small")
 
 with _col_right:
     _render_right_panel(st.session_state.design_data)
@@ -4675,7 +4718,8 @@ with _col_main:
             # pfx dầm theo phương án — dùng CHUNG cho mọi sub-tab (overlay theo PA)
             _spt_pfx = _PA_SPT_PFX.get(selected_ribbon, "spt")
             # Nạp bố trí nhịp (2 tầng) của PA vào d → mọi bản vẽ đồng bộ
-            d = {**d, "span_layout": _pa_span_layout(selected_ribbon)}
+            d = {**d, "span_layout": _pa_span_layout(selected_ribbon),
+                 "railings": _resolve_railings_for_pa(_pa_key)}
 
             # Thông tin brief
             _geo_d = d.get("geo_logic", {})
@@ -4882,6 +4926,46 @@ with _col_main:
             # ── TAB 2: Bố trí chung ────────────────────────────────────────
             with tab_btc:
                 st.markdown("##### Bố trí chung")
+
+                # ── 0a. Lan can / Giải phân cách (theo phương án) ────────────
+                with st.expander(f"🚧 Lan can / Giải phân cách — {selected_ribbon}",
+                                 expanded=False):
+                    _rails_lib = st.session_state.get("lib_railings")
+                    if _rails_lib is None:
+                        _rails_lib = CLIB.load_railings()
+                        st.session_state.lib_railings = _rails_lib
+                    if not _rails_lib:
+                        st.info("Chưa có MCN lan can/giải phân cách nào. Vào tab "
+                                "**📚 Thư viện → 🚧 Lan can/Giải phân cách** để upload "
+                                "mặt cắt ngang (DXF).")
+                    else:
+                        _sel_cur = _pa_railing(selected_ribbon)
+                        _rc1, _rc2 = st.columns(2)
+                        _new_sel = {}
+                        for _col, _t in ((_rc1, "lan_can"),
+                                         (_rc2, "giai_phan_cach")):
+                            _opts = [r for r in _rails_lib if r.get("loai") == _t]
+                            _ids  = ["— Không dùng —"] + [r["id"] for r in _opts]
+                            _names = {r["id"]: r.get("ten", r["id"]) for r in _opts}
+                            _cur = _sel_cur.get(_t)
+                            _idx = _ids.index(_cur) if _cur in _ids else 0
+                            with _col:
+                                _pick = st.selectbox(
+                                    CLIB.RAILING_LABEL[_t], _ids, index=_idx,
+                                    format_func=lambda k: ("— Không dùng —"
+                                                           if k.startswith("—")
+                                                           else _names.get(k, k)),
+                                    key=f"rail_sel_{_t}_{selected_ribbon}")
+                            if not _pick.startswith("—"):
+                                _new_sel[_t] = _pick
+                        if st.button("💾 Áp dụng lan can cho phương án",
+                                     key=f"rail_apply_{selected_ribbon}",
+                                     use_container_width=True):
+                            _save_pa_railing(selected_ribbon, _new_sel)
+                            st.success("Đã áp dụng. Mô hình 3D sẽ kéo MCN dọc toàn cầu.")
+                            st.rerun()
+                        st.caption("MCN đã chọn sẽ được **kéo chạy dọc toàn cầu** trong "
+                                   "mô hình 3D (lan can ở 2 mép cầu, giải phân cách ở tim).")
 
                 # ── 0. Dầm thư viện & bố trí nhịp (theo phương án) ────────────
                 with st.expander(f"🌉 Dầm & bố trí nhịp — {selected_ribbon}",

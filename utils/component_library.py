@@ -11,11 +11,8 @@ mong_result) để Phase 2 ghép cấu kiện vào 3D / bố trí chung được
 import os
 import re
 import json
-import base64
 import unicodedata
 import copy
-import urllib.request
-import urllib.error
 
 # ── Đường dẫn lưu trữ ────────────────────────────────────────────────────────
 _THIS_DIR    = os.path.dirname(os.path.abspath(__file__))
@@ -26,89 +23,8 @@ LIBRARY_PATH = os.path.join(LIBRARY_DIR, "components.json")
 VERSION = 1
 COMPONENT_TYPES = ("dam", "tru", "mo", "mong")
 
-
-# ══════════════════════════════════════════════════════════════════════════
-# TỰ ĐỘNG LƯU LÊN GITHUB (tùy chọn) — cấu hình qua st.secrets hoặc biến môi
-# trường: GITHUB_TOKEN, GITHUB_REPO ("owner/name"), GITHUB_BRANCH (mặc định
-# "main"). Không cấu hình → chỉ lưu file cục bộ (hành vi cũ).
-# ══════════════════════════════════════════════════════════════════════════
-def _gh_config() -> dict:
-    cfg = {}
-    try:
-        import streamlit as st          # ưu tiên Streamlit secrets
-        for k in ("GITHUB_TOKEN", "GITHUB_REPO", "GITHUB_BRANCH"):
-            try:
-                if k in st.secrets:
-                    cfg[k] = st.secrets[k]
-            except Exception:
-                pass
-    except Exception:
-        pass
-    for k in ("GITHUB_TOKEN", "GITHUB_REPO", "GITHUB_BRANCH"):
-        cfg.setdefault(k, os.environ.get(k))
-    return cfg
-
-
-def github_enabled() -> bool:
-    c = _gh_config()
-    return bool(c.get("GITHUB_TOKEN") and c.get("GITHUB_REPO"))
-
-
-def commit_file_to_github(relpath: str, content_bytes: bytes,
-                          message: str) -> tuple:
-    """Commit/cập nhật 1 file lên GitHub qua Contents API.
-    Trả về (ok: bool, thông điệp: str). Best-effort, không raise."""
-    c = _gh_config()
-    token  = c.get("GITHUB_TOKEN")
-    repo   = c.get("GITHUB_REPO")
-    branch = c.get("GITHUB_BRANCH") or "main"
-    if not (token and repo):
-        return (False, "Chưa cấu hình GITHUB_TOKEN/GITHUB_REPO")
-    api = f"https://api.github.com/repos/{repo}/contents/{relpath}"
-    headers = {
-        "Authorization": f"Bearer {token}",
-        "Accept": "application/vnd.github+json",
-        "User-Agent": "ai-bridge-design",
-    }
-    sha = None                                   # SHA hiện tại (nếu file đã có)
-    try:
-        req = urllib.request.Request(api + f"?ref={branch}", headers=headers)
-        with urllib.request.urlopen(req, timeout=15) as r:
-            sha = json.loads(r.read().decode()).get("sha")
-    except urllib.error.HTTPError as e:
-        if e.code != 404:
-            return (False, f"GET lỗi {e.code}")
-    except Exception as e:
-        return (False, f"Mạng/khác: {e}")
-    body = {
-        "message": message,
-        "content": base64.b64encode(content_bytes).decode("ascii"),
-        "branch":  branch,
-    }
-    if sha:
-        body["sha"] = sha
-    try:
-        req = urllib.request.Request(
-            api, data=json.dumps(body).encode("utf-8"),
-            headers={**headers, "Content-Type": "application/json"},
-            method="PUT")
-        with urllib.request.urlopen(req, timeout=20):
-            return (True, "Đã đồng bộ lên GitHub")
-    except urllib.error.HTTPError as e:
-        return (False, f"PUT lỗi {e.code}: {e.read().decode()[:160]}")
-    except Exception as e:
-        return (False, f"Mạng/khác: {e}")
-
-
-def _autocommit(relpath: str, content_bytes: bytes, label: str) -> None:
-    """Tự commit nếu đã bật GitHub sync (best-effort, nuốt lỗi)."""
-    if not github_enabled():
-        return
-    try:
-        commit_file_to_github(relpath, content_bytes,
-                              f"App tự lưu {label}")
-    except Exception:
-        pass
+# Lưu trữ HOÀN TOÀN CỤC BỘ. Người dùng tự tải thư viện về (.zip) để giữ và tự
+# upload lại để dùng khi làm — không còn tự đồng bộ GitHub.
 
 # Nhãn hiển thị cho từng loại
 TYPE_LABEL = {
@@ -293,14 +209,12 @@ def load_library() -> dict:
 
 
 def save_library(lib: dict) -> None:
-    """Ghi thư viện ra JSON (UTF-8, giữ dấu tiếng Việt) + tự đồng bộ GitHub."""
+    """Ghi thư viện ra JSON (UTF-8, giữ dấu tiếng Việt) — chỉ lưu cục bộ."""
     _ensure_dir()
     data = normalize(lib)
     _txt = json.dumps(data, ensure_ascii=False, indent=2)
     with open(LIBRARY_PATH, "w", encoding="utf-8") as f:
         f.write(_txt)
-    _autocommit("Data/Library/components.json", _txt.encode("utf-8"),
-                "thư viện cấu kiện")
 
 
 def records_for(lib: dict, ctype: str) -> list:
@@ -338,8 +252,6 @@ def save_beams(beams: list) -> None:
                       ensure_ascii=False, indent=2)
     with open(BEAMS_PATH, "w", encoding="utf-8") as f:
         f.write(_txt)
-    _autocommit("Data/Library/beams.json", _txt.encode("utf-8"),
-                "thư viện dầm")
 
 
 def make_beam_id(ten: str, existing: list = None) -> str:
@@ -399,8 +311,6 @@ def save_piers(piers: list) -> None:
                       ensure_ascii=False, indent=2)
     with open(PIERS_PATH, "w", encoding="utf-8") as f:
         f.write(_txt)
-    _autocommit("Data/Library/piers.json", _txt.encode("utf-8"),
-                "thư viện trụ lắp ghép")
 
 
 def make_pier_id(ten: str, existing: list = None) -> str:
@@ -453,8 +363,6 @@ def save_mos(mos: list) -> None:
                       ensure_ascii=False, indent=2)
     with open(MOS_PATH, "w", encoding="utf-8") as f:
         f.write(_txt)
-    _autocommit("Data/Library/mos.json", _txt.encode("utf-8"),
-                "thư viện mố lắp ghép")
 
 
 def make_mo_id(ten: str, existing: list = None) -> str:
@@ -480,3 +388,104 @@ def delete_mo(mos: list, mo_id: str) -> list:
 
 def get_mo(mos: list, mo_id: str):
     return next((m for m in (mos or []) if m.get("id") == mo_id), None)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# KHO LAN CAN / GIẢI PHÂN CÁCH (RAILINGS) — mỗi bản ghi là 1 MẶT CẮT NGANG
+# (upload từ DXF) sẽ được kéo (extrude) chạy DỌC TOÀN CẦU.
+#   { id, ten, loai:"lan_can"|"giai_phan_cach",
+#     outer:[[y_mm,z_mm],...], holes:[[[y,z],...],...],
+#     rong_mm, cao_mm, created_by }
+# Hệ toạ độ mặt cắt: trục y = ngang cầu (mm), trục z = cao độ từ mặt cầu (mm).
+# Lưu riêng railings.json.
+# ══════════════════════════════════════════════════════════════════════════
+RAILINGS_PATH = os.path.join(LIBRARY_DIR, "railings.json")
+
+RAILING_TYPES = ("lan_can", "giai_phan_cach")
+RAILING_LABEL = {"lan_can": "Lan can", "giai_phan_cach": "Giải phân cách"}
+
+
+def load_railings() -> list:
+    """Đọc danh sách lan can/giải phân cách. Thiếu file → []."""
+    if os.path.exists(RAILINGS_PATH):
+        try:
+            with open(RAILINGS_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            rows = data.get("railings", []) if isinstance(data, dict) else data
+            return [r for r in rows if isinstance(r, dict)]
+        except (OSError, json.JSONDecodeError):
+            pass
+    return []
+
+
+def save_railings(railings: list) -> None:
+    """Ghi danh sách lan can/giải phân cách ra JSON (chỉ lưu cục bộ)."""
+    _ensure_dir()
+    _txt = json.dumps({"version": VERSION, "railings": list(railings or [])},
+                      ensure_ascii=False, indent=2)
+    with open(RAILINGS_PATH, "w", encoding="utf-8") as f:
+        f.write(_txt)
+
+
+def make_railing_id(ten: str, existing: list = None) -> str:
+    base = slugify(ten) or "lan-can"
+    existing_ids = {r.get("id") for r in (existing or [])}
+    if base not in existing_ids:
+        return base
+    i = 2
+    while f"{base}-{i}" in existing_ids:
+        i += 1
+    return f"{base}-{i}"
+
+
+def upsert_railing(railings: list, rail: dict) -> list:
+    out = [r for r in (railings or []) if r.get("id") != rail.get("id")]
+    out.append(rail)
+    return out
+
+
+def delete_railing(railings: list, rail_id: str) -> list:
+    return [r for r in (railings or []) if r.get("id") != rail_id]
+
+
+def get_railing(railings: list, rail_id: str):
+    return next((r for r in (railings or []) if r.get("id") == rail_id), None)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# XUẤT / NHẬP TOÀN BỘ THƯ VIỆN — gộp 5 kho (cấu kiện tham số, dầm, trụ, mố,
+# lan can) thành 1 bundle JSON để người dùng tự tải về và tự upload lại.
+# ══════════════════════════════════════════════════════════════════════════
+def export_bundle() -> dict:
+    """Gộp toàn bộ thư viện thành 1 dict (để ghi ra 1 file JSON)."""
+    return {
+        "version":    VERSION,
+        "kind":       "ai-bridge-library",
+        "components": normalize(load_library()),
+        "beams":      load_beams(),
+        "piers":      load_piers(),
+        "mos":        load_mos(),
+        "railings":   load_railings(),
+    }
+
+
+def import_bundle(bundle: dict) -> dict:
+    """Ghi đè toàn bộ thư viện từ 1 bundle đã tải lên.
+    Trả về dict {kho: số_bản_ghi} đã nạp. Bỏ qua kho thiếu trong file."""
+    bundle = dict(bundle or {})
+    counts = {}
+    if "components" in bundle:
+        lib = normalize(bundle.get("components") or {})
+        save_library(lib)
+        counts["components"] = sum(len(lib.get(c, [])) for c in COMPONENT_TYPES)
+    for key, saver in (
+        ("beams",    save_beams),
+        ("piers",    save_piers),
+        ("mos",      save_mos),
+        ("railings", save_railings),
+    ):
+        if key in bundle:
+            rows = [x for x in (bundle.get(key) or []) if isinstance(x, dict)]
+            saver(rows)
+            counts[key] = len(rows)
+    return counts

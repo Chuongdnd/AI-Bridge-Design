@@ -119,6 +119,137 @@ def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=Tr
 
 
 # ===========================================================================
+# LAN CAN / GIẢI PHÂN CÁCH — kéo (extrude) MCN khai báo CHẠY DỌC TOÀN CẦU
+# ===========================================================================
+def _sweep_profile_mesh(profile_yz, y_off, mirror, x_start, x_end, z_base,
+                        color, name="", sl=False, opacity=0.95):
+    """Kéo 1 mặt cắt ngang kín (list [y_m, z_m], gốc z=0 tại đáy) dọc trục x
+    từ x_start→x_end thành 1 khối Mesh3d (chỉ dựng mặt bao quanh — đủ kín nhìn
+    như khối đặc; 2 đầu giấu trong mố)."""
+    pts = [(float(p[0]), float(p[1])) for p in (profile_yz or []) if len(p) >= 2]
+    if len(pts) < 3:
+        return None
+    sgn = -1.0 if mirror else 1.0
+    vx, vy, vz = [], [], []
+    for (yy, zz) in pts:                       # 2 đỉnh / điểm: đầu x_start & x_end
+        y = sgn * yy + y_off
+        z = z_base + zz
+        vx += [x_start, x_end]; vy += [y, y]; vz += [z, z]
+    n = len(pts)
+    ii, jj, kk = [], [], []
+    for i in range(n):                          # nối vòng kín (i → i+1 mod n)
+        a0 = 2 * i;            a1 = 2 * i + 1
+        b0 = 2 * ((i + 1) % n); b1 = 2 * ((i + 1) % n) + 1
+        ii += [a0, a0];  jj += [b0, b1];  kk += [b1, a1]
+    return go.Mesh3d(
+        x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
+        color=color, opacity=opacity, name=name, showlegend=sl and bool(name),
+        flatshading=True, lighting=dict(ambient=0.65, diffuse=0.85, specular=0.2),
+        hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
+    )
+
+
+def _sweep_profile_curve_mesh(profile_yz, y_off, mirror, vn_func, s0, s1,
+                              z_base, color, name="", sl=False, step=5.0,
+                              opacity=0.95):
+    """Như _sweep_profile_mesh nhưng BÁM ĐƯỜNG CONG tim tuyến (VN-2000): tại mỗi
+    lý trình s, mỗi điểm MCN đặt theo offset ngang qua vn_func(s, offset)."""
+    pts = [(float(p[0]), float(p[1])) for p in (profile_yz or []) if len(p) >= 2]
+    n = len(pts)
+    if n < 3:
+        return None
+    sgn = -1.0 if mirror else 1.0
+    import numpy as _np
+    m  = max(2, int(abs(s1 - s0) / max(step, 0.5)))
+    ss = _np.linspace(s0, s1, m + 1)
+    vx, vy, vz = [], [], []
+    for s in ss:
+        for (yy, zz) in pts:
+            xx, yc = vn_func(s, sgn * yy + y_off)
+            vx.append(xx); vy.append(yc); vz.append(z_base + zz)
+    ii, jj, kk = [], [], []
+    for i in range(m):
+        for j in range(n):
+            a = i * n + j;            b = i * n + (j + 1) % n
+            c = (i + 1) * n + (j + 1) % n; dd = (i + 1) * n + j
+            ii += [a, a]; jj += [b, c]; kk += [c, dd]
+    return go.Mesh3d(
+        x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
+        color=color, opacity=opacity, name=name, showlegend=sl and bool(name),
+        flatshading=True, lighting=dict(ambient=0.65, diffuse=0.85, specular=0.2),
+        hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
+    )
+
+
+def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
+    """Lan can (2 mép) + giải phân cách (tim) BÁM đường cong tim tuyến VN-2000."""
+    out = []
+    rails = (d or {}).get("railings") or {}
+    if not isinstance(rails, dict):
+        return out
+
+    def _prof_m(rec):
+        return [[p[0] / 1000.0, p[1] / 1000.0] for p in (rec.get("outer") or [])]
+
+    lc = rails.get("lan_can")
+    if lc and lc.get("outer"):
+        prof = _prof_m(lc); w = float(lc.get("rong_mm", 0) or 0) / 1000.0
+        y_edge = bc / 2 - max(w, 0.0) / 2
+        for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
+            _m = _sweep_profile_curve_mesh(
+                prof, y_off=_side * y_edge, mirror=_mir, vn_func=vn_func,
+                s0=s0, s1=s1, z_base=z_base, color="#bfc4c9",
+                name=f"Lan can ({lc.get('ten','')})" if _sl else "", sl=_sl)
+            if _m is not None:
+                out.append(_m)
+    gpc = rails.get("giai_phan_cach")
+    if gpc and gpc.get("outer"):
+        _m = _sweep_profile_curve_mesh(
+            _prof_m(gpc), y_off=0.0, mirror=False, vn_func=vn_func,
+            s0=s0, s1=s1, z_base=z_base, color="#aeb6bd",
+            name=f"Giải phân cách ({gpc.get('ten','')})", sl=True)
+        if _m is not None:
+            out.append(_m)
+    return out
+
+
+def _railing_traces_3d(d, x_start, x_end, bc, z_deck):
+    """Trả về list Mesh3d lan can (2 mép cầu) + giải phân cách (tim) đã chọn
+    cho phương án — đọc từ d['railings'] = {'lan_can': rec, 'giai_phan_cach': rec}."""
+    out = []
+    rails = (d or {}).get("railings") or {}
+    if not isinstance(rails, dict):
+        return out
+
+    def _prof_m(rec):
+        return [[p[0] / 1000.0, p[1] / 1000.0] for p in (rec.get("outer") or [])]
+
+    # ── Lan can: đặt ở 2 mép cầu, mặt ngoài ~ ±bc/2 ──────────────────────
+    lc = rails.get("lan_can")
+    if lc and lc.get("outer"):
+        prof = _prof_m(lc); w = float(lc.get("rong_mm", 0) or 0) / 1000.0
+        y_edge = bc / 2 - max(w, 0.0) / 2          # tâm MCN nằm trong mép
+        for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
+            _m = _sweep_profile_mesh(
+                prof, y_off=_side * y_edge, mirror=_mir,
+                x_start=x_start, x_end=x_end, z_base=z_deck, color="#bfc4c9",
+                name=f"Lan can ({lc.get('ten','')})" if _sl else "", sl=_sl)
+            if _m is not None:
+                out.append(_m)
+
+    # ── Giải phân cách: đặt ở tim cầu (y=0) ──────────────────────────────
+    gpc = rails.get("giai_phan_cach")
+    if gpc and gpc.get("outer"):
+        _m = _sweep_profile_mesh(
+            _prof_m(gpc), y_off=0.0, mirror=False,
+            x_start=x_start, x_end=x_end, z_base=z_deck, color="#aeb6bd",
+            name=f"Giải phân cách ({gpc.get('ten','')})", sl=True)
+        if _m is not None:
+            out.append(_m)
+    return out
+
+
+# ===========================================================================
 # SƠ ĐỒ CỌC khai báo từ DXF (utils/pile_plan.py) — vẽ theo tọa độ thật + cọc xiên
 # ===========================================================================
 def _layout_piles(d, pos_key):
@@ -1536,6 +1667,12 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
                              color="#e8eaf0", opacity=0.55,
                              name="Bản mặt cầu" if sl else "", sl=sl))
 
+    # ── Lan can / Giải phân cách — kéo MCN chạy dọc toàn cầu ──────────────
+    try:
+        traces.extend(_railing_traces_3d(d, x0, x_end, bc, z_deck))
+    except Exception as _e:
+        print(f"[ve_cau_3d] lan can lỗi: {_e}")
+
     fig = go.Figure(data=traces)
 
     # Vẽ khung tĩnh không trong 3D
@@ -2027,6 +2164,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                               z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
         fig.add_trace(_aswept(x0, x_end, -bc/2, bc/2,
                               z_bant, z_deck, "#d5d8dc", 0.82, "Bản mặt cầu"))
+
+        # Lan can / Giải phân cách — kéo MCN bám đường cong tim tuyến
+        try:
+            for _rt in _railing_curve_traces(d, _vn, x0, x_end, bc, z_phu):
+                fig.add_trace(_rt)
+        except Exception as _e:
+            print(f"[add_all] lan can lỗi: {_e}")
 
         # Dầm chính: mô hình 3D do người dùng dựng (tab Chi tiết dầm) được chèn
         # ở 00-Interface qua get_beam_model_mesh_traces — KHÔNG vẽ dầm AI tại đây.
