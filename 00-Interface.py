@@ -215,7 +215,6 @@ try:
     EXP  = importlib.import_module("09-Export_CAD_IFC") # Export DXF / IFC
     PLOT = importlib.import_module("00-Drawing_Utils")
     TV   = importlib.import_module("00-Terrain_Viewer")
-    TC   = importlib.import_module("04-Pier-test")
     LPC  = importlib.import_module("10-LopPhu_MatCau")  # Lớp phủ mặt cầu
     BVK  = importlib.import_module("11-BanVe_KetCau")   # Bản vẽ kết cấu 2D/3D
     SSP  = importlib.import_module("09-So_Sanh_PA")     # So sánh 3 phương án
