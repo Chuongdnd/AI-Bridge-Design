@@ -16,6 +16,16 @@ try:
 except ImportError:
     _HAS_OPTION_MENU = False
 import plotly.graph_objects as go
+import plotly.io as _pio
+
+# Mặc định thao tác bản vẽ 2D = PAN (kéo để di chuyển) thay vì zoom — dễ thao
+# tác hơn cho bản vẽ kỹ thuật. Áp cho mọi template dùng trong app. Zoom vẫn
+# dùng được bằng con lăn chuột (scrollZoom=True trong config).
+for _tpl_name in ("plotly_white", "plotly_dark", "plotly", "none"):
+    try:
+        _pio.templates[_tpl_name].layout.dragmode = "pan"
+    except Exception:
+        pass
 
 # --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
 st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")

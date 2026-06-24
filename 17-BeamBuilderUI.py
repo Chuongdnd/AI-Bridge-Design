@@ -2110,6 +2110,7 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
     _leg = True
     for i_dam in range(n_dam):
         sec, mir = _cell_section(pfx, active, secmap, 1, 3, i_dam, n_dam)
+        _drop_holes = False
         if which == "end":
             # Mặt cắt tại đầu dầm của đúng cây dầm (variant) ở vị trí ngang này.
             _T = "B" if (i_dam == 0 or i_dam == n_dam - 1) else "G"
@@ -2119,6 +2120,10 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
             _sec_end = (_secs_v or {}).get(_en) if _en else None
             if _sec_end is not None and getattr(_sec_end, "outer", None):
                 sec = _sec_end
+            else:
+                # Không có mặt cắt đầu dầm riêng → đầu dầm là khối ĐẶC (bịt khoang
+                # rỗng), bỏ lỗ để phân biệt rõ với mặt cắt giữa nhịp (có khoang rỗng).
+                _drop_holes = True
         if sec is None or not getattr(sec, "outer", None):
             continue
         _sgn = -1.0 if mir else 1.0
@@ -2137,7 +2142,7 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
             hovertemplate="Mặt cắt dầm thực tế<extra></extra>",
         ))
         _leg = False
-        for hole in (sec.holes or []):
+        for hole in ([] if _drop_holes else (sec.holes or [])):
             if not hole:
                 continue
             hx = [x_center + _sgn * p[0] / 1000.0 for p in hole]
