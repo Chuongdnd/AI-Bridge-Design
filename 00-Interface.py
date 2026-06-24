@@ -262,6 +262,12 @@ try:
     PS = _iutil.module_from_spec(_ps_spec)
     _ps_spec.loader.exec_module(PS)
 
+    # ── Thống kê khối lượng cấu kiện (sơ bộ) ────────────────────────────────
+    _kl_spec = _iutil.spec_from_file_location(
+        "khoi_luong", os.path.join(_bb_dir, "utils", "khoi_luong.py"))
+    KL = _iutil.module_from_spec(_kl_spec)
+    _kl_spec.loader.exec_module(KL)
+
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
     st.stop()
@@ -3049,6 +3055,43 @@ def _resolve_railings_for_pa(pa_key: str) -> dict:
     return out
 
 
+def _pa_dam_roles(d: dict, pa_key: str) -> list:
+    """Danh sách vai trò dầm (nhãn, beam_rec|None, L) của 1 PA để thống kê/khối lượng."""
+    sl = _pa_span_layout(pa_key)
+    beams = st.session_state.get("dam_beams") or CLIB.load_beams()
+    roles = []
+    if sl.get("mode") == "two_tier":
+        roles.append(("nhịp dẫn",  CLIB.get_beam(beams, sl.get("beam_dan")),  sl.get("L_dan")))
+        roles.append(("nhịp chính", CLIB.get_beam(beams, sl.get("beam_main")), sl.get("L_main")))
+    else:
+        _bid = sl.get("beam_dan") or (d.get("lib_dam_applied") or {}).get(pa_key)
+        roles.append(("toàn cầu", CLIB.get_beam(beams, _bid) if _bid else None,
+                      sl.get("L_dan")))
+    return roles
+
+
+def _render_kl_table(rows: list, title: str = None, key: str = None) -> None:
+    """Hiển thị 1 bảng khối lượng: Cấu kiện · Số lượng · BT(m³) · Ván khuôn(m²) · Cốt thép(kg)."""
+    if title:
+        st.markdown(title)
+    if not rows:
+        st.caption("Chưa đủ dữ liệu để thống kê khối lượng.")
+        return
+    _df = pd.DataFrame([{
+        "Cấu kiện":       r["ten"],
+        "Số lượng":       r["so_luong"],
+        "Bê tông (m³)":   r["bt_m3"],
+        "Ván khuôn (m²)": r["coppha_m2"],
+        "Cốt thép (kg)":  r["thep_kg"],
+        "Ghi chú":        r.get("ghi_chu", ""),
+    } for r in rows])
+    st.dataframe(_df, use_container_width=True, hide_index=True, key=key)
+    _t = KL.tong_hop(rows)
+    st.caption(f"**Σ Tổng:** Bê tông **{_t['bt_m3']:.1f} m³** · "
+               f"Ván khuôn **{_t['coppha_m2']:.0f} m²** · "
+               f"Cốt thép **{_t['thep_kg']:.0f} kg** ({_t['thep_kg']/1000:.2f} tấn)")
+
+
 def _apply_beam_to_pa(d: dict, pa_key: str, beam: dict, tier: str = "dan") -> None:
     """Gán dầm thư viện cho 1 PA + nạp sections vào pfx Chi tiết dầm của PA.
 
@@ -5071,6 +5114,18 @@ with _col_main:
                                         config={"scrollZoom": True, "displayModeBar": True},
                                         key="mcn_btc_mid")
 
+                    # ── 4. Bảng KHỐI LƯỢNG cấu kiện TOÀN CẦU ─────────────────
+                    st.markdown("---")
+                    st.markdown("### 📊 Khối lượng cấu kiện — Toàn cầu")
+                    try:
+                        _kl_rows = KL.bang_toan_cau(d, dam_roles=_pa_dam_roles(d, selected_ribbon))
+                        _render_kl_table(_kl_rows, key=f"kl_toancau_{selected_ribbon}")
+                        st.caption("Khối lượng **sơ bộ** — cơ sở lập **dự toán**. "
+                                   "Hệ số cốt thép (kg/m³) theo cấu kiện; cọc khoan nhồi "
+                                   "không tính ván khuôn.")
+                    except Exception as _ekl:
+                        st.error(f"Lỗi bảng khối lượng: {_ekl}")
+
                 except Exception as _e:
                     st.error(f"Lỗi tab Bố trí chung: {_e}")
     
@@ -5156,7 +5211,18 @@ with _col_main:
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt cắt dọc: {_e}")
-    
+
+                # ── Khối lượng ĐỘC LẬP cho vị trí đang chọn (gồm cọc) ────────
+                st.markdown("---")
+                st.markdown(f"### 📊 Khối lượng — {_vt_label_cur} (gồm cọc)")
+                try:
+                    _kl_vt = KL.khoi_luong_vi_tri(d, _selected_vt)
+                    _render_kl_table(_kl_vt, key=f"kl_vt_{selected_ribbon}_{_selected_vt}")
+                    st.caption("Khối lượng **sơ bộ** của riêng vị trí này (thân + xà mũ/"
+                               "thân mố + đài cọc + cọc).")
+                except Exception as _ekl:
+                    st.error(f"Lỗi bảng khối lượng vị trí: {_ekl}")
+
             # ── TAB: Chi tiết dầm — HIỂN THỊ KẾT QUẢ (không khai báo) ────
             with tab_spt:
                 try:
@@ -5190,9 +5256,18 @@ with _col_main:
                     except Exception as _ep:
                         st.error(f"Lỗi mặt bằng bố trí dầm: {_ep}")
 
-                    # ② Chi tiết MCN · mặt cắt dọc · mặt bằng theo từng loại dầm
+                    # ② Khối lượng dầm theo loại (toàn cầu)
+                    st.markdown("**② Khối lượng dầm theo loại** (toàn cầu)")
+                    try:
+                        _render_kl_table(
+                            KL.bang_dam(d, dam_roles=_pa_dam_roles(d, selected_ribbon)),
+                            key=f"kl_dam_{selected_ribbon}")
+                    except Exception as _ekl:
+                        st.error(f"Lỗi bảng khối lượng dầm: {_ekl}")
+
+                    # ③ Chi tiết MCN · mặt cắt dọc · mặt bằng theo từng loại dầm
                     st.markdown("---")
-                    st.markdown("**② Mặt cắt ngang · mặt cắt dọc · mặt bằng — theo từng loại dầm**")
+                    st.markdown("**③ Mặt cắt ngang · mặt cắt dọc · mặt bằng — theo từng loại dầm**")
                     _sl_ctd    = _pa_span_layout(selected_ribbon)
                     _beams_ctd = st.session_state.get("dam_beams") or CLIB.load_beams()
                     _kcn_ctd   = dict(d.get("kcn_result") or d.get("ai_result") or {})
