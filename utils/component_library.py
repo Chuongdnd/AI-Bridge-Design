@@ -126,8 +126,8 @@ SCHEMA = {
              "be_rong_xa_mu", "ghi_chu"],
     "mo":   ["ten", "loai_mo", "chieu_cao", "be_rong",
              "be_day_tuong", "ghi_chu"],
-    "mong": ["ten", "loai_mong", "duong_kinh_coc", "so_coc",
-             "chieu_dai_coc", "ghi_chu"],
+    "mong": ["ten", "loai_mong", "tiet_dien", "canh_b", "canh_h", "so_canh",
+             "duong_kinh_coc", "so_coc", "chieu_dai_coc", "ghi_chu"],
 }
 
 # Trường số (numeric) — dùng để cấu hình cột & ép kiểu khi lưu
@@ -135,7 +135,7 @@ NUMERIC_FIELDS = {
     "dam":  ["chieu_dai", "chieu_cao", "khoang_cach_dam", "so_luong_dam", "be_rong_canh"],
     "tru":  ["B_tru", "D_than", "H_than", "be_rong_xa_mu"],
     "mo":   ["chieu_cao", "be_rong", "be_day_tuong"],
-    "mong": ["duong_kinh_coc", "so_coc", "chieu_dai_coc"],
+    "mong": ["canh_b", "canh_h", "so_canh", "duong_kinh_coc", "so_coc", "chieu_dai_coc"],
 }
 
 # Nhãn cột tiếng Việt (dùng cho st.column_config bên Interface)
@@ -159,6 +159,10 @@ FIELD_LABEL = {
     "duong_kinh_coc":  "D cọc (m)",
     "so_coc":          "Số cọc",
     "chieu_dai_coc":   "L cọc (m)",
+    "tiet_dien":       "Dạng mặt cắt",
+    "canh_b":          "Cạnh/Ø b (mm)",
+    "canh_h":          "Cạnh h (mm)",
+    "so_canh":         "Số cạnh",
     "ghi_chu":         "Ghi chú",
 }
 
@@ -168,6 +172,7 @@ LOAI_OPTIONS = {
     "loai_tru":  ["Trụ thân đặc", "Trụ thân cột", "Trụ thân hẹp", "Khác"],
     "loai_mo":   ["Mố chữ U", "Mố vùi", "Mố chữ nhật", "Khác"],
     "loai_mong": ["Cọc khoan nhồi", "Cọc ép", "Móng nông", "Khác"],
+    "tiet_dien": ["Tròn", "Vuông", "Chữ nhật", "Đa giác đều"],
 }
 
 
@@ -226,11 +231,14 @@ def default_library() -> dict:
     ]
     mong = [
         _rec("mong", "Cọc khoan nhồi D1.0", loai_mong="Cọc khoan nhồi",
+             tiet_dien="Tròn", canh_b=1000.0, canh_h=0.0, so_canh=0,
              duong_kinh_coc=1.0, so_coc=6, chieu_dai_coc=30.0,
              ghi_chu="Đất yếu, tải lớn"),
         _rec("mong", "Cọc ép D0.4", loai_mong="Cọc ép",
+             tiet_dien="Vuông", canh_b=400.0, canh_h=0.0, so_canh=0,
              duong_kinh_coc=0.4, so_coc=12, chieu_dai_coc=20.0, ghi_chu=""),
         _rec("mong", "Móng nông", loai_mong="Móng nông",
+             tiet_dien="", canh_b=0.0, canh_h=0.0, so_canh=0,
              duong_kinh_coc=0.0, so_coc=0, chieu_dai_coc=0.0,
              ghi_chu="Nền đá / đất tốt"),
     ]

@@ -256,6 +256,12 @@ try:
     PP = _iutil.module_from_spec(_pp_spec)
     _pp_spec.loader.exec_module(PP)
 
+    # ── Chi tiết mặt cắt cọc (parametric) ───────────────────────────────────
+    _ps_spec = _iutil.spec_from_file_location(
+        "pile_section", os.path.join(_bb_dir, "utils", "pile_section.py"))
+    PS = _iutil.module_from_spec(_ps_spec)
+    _ps_spec.loader.exec_module(PS)
+
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
     st.stop()
@@ -334,7 +340,10 @@ def _coc_lib_options():
         D = float(m.get("duong_kinh_coc", 0) or 0)
         L = float(m.get("chieu_dai_coc", 0) or 0)
         if D > 0:
-            opts.append((f"{m.get('ten','(cọc)')} — Ø{D:.2f}m, L={L:.0f}m", D, L))
+            _shp = m.get("tiet_dien", "")
+            _mc = (PS.describe(_shp, m.get("canh_b", 0), m.get("canh_h", 0),
+                               m.get("so_canh", 0)) if _shp else f"Ø{D*1000:.0f}")
+            opts.append((f"{m.get('ten','(cọc)')} — {_mc}, L={L:.0f}m", D, L))
     return opts
 
 
@@ -3745,6 +3754,147 @@ def render_assembly_library(kind: str) -> None:
             st.rerun()
 
 
+def _pile_section_fig(shape, b_mm, h_mm, n_sides, height=260, title=""):
+    """Vẽ xem trước MẶT CẮT NGANG cọc từ tham số (mm)."""
+    import plotly.graph_objects as _go
+    poly = PS.section_polygon(shape, b_mm, h_mm, n_sides)
+    xs = [p[0] for p in poly] + [poly[0][0]]
+    zs = [p[1] for p in poly] + [poly[0][1]]
+    fig = _go.Figure()
+    fig.add_trace(_go.Scatter(
+        x=xs, y=zs, fill="toself", mode="lines",
+        fillcolor="rgba(170,183,184,0.45)", line=dict(color="#566573", width=2),
+        hoverinfo="skip", showlegend=False))
+    # tâm + ký hiệu trục
+    _r = max(abs(min(xs)), abs(max(xs)), abs(min(zs)), abs(max(zs)), 1.0)
+    fig.add_shape(type="line", x0=-_r*1.15, y0=0, x1=_r*1.15, y1=0,
+                  line=dict(color="#aab7b8", width=1, dash="dashdot"))
+    fig.add_shape(type="line", x0=0, y0=-_r*1.15, x1=0, y1=_r*1.15,
+                  line=dict(color="#aab7b8", width=1, dash="dashdot"))
+    _Deq = PS.equivalent_D_m(shape, b_mm, h_mm, n_sides)
+    fig.update_layout(
+        title=dict(text=title or f"{PS.describe(shape, b_mm, h_mm, n_sides)} · "
+                                 f"Ø_tđ={_Deq:.2f}m", x=0.5, font=dict(size=12)),
+        xaxis=dict(title="x (mm)", scaleanchor="y", scaleratio=1,
+                   showgrid=True, gridcolor="#eef2f3", zeroline=False),
+        yaxis=dict(title="z (mm)", showgrid=True, gridcolor="#eef2f3", zeroline=False),
+        height=height, template="plotly_white",
+        margin=dict(l=50, r=20, t=44, b=40),
+    )
+    return fig
+
+
+def render_mong_library(lib: dict) -> None:
+    """Thư viện MÓNG: tạo CHI TIẾT CỌC qua mặt cắt ngang (parametric)."""
+    st.markdown("##### 🦵 Chi tiết cọc (mặt cắt ngang)")
+    st.caption("Tạo chi tiết cọc bằng cách chọn **dạng mặt cắt** và nhập kích thước "
+               "(mm). Đường kính tương đương (m) tự suy ra để dùng cho **Sơ đồ cọc** "
+               "và các hình mố–trụ.")
+    recs = list(CLIB.records_for(lib, "mong"))
+
+    # Danh sách chi tiết cọc hiện có
+    if recs:
+        st.markdown("**Đã có trong thư viện:**")
+        for _r in recs:
+            _shp = _r.get("tiet_dien", "") or "—"
+            _b = _r.get("canh_b", 0); _h = _r.get("canh_h", 0); _n = _r.get("so_canh", 0)
+            _desc = (PS.describe(_shp, _b, _h, _n) if _shp not in ("", "—") else "MC chưa khai")
+            st.markdown(
+                f"- **{_r.get('ten','(cọc)')}** · {_r.get('loai_mong','—')} · "
+                f"{_desc} · Ø_tđ={float(_r.get('duong_kinh_coc',0) or 0):.2f}m · "
+                f"L={float(_r.get('chieu_dai_coc',0) or 0):.0f}m")
+
+    st.markdown("---")
+    st.markdown("**➕ Thêm / sửa chi tiết cọc**")
+    _names = ["— Tạo mới —"] + [r.get("ten", "") for r in recs]
+    _pick = st.selectbox("Chọn để sửa", _names, index=0, key="mong_pick")
+    _cur = {}
+    if _pick != _names[0]:
+        _cur = next((r for r in recs if r.get("ten") == _pick), {})
+    # Hậu tố key theo record đang chọn → đổi record thì widget lấy lại default mới
+    _pk = str(_names.index(_pick))
+
+    _c1, _c2 = st.columns([3, 2])
+    with _c1:
+        _ten = st.text_input("Tên chi tiết cọc", value=_cur.get("ten", ""),
+                             key=f"mong_ten_{_pk}")
+        _loai = st.selectbox(
+            "Loại móng", CLIB.LOAI_OPTIONS["loai_mong"],
+            index=(CLIB.LOAI_OPTIONS["loai_mong"].index(_cur["loai_mong"])
+                   if _cur.get("loai_mong") in CLIB.LOAI_OPTIONS["loai_mong"] else 0),
+            key=f"mong_loai_{_pk}")
+        _shapes = PS.SHAPES
+        _shape = st.selectbox(
+            "Dạng mặt cắt", _shapes,
+            index=(_shapes.index(_cur["tiet_dien"])
+                   if _cur.get("tiet_dien") in _shapes else 0),
+            key=f"mong_shape_{_pk}")
+        # record cũ chưa khai mặt cắt → suy cạnh b từ đường kính tương đương
+        _b_def = float(_cur.get("canh_b", 0) or 0)
+        if _b_def <= 0:
+            _b_def = float(_cur.get("duong_kinh_coc", 0) or 0) * 1000 or 1000.0
+        _cc1, _cc2, _cc3 = st.columns(3)
+        _b = _cc1.number_input(
+            "Cạnh/Ø b (mm)", 50.0, 5000.0, _b_def, 50.0, key=f"mong_b_{_pk}")
+        _h = _cc2.number_input(
+            "Cạnh h (mm)", 0.0, 5000.0,
+            float(_cur.get("canh_h", 0) or 0), 50.0, key=f"mong_h_{_pk}",
+            help="Chỉ dùng cho Chữ nhật (chiều cao).",
+            disabled=(_shape != "Chữ nhật"))
+        _n = _cc3.number_input(
+            "Số cạnh", 3, 16, int(_cur.get("so_canh", 8) or 8), 1, key=f"mong_n_{_pk}",
+            help="Chỉ dùng cho Đa giác đều.",
+            disabled=(_shape != "Đa giác đều"))
+        _cd1, _cd2 = st.columns(2)
+        _sococ = _cd1.number_input("Số cọc (gợi ý)", 0, 200,
+                                   int(_cur.get("so_coc", 0) or 0), 1,
+                                   key=f"mong_sococ_{_pk}")
+        _Lcoc = _cd2.number_input("L cọc (m)", 0.0, 120.0,
+                                  float(_cur.get("chieu_dai_coc", 30) or 30), 1.0,
+                                  key=f"mong_Lcoc_{_pk}")
+        _ghi = st.text_input("Ghi chú", value=_cur.get("ghi_chu", ""),
+                             key=f"mong_ghi_{_pk}")
+    with _c2:
+        try:
+            st.plotly_chart(_pile_section_fig(_shape, _b, _h, _n),
+                            use_container_width=True, config={"displayModeBar": False})
+        except Exception as _e:
+            st.error(f"Lỗi vẽ mặt cắt: {_e}")
+        st.metric("Ø tương đương", f"{PS.equivalent_D_m(_shape, _b, _h, _n):.3f} m")
+
+    _b1, _b2 = st.columns([1, 1])
+    if _b1.button("💾 Lưu chi tiết cọc", type="primary", key="mong_save"):
+        if not str(_ten).strip():
+            st.error("Cần nhập **Tên chi tiết cọc**.")
+        else:
+            _flds = PS.section_fields(_shape, _b, _h, _n)
+            _new = {
+                "ten": _ten.strip(), "loai_mong": _loai,
+                "so_coc": int(_sococ), "chieu_dai_coc": float(_Lcoc),
+                "ghi_chu": _ghi, **_flds,
+            }
+            _byname = {r.get("ten"): r for r in recs}
+            _byname[_new["ten"]] = _new           # upsert theo tên
+            _newlib = dict(lib); _newlib["mong"] = list(_byname.values())
+            try:
+                CLIB.save_library(_newlib)
+                st.session_state.component_library = CLIB.normalize(_newlib)
+                st.success(f"✅ Đã lưu chi tiết cọc **{_new['ten']}**.")
+                st.rerun()
+            except Exception as _e:
+                st.error(f"Lỗi lưu: {_e}")
+    if _pick != _names[0] and _b2.button("🗑 Xóa chi tiết này", key="mong_del"):
+        _keep = [r for r in recs if r.get("ten") != _pick]
+        _newlib = dict(lib); _newlib["mong"] = _keep
+        try:
+            CLIB.save_library(_newlib)
+            st.session_state.component_library = CLIB.normalize(_newlib)
+            st.success(f"Đã xóa **{_pick}**.")
+            st.rerun()
+        except Exception as _e:
+            st.error(f"Lỗi xóa: {_e}")
+
+
 def render_thu_vien() -> None:
     """Tab Thư viện cấu kiện dùng chung.
     Dầm: tạo qua panel CAD. Trụ/Mố/Móng: bảng tham số. Luôn truy cập được."""
@@ -3788,36 +3938,8 @@ def render_thu_vien() -> None:
     with _tabs[2]:
         render_assembly_library("mo")
 
-    for ctype, _tab in zip(_simple, _tabs[3:]):
-        with _tab:
-            cols = CLIB.SCHEMA[ctype]
-            df   = pd.DataFrame(CLIB.records_for(lib, ctype), columns=cols)
-            colcfg = {}
-            for f in cols:
-                lbl = CLIB.FIELD_LABEL.get(f, f)
-                if f in CLIB.LOAI_OPTIONS:
-                    colcfg[f] = st.column_config.SelectboxColumn(
-                        lbl, options=CLIB.LOAI_OPTIONS[f], required=False)
-                elif f in CLIB.NUMERIC_FIELDS[ctype]:
-                    colcfg[f] = st.column_config.NumberColumn(lbl, format="%.2f", step=0.1)
-                else:
-                    colcfg[f] = st.column_config.TextColumn(lbl)
-            _edited = st.data_editor(
-                df, key=f"clib_editor_{ctype}", num_rows="dynamic",
-                use_container_width=True, hide_index=True, column_config=colcfg,
-            )
-            if st.button(f"💾 Lưu {CLIB.TYPE_LABEL[ctype]}", key=f"clib_save_{ctype}"):
-                try:
-                    recs = _edited.fillna("").to_dict("records")
-                    _newlib = dict(lib)
-                    _newlib[ctype] = [r for r in recs if str(r.get("ten", "")).strip()]
-                    CLIB.save_library(_newlib)
-                    st.session_state.component_library = CLIB.normalize(_newlib)
-                    st.session_state.pop(f"clib_editor_{ctype}", None)
-                    st.success(f"✅ Đã lưu {CLIB.TYPE_LABEL[ctype]}.")
-                    st.rerun()
-                except Exception as _e:
-                    st.error(f"Lỗi lưu: {_e}")
+    with _tabs[3]:
+        render_mong_library(lib)
 
 
 selected_ribbon = st.session_state.get('current_tab', 'THUYẾT MINH')
