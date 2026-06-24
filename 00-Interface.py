@@ -5275,34 +5275,58 @@ with _col_main:
                             return _fh.read()
                     return None
 
-                # Cây xuất: (nhãn thư mục, tên thư mục trong zip, [(id, nhãn, tệp, producer)])
+                # Cây xuất 3 cấp: (thư mục, dir, [ (cấu kiện, sub_dir,
+                #   [ (id, định dạng, tệp, producer) ]) ]). Quy ước: 2D→DXF, 3D→IFC.
                 _exp_tree = [
-                    ("📐 Bản vẽ CAD (DXF)", "BanVe_CAD", [
-                        ("td",  "Trắc dọc cầu",   "trac_doc.dxf",      lambda: EXP.export_trac_doc_dxf(d)),
-                        ("mcn", "Mặt cắt ngang",  "mat_cat_ngang.dxf", lambda: EXP.export_mcn_dxf(d)),
-                        ("tru", "Trụ cầu",        "tru.dxf",           lambda: EXP.export_tru_dxf(d)),
+                    ("🌉 Kết cấu cầu", "KetCauCau", [
+                        ("Mặt cắt ngang", "MatCatNgang", [
+                            ("mcn2d", "2D — DXF",            "mat_cat_ngang.dxf",
+                             lambda: EXP.export_mcn_dxf(d)),
+                            ("mcn3d", "3D — IFC (kéo dọc cầu)", "mat_cat_ngang_3d.ifc",
+                             lambda: EXP.export_bridge_ifc(d)),
+                        ]),
+                        ("Trắc dọc", "TracDoc", [
+                            ("td2d", "2D — DXF", "trac_doc.dxf",
+                             lambda: EXP.export_trac_doc_dxf(d)),
+                        ]),
+                        ("Trụ cầu", "Tru", [
+                            ("tru2d", "2D — DXF", "tru.dxf",
+                             lambda: EXP.export_tru_dxf(d)),
+                            ("tru3d", "3D — IFC", "tru.ifc",
+                             lambda: EXP.export_pier_ifc(d)),
+                        ]),
+                        ("Kết cấu toàn cầu", "ToanCau", [
+                            ("cau3d", "3D — IFC", "ket_cau_cau.ifc",
+                             lambda: EXP.export_bridge_ifc(d)),
+                        ]),
                     ]),
-                    ("🏗️ Mô hình BIM (IFC)", "MoHinh_IFC", [
-                        ("bifc", "Kết cấu cầu",       "ket_cau_cau.ifc", lambda: EXP.export_bridge_ifc(d)),
-                        ("pifc", "Trụ cầu",           "tru.ifc",         lambda: EXP.export_pier_ifc(d)),
-                        ("tifc", "Địa hình khảo sát", "dia_hinh.ifc",    _terrain_ifc_bytes),
+                    ("🗺️ Địa hình", "DiaHinh", [
+                        ("Địa hình khảo sát", "KhaoSat", [
+                            ("dh3d", "3D — IFC", "dia_hinh.ifc", _terrain_ifc_bytes),
+                        ]),
                     ]),
                     ("📚 Dữ liệu / Thư viện", "DuLieu", [
-                        ("lib", "Toàn bộ thư viện cấu kiện", "thu_vien.json",
-                         lambda: json.dumps(CLIB.export_bundle(), ensure_ascii=False,
-                                            indent=2).encode("utf-8")),
-                        ("par", "Thông số & kết quả phương án", "thong_so_phuong_an.json",
-                         lambda: json.dumps(
-                             {k: d.get(k) for k in
-                              ("bc", "B", "H", "vtk", "kcn_result", "tru_result",
-                               "mong_result", "lop_phu_result", "geo_logic", "span_layout")},
-                             ensure_ascii=False, indent=2, default=str).encode("utf-8")),
+                        ("Thư viện cấu kiện", "ThuVien", [
+                            ("lib", "Toàn bộ (JSON)", "thu_vien.json",
+                             lambda: json.dumps(CLIB.export_bundle(), ensure_ascii=False,
+                                                indent=2).encode("utf-8")),
+                        ]),
+                        ("Phương án", "PhuongAn", [
+                            ("par", "Thông số & kết quả (JSON)", "thong_so_phuong_an.json",
+                             lambda: json.dumps(
+                                 {k: d.get(k) for k in
+                                  ("bc", "B", "H", "vtk", "kcn_result", "tru_result",
+                                   "mong_result", "lop_phu_result", "geo_logic", "span_layout")},
+                                 ensure_ascii=False, indent=2, default=str).encode("utf-8")),
+                        ]),
                     ]),
                 ]
 
-                # Danh sách key tất cả mục — phục vụ nút chọn/bỏ chọn tất cả
+                # Tất cả key (3 cấp) — phục vụ nút chọn/bỏ chọn tất cả
                 _all_keys = [f"exp_{_PA_TAG}_{_id}"
-                             for _, _, _items in _exp_tree for _id, *_ in _items]
+                             for _, _, _subs in _exp_tree
+                             for _, _, _fmts in _subs
+                             for _id, *_ in _fmts]
                 _bt1, _bt2, _ = st.columns([1, 1, 3])
                 if _bt1.button("✅ Chọn tất cả", key=f"exp_selall_{_PA_TAG}",
                                use_container_width=True):
@@ -5315,15 +5339,21 @@ with _col_main:
                         st.session_state[_k] = False
                     st.rerun()
 
-                _sel_items = []     # (subdir, fname, producer, label)
-                for _flabel, _fdir, _items in _exp_tree:
-                    _n_on = sum(1 for _id, *_ in _items
-                                if st.session_state.get(f"exp_{_PA_TAG}_{_id}"))
-                    with st.expander(f"{_flabel}  ({_n_on}/{len(_items)})", expanded=True):
-                        for _id, _lbl, _fn, _mk in _items:
-                            if st.checkbox(f"{_lbl}  ·  `{_fdir}/{_fn}`",
-                                           key=f"exp_{_PA_TAG}_{_id}"):
-                                _sel_items.append((_fdir, _fn, _mk, _lbl))
+                _sel_items = []     # (dir_đầy_đủ, fname, producer, label)
+                for _flabel, _fdir, _subs in _exp_tree:
+                    _ids_in = [f"exp_{_PA_TAG}_{_id}"
+                               for _, _, _fmts in _subs for _id, *_ in _fmts]
+                    _n_on = sum(1 for _k in _ids_in if st.session_state.get(_k))
+                    with st.expander(f"{_flabel}  ({_n_on}/{len(_ids_in)})", expanded=True):
+                        for _slabel, _sdir, _fmts in _subs:
+                            st.markdown(f"**↳ {_slabel}**")
+                            for _id, _fmtlbl, _fn, _mk in _fmts:
+                                if st.checkbox(
+                                        f"　{_fmtlbl}  ·  `{_fdir}/{_sdir}/{_fn}`",
+                                        key=f"exp_{_PA_TAG}_{_id}"):
+                                    _sel_items.append(
+                                        (f"{_fdir}/{_sdir}", _fn, _mk,
+                                         f"{_slabel} · {_fmtlbl}"))
 
                 st.markdown("---")
                 _cz1, _cz2 = st.columns([1, 1])
