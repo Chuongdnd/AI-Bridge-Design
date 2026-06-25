@@ -91,10 +91,15 @@ def _dims(d):
     L_tru = max(2.5, bc * 0.25)
     cap_H = max(0.8, bc * 0.06)
     cap_L = min(bc * 0.9, L_tru + 1.2)
-    # Móng cọc
-    D_coc_mm  = _f(mong.get("D_coc_mm", mong.get("kich_thuoc_mm", 800)), 800)
-    L_coc     = _f(mong.get("chieu_dai_coc", mong.get("L_coc_tu", 20)), 20)
-    so_coc_be = int(_f(mong.get("so_coc_be", mong.get("So_coc_tu", 5)), 5)) or 5
+    # Móng cọc — chấp nhận mọi bộ tên khóa (AI / thư viện / khối lượng)
+    _Dmm = mong.get("D_coc_mm") or mong.get("kich_thuoc_mm")
+    if _Dmm:
+        D_coc_mm = _f(_Dmm, 800)
+    else:                                   # thư viện dùng duong_kinh_coc (m)
+        D_coc_mm = (_f(mong.get("duong_kinh_coc"), 0) * 1000.0) or 800
+    L_coc     = _f(mong.get("chieu_dai_coc") or mong.get("L_coc_tu"), 20) or 20
+    so_coc_be = int(_f(mong.get("so_coc_be") or mong.get("So_coc_tu")
+                       or mong.get("so_coc"), 5)) or 5
     loai_coc  = str(mong.get("loai_mong", "Cọc khoan nhồi"))
     D_m = D_coc_mm * _MM2M
     Be_ngang = _f(mong.get("Be_ngang"), max(3.0, D_m * 4))
