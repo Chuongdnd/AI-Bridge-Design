@@ -3817,9 +3817,43 @@ def _render_asm_edit_panel(cfg: dict) -> None:
         st.rerun()
 
 
+# Một số TRỤ ĐIỂN HÌNH mặc định — ghép sẵn từ 3 bộ phận trong thư viện.
+_PIER_PRESETS = [
+    {"ten": "Trụ thân đặc tròn", "cap_id": "xm-i-tng",
+     "stem_id": "than-dac-tron", "footing_id": "be-vuong"},
+    {"ten": "Trụ 2 cột lục giác", "cap_id": "xm-2-phia-spt",
+     "stem_id": "than-2-lucgiac", "footing_id": "be-vuong"},
+    {"ten": "Trụ thân vuông đổi tiết diện",
+     "cap_id": "xm-cung-dam-i-i-tng-tng-cao-1-5",
+     "stem_id": "than-dac-vuong-thay-doi-tiet-dien", "footing_id": "be-vuong"},
+]
+
+
+def _pier_part_libs():
+    """Nạp & cache 3 thư viện bộ phận trụ (caps/stems/footings)."""
+    if st.session_state.get("lib_caps") is None:
+        st.session_state["lib_caps"] = CLIB.load_caps()
+    if st.session_state.get("lib_stems") is None:
+        st.session_state["lib_stems"] = CLIB.load_stems()
+    if st.session_state.get("lib_footings") is None:
+        st.session_state["lib_footings"] = CLIB.load_footings()
+    return (st.session_state["lib_caps"], st.session_state["lib_stems"],
+            st.session_state["lib_footings"])
+
+
 def _resolve_assembly(d, kind: str) -> dict:
     """Bản ghi trụ/mố lắp ghép đang gán cho cầu (None nếu dùng mặc định)."""
     cfg = _asm_cfg(kind)
+    if kind == "tru":
+        pp = (d or {}).get("pier_parts")
+        if pp and (pp.get("cap_id") or pp.get("stem_id") or pp.get("footing_id")):
+            caps, stems, foots = _pier_part_libs()
+            cap  = CLIB.get_cap(caps, pp.get("cap_id"))
+            stem = CLIB.get_stem(stems, pp.get("stem_id"))
+            foot = CLIB.get_footing(foots, pp.get("footing_id"))
+            if cap or stem or foot:
+                return PB.build_pier_from_parts(cap, stem, foot,
+                                                ten=pp.get("ten", "Trụ lắp ghép"))
     rid = (d or {}).get(cfg["id_key"])
     if not rid:
         return None
@@ -3827,8 +3861,67 @@ def _resolve_assembly(d, kind: str) -> dict:
     return cfg["get"](items, rid)
 
 
+def _pier_parts_label(pp, caps, stems, foots) -> str:
+    """Tóm tắt tên 3 bộ phận của 1 cấu hình trụ lắp ghép."""
+    _c = CLIB.get_cap(caps, pp.get("cap_id")) if pp else None
+    _s = CLIB.get_stem(stems, pp.get("stem_id")) if pp else None
+    _f = CLIB.get_footing(foots, pp.get("footing_id")) if pp else None
+    return (f"🧢 {(_c or {}).get('ten','—')} · "
+            f"🏛️ {(_s or {}).get('ten','—')} · "
+            f"🟫 {(_f or {}).get('ten','—')}")
+
+
+def _pier_assembler(d) -> None:
+    """Chọn 1 TRỤ điển hình có sẵn, hoặc tự ghép từ 3 bộ phận (xà mũ/thân/bệ).
+    Khi gắn vào cầu: xà mũ tự co bề rộng theo cầu, thân tự co chiều cao tĩnh không."""
+    caps, stems, foots = _pier_part_libs()
+    if not (caps or stems or foots):
+        st.caption("🏗️ Chưa có bộ phận trụ — dựng **Xà mũ / Thân / Bệ** ở "
+                   "**THƯ VIỆN → Trụ** rồi quay lại đây để lắp vào cầu.")
+        d["pier_parts"] = None
+        return
+    _opts = [p["ten"] for p in _PIER_PRESETS] + ["🔧 Tùy chỉnh bộ phận…"]
+    cur = d.get("pier_parts") or {}
+    _idx = 0
+    for i, p in enumerate(_PIER_PRESETS):
+        if (cur.get("cap_id") == p["cap_id"] and cur.get("stem_id") == p["stem_id"]
+                and cur.get("footing_id") == p["footing_id"]):
+            _idx = i
+            break
+    else:
+        _idx = len(_PIER_PRESETS) if cur else 0
+    _sel = st.selectbox(
+        "🏗️ Trụ áp dụng cho cầu", _opts, index=_idx, key="tru_preset_sel",
+        help="Chọn 1 trụ điển hình có sẵn, hoặc 'Tùy chỉnh' để ghép từng bộ phận. "
+             "Khi gắn vào cầu, xà mũ tự co bề rộng theo cầu, thân tự co chiều cao.")
+    if _sel != _opts[-1]:
+        p = _PIER_PRESETS[_opts.index(_sel)]
+        d["pier_parts"] = {"ten": p["ten"], "cap_id": p["cap_id"],
+                           "stem_id": p["stem_id"], "footing_id": p["footing_id"]}
+        st.caption(_pier_parts_label(d["pier_parts"], caps, stems, foots))
+    else:
+        def _pick(label, items, key, cur_id):
+            _o = ["(không)"] + [it.get("ten", "(?)") for it in items]
+            _i = next((k + 1 for k, it in enumerate(items)
+                       if it.get("id") == cur_id), 0)
+            _s = st.selectbox(label, _o, index=_i, key=key)
+            return None if _s == _o[0] else items[_o.index(_s) - 1].get("id")
+        _c1, _c2, _c3 = st.columns(3)
+        with _c1:
+            cid = _pick("🧢 Xà mũ", caps, "tru_cap_sel", cur.get("cap_id"))
+        with _c2:
+            sid = _pick("🏛️ Thân trụ", stems, "tru_stem_sel", cur.get("stem_id"))
+        with _c3:
+            fid = _pick("🟫 Bệ trụ", foots, "tru_footing_sel", cur.get("footing_id"))
+        d["pier_parts"] = {"ten": "Trụ tùy chỉnh", "cap_id": cid,
+                           "stem_id": sid, "footing_id": fid}
+
+
 def _assembly_picker(d, kind: str) -> None:
     """Selectbox chọn trụ/mố lắp ghép áp dụng cho cầu (lưu d[id_key])."""
+    if kind == "tru":
+        _pier_assembler(d)
+        return
     cfg = _asm_cfg(kind); lab = cfg["label"]
     items = st.session_state.get(cfg["ss"])
     if items is None:
