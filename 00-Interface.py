@@ -3896,9 +3896,9 @@ def _pier_assembler(d) -> None:
              "Khi gắn vào cầu, xà mũ tự co bề rộng theo cầu, thân tự co chiều cao.")
     if _sel != _opts[-1]:
         p = _PIER_PRESETS[_opts.index(_sel)]
-        d["pier_parts"] = {"ten": p["ten"], "cap_id": p["cap_id"],
-                           "stem_id": p["stem_id"], "footing_id": p["footing_id"]}
-        st.caption(_pier_parts_label(d["pier_parts"], caps, stems, foots))
+        _new_pp = {"ten": p["ten"], "cap_id": p["cap_id"],
+                   "stem_id": p["stem_id"], "footing_id": p["footing_id"]}
+        st.caption(_pier_parts_label(_new_pp, caps, stems, foots))
     else:
         def _pick(label, items, key, cur_id):
             _o = ["(không)"] + [it.get("ten", "(?)") for it in items]
@@ -3913,8 +3913,15 @@ def _pier_assembler(d) -> None:
             sid = _pick("🏛️ Thân trụ", stems, "tru_stem_sel", cur.get("stem_id"))
         with _c3:
             fid = _pick("🟫 Bệ trụ", foots, "tru_footing_sel", cur.get("footing_id"))
-        d["pier_parts"] = {"ten": "Trụ tùy chỉnh", "cap_id": cid,
-                           "stem_id": sid, "footing_id": fid}
+        _new_pp = {"ten": "Trụ tùy chỉnh", "cap_id": cid,
+                   "stem_id": sid, "footing_id": fid}
+    # Đổi lựa chọn → rerun để MỌI bản vẽ phía trên (3D, trắc dọc, mặt bằng,
+    # MCN) dựng lại bằng trụ mới (các bản vẽ chạy trước picker trong cùng 1 lần).
+    if _new_pp != (d.get("pier_parts") or None):
+        d["pier_parts"] = _new_pp
+        st.rerun()
+    d["pier_parts"] = _new_pp
+
 
 
 def _assembly_picker(d, kind: str) -> None:
