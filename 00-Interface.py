@@ -3291,6 +3291,70 @@ def _render_dam_edit_panel(d: dict) -> None:
         st.rerun()
 
 
+def _render_part_io(part_key: str, label: str, rows: list,
+                    save_fn, ss_key: str | None = None) -> None:
+    """Sao lưu / khôi phục thư viện CỤC BỘ cho 1 bộ phận.
+
+    rows     : danh sách bản ghi hiện có của bộ phận đó.
+    save_fn  : callback(list) lưu xuống đĩa (vd CLIB.save_beams).
+    ss_key   : nếu có → cập nhật st.session_state[ss_key] = danh sách mới.
+    File tải về theo định dạng {kind, part, rows}; khi upload chấp nhận cả
+    file part lẫn danh sách thuần."""
+    with st.expander(f"💾 Sao lưu / khôi phục thư viện {label}", expanded=False):
+        st.caption(
+            f"Tải về để giữ bản sao thư viện **{label}** (commit vào repo hoặc "
+            "lưu sang máy khác); upload lại để khôi phục. Có thể **gộp** thêm "
+            "hoặc **thay thế toàn bộ**.")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            _payload = json.dumps(
+                {"kind": "ai-bridge-part", "part": part_key, "version": 1,
+                 "rows": rows}, ensure_ascii=False, indent=2)
+            st.download_button(
+                f"⬇️ Tải thư viện {label}", data=_payload.encode("utf-8"),
+                file_name=f"thu_vien_{part_key}.json", mime="application/json",
+                use_container_width=True, key=f"partio_dl_{part_key}")
+        with _c2:
+            _up = st.file_uploader(
+                "⬆️ Nạp lại từ file (.json)", type=["json"],
+                key=f"partio_ul_{part_key}")
+        if _up is not None:
+            try:
+                _doc = json.loads(_up.read().decode("utf-8"))
+                if isinstance(_doc, dict):
+                    _imp = _doc.get("rows")
+                    if _imp is None:
+                        _imp = _doc.get(part_key, [])
+                else:
+                    _imp = _doc
+                _imp = [r for r in (_imp or []) if isinstance(r, dict)]
+            except Exception as _e:
+                _imp = None
+                st.error(f"File không hợp lệ: {_e}")
+            if _imp is not None:
+                _mode = st.radio(
+                    "Cách nạp:", ["Gộp (giữ mục hiện có)", "Thay thế toàn bộ"],
+                    horizontal=True, key=f"partio_mode_{part_key}")
+                if st.button(f"✅ Xác nhận nạp {len(_imp)} mục",
+                             type="primary", key=f"partio_apply_{part_key}"):
+                    if _mode.startswith("Thay"):
+                        _new = _imp
+                    else:
+                        _byid = {r.get("id"): r for r in rows if r.get("id")}
+                        _extra = []
+                        for _r in _imp:
+                            if _r.get("id"):
+                                _byid[_r["id"]] = _r
+                            else:
+                                _extra.append(_r)
+                        _new = list(_byid.values()) + _extra
+                    if ss_key:
+                        st.session_state[ss_key] = _new
+                    save_fn(_new)
+                    st.success(f"Đã nạp {len(_imp)} mục vào thư viện {label}.")
+                    st.rerun()
+
+
 def render_dam_library(d: dict) -> None:
     """Tab Dầm: panel tạo/sửa (nếu đang mở) hoặc danh sách thẻ dầm."""
     if "dam_beams" not in st.session_state:
@@ -3319,49 +3383,8 @@ def render_dam_library(d: dict) -> None:
             st.session_state["_lib_dam_panel"] = "new"
             st.rerun()
 
-    # ── Sao lưu / khôi phục thư viện (lưu vĩnh viễn thủ công) ─────────────────
-    with st.expander("💾 Sao lưu / khôi phục thư viện dầm", expanded=False):
-        st.caption(
-            "Thư viện lưu tại `Data/Library/beams.json` (đã có trong repo). "
-            "Để lưu **VĨNH VIỄN** qua các lần deploy: bấm **Tải về**, rồi commit "
-            "file đó vào repo (hoặc gửi cho người quản trị commit). Sau khi server "
-            "reset, dùng **Nạp lại** để khôi phục.")
-        _bk1, _bk2 = st.columns(2)
-        with _bk1:
-            _payload = json.dumps({"version": 1, "beams": beams},
-                                  ensure_ascii=False, indent=2)
-            st.download_button(
-                "⬇️ Tải về beams.json", data=_payload.encode("utf-8"),
-                file_name="beams.json", mime="application/json",
-                use_container_width=True, key="lib_export_json")
-        with _bk2:
-            _up = st.file_uploader("⬆️ Nạp lại từ file (.json)", type=["json"],
-                                   key="lib_import_json")
-        if _up is not None:
-            try:
-                _data = json.loads(_up.read().decode("utf-8"))
-                _imp  = _data.get("beams", []) if isinstance(_data, dict) else _data
-                _imp  = [b for b in _imp if isinstance(b, dict) and b.get("id")]
-            except Exception as _e:
-                _imp = None
-                st.error(f"File không hợp lệ: {_e}")
-            if _imp is not None:
-                _mode = st.radio(
-                    "Cách nạp:", ["Gộp (giữ dầm hiện có)", "Thay thế toàn bộ"],
-                    horizontal=True, key="lib_import_mode")
-                if st.button(f"✅ Xác nhận nạp {len(_imp)} dầm",
-                             type="primary", key="lib_import_apply"):
-                    if _mode.startswith("Thay"):
-                        _new = _imp
-                    else:
-                        _byid = {b["id"]: b for b in beams}
-                        for _b in _imp:
-                            _byid[_b["id"]] = _b
-                        _new = list(_byid.values())
-                    st.session_state.dam_beams = _new
-                    CLIB.save_beams(_new)
-                    st.success(f"Đã nạp {len(_imp)} dầm vào thư viện.")
-                    st.rerun()
+    # ── Sao lưu / khôi phục thư viện dầm (cục bộ) ────────────────────────────
+    _render_part_io("dam", "dầm", beams, CLIB.save_beams, ss_key="dam_beams")
 
     if not beams:
         st.info("Chưa có dầm nào. Bấm **➕ Tạo dầm mới** để bắt đầu.")
@@ -3776,6 +3799,7 @@ def render_cap_library():
             st.session_state.pop("_cap_edit_id", None)
             st.session_state["_cap_panel"] = "new"
             st.rerun()
+    _render_part_io("caps", "xà mũ", caps, CLIB.save_caps, ss_key="lib_caps")
     if not caps:
         st.info("Chưa có xà mũ nào. Bấm **➕ Tạo xà mũ mới**.")
         return
@@ -3875,6 +3899,8 @@ def render_simple_part_library(kind: str):
                 st.session_state.pop(_k, None)
             st.session_state[f"_{kind}_panel"] = "new"
             st.rerun()
+    _render_part_io(kind, cfg["label"].lower(), items,
+                    getattr(CLIB, cfg["save"]), ss_key=ss)
     if not items:
         st.info(f"Chưa có {cfg['label'].lower()} nào.")
         return
@@ -4003,6 +4029,7 @@ def render_assembly_library(kind: str) -> None:
             st.session_state[f"_lib_{kind}_panel"] = "new"
             st.rerun()
 
+    _render_part_io(kind, lab.lower(), items, cfg["save"], ss_key=ss)
     if not items:
         st.info(f"Chưa có {lab.lower()} nào. Bấm **➕ Tạo {lab.lower()} mới** để bắt đầu.")
         return
@@ -4081,6 +4108,12 @@ def render_mong_library(lib: dict) -> None:
                "(mm). Đường kính tương đương (m) tự suy ra để dùng cho **Sơ đồ cọc** "
                "và các hình mố–trụ.")
     recs = list(CLIB.records_for(lib, "mong"))
+
+    def _save_mong(_new):
+        _nl = dict(lib); _nl["mong"] = _new
+        CLIB.save_library(_nl)
+        st.session_state.component_library = CLIB.normalize(_nl)
+    _render_part_io("mong", "móng", recs, _save_mong)
 
     # ── Danh sách thẻ chi tiết cọc (giống Dầm/Trụ/Mố) — ✏️ sửa · 🗑️ xóa ──
     if recs:
@@ -4236,6 +4269,9 @@ def render_railing_library() -> None:
                "(tab **Bố trí chung**), chọn loại MCN này — mô hình 3D sẽ kéo MCN "
                "đó **chạy dọc toàn cầu**.")
 
+    _render_part_io("railings", "lan can/GPC", rails, CLIB.save_railings,
+                    ss_key="lib_railings")
+
     # ── Danh sách đã có ──────────────────────────────────────────────────
     if rails:
         st.markdown("**Đã có trong thư viện:**")
@@ -4342,17 +4378,9 @@ def _render_library_io() -> None:
     with _io1:
         try:
             _bundle = CLIB.export_bundle()
-            _comp = _bundle.get("components", {})
-            # Đếm THEO thư viện đang hiển thị (không tính seed tham số cũ dầm/trụ/mố)
-            _n = (len(_bundle.get("beams", []))
-                  + len(_bundle.get("caps", [])) + len(_bundle.get("stems", []))
-                  + len(_bundle.get("footings", []))
-                  + len(_bundle.get("mos", []))
-                  + len(_comp.get("mong", []))
-                  + len(_bundle.get("railings", [])))
             _data = json.dumps(_bundle, ensure_ascii=False, indent=2).encode("utf-8")
             st.download_button(
-                f"⬇️ Tải toàn bộ thư viện ({_n} mục)", data=_data,
+                "⬇️ Tải toàn bộ thư viện", data=_data,
                 file_name="thu_vien_cau_kien.json", mime="application/json",
                 use_container_width=True, key="lib_export_all")
         except Exception as _e:
