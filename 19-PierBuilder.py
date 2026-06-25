@@ -188,11 +188,31 @@ def _bbox_ab(pts):
     return min(xs), max(xs), min(ys), max(ys)
 
 
+def _cap_layers(cap: dict) -> list:
+    """Danh sách TẦNG xà mũ [{section, D}] — hỗ trợ cả định dạng cũ ({section,D}
+    = 1 tầng) lẫn mới ({layers:[...]}). Tầng xếp chồng từ dưới lên."""
+    cap = cap or {}
+    if cap.get("layers"):
+        out = []
+        for lay in cap["layers"]:
+            if lay and lay.get("section", {}).get("outer"):
+                out.append({"section": lay["section"],
+                            "D": float(lay.get("D", 1.8) or 1.8)})
+        if out:
+            return out
+    if cap.get("section", {}).get("outer"):
+        return [{"section": cap["section"], "D": float(cap.get("D", 1.8) or 1.8)}]
+    return []
+
+
 def _part_height_m(part: dict, role: str) -> float:
     """Chiều cao (m) một bộ phận theo trục z."""
     if role == "xa_mu":
-        _, _, vmin, vmax = _bbox_ab(part.get("section", {}).get("outer", [[0, 0]]))
-        return (vmax - vmin) * MM
+        h = 0.0
+        for lay in _cap_layers(part):
+            _, _, vmin, vmax = _bbox_ab(lay["section"].get("outer", [[0, 0]]))
+            h += (vmax - vmin) * MM
+        return h or 1.2
     return float(part.get("H", 1.5))
 
 
@@ -225,9 +245,17 @@ def build_pier_mesh_traces(pier: dict, H_tru: float = None,
     traces.append(_plan_mesh(than.get("section"), z, H_than, x_ctr,
                              _COL["than"], L["than"]))
     z += H_than
-    # 3) XÀ MŨ — mặt đứng ngang (u→ngang y, v→cao z) đùn dọc cầu (x) sâu D.
-    traces.append(_cap_mesh(cap.get("section"), z, float(cap.get("D", 1.8)),
-                            x_ctr, _COL["xa_mu"], L["xa_mu"]))
+    # 3) XÀ MŨ — 1..3 TẦNG xếp chồng, mỗi tầng 1 mặt cắt + chiều sâu dọc cầu D.
+    _caps = _cap_layers(cap)
+    _multi = len(_caps) > 1
+    _z_cap = z
+    for _li, _lay in enumerate(_caps):
+        _, _, _vmin, _vmax = _bbox_ab(_lay["section"].get("outer", [[0, 0]]))
+        _h_lay = (_vmax - _vmin) * MM
+        _nm = (f"{L['xa_mu']} T{_li + 1}" if _multi else L["xa_mu"])
+        traces.append(_cap_mesh(_lay["section"], _z_cap, _lay["D"],
+                                x_ctr, _COL["xa_mu"], _nm))
+        _z_cap += _h_lay
     return [t for t in traces if t is not None]
 
 
@@ -321,7 +349,11 @@ def pier_elevation_rects(pier: dict, H_tru: float = None,
     rects.append(_rect(L["than"], _COL["than"],
                        _plan_doc_width_m(than.get("section")), z, H_than))
     z += H_than
-    rects.append(_rect(L["xa_mu"], _COL["xa_mu"], float(cap.get("D", 1.8)), z, H_cap))
+    for _li, _lay in enumerate(_cap_layers(cap)):
+        _, _, _vmin, _vmax = _bbox_ab(_lay["section"].get("outer", [[0, 0]]))
+        _h_lay = (_vmax - _vmin) * MM
+        rects.append(_rect(L["xa_mu"], _COL["xa_mu"], _lay["D"], z, _h_lay))
+        z += _h_lay
     return rects
 
 

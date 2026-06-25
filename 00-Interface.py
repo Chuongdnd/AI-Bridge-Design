@@ -3468,11 +3468,14 @@ def _asm_labels(cfg: dict) -> dict:
 
 def _clear_asm_widgets(kind: str) -> None:
     """Xóa giá trị widget cũ khi mở panel tạo/sửa (tránh dính dữ liệu trước)."""
-    _keys = [f"_lib_{kind}_name", f"pp_{kind}_than_flex"]
+    _keys = [f"_lib_{kind}_name", f"pp_{kind}_than_flex", f"nlay_{kind}_xamu"]
     for role in ("be", "than", "xa_mu"):
         _keys += [f"{kind}_dxf_{role}", f"_{kind}_sig_{role}"]
         for pp in ("H", "B", "D"):
             _keys.append(f"pp_{kind}_{role}_{pp}")
+    for i in range(3):      # tầng xà mũ
+        _keys += [f"{kind}_dxf_xamu_L{i}", f"_{kind}_sig_xamu_L{i}",
+                  f"pp_{kind}_xamu_D_L{i}"]
     for _k in _keys:
         st.session_state.pop(_k, None)
 
@@ -3495,10 +3498,69 @@ def _asm_section_fig(section: dict):
     return fig
 
 
+def _xamu_layers_of(part) -> list:
+    """Lấy danh sách tầng xà mũ từ part (hỗ trợ định dạng cũ {section,D})."""
+    part = part or {}
+    if part.get("layers"):
+        return [dict(l) for l in part["layers"]]
+    if (part.get("section") or {}).get("outer"):
+        return [{"section": part["section"], "D": float(part.get("D", 1.8) or 1.8)}]
+    return []
+
+
+def _render_xamu_layers(kind, part) -> dict:
+    """Editor XÀ MŨ NHIỀU TẦNG: 1-3 tầng xếp chồng (dưới→trên), mỗi tầng 1 mặt
+    cắt ngang + chiều sâu dọc cầu riêng → tả được mũ có vùng đỉnh nông hơn thân."""
+    _layers = _xamu_layers_of(part)
+    _n = int(st.number_input(
+        "Số tầng xà mũ (xếp chồng dưới→trên)", 1, 3, max(1, len(_layers)), 1,
+        key=f"nlay_{kind}_xamu",
+        help="VD: tầng 1 = thân mũ (sâu), tầng 2 = bệ kê gối/đỉnh mũ (nông hơn)."))
+    new_layers = []
+    for i in range(_n):
+        st.markdown(f"**↳ Tầng {i+1}**" + (" — dưới cùng" if i == 0 else ""))
+        cur = _layers[i] if i < len(_layers) else {}
+        sec = dict(cur.get("section") or {})
+        _up = st.file_uploader(f"⬆ Mặt cắt ngang tầng {i+1} (DXF/DWG)",
+                               type=["dxf", "dwg"], key=f"{kind}_dxf_xamu_L{i}")
+        if _up is not None:
+            _sig = f"{_up.name}:{_up.size}"
+            if st.session_state.get(f"_{kind}_sig_xamu_L{i}") != _sig:
+                try:
+                    _res = _BB_ENGINE.parse_dxf_bytes(_up.read())
+                    if _res.get("error"):
+                        st.error(f"Lỗi đọc DXF: {_res['error']}")
+                    elif len(_res.get("outer", [])) >= 3:
+                        sec = {"outer": _res["outer"], "holes": _res.get("holes", [])}
+                        st.session_state[f"_{kind}_sig_xamu_L{i}"] = _sig
+                        st.success(f"✅ Đã nạp tầng {i+1}: {len(sec['outer'])} đỉnh.")
+                    else:
+                        st.warning("Không tìm thấy biên kín trong DXF.")
+                except Exception as _e:
+                    st.error(f"Lỗi xử lý DXF: {_e}")
+        _c1, _c2 = st.columns([3, 2])
+        with _c1:
+            _f = _asm_section_fig(sec)
+            if _f is not None:
+                st.plotly_chart(_f, use_container_width=True,
+                                key=f"{kind}_secfig_xamu_L{i}")
+            else:
+                st.info("Chưa có mặt cắt — upload DXF cho tầng này.")
+        with _c2:
+            _D = st.number_input(
+                f"Chiều sâu dọc cầu D (m) — tầng {i+1}", 0.3, 10.0,
+                float(cur.get("D", 1.8) or 1.8), 0.1,
+                key=f"pp_{kind}_xamu_D_L{i}")
+        new_layers.append({"section": sec, "D": float(_D)})
+    return {"layers": new_layers}
+
+
 def _render_asm_part_editor(kind, spec, part) -> dict:
     """Khối UI 1 bộ phận: upload DXF + xem trước 2D + tham số đùn. Trả part mới."""
     role = spec["role"]; label = spec["label"]
     st.caption(spec["hint"])
+    if role == "xa_mu":
+        return _render_xamu_layers(kind, part)
     part = dict(part or {})
     sec = dict(part.get("section") or {})
 
@@ -3673,9 +3735,12 @@ def render_assembly_library(kind: str) -> None:
         with _info:
             _pp = cfg["migrate"](p).get("parts", {})
             if kind == "tru":
+                _xml = _xamu_layers_of(_pp.get('xa_mu', {}))
+                _mu_txt = ("/".join(f"{l.get('D','?')}" for l in _xml) + "m"
+                           if _xml else "?")
                 _sub = (f"bệ H={_pp.get('be',{}).get('H','?')}m · "
                         f"thân H={_pp.get('than',{}).get('H','?')}m · "
-                        f"mũ sâu {_pp.get('xa_mu',{}).get('D','?')}m")
+                        f"mũ {len(_xml)} tầng (sâu {_mu_txt})")
             else:
                 _sub = (f"bệ H={_pp.get('be',{}).get('H','?')}m · "
                         f"thân+mũ rộng B={_pp.get('than',{}).get('B','?')}m")
