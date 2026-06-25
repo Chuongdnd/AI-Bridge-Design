@@ -300,26 +300,65 @@ def build_pier_mesh_traces(pier: dict, H_tru: float = None,
     p = migrate_pier(pier or {})
     parts = p.get("parts", {})
     be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
-    H_be = float(be.get("H", 1.5))
+
+    be_layers   = stem_layers_of(be)        # [{section,H,loft}] hoặc []
+    than_layers = stem_layers_of(than)
+    H_be  = stem_total_height(be_layers) if be_layers else float(be.get("H", 1.5))
     H_cap = _part_height_m(cap, "xa_mu")
-    H_than = float(than.get("H", 5.0))
-    if H_tru is not None:
+    H_than_nat = (stem_total_height(than_layers) if than_layers
+                  else float(than.get("H", 5.0)))
+    H_than = H_than_nat
+    if H_tru is not None:                    # co chiều cao thân để khớp tổng H_tru
         H_than = max(0.3, float(H_tru) - H_be - H_cap)
 
     traces = []
     z = z_base
-
-    # 1) BỆ — mặt bằng đùn đứng. section(u,v): u→ngang(y), v→dọc(x).
-    traces.append(_plan_mesh(be.get("section"), z, H_be, x_ctr, _COL["be"], L["be"]))
+    # 1) BỆ — mặt bằng đùn đứng (nhiều tầng nếu có).
+    if be_layers:
+        traces += stem_traces(be_layers, z, x_ctr, color=_COL["be"], name=L["be"])
+    else:
+        traces.append(_plan_mesh(be.get("section"), z, H_be, x_ctr,
+                                 _COL["be"], L["be"]))
     z += H_be
-    # 2) THÂN
-    traces.append(_plan_mesh(than.get("section"), z, H_than, x_ctr,
-                             _COL["than"], L["than"]))
+    # 2) THÂN — co chiều cao các tầng để tổng = H_than.
+    if than_layers:
+        _tl = _scale_layers_height(than_layers, H_than)
+        traces += stem_traces(_tl, z, x_ctr, color=_COL["than"], name=L["than"])
+    else:
+        traces.append(_plan_mesh(than.get("section"), z, H_than, x_ctr,
+                                 _COL["than"], L["than"]))
     z += H_than
     # 3) XÀ MŨ — các đoạn xếp theo DỌC CẦU, đoạn loft vuốt sang đoạn sau.
     traces += cap_traces(_cap_layers(cap), z, x_ctr, cap_width=cap_width,
                          color=_COL["xa_mu"], name=L["xa_mu"])
     return [t for t in traces if t is not None]
+
+
+def _scale_layers_height(layers: list, target_total: float) -> list:
+    """Co/giãn chiều cao các tầng để tổng = target_total (giữ tỉ lệ)."""
+    cur = sum(float(l.get("H", 0) or 0) for l in (layers or [])) or 1.0
+    f = float(target_total) / cur
+    return [{**l, "H": float(l.get("H", 0) or 0) * f} for l in (layers or [])]
+
+
+def build_pier_from_parts(cap: dict = None, stem: dict = None,
+                          footing: dict = None, ten: str = "") -> dict:
+    """Lắp 1 trụ HOÀN CHỈNH từ 3 bản ghi thư viện (xà mũ + thân + bệ).
+
+    Trả về pier dict định dạng `parts` để build_pier_mesh_traces() vẽ. Mỗi bộ
+    phận giữ nguyên hình dạng/tiết diện đã mô hình; khi gắn vào cầu, xà mũ tự
+    co bề rộng theo cầu và thân tự co chiều cao theo tĩnh không (ở renderer)."""
+    parts = {}
+    if footing:
+        parts["be"] = {"layers": stem_layers_of(footing),
+                       "H": stem_total_height(footing)}
+    if stem:
+        parts["than"] = {"layers": stem_layers_of(stem),
+                         "H": stem_total_height(stem)}
+    if cap:
+        parts["xa_mu"] = {"layers": _cap_layers(cap)}
+    return {"ten": ten, "parts": parts, "loai": "tru"}
+
 
 
 def _plan_mesh(section, z0, H, x_ctr, color, name):
@@ -617,11 +656,19 @@ def pier_elevation_rects(pier: dict, H_tru: float = None,
     p = migrate_pier(pier or {})
     parts = p.get("parts", {})
     be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
-    H_be = float(be.get("H", 1.5))
+    be_layers, than_layers = stem_layers_of(be), stem_layers_of(than)
+    H_be = stem_total_height(be_layers) if be_layers else float(be.get("H", 1.5))
     H_cap = _part_height_m(cap, "xa_mu")
-    H_than = float(than.get("H", 5.0))
+    H_than = (stem_total_height(than_layers) if than_layers
+              else float(than.get("H", 5.0)))
     if H_tru is not None:
         H_than = max(0.3, float(H_tru) - H_be - H_cap)
+
+    def _sec0(part, layers):
+        """Mặt cắt đại diện (tầng đáy) để lấy bề rộng dọc cầu."""
+        if layers:
+            return layers[0].get("section")
+        return part.get("section")
 
     def _rect(name, color, w, z0, h):
         return {"name": name, "color": color,
@@ -629,10 +676,11 @@ def pier_elevation_rects(pier: dict, H_tru: float = None,
                 "zs": [z0, z0, z0 + h, z0 + h]}
 
     z = z_base
-    rects = [_rect(L["be"], _COL["be"], _plan_doc_width_m(be.get("section")), z, H_be)]
+    rects = [_rect(L["be"], _COL["be"],
+                   _plan_doc_width_m(_sec0(be, be_layers)), z, H_be)]
     z += H_be
     rects.append(_rect(L["than"], _COL["than"],
-                       _plan_doc_width_m(than.get("section")), z, H_than))
+                       _plan_doc_width_m(_sec0(than, than_layers)), z, H_than))
     z += H_than
     # Xà mũ: các đoạn xếp DỌC CẦU (cạnh nhau), cùng đáy z; mỗi đoạn cao riêng.
     _caps = _cap_layers(cap)
