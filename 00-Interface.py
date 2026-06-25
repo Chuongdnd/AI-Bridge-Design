@@ -6027,7 +6027,9 @@ with _col_main:
                 _r1c1, _r1c2 = st.columns(2)
                 with _r1c1:
                     try:
-                        st.plotly_chart(BVK.ve_mat_bang_mo_tru(d, vi_tri=_selected_vt),
+                        st.plotly_chart(BVK.ve_mat_bang_mo_tru(
+                                            d, vi_tri=_selected_vt,
+                                            pier_assembly=_resolve_assembly(d, "tru")),
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
@@ -6043,14 +6045,18 @@ with _col_main:
                 _r2c1, _r2c2 = st.columns(2)
                 with _r2c1:
                     try:
-                        st.plotly_chart(BVK.ve_mcn_vi_tri(d, vi_tri=_selected_vt, df_geology=_df_geo),
+                        st.plotly_chart(BVK.ve_mcn_vi_tri(
+                                            d, vi_tri=_selected_vt, df_geology=_df_geo,
+                                            pier_assembly=_resolve_assembly(d, "tru")),
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt cắt ngang: {_e}")
                 with _r2c2:
                     try:
-                        st.plotly_chart(BVK.ve_mat_cat_doc_vi_tri(d, vi_tri=_selected_vt),
+                        st.plotly_chart(BVK.ve_mat_cat_doc_vi_tri(
+                                            d, vi_tri=_selected_vt,
+                                            pier_assembly=_resolve_assembly(d, "tru")),
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:

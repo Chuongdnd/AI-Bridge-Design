@@ -2432,7 +2432,7 @@ def ve_binh_do_2d(d, df_tim_line=None):
 # ===========================================================================
 # 8. MẶT CẮT NGANG TẠI VỊ TRÍ MỐ / TRỤ
 # ===========================================================================
-def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None):
+def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None):
     """
     MCN cắt vuông góc tim cầu tại vị trí mố hoặc trụ cụ thể.
     vi_tri: 'mo_trai' | 'mo_phai' | 'tru_1' | 'tru_2' | ...
@@ -2557,26 +2557,46 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None):
         z_shb  = z_capb - H_tru
         z_beb  = z_shb - be_H
 
-        _poly(fig, [-be_W, be_W, be_W, -be_W],
-              [z_beb, z_beb, z_shb, z_shb],
-              _C["be"], _C["be_dk"], "Bệ cọc")
+        if pier_assembly:
+            # TRỤ LẮP GHÉP: vẽ MCN thật từ hệ trụ mới (thay khối trụ cũ).
+            _PBm = _get_PB()
+            _polys = _PBm.pier_mcn_polys(pier_assembly, z_top=cao_dd,
+                                         H_than=H_tru, target_width=bc)
+            _seen = set()
+            for _pl in _polys:
+                _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
+                _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["btong_dk"],
+                      _nm if _sl else "", showlegend=_sl)
+            _allx = [x for pl in _polys for x in pl["xs"]]
+            if _allx:
+                be_W = max(be_W, abs(min(_allx)), abs(max(_allx)))
+            _capx = [x for pl in _polys if pl["name"] == "Xà mũ" for x in pl["xs"]]
+            if _capx:
+                cap_W = max(abs(min(_capx)), abs(max(_capx)))
+            _ally = [y for pl in _polys for y in pl["ys"]]
+            if _ally:
+                z_beb = min(_ally)
+        else:
+            _poly(fig, [-be_W, be_W, be_W, -be_W],
+                  [z_beb, z_beb, z_shb, z_shb],
+                  _C["be"], _C["be_dk"], "Bệ cọc")
 
-        # Thân cột
-        loai_t = str(tru_r.get("loai_tru", "Thân cột 2 trụ"))
-        n_cot  = 3 if "3" in loai_t else (2 if "cột" in loai_t.lower() else 1)
-        W_cot  = min(1.0, bc * 0.06 + 0.4)
-        col_offs = np.linspace(-cap_W * 0.6, cap_W * 0.6, n_cot)
-        for ic, off_c in enumerate(col_offs):
-            _poly(fig, [off_c - W_cot/2, off_c + W_cot/2,
-                        off_c + W_cot/2, off_c - W_cot/2],
-                  [z_shb, z_shb, z_capb, z_capb],
-                  _C["btong"], _C["btong_dk"],
-                  "Thân cột" if ic == 0 else "", showlegend=(ic == 0))
+            # Thân cột
+            loai_t = str(tru_r.get("loai_tru", "Thân cột 2 trụ"))
+            n_cot  = 3 if "3" in loai_t else (2 if "cột" in loai_t.lower() else 1)
+            W_cot  = min(1.0, bc * 0.06 + 0.4)
+            col_offs = np.linspace(-cap_W * 0.6, cap_W * 0.6, n_cot)
+            for ic, off_c in enumerate(col_offs):
+                _poly(fig, [off_c - W_cot/2, off_c + W_cot/2,
+                            off_c + W_cot/2, off_c - W_cot/2],
+                      [z_shb, z_shb, z_capb, z_capb],
+                      _C["btong"], _C["btong_dk"],
+                      "Thân cột" if ic == 0 else "", showlegend=(ic == 0))
 
-        # Xà mũ
-        _poly(fig, [-cap_W, cap_W, cap_W, -cap_W],
-              [z_capb, z_capb, cao_dd, cao_dd],
-              _C["btong"], _C["dam_dk"], "Xà mũ")
+            # Xà mũ
+            _poly(fig, [-cap_W, cap_W, cap_W, -cap_W],
+                  [z_capb, z_capb, cao_dd, cao_dd],
+                  _C["btong"], _C["dam_dk"], "Xà mũ")
 
         # Cọc — ưu tiên sơ đồ cọc khai báo từ DXF (mặt cắt ngang: chiếu trục ngang)
         _piles_vt = _layout_piles(d, vi_tri)
@@ -2809,18 +2829,37 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
     return fig
 
 
-def ve_mat_bang_mo_tru(d, vi_tri='mo_trai'):
+def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None):
     """MẶT BẰNG KẾT CẤU MỐ/TRỤ — nhìn từ trên: x = ngang cầu, y = dọc cầu."""
     g = _pos_geometry(d, vi_tri)
     fig = go.Figure()
     bhn, bhd = g["be_half_ngang"], g["be_half_doc"]
     bc = g["bc"]
+    _use_asm = bool(pier_assembly) and not g["is_mo"]
 
-    # Bệ cọc (chung)
-    _poly(fig, [-bhn, bhn, bhn, -bhn], [-bhd, -bhd, bhd, bhd],
-          "rgba(170,183,184,0.30)", _C["be_dk"], "Bệ cọc", lw=1.8)
+    if _use_asm:
+        # TRỤ LẮP GHÉP: vẽ footprint thật (bệ/thân/xà mũ, kể cả nhiều khối).
+        _PBm = _get_PB()
+        _polys = _PBm.pier_plan_polys(pier_assembly, target_width=bc)
+        _seen = set()
+        for _pl in _polys:
+            _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
+            _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["be_dk"],
+                  _nm if _sl else "", showlegend=_sl, lw=1.6)
+        _allx = [x for pl in _polys for x in pl["xs"]]
+        _ally = [y for pl in _polys for y in pl["ys"]]
+        if _allx:
+            bhn = max(bhn, abs(min(_allx)), abs(max(_allx)))
+        if _ally:
+            bhd = max(bhd, abs(min(_ally)), abs(max(_ally)))
+    else:
+        # Bệ cọc (chung)
+        _poly(fig, [-bhn, bhn, bhn, -bhn], [-bhd, -bhd, bhd, bhd],
+              "rgba(170,183,184,0.30)", _C["be_dk"], "Bệ cọc", lw=1.8)
 
-    if g["is_mo"]:
+    if _use_asm:
+        pass  # đã vẽ footprint trụ ở trên
+    elif g["is_mo"]:
         # Thân mố (tường thân) + tường cánh kéo về phía sau (dọc cầu)
         body_ng = bc / 2 + 0.5
         body_dc = max(0.8, bhd * 0.35)
@@ -2873,7 +2912,7 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai'):
     return fig
 
 
-def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai'):
+def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
     """MẶT CẮT DỌC tại vị trí — cắt dọc tim cầu qua mố/trụ: x = dọc cầu, y = cao độ."""
     g = _pos_geometry(d, vi_tri)
     fig = go.Figure()
@@ -2890,7 +2929,18 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai'):
         line=dict(color="#6d4c41", width=1.5), mode="lines",
         name="Địa hình"))
 
-    if g["is_mo"]:
+    if pier_assembly and not g["is_mo"]:
+        # TRỤ LẮP GHÉP: mặt cắt dọc thật (bệ/thân/xà mũ) từ hệ trụ mới.
+        _PBm = _get_PB()
+        _seen = set()
+        for _rc in _PBm.pier_elevation_rects(
+                pier_assembly, H_tru=(g["cao_dd"] - g["z_beb"]),
+                x_ctr=0.0, z_base=g["z_beb"]):
+            _nm = _rc["name"]; _sl = _nm not in _seen; _seen.add(_nm)
+            _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["be_dk"],
+                  _nm if _sl else "", showlegend=_sl)
+        z_top_pile = g["z_beb"]
+    elif g["is_mo"]:
         # Thân mố + tường cánh (mặt cắt dọc)
         body_dc = max(0.8, bhd * 0.35)
         _poly(fig, [-body_dc, body_dc, body_dc, -body_dc],
