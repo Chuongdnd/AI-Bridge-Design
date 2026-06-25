@@ -3355,6 +3355,75 @@ def _render_part_io(part_key: str, label: str, rows: list,
                     st.rerun()
 
 
+def _render_tru_io() -> None:
+    """Sao lưu / khôi phục CHUNG cho cả 3 kho bộ phận trụ: xà mũ · thân · bệ.
+
+    Đặt ở cấp tổng (trên hàng chọn Xà mũ/Thân/Bệ) — 1 file mang theo cả 3."""
+    caps = st.session_state.get("lib_caps")
+    if caps is None:
+        caps = st.session_state.lib_caps = CLIB.load_caps()
+    stems = st.session_state.get("lib_stems")
+    if stems is None:
+        stems = st.session_state.lib_stems = CLIB.load_stems()
+    foots = st.session_state.get("lib_footings")
+    if foots is None:
+        foots = st.session_state.lib_footings = CLIB.load_footings()
+    with st.expander("💾 Sao lưu / khôi phục thư viện trụ (xà mũ · thân · bệ)",
+                     expanded=False):
+        st.caption("Tải về / nạp lại **CHUNG** cho cả 3 bộ phận trụ trong 1 file. "
+                   "Có thể **gộp** thêm hoặc **thay thế toàn bộ**.")
+        _c1, _c2 = st.columns(2)
+        with _c1:
+            _payload = json.dumps(
+                {"kind": "ai-bridge-pier", "version": 1,
+                 "caps": caps, "stems": stems, "footings": foots},
+                ensure_ascii=False, indent=2)
+            st.download_button(
+                "⬇️ Tải thư viện trụ", data=_payload.encode("utf-8"),
+                file_name="thu_vien_tru.json", mime="application/json",
+                use_container_width=True, key="partio_dl_tru")
+        with _c2:
+            _up = st.file_uploader("⬆️ Nạp lại từ file (.json)", type=["json"],
+                                   key="partio_ul_tru")
+        if _up is not None:
+            try:
+                _doc = json.loads(_up.read().decode("utf-8"))
+                if not isinstance(_doc, dict):
+                    raise ValueError("File trụ phải gồm caps/stems/footings")
+                _ic = [r for r in (_doc.get("caps") or []) if isinstance(r, dict)]
+                _is = [r for r in (_doc.get("stems") or []) if isinstance(r, dict)]
+                _if = [r for r in (_doc.get("footings") or []) if isinstance(r, dict)]
+            except Exception as _e:
+                st.error(f"File không hợp lệ: {_e}")
+            else:
+                _mode = st.radio(
+                    "Cách nạp:", ["Gộp (giữ mục hiện có)", "Thay thế toàn bộ"],
+                    horizontal=True, key="partio_mode_tru")
+
+                def _merge(cur, imp):
+                    if _mode.startswith("Thay"):
+                        return imp
+                    _byid = {r.get("id"): r for r in cur if r.get("id")}
+                    _ex = []
+                    for r in imp:
+                        if r.get("id"):
+                            _byid[r["id"]] = r
+                        else:
+                            _ex.append(r)
+                    return list(_byid.values()) + _ex
+
+                if st.button(
+                        f"✅ Xác nhận nạp {len(_ic)} xà mũ · {len(_is)} thân · "
+                        f"{len(_if)} bệ", type="primary", key="partio_apply_tru"):
+                    _nc, _ns, _nf = (_merge(caps, _ic), _merge(stems, _is),
+                                     _merge(foots, _if))
+                    st.session_state.lib_caps = _nc;     CLIB.save_caps(_nc)
+                    st.session_state.lib_stems = _ns;    CLIB.save_stems(_ns)
+                    st.session_state.lib_footings = _nf; CLIB.save_footings(_nf)
+                    st.success("Đã nạp thư viện trụ (xà mũ · thân · bệ).")
+                    st.rerun()
+
+
 def render_dam_library(d: dict) -> None:
     """Tab Dầm: panel tạo/sửa (nếu đang mở) hoặc danh sách thẻ dầm."""
     if "dam_beams" not in st.session_state:
@@ -3799,7 +3868,6 @@ def render_cap_library():
             st.session_state.pop("_cap_edit_id", None)
             st.session_state["_cap_panel"] = "new"
             st.rerun()
-    _render_part_io("caps", "xà mũ", caps, CLIB.save_caps, ss_key="lib_caps")
     if not caps:
         st.info("Chưa có xà mũ nào. Bấm **➕ Tạo xà mũ mới**.")
         return
@@ -3899,8 +3967,6 @@ def render_simple_part_library(kind: str):
                 st.session_state.pop(_k, None)
             st.session_state[f"_{kind}_panel"] = "new"
             st.rerun()
-    _render_part_io(kind, cfg["label"].lower(), items,
-                    getattr(CLIB, cfg["save"]), ss_key=ss)
     if not items:
         st.info(f"Chưa có {cfg['label'].lower()} nào.")
         return
@@ -4461,7 +4527,9 @@ def render_thu_vien() -> None:
     if _sel == "dam":
         render_dam_library(d)
     elif _sel == "tru":
-        # 3 thư viện bộ phận trụ độc lập (lắp ghép khi gắn cầu)
+        # 3 thư viện bộ phận trụ độc lập (lắp ghép khi gắn cầu).
+        # Sao lưu/khôi phục đặt ở CẤP TỔNG — chung cho cả 3 bộ phận con.
+        _render_tru_io()
         _tru_sub = st.radio(
             "Bộ phận trụ", ["🧢 Xà mũ", "🏛️ Thân trụ", "🟫 Bệ trụ"],
             horizontal=True, key="_tru_part_sub", label_visibility="collapsed")
