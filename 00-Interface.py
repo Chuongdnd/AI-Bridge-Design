@@ -3857,7 +3857,9 @@ _SIMPLE_PART_CFG = {
     "stem": {"ss": "lib_stems", "icon": "🏛️", "label": "Thân trụ", "color": "#5d8aa8",
              "load": "load_stems", "save": "save_stems", "upsert": "upsert_stem",
              "delete": "delete_stem", "get": "get_stem", "mkid": "make_stem_id",
-             "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc cầu) — đùn theo chiều cao."},
+             "layered": True,
+             "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc cầu). Thêm nhiều tầng xếp "
+                     "THEO PHƯƠNG ĐỨNG, có thể loft vuốt giữa các tầng."},
     "footing": {"ss": "lib_footings", "icon": "🟫", "label": "Bệ trụ", "color": "#7f8c9b",
                 "load": "load_footings", "save": "save_footings", "upsert": "upsert_footing",
                 "delete": "delete_footing", "get": "get_footing", "mkid": "make_footing_id",
@@ -3969,8 +3971,19 @@ def _render_cap_edit_panel():
         st.rerun()
 
 
+def _clear_part_widgets(kind: str) -> None:
+    """Xoá widget state + store mặt cắt của panel thân/bệ trước khi mở mới/sửa."""
+    for _k in (f"{kind}_dxf_part", f"_{kind}_sig_part",
+               f"pp_{kind}_H", f"_{kind}_name", f"_stem_secs_{kind}"):
+        st.session_state.pop(_k, None)
+    for i in range(24):                 # các tầng thân trụ (layered)
+        for _k in (f"{kind}_dxf_stem_L{i}", f"_{kind}_sig_stem_L{i}",
+                   f"pp_{kind}_stem_H_L{i}", f"pp_{kind}_stem_loft_L{i}"):
+            st.session_state.pop(_k, None)
+
+
 def render_simple_part_library(kind: str):
-    """Thư viện THÂN TRỤ / BỆ TRỤ — 1 mặt cắt mặt bằng + chiều cao H, 3D độc lập."""
+    """Thư viện THÂN TRỤ (nhiều tầng + loft) / BỆ TRỤ (1 mặt cắt), 3D độc lập."""
     cfg = _SIMPLE_PART_CFG[kind]
     ss = cfg["ss"]
     _load = getattr(CLIB, cfg["load"])
@@ -3989,9 +4002,7 @@ def render_simple_part_library(kind: str):
                      use_container_width=True, key=f"{kind}_new"):
             st.session_state[f"_{kind}_draft"] = {"ten": "", "section": {}, "H": 5.0}
             st.session_state.pop(f"_{kind}_edit_id", None)
-            for _k in (f"{kind}_dxf_part", f"_{kind}_sig_part",
-                       f"pp_{kind}_H", f"_{kind}_name"):
-                st.session_state.pop(_k, None)
+            _clear_part_widgets(kind)
             st.session_state[f"_{kind}_panel"] = "new"
             st.rerun()
     if not items:
@@ -3999,19 +4010,23 @@ def render_simple_part_library(kind: str):
         return
     for it in sorted(items, key=lambda x: str(x.get("ten", "")).lower()):
         _info, _e, _del = st.columns([8, 1, 1])
+        if cfg.get("layered"):
+            _nl = len(PB.stem_layers_of(it))
+            _meta = (f"{_nl} tầng · cao {PB.stem_total_height(it):.2f}m"
+                     if _nl else "chưa có mặt cắt")
+        else:
+            _meta = f"H={it.get('H','?')}m"
         _info.markdown(
             f"<div style='background:#141420;border:1px solid #2a2a3a;"
             f"border-left:4px solid {cfg['color']};border-radius:8px;padding:8px 12px'>"
             f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
             f"{cfg['icon']} {it.get('ten','(không tên)')}</span>"
             f"<span style='font-size:11px;color:#888;margin-left:10px'>"
-            f"H={it.get('H','?')}m</span></div>", unsafe_allow_html=True)
+            f"{_meta}</span></div>", unsafe_allow_html=True)
         if _e.button("✏️", key=f"{kind}_edit_{it['id']}", use_container_width=True):
             st.session_state[f"_{kind}_draft"] = dict(it)
             st.session_state[f"_{kind}_edit_id"] = it["id"]
-            for _k in (f"{kind}_dxf_part", f"_{kind}_sig_part",
-                       f"pp_{kind}_H", f"_{kind}_name"):
-                st.session_state.pop(_k, None)
+            _clear_part_widgets(kind)
             st.session_state[f"_{kind}_panel"] = it["id"]
             st.rerun()
         if _del.button("🗑️", key=f"{kind}_del_{it['id']}", use_container_width=True):
@@ -4020,7 +4035,146 @@ def render_simple_part_library(kind: str):
             st.rerun()
 
 
+def _render_stem_layers(kind: str, draft: dict) -> list:
+    """Editor THÂN TRỤ nhiều tầng theo PHƯƠNG ĐỨNG: mỗi tầng = [bản vẽ mặt cắt |
+    Upload · Chiều cao · Loft]. Mỗi tầng 1 hàng. Trả về list layers."""
+    _init = PB.stem_layers_of(draft)
+    _store = f"_stem_secs_{kind}"
+    if _store not in st.session_state:
+        st.session_state[_store] = [dict(l.get("section") or {}) for l in _init] or [{}]
+    secs = st.session_state[_store]
+    _n = len(secs)
+    st.caption("Các tầng xếp chồng **theo phương đứng** (từ đáy lên đỉnh thân). "
+               "Bấm **➕ Thêm tầng** để khai báo bao nhiêu tầng tuỳ ý; bật **Loft** "
+               "để vuốt mượt từ tầng dưới lên tầng trên.")
+    new_layers = []
+    for i in range(_n):
+        cur = _init[i] if i < len(_init) else {}
+        sec = dict(secs[i] or {})
+        st.markdown(f"**Tầng {i+1}** (từ đáy)" + (" → loft" if cur.get("loft") else ""))
+        _pv, _ct = st.columns([3, 2])
+        with _ct:
+            _up = st.file_uploader(
+                "Upload mặt cắt mặt bằng (DXF/DWG)", type=["dxf", "dwg"],
+                key=f"{kind}_dxf_stem_L{i}")
+            if _up is not None:
+                _sig = f"{_up.name}:{_up.size}"
+                if st.session_state.get(f"_{kind}_sig_stem_L{i}") != _sig:
+                    try:
+                        _res = _BB_ENGINE.parse_dxf_bytes(_up.read())
+                        if _res.get("error"):
+                            st.error(f"DXF: {_res['error']}")
+                        elif len(_res.get("outer", [])) >= 3:
+                            sec = {"outer": _res["outer"],
+                                   "holes": _res.get("holes", []),
+                                   "solids": _res.get("solids")}
+                            secs[i] = sec
+                            st.session_state[f"_{kind}_sig_stem_L{i}"] = _sig
+                            _ns = _res.get("n_solids", 1)
+                            st.success(f"✅ {len(sec['outer'])} đỉnh"
+                                       + (f" · {_ns} khối" if _ns > 1 else ""))
+                        else:
+                            st.warning("Không có biên kín.")
+                    except Exception as _e:
+                        st.error(f"Lỗi DXF: {_e}")
+            _H = st.number_input(
+                "Chiều cao tầng (m)", 0.2, 40.0,
+                float(cur.get("H", 3.0) or 3.0), 0.1,
+                key=f"pp_{kind}_stem_H_L{i}")
+            _loft = False
+            if i < _n - 1:
+                _loft = st.checkbox(
+                    "Loft (vuốt lên tầng trên)",
+                    value=bool(cur.get("loft", False)),
+                    key=f"pp_{kind}_stem_loft_L{i}",
+                    help="Vuốt mượt từ mặt cắt tầng này lên mặt cắt tầng kế trên.")
+        with _pv:
+            _f = _asm_section_fig(sec)
+            if _f is not None:
+                st.plotly_chart(_f, use_container_width=True,
+                                key=f"{kind}_secfig_stem_L{i}")
+            else:
+                st.info("Chưa có mặt cắt — upload DXF cho tầng này.")
+        new_layers.append({"section": sec, "H": float(_H), "loft": bool(_loft)})
+
+    _a1, _a2, _ = st.columns([1, 1, 3])
+    if _a1.button("➕ Thêm tầng", key=f"addseg_{kind}_stem",
+                  use_container_width=True):
+        secs.append({})
+        st.rerun()
+    if _n > 1 and _a2.button("🗑 Bớt tầng trên", key=f"rmseg_{kind}_stem",
+                             use_container_width=True):
+        secs.pop()
+        _j = _n - 1
+        for _k in (f"{kind}_dxf_stem_L{_j}", f"_{kind}_sig_stem_L{_j}",
+                   f"pp_{kind}_stem_H_L{_j}", f"pp_{kind}_stem_loft_L{_j}"):
+            st.session_state.pop(_k, None)
+        st.rerun()
+    return [l for l in new_layers if (l.get("section") or {}).get("outer")]
+
+
+def _render_stem_panel(kind: str, cfg: dict):
+    """Panel THÂN TRỤ nhiều tầng đứng + loft (3D độc lập)."""
+    eid = st.session_state.get(f"_{kind}_edit_id")
+    draft = st.session_state.get(f"_{kind}_draft") or {}
+    st.markdown(
+        f"<div style='background:#0a1f35;border:1px solid #007acc;border-radius:8px;"
+        f"padding:8px 12px;margin:6px 0'><b style='color:#4fc3f7'>"
+        f"{'✏️ Sửa ' if eid else '➕ Tạo '}{cfg['label'].lower()}</b> — nhiều tầng "
+        f"mặt cắt xếp đứng, có loft, rồi 💾 Lưu.</div>", unsafe_allow_html=True)
+    _ten = st.text_input(f"Tên {cfg['label'].lower()}", value=draft.get("ten", ""),
+                         key=f"_{kind}_name")
+    st.caption(cfg["hint"])
+
+    layers = _render_stem_layers(kind, draft)
+    # Giữ qua rerun (bấm Lưu là rerun mới)
+    _dr = dict(draft); _dr["layers"] = layers
+    _dr.pop("section", None); _dr.pop("H", None)
+    st.session_state[f"_{kind}_draft"] = _dr
+
+    st.markdown("---")
+    _Htot = PB.stem_total_height(layers)
+    st.markdown(f"**🧊 Xem trước 3D {cfg['label'].lower()}** (độc lập · cao ≈ "
+                f"{_Htot:.2f} m)")
+    try:
+        st.plotly_chart(
+            PB.build_stem_part_fig(layers, color=cfg["color"], name=cfg["label"]),
+            use_container_width=True, key=f"{kind}_prev3d")
+    except Exception as _e:
+        st.error(f"Lỗi 3D: {_e}")
+
+    _s1, _s2, _ = st.columns([1, 1, 3])
+    if _s1.button(f"💾 Lưu {cfg['label'].lower()}", type="primary",
+                  use_container_width=True, key=f"{kind}_save"):
+        if not _ten.strip():
+            st.warning(f"⚠️ Nhập **tên {cfg['label'].lower()}**.")
+        elif not layers:
+            st.warning("⚠️ Cần ít nhất 1 tầng có mặt cắt.")
+        else:
+            items = st.session_state.get(cfg["ss"], getattr(CLIB, cfg["load"])())
+            rid = eid or getattr(CLIB, cfg["mkid"])(_ten, items)
+            rec = {"id": rid, "ten": _ten.strip(), "layers": layers,
+                   "H": float(_Htot),
+                   "created_by": (AUTH.current_user() or {}).get("name", ""),
+                   "updated_at": time.strftime("%Y-%m-%d %H:%M")}
+            st.session_state[cfg["ss"]] = getattr(CLIB, cfg["upsert"])(items, rec)
+            getattr(CLIB, cfg["save"])(st.session_state[cfg["ss"]])
+            for _k in (f"_{kind}_panel", f"_{kind}_edit_id", f"_{kind}_draft",
+                       f"_stem_secs_{kind}"):
+                st.session_state.pop(_k, None)
+            st.toast(f"Đã lưu {cfg['label'].lower()} “{_ten}”.", icon="✅")
+            st.rerun()
+    if _s2.button("Hủy", use_container_width=True, key=f"{kind}_cancel"):
+        for _k in (f"_{kind}_panel", f"_{kind}_edit_id", f"_{kind}_draft",
+                   f"_stem_secs_{kind}"):
+            st.session_state.pop(_k, None)
+        st.rerun()
+
+
 def _render_simple_part_panel(kind: str, cfg: dict):
+    if cfg.get("layered"):
+        _render_stem_panel(kind, cfg)
+        return
     eid = st.session_state.get(f"_{kind}_edit_id")
     draft = st.session_state.get(f"_{kind}_draft") or {}
     st.markdown(

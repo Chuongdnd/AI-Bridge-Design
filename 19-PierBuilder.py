@@ -451,6 +451,122 @@ def cap_traces(layers, z0, x_ctr, cap_width=None, color=None, name="Xà mũ"):
     return [t for t in out if t is not None]
 
 
+# ── THÂN TRỤ nhiều tầng + loft theo PHƯƠNG ĐỨNG ─────────────────────────────
+def stem_layers_of(part: dict) -> list:
+    """Danh sách tầng thân trụ [{section,H,loft}] — tương thích {section,H} cũ."""
+    part = part or {}
+    if part.get("layers"):
+        return [dict(l) for l in part["layers"]]
+    if (part.get("section") or {}).get("outer"):
+        return [{"section": part["section"], "H": float(part.get("H", 5.0) or 5.0)}]
+    return []
+
+
+def stem_total_height(part_or_layers) -> float:
+    """Tổng chiều cao thân = Σ chiều cao các tầng."""
+    lays = (part_or_layers if isinstance(part_or_layers, list)
+            else stem_layers_of(part_or_layers))
+    h = sum(float(l.get("H", 0) or 0) for l in lays)
+    return h if h > 1e-6 else 5.0
+
+
+def _centroid_y_m(solid_outer) -> float:
+    """y (ngang, m) trọng tâm của 1 khối footprint — để ghép cặp khối khi loft."""
+    pts = solid_outer
+    n = len(pts); a2 = cy = 0.0
+    for i in range(n):
+        j = (i + 1) % n
+        cr = pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1]
+        a2 += cr; cy += (pts[i][0] + pts[j][0]) * cr      # u = ngang
+    if abs(a2) < 1e-9:
+        return sum(p[0] for p in pts) / max(n, 1) * MM
+    return (cy / (3 * a2)) * MM
+
+
+def _ring_xy_to_parts(ra, rb, z0, H, M, N):
+    """Loft 2 vòng (x,y) theo PHƯƠNG ĐỨNG z0..z0+H → (X,Y,Z,I,J,K) kèn nắp."""
+    vx, vy, vz = [], [], []
+    for i in range(M + 1):
+        t = i / M
+        z = z0 + H * t
+        ring = ra * (1 - t) + rb * t
+        for (x, y) in ring:
+            vx.append(x); vy.append(y); vz.append(z)
+    I, J, K = [], [], []
+    for i in range(M):                               # thành bên
+        for j in range(N):
+            a = i * N + j;             b = i * N + (j + 1) % N
+            c = (i + 1) * N + (j + 1) % N; e = (i + 1) * N + j
+            I += [a, a]; J += [b, c]; K += [c, e]
+    _, t0 = _triangulate([list(p) for p in ra], [])  # nắp đáy (đảo chiều)
+    for (p, q, r) in t0:
+        I.append(p); J.append(r); K.append(q)
+    base = M * N
+    _, t1 = _triangulate([list(p) for p in rb], [])  # nắp đỉnh
+    for (p, q, r) in t1:
+        I.append(base + p); J.append(base + q); K.append(base + r)
+    return vx, vy, vz, I, J, K
+
+
+def _stem_loft_mesh(secA, secB, z0, H, x_ctr, color, name, N=56, M=14):
+    """Vuốt nối footprint A→B theo PHƯƠNG ĐỨNG z0..z0+H. Footprint (u,v) →
+    mặt bằng (x=(v-cv)+x_ctr, y=u). Ghép cặp từng khối (vd 2 cột)."""
+    solA = _section_solids(secA); solB = _section_solids(secB)
+    if not solA or not solB or len(solA) != len(solB):
+        return _plan_mesh(secA, z0, H, x_ctr, color, name)
+    _, _, vAmin, vAmax = _solids_bbox(solA); cvA = (vAmin + vAmax) / 2.0
+    _, _, vBmin, vBmax = _solids_bbox(solB); cvB = (vBmin + vBmax) / 2.0
+
+    def _ringA(s):
+        return [[(v - cvA) * MM + x_ctr, u * MM] for (u, v) in s["outer"]]
+
+    def _ringB(s):
+        return [[(v - cvB) * MM + x_ctr, u * MM] for (u, v) in s["outer"]]
+
+    ordA = sorted(range(len(solA)), key=lambda k: _centroid_y_m(solA[k]["outer"]))
+    ordB = sorted(range(len(solB)), key=lambda k: _centroid_y_m(solB[k]["outer"]))
+    parts = []
+    for ia, ib in zip(ordA, ordB):
+        ra = _resample_ring(_ringA(solA[ia]), N)
+        rb = _best_roll(ra, _resample_ring(_ringB(solB[ib]), N))
+        parts.append(_ring_xy_to_parts(ra, rb, z0, H, M, N))
+    return _mesh(_merge_parts(parts), color, name)
+
+
+def stem_traces(layers, z_base=0.0, x_ctr=0.0, color=None,
+                name="Thân trụ", target_w_m=None):
+    """Render thân trụ nhiều tầng xếp THEO PHƯƠNG ĐỨNG; tầng có loft vuốt mượt
+    sang tầng trên. target_w_m: co bề rộng khớp cầu (giữ khoảng cách cột)."""
+    color = color or _COL["than"]
+    layers = [l for l in (layers or []) if (l.get("section") or {}).get("outer")]
+    if not layers:
+        return []
+    z = z_base
+    multi = len(layers) > 1
+    out = []
+    for i, lay in enumerate(layers):
+        H = float(lay.get("H", 5.0) or 5.0)
+        secA = _scale_section_u(lay["section"], target_w_m) if target_w_m else lay["section"]
+        nm = f"{name} #{i + 1}" if multi else name
+        if lay.get("loft") and i + 1 < len(layers):
+            _nx = layers[i + 1]["section"]
+            secB = _scale_section_u(_nx, target_w_m) if target_w_m else _nx
+            out.append(_stem_loft_mesh(secA, secB, z, H, x_ctr, color, nm))
+        else:
+            out.append(_plan_mesh(secA, z, H, x_ctr, color, nm))
+        z += H
+    return [t for t in out if t is not None]
+
+
+def build_stem_part_fig(layers: list, target_w_m: float = None,
+                        color: str = None, name: str = "Thân trụ") -> go.Figure:
+    """3D thân trụ độc lập (panel thư viện) — đặt đáy tại z=0."""
+    return _part_scene_layout(
+        go.Figure(stem_traces(layers, z_base=0.0, x_ctr=0.0,
+                              color=color or _COL["than"],
+                              name=name, target_w_m=target_w_m)))
+
+
 def _part_scene_layout(fig):
     fig.update_layout(
         scene=dict(xaxis_title="Dọc cầu (m)", yaxis_title="Ngang cầu (m)",
