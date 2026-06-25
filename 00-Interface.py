@@ -3863,7 +3863,9 @@ _SIMPLE_PART_CFG = {
     "footing": {"ss": "lib_footings", "icon": "🟫", "label": "Bệ trụ", "color": "#7f8c9b",
                 "load": "load_footings", "save": "save_footings", "upsert": "upsert_footing",
                 "delete": "delete_footing", "get": "get_footing", "mkid": "make_footing_id",
-                "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc cầu) — đùn theo chiều cao."},
+                "layered": True,
+                "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc cầu). Thêm nhiều tầng xếp "
+                        "THEO PHƯƠNG ĐỨNG (bệ giật cấp), có thể loft giữa các tầng."},
 }
 
 
@@ -4044,7 +4046,7 @@ def _render_stem_layers(kind: str, draft: dict) -> list:
         st.session_state[_store] = [dict(l.get("section") or {}) for l in _init] or [{}]
     secs = st.session_state[_store]
     _n = len(secs)
-    st.caption("Các tầng xếp chồng **theo phương đứng** (từ đáy lên đỉnh thân). "
+    st.caption("Các tầng xếp chồng **theo phương đứng** (từ đáy lên đỉnh). "
                "Bấm **➕ Thêm tầng** để khai báo bao nhiêu tầng tuỳ ý; bật **Loft** "
                "để vuốt mượt từ tầng dưới lên tầng trên.")
     new_layers = []
