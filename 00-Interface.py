@@ -3243,7 +3243,13 @@ def _render_dam_edit_panel(d: dict) -> None:
                              "nhịp gợi ý khi áp dụng vào phương án.")
 
     try:
-        BBUI.render_cad_spt_tab(d, pfx=base)
+        # Dùng CHIỀU DÀI KHAI BÁO để dựng/đo dầm trong thư viện (độc lập với
+        # chiều dài nhịp toàn cục) → mặt cắt dọc/3D & bố trí đoạn khớp số đã khai.
+        _decl_L = float(st.session_state.get("_lib_dam_len_in", 0) or 0) or 33.0
+        _kcn_panel = {**(d.get("kcn_result") or d.get("ai_result") or {}),
+                      "chieu_dai": _decl_L}
+        _d_panel = {**d, "kcn_result": _kcn_panel, "ai_result": _kcn_panel}
+        BBUI.render_cad_spt_tab(_d_panel, pfx=base)
     except Exception as _e:
         import traceback
         st.error(f"Lỗi dựng dầm: {_e}")
