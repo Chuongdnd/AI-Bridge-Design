@@ -3509,20 +3509,22 @@ def _xamu_layers_of(part) -> list:
 
 
 def _render_xamu_layers(kind, part) -> dict:
-    """Editor XÀ MŨ NHIỀU ĐOẠN theo phương DỌC CẦU: 1-3 đoạn xếp lần lượt dọc cầu,
-    mỗi đoạn 1 mặt cắt ngang + chiều sâu (bề dày dọc cầu) riêng → tả được mũ có
-    vùng giữa cao (bệ kê gối) còn 2 đầu thấp/khác hình."""
-    _layers = _xamu_layers_of(part)
-    _n = int(st.number_input(
-        "Số đoạn xà mũ (xếp theo DỌC CẦU)", 1, 3, max(1, len(_layers)), 1,
-        key=f"nlay_{kind}_xamu",
-        help="Các đoạn nối tiếp nhau dọc cầu, tổng bề dày căn giữa tại tim trụ. "
-             "VD: đoạn giữa cao (có bệ kê gối), 2 đoạn đầu thấp hơn."))
+    """Editor XÀ MŨ: THÊM ĐOẠN MẶT CẮT TÙY Ý theo phương DỌC CẦU; mỗi đoạn 1 mặt
+    cắt ngang + bề dày dọc cầu + tuỳ chọn loft vuốt sang đoạn sau.
+    Mặt cắt giữ trong store session để không mất khi thêm/bớt đoạn."""
+    _init = _xamu_layers_of(part)
+    _store = f"_xamu_secs_{kind}"
+    if _store not in st.session_state:
+        st.session_state[_store] = [dict(l.get("section") or {}) for l in _init] or [{}]
+    secs = st.session_state[_store]
+    st.caption("Các đoạn nối tiếp nhau theo dọc cầu (tổng bề dày căn giữa tim trụ). "
+               "Bấm **➕ Thêm đoạn** để khai bao nhiêu đoạn tuỳ ý.")
     new_layers = []
+    _n = len(secs)
     for i in range(_n):
         st.markdown(f"**↳ Đoạn {i+1} (dọc cầu)**")
-        cur = _layers[i] if i < len(_layers) else {}
-        sec = dict(cur.get("section") or {})
+        cur = _init[i] if i < len(_init) else {}
+        sec = dict(secs[i] or {})
         _up = st.file_uploader(f"⬆ Mặt cắt ngang đoạn {i+1} (DXF/DWG)",
                                type=["dxf", "dwg"], key=f"{kind}_dxf_xamu_L{i}")
         if _up is not None:
@@ -3534,6 +3536,7 @@ def _render_xamu_layers(kind, part) -> dict:
                         st.error(f"Lỗi đọc DXF: {_res['error']}")
                     elif len(_res.get("outer", [])) >= 3:
                         sec = {"outer": _res["outer"], "holes": _res.get("holes", [])}
+                        secs[i] = sec      # lưu vào store ngay (không mất khi rerun)
                         st.session_state[f"_{kind}_sig_xamu_L{i}"] = _sig
                         st.success(f"✅ Đã nạp đoạn {i+1}: {len(sec['outer'])} đỉnh.")
                     else:
@@ -3561,6 +3564,20 @@ def _render_xamu_layers(kind, part) -> dict:
                     key=f"pp_{kind}_xamu_loft_L{i}",
                     help="Bật để mặt cắt đoạn này vuốt mượt sang mặt cắt đoạn kế.")
         new_layers.append({"section": sec, "D": float(_D), "loft": bool(_loft)})
+
+    _a1, _a2, _ = st.columns([1, 1, 3])
+    if _a1.button("➕ Thêm đoạn", key=f"addseg_{kind}_xamu",
+                  use_container_width=True):
+        secs.append({})
+        st.rerun()
+    if _n > 1 and _a2.button("🗑 Bớt đoạn cuối", key=f"rmseg_{kind}_xamu",
+                             use_container_width=True):
+        secs.pop()
+        _j = _n - 1
+        for _k in (f"{kind}_dxf_xamu_L{_j}", f"_{kind}_sig_xamu_L{_j}",
+                   f"pp_{kind}_xamu_D_L{_j}", f"pp_{kind}_xamu_loft_L{_j}"):
+            st.session_state.pop(_k, None)
+        st.rerun()
     return {"layers": new_layers}
 
 
@@ -3723,11 +3740,11 @@ _SIMPLE_PART_CFG = {
 
 
 def _clear_cap_widgets():
-    for i in range(3):
+    for i in range(16):
         for k in (f"cap_dxf_xamu_L{i}", f"_cap_sig_xamu_L{i}",
                   f"pp_cap_xamu_D_L{i}", f"pp_cap_xamu_loft_L{i}"):
             st.session_state.pop(k, None)
-    st.session_state.pop("nlay_cap_xamu", None)
+    st.session_state.pop("_xamu_secs_cap", None)   # store mặt cắt theo đoạn
     st.session_state.pop("_cap_name", None)
 
 
