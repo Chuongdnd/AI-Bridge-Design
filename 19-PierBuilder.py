@@ -707,6 +707,96 @@ def pier_total_height(pier: dict, H_tru: float = None) -> float:
     return round(H_be + H_than + H_cap, 3)
 
 
+def pier_plan_polys(pier: dict, target_width: float = None) -> list:
+    """Hình chiếu MẶT BẰNG (ngang u × dọc v) của trụ lắp ghép → list
+    {name,color,xs(ngang m),ys(dọc m)}. Thân/bệ giữ footprint thật (kể cả
+    nhiều khối); xà mũ = chữ nhật ngang(co theo cầu) × sâu tổng các đoạn."""
+    p = migrate_pier(pier or {})
+    parts = p.get("parts", {})
+    be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
+    out = []
+
+    def _footprint(part, name, color):
+        lays = stem_layers_of(part)
+        sec = lays[0]["section"] if lays else part.get("section")
+        for s in _section_solids(sec):
+            _, _, vmin, vmax = _solids_bbox([s])
+            cv = (vmin + vmax) / 2.0
+            out.append({"name": name, "color": color,
+                        "xs": [u * MM for (u, v) in s["outer"]],
+                        "ys": [(v - cv) * MM for (u, v) in s["outer"]]})
+
+    _footprint(be, "Bệ trụ", _COL["be"])
+    _footprint(than, "Thân trụ", _COL["than"])
+    cap_secs = _cap_layers(cap)
+    if cap_secs:
+        total_D = sum(float(l.get("D", 1.8) or 1.8) for l in cap_secs) or 1.8
+        sec = max(cap_secs, key=lambda l: _sec_v_extent(l["section"]))["section"]
+        if target_width:
+            sec = _scale_section_u(sec, target_width)
+        umin, umax, _, _ = _solids_bbox(_section_solids(sec))
+        out.append({"name": "Xà mũ", "color": _COL["xa_mu"],
+                    "xs": [umin * MM, umax * MM, umax * MM, umin * MM],
+                    "ys": [-total_D / 2, -total_D / 2, total_D / 2, total_D / 2]})
+    return out
+
+
+def _sec_v_extent(section: dict) -> float:
+    """Chiều cao (v-extent, m) của 1 mặt cắt."""
+    sl = _section_solids(section)
+    if not sl:
+        return 0.0
+    _, _, vmin, vmax = _solids_bbox(sl)
+    return (vmax - vmin) * MM
+
+
+def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
+                   target_width: float = None) -> list:
+    """Hình chiếu MẶT CẮT NGANG cầu (ngang u × cao z) của trụ lắp ghép.
+
+    Trả list {name,color,xs(ngang m),ys(cao z m)}. z_top = cao độ ĐỈNH xà mũ
+    (= đáy dầm); H_than = chiều cao thân (m). Xà mũ co bề rộng = target_width.
+    Thân/bệ giữ tiết diện thật → mỗi khối là 1 chữ nhật theo bề rộng ngang."""
+    p = migrate_pier(pier or {})
+    parts = p.get("parts", {})
+    be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
+    be_layers, than_layers = stem_layers_of(be), stem_layers_of(than)
+    H_be  = stem_total_height(be_layers) if be_layers else float(be.get("H", 1.5))
+    H_cap = _part_height_m(cap, "xa_mu")
+    out = []
+
+    # 1) XÀ MŨ — dùng mặt cắt (ngang u, cao v) đoạn CAO NHẤT; co bề rộng theo cầu.
+    cap_secs = _cap_layers(cap)
+    if cap_secs:
+        sec = max(cap_secs, key=lambda l: _sec_v_extent(l["section"]))["section"]
+        if target_width:
+            sec = _scale_section_u(sec, target_width)
+        for s in _section_solids(sec):
+            _, _, _, vmax = _solids_bbox([s])
+            out.append({"name": "Xà mũ", "color": _COL["xa_mu"],
+                        "xs": [u * MM for (u, v) in s["outer"]],
+                        "ys": [z_top + (v - vmax) * MM for (u, v) in s["outer"]]})
+    z_cap_b = z_top - H_cap
+
+    # 2) THÂN — mỗi khối footprint → 1 chữ nhật ngang [umin,umax] × cao H_than.
+    than_sec = than_layers[0]["section"] if than_layers else than.get("section")
+    for s in _section_solids(than_sec):
+        umin, umax, _, _ = _solids_bbox([s])
+        out.append({"name": "Thân trụ", "color": _COL["than"],
+                    "xs": [umin * MM, umax * MM, umax * MM, umin * MM],
+                    "ys": [z_cap_b - H_than, z_cap_b - H_than, z_cap_b, z_cap_b]})
+    z_be_t = z_cap_b - H_than
+
+    # 3) BỆ — footprint → chữ nhật ngang.
+    be_sec = be_layers[0]["section"] if be_layers else be.get("section")
+    for s in _section_solids(be_sec):
+        umin, umax, _, _ = _solids_bbox([s])
+        out.append({"name": "Bệ trụ", "color": _COL["be"],
+                    "xs": [umin * MM, umax * MM, umax * MM, umin * MM],
+                    "ys": [z_be_t - H_be, z_be_t - H_be, z_be_t, z_be_t]})
+    return out
+
+
 # ══════════════════════════════════════════════════════════════════════════
 # MỐ CHỮ U BTCT (abutment) — KẾT CẤU KHÁC TRỤ.
 #   • Bệ mố (be)        : mặt cắt MẶT BẰNG (ngang × dọc) → đùn ĐỨNG (cao H).
