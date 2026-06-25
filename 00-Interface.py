@@ -6159,12 +6159,29 @@ with _col_main:
                                        _sl_ctd.get("L_dan")))
 
                     # Khử trùng theo (loại, chiều dài) để không vẽ lặp
+                    def _pick_lib_beam(_beams, _loai, _L):
+                        """Tự khớp dầm thư viện theo loại + chiều dài gần nhất."""
+                        _cs = [b for b in (_beams or []) if b.get("sections")
+                               and str(b.get("loai_dam", "")).lower() == str(_loai).lower()]
+                        if not _cs:
+                            _cs = [b for b in (_beams or []) if b.get("sections")]
+                        if not _cs:
+                            return None
+                        return min(_cs, key=lambda b: abs(
+                            float(b.get("chieu_dai", 0) or 0) - float(_L or 0)))
+
                     _seen = set(); _shown = 0
                     for _ri, (_lbl, _brec, _Lr) in enumerate(_roles):
                         _loai_r = ((_brec.get("loai_dam") if _brec else None)
                                    or _kcn_ctd.get("loai_dam") or "Super-T")
                         _Lval = float(_Lr or (_brec or {}).get("chieu_dai")
                                       or _kcn_ctd.get("chieu_dai", 38.0) or 38.0)
+                        # Chưa áp dụng dầm cụ thể → tự khớp dầm thư viện (để 3D đúng)
+                        if not (_brec and _brec.get("sections")):
+                            _auto = _pick_lib_beam(_beams_ctd, _loai_r, _Lval)
+                            if _auto:
+                                _brec = _auto
+                                _loai_r = _auto.get("loai_dam") or _loai_r
                         _sig = (str(_loai_r).lower(), round(_Lval, 1))
                         if _sig in _seen:
                             continue
