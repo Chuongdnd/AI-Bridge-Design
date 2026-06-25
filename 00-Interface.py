@@ -3525,58 +3525,52 @@ def _render_xamu_layers(kind, part) -> dict:
     st.caption("Các đoạn nối tiếp nhau theo dọc cầu (tổng bề dày căn giữa tim trụ). "
                "Bấm **➕ Thêm đoạn** để khai bao nhiêu đoạn tuỳ ý.")
 
-    new_layers = [None] * _n
-    _PER_ROW = 2
-    for _r0 in range(0, _n, _PER_ROW):
-        _cells = st.columns(_PER_ROW)
-        for _ci in range(_PER_ROW):
-            i = _r0 + _ci
-            if i >= _n:
-                break
-            cur = _init[i] if i < len(_init) else {}
-            sec = dict(secs[i] or {})
-            with _cells[_ci]:
-                st.markdown(f"**Đoạn {i+1}**" + (" → loft" if cur.get("loft") else ""))
-                _pv, _ct = st.columns([3, 2])
-                with _ct:
-                    _up = st.file_uploader(
-                        "Upload", type=["dxf", "dwg"], key=f"{kind}_dxf_xamu_L{i}",
-                        label_visibility="collapsed")
-                    if _up is not None:
-                        _sig = f"{_up.name}:{_up.size}"
-                        if st.session_state.get(f"_{kind}_sig_xamu_L{i}") != _sig:
-                            try:
-                                _res = _BB_ENGINE.parse_dxf_bytes(_up.read())
-                                if _res.get("error"):
-                                    st.error(f"DXF: {_res['error']}")
-                                elif len(_res.get("outer", [])) >= 3:
-                                    sec = {"outer": _res["outer"],
-                                           "holes": _res.get("holes", [])}
-                                    secs[i] = sec
-                                    st.session_state[f"_{kind}_sig_xamu_L{i}"] = _sig
-                                    st.success(f"✅ {len(sec['outer'])} đỉnh")
-                                else:
-                                    st.warning("Không có biên kín.")
-                            except Exception as _e:
-                                st.error(f"Lỗi DXF: {_e}")
-                    _D = st.number_input(
-                        "Chiều dài (m)", 0.3, 10.0,
-                        float(cur.get("D", 1.8) or 1.8), 0.1,
-                        key=f"pp_{kind}_xamu_D_L{i}")
-                    _loft = False
-                    if i < _n - 1:
-                        _loft = st.checkbox(
-                            "Loft", value=bool(cur.get("loft", False)),
-                            key=f"pp_{kind}_xamu_loft_L{i}",
-                            help="Vuốt mượt sang mặt cắt đoạn kế.")
-                with _pv:
-                    _f = _asm_section_fig(sec)
-                    if _f is not None:
-                        st.plotly_chart(_f, use_container_width=True,
-                                        key=f"{kind}_secfig_xamu_L{i}")
-                    else:
-                        st.info("Chưa có mặt cắt")
-            new_layers[i] = {"section": sec, "D": float(_D), "loft": bool(_loft)}
+    new_layers = []
+    for i in range(_n):
+        cur = _init[i] if i < len(_init) else {}
+        sec = dict(secs[i] or {})
+        st.markdown(f"**Đoạn {i+1}**" + (" → loft" if cur.get("loft") else ""))
+        _pv, _ct = st.columns([3, 2])
+        with _ct:
+            _up = st.file_uploader(
+                "Upload mặt cắt (DXF/DWG)", type=["dxf", "dwg"],
+                key=f"{kind}_dxf_xamu_L{i}")
+            if _up is not None:
+                _sig = f"{_up.name}:{_up.size}"
+                if st.session_state.get(f"_{kind}_sig_xamu_L{i}") != _sig:
+                    try:
+                        _res = _BB_ENGINE.parse_dxf_bytes(_up.read())
+                        if _res.get("error"):
+                            st.error(f"DXF: {_res['error']}")
+                        elif len(_res.get("outer", [])) >= 3:
+                            sec = {"outer": _res["outer"],
+                                   "holes": _res.get("holes", [])}
+                            secs[i] = sec
+                            st.session_state[f"_{kind}_sig_xamu_L{i}"] = _sig
+                            st.success(f"✅ {len(sec['outer'])} đỉnh")
+                        else:
+                            st.warning("Không có biên kín.")
+                    except Exception as _e:
+                        st.error(f"Lỗi DXF: {_e}")
+            _D = st.number_input(
+                "Chiều dài (m)", 0.3, 10.0,
+                float(cur.get("D", 1.8) or 1.8), 0.1,
+                key=f"pp_{kind}_xamu_D_L{i}")
+            _loft = False
+            if i < _n - 1:
+                _loft = st.checkbox(
+                    "Loft (vuốt sang đoạn sau)",
+                    value=bool(cur.get("loft", False)),
+                    key=f"pp_{kind}_xamu_loft_L{i}",
+                    help="Vuốt mượt sang mặt cắt đoạn kế.")
+        with _pv:
+            _f = _asm_section_fig(sec)
+            if _f is not None:
+                st.plotly_chart(_f, use_container_width=True,
+                                key=f"{kind}_secfig_xamu_L{i}")
+            else:
+                st.info("Chưa có mặt cắt — upload DXF cho đoạn này.")
+        new_layers.append({"section": sec, "D": float(_D), "loft": bool(_loft)})
 
     _a1, _a2, _ = st.columns([1, 1, 3])
     if _a1.button("➕ Thêm đoạn", key=f"addseg_{kind}_xamu",
