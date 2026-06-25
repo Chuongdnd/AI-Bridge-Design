@@ -998,6 +998,52 @@ def _chain_lines_to_polys(
     return loops
 
 
+_ARC_SAG = 2.0   # sai số cung tối đa (mm) khi rời rạc hoá cung tròn
+
+
+def _sample_arc(cx, cy, r, a0, a1, sag=_ARC_SAG):
+    """Rời rạc cung CCW từ a0→a1 (radian) thành list (x,y)."""
+    import math
+    if a1 <= a0:
+        a1 += 2 * math.pi
+    span = a1 - a0
+    # số đoạn theo sai số cung (sagitta): nseg ~ span / (2·acos(1-sag/r))
+    try:
+        step = 2.0 * math.acos(max(-1.0, min(1.0, 1.0 - sag / max(r, 1e-6))))
+    except ValueError:
+        step = span
+    nseg = max(2, int(math.ceil(span / max(step, 1e-3))))
+    return [(cx + r * math.cos(a0 + span * k / nseg),
+             cy + r * math.sin(a0 + span * k / nseg)) for k in range(nseg + 1)]
+
+
+def _flatten_poly_entity(entity, sag=_ARC_SAG):
+    """Làm phẳng LWPOLYLINE/POLYLINE có CUNG (bulge) → list (x,y) bám cung tròn.
+    Dùng virtual_entities() (LINE/ARC theo đúng thứ tự & hướng)."""
+    import math
+    pts: list[tuple[float, float]] = []
+    try:
+        ves = list(entity.virtual_entities())
+    except Exception:
+        return pts
+    for ve in ves:
+        t = ve.dxftype()
+        if t == "LINE":
+            s = ve.dxf.start; e = ve.dxf.end
+            if not pts:
+                pts.append((float(s.x), float(s.y)))
+            pts.append((float(e.x), float(e.y)))
+        elif t == "ARC":
+            c = ve.dxf.center
+            seg = _sample_arc(float(c.x), float(c.y), float(ve.dxf.radius),
+                              math.radians(float(ve.dxf.start_angle)),
+                              math.radians(float(ve.dxf.end_angle)), sag)
+            if not pts:
+                pts.append(seg[0])
+            pts.extend(seg[1:])
+    return pts
+
+
 def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
     """
     Đọc file DXF (bytes), trả về dict:
@@ -1086,8 +1132,14 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
         closed = False
 
         if etype == "LWPOLYLINE":
-            pts = [(float(p[0]), float(p[1])) for p in entity.get_points()]
             closed = bool(entity.is_closed)
+            # Có CUNG (bulge ≠ 0)? → làm phẳng bám cung tròn; nếu không → đỉnh thô.
+            _has_bulge = any(abs(float(p[4])) > 1e-9
+                             for p in entity.get_points("xyseb"))
+            if _has_bulge:
+                pts = _flatten_poly_entity(entity)
+            if not pts:
+                pts = [(float(p[0]), float(p[1])) for p in entity.get_points()]
 
         elif etype == "POLYLINE":
             try:
@@ -1095,9 +1147,49 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
                     continue
             except Exception:
                 pass
-            pts = [(float(v.dxf.location.x), float(v.dxf.location.y))
-                   for v in entity.vertices]
             closed = bool(entity.is_closed)
+            try:
+                _has_bulge = any(abs(float(getattr(v.dxf, "bulge", 0) or 0)) > 1e-9
+                                 for v in entity.vertices)
+            except Exception:
+                _has_bulge = False
+            if _has_bulge:
+                pts = _flatten_poly_entity(entity)
+            if not pts:
+                pts = [(float(v.dxf.location.x), float(v.dxf.location.y))
+                       for v in entity.vertices]
+
+        elif etype == "CIRCLE":
+            import math as _m
+            _c = entity.dxf.center
+            pts = _sample_arc(float(_c.x), float(_c.y), float(entity.dxf.radius),
+                              0.0, 2 * _m.pi)
+            closed = True
+
+        elif etype in ("ELLIPSE", "SPLINE"):
+            try:
+                pts = [(float(p.x), float(p.y))
+                       for p in entity.flattening(_ARC_SAG)]
+                closed = bool(getattr(entity, "closed", False)) or \
+                    (len(pts) > 2 and
+                     abs(pts[0][0] - pts[-1][0]) < 0.5 and
+                     abs(pts[0][1] - pts[-1][1]) < 0.5)
+            except Exception:
+                pts = []
+
+        elif etype == "ARC":
+            import math as _m
+            try:
+                _c = entity.dxf.center
+                _seg = _sample_arc(
+                    float(_c.x), float(_c.y), float(entity.dxf.radius),
+                    _m.radians(float(entity.dxf.start_angle)),
+                    _m.radians(float(entity.dxf.end_angle)))
+                for _k in range(len(_seg) - 1):     # cung hở → các đoạn để ghép vòng
+                    raw_lines.append((_seg[_k], _seg[_k + 1]))
+            except Exception:
+                pass
+            continue
 
         elif etype == "LINE":
             try:
