@@ -3494,7 +3494,7 @@ def _asm_section_fig(section: dict):
         sec, show_grid_pts=False,
         x_range=(min(xs) - mx, max(xs) + mx),
         z_range=(min(zs) - mz, max(zs) + mz))
-    fig.update_layout(height=300, margin=dict(l=40, r=10, t=10, b=30))
+    fig.update_layout(height=210, margin=dict(l=40, r=10, t=10, b=30))
     return fig
 
 
@@ -3509,19 +3509,21 @@ def _xamu_layers_of(part) -> list:
 
 
 def _render_xamu_layers(kind, part) -> dict:
-    """Editor XÀ MŨ NHIỀU TẦNG: 1-3 tầng xếp chồng (dưới→trên), mỗi tầng 1 mặt
-    cắt ngang + chiều sâu dọc cầu riêng → tả được mũ có vùng đỉnh nông hơn thân."""
+    """Editor XÀ MŨ NHIỀU ĐOẠN theo phương DỌC CẦU: 1-3 đoạn xếp lần lượt dọc cầu,
+    mỗi đoạn 1 mặt cắt ngang + chiều sâu (bề dày dọc cầu) riêng → tả được mũ có
+    vùng giữa cao (bệ kê gối) còn 2 đầu thấp/khác hình."""
     _layers = _xamu_layers_of(part)
     _n = int(st.number_input(
-        "Số tầng xà mũ (xếp chồng dưới→trên)", 1, 3, max(1, len(_layers)), 1,
+        "Số đoạn xà mũ (xếp theo DỌC CẦU)", 1, 3, max(1, len(_layers)), 1,
         key=f"nlay_{kind}_xamu",
-        help="VD: tầng 1 = thân mũ (sâu), tầng 2 = bệ kê gối/đỉnh mũ (nông hơn)."))
+        help="Các đoạn nối tiếp nhau dọc cầu, tổng bề dày căn giữa tại tim trụ. "
+             "VD: đoạn giữa cao (có bệ kê gối), 2 đoạn đầu thấp hơn."))
     new_layers = []
     for i in range(_n):
-        st.markdown(f"**↳ Tầng {i+1}**" + (" — dưới cùng" if i == 0 else ""))
+        st.markdown(f"**↳ Đoạn {i+1} (dọc cầu)**")
         cur = _layers[i] if i < len(_layers) else {}
         sec = dict(cur.get("section") or {})
-        _up = st.file_uploader(f"⬆ Mặt cắt ngang tầng {i+1} (DXF/DWG)",
+        _up = st.file_uploader(f"⬆ Mặt cắt ngang đoạn {i+1} (DXF/DWG)",
                                type=["dxf", "dwg"], key=f"{kind}_dxf_xamu_L{i}")
         if _up is not None:
             _sig = f"{_up.name}:{_up.size}"
@@ -3533,7 +3535,7 @@ def _render_xamu_layers(kind, part) -> dict:
                     elif len(_res.get("outer", [])) >= 3:
                         sec = {"outer": _res["outer"], "holes": _res.get("holes", [])}
                         st.session_state[f"_{kind}_sig_xamu_L{i}"] = _sig
-                        st.success(f"✅ Đã nạp tầng {i+1}: {len(sec['outer'])} đỉnh.")
+                        st.success(f"✅ Đã nạp đoạn {i+1}: {len(sec['outer'])} đỉnh.")
                     else:
                         st.warning("Không tìm thấy biên kín trong DXF.")
                 except Exception as _e:
@@ -3545,10 +3547,10 @@ def _render_xamu_layers(kind, part) -> dict:
                 st.plotly_chart(_f, use_container_width=True,
                                 key=f"{kind}_secfig_xamu_L{i}")
             else:
-                st.info("Chưa có mặt cắt — upload DXF cho tầng này.")
+                st.info("Chưa có mặt cắt — upload DXF cho đoạn này.")
         with _c2:
             _D = st.number_input(
-                f"Chiều sâu dọc cầu D (m) — tầng {i+1}", 0.3, 10.0,
+                f"Bề dày dọc cầu D (m) — đoạn {i+1}", 0.3, 10.0,
                 float(cur.get("D", 1.8) or 1.8), 0.1,
                 key=f"pp_{kind}_xamu_D_L{i}")
         new_layers.append({"section": sec, "D": float(_D)})
@@ -3621,25 +3623,25 @@ def _render_asm_edit_panel(cfg: dict) -> None:
     _nm = st.text_input(f"Tên {lab.lower()}", value=cur.get("ten", ""),
                         placeholder=cfg["name_ph"], key=f"_lib_{kind}_name")
 
-    _cfg, _prev = st.columns([3, 2])
-    with _cfg:
-        _ptabs = st.tabs([f"🧱 {pt['label']}" for pt in cfg["parts"]])
-        for _tab, spec in zip(_ptabs, cfg["parts"]):
-            with _tab:
-                parts[spec["role"]] = _render_asm_part_editor(
-                    kind, spec, parts.get(spec["role"], {}))
+    # Khai báo mặt cắt từng bộ phận (full-width, hình mặt cắt nhỏ gọn)
+    _ptabs = st.tabs([f"🧱 {pt['label']}" for pt in cfg["parts"]])
+    for _tab, spec in zip(_ptabs, cfg["parts"]):
+        with _tab:
+            parts[spec["role"]] = _render_asm_part_editor(
+                kind, spec, parts.get(spec["role"], {}))
 
     rec = {"id": editing_id or "", "ten": _nm, "loai": kind, "parts": parts}
     rec["H_ref"] = cfg["total_h"](rec)
     st.session_state[f"_lib_{kind}_draft"] = rec
 
-    with _prev:
-        st.caption(f"Xem trước 3D — kéo xoay · cao ≈ {rec['H_ref']} m")
-        try:
-            st.plotly_chart(cfg["preview"](rec, labels=labels),
-                            use_container_width=True, key=f"{kind}_prev3d")
-        except Exception as _e:
-            st.error(f"Lỗi xem trước 3D: {_e}")
+    # Xem trước 3D — HÀNG RIÊNG DƯỚI CÙNG, full-width cho to & dễ xoay
+    st.markdown("---")
+    st.markdown(f"**🧊 Xem trước 3D** — kéo xoay · cao ≈ {rec['H_ref']} m")
+    try:
+        st.plotly_chart(cfg["preview"](rec, labels=labels),
+                        use_container_width=True, key=f"{kind}_prev3d")
+    except Exception as _e:
+        st.error(f"Lỗi xem trước 3D: {_e}")
 
     st.markdown("---")
     _p1, _p2, _ = st.columns([1, 1, 3])
@@ -3740,7 +3742,7 @@ def render_assembly_library(kind: str) -> None:
                            if _xml else "?")
                 _sub = (f"bệ H={_pp.get('be',{}).get('H','?')}m · "
                         f"thân H={_pp.get('than',{}).get('H','?')}m · "
-                        f"mũ {len(_xml)} tầng (sâu {_mu_txt})")
+                        f"mũ {len(_xml)} đoạn (dày {_mu_txt})")
             else:
                 _sub = (f"bệ H={_pp.get('be',{}).get('H','?')}m · "
                         f"thân+mũ rộng B={_pp.get('than',{}).get('B','?')}m")

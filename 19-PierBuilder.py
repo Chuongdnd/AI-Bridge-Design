@@ -208,22 +208,40 @@ def _cap_layers(cap: dict) -> list:
 def _part_height_m(part: dict, role: str) -> float:
     """Chiều cao (m) một bộ phận theo trục z."""
     if role == "xa_mu":
-        h = 0.0
+        # Các đoạn xếp DỌC CẦU (cạnh nhau), cùng đáy → chiều cao mũ = đoạn CAO NHẤT.
+        hs = []
         for lay in _cap_layers(part):
             _, _, vmin, vmax = _bbox_ab(lay["section"].get("outer", [[0, 0]]))
-            h += (vmax - vmin) * MM
-        return h or 1.2
+            hs.append((vmax - vmin) * MM)
+        return max(hs) if hs else 1.2
     return float(part.get("H", 1.5))
+
+
+def _scale_section_u(section: dict, target_w_m: float) -> dict:
+    """Co/giãn mặt cắt theo phương NGANG (u) để bề rộng = target_w_m (giữ tâm
+    u=0, giữ nguyên chiều cao). Dùng để xà mũ khớp BỀ RỘNG CẦU khi gắn vào cầu."""
+    if not section or not section.get("outer") or not target_w_m:
+        return section
+    umin, umax, _, _ = _bbox_ab(section["outer"])
+    w = umax - umin
+    if w < 1e-6:
+        return section
+    f = (target_w_m * 1000.0) / w           # target (m) → mm
+    _sc = lambda pts: [[u * f, v] for (u, v) in pts]
+    return {"outer": _sc(section["outer"]),
+            "holes": [_sc(h) for h in section.get("holes", [])]}
 
 
 def build_pier_mesh_traces(pier: dict, H_tru: float = None,
                            x_ctr: float = 0.0, z_base: float = 0.0,
-                           labels: dict = None) -> list:
+                           labels: dict = None, cap_width: float = None) -> list:
     """Trả về list go.Mesh3d của 1 trụ/mố (3 bộ phận).
 
-    H_tru : nếu cho (m), chiều cao THÂN tự co để (đáy bệ→đỉnh mũ) = H_tru.
-    x_ctr : lý trình tâm (m).   z_base: cao độ đáy bệ (m).
-    labels: ghi đè tên bộ phận {be,than,xa_mu} (mặc định: nhãn trụ).
+    H_tru     : nếu cho (m), chiều cao THÂN tự co để (đáy bệ→đỉnh mũ) = H_tru.
+    x_ctr     : lý trình tâm (m).   z_base: cao độ đáy bệ (m).
+    labels    : ghi đè tên bộ phận {be,than,xa_mu} (mặc định: nhãn trụ).
+    cap_width : nếu cho (m), co/giãn BỀ RỘNG xà mũ = cap_width (khớp bề rộng cầu),
+                giữ nguyên hình dạng & chiều cao.
     """
     L = labels or _ROLE_LABEL
     p = migrate_pier(pier or {})
@@ -245,17 +263,17 @@ def build_pier_mesh_traces(pier: dict, H_tru: float = None,
     traces.append(_plan_mesh(than.get("section"), z, H_than, x_ctr,
                              _COL["than"], L["than"]))
     z += H_than
-    # 3) XÀ MŨ — 1..3 TẦNG xếp chồng, mỗi tầng 1 mặt cắt + chiều sâu dọc cầu D.
+    # 3) XÀ MŨ — 1..3 ĐOẠN xếp theo phương DỌC CẦU (x), cùng đáy tại đỉnh thân.
+    #    Mỗi đoạn 1 mặt cắt ngang + chiều sâu dọc cầu D; tổng D căn giữa tại x_ctr.
     _caps = _cap_layers(cap)
     _multi = len(_caps) > 1
-    _z_cap = z
+    _total_D = sum(l["D"] for l in _caps) or 1.8
+    _x = x_ctr - _total_D / 2.0
     for _li, _lay in enumerate(_caps):
-        _, _, _vmin, _vmax = _bbox_ab(_lay["section"].get("outer", [[0, 0]]))
-        _h_lay = (_vmax - _vmin) * MM
-        _nm = (f"{L['xa_mu']} T{_li + 1}" if _multi else L["xa_mu"])
-        traces.append(_cap_mesh(_lay["section"], _z_cap, _lay["D"],
-                                x_ctr, _COL["xa_mu"], _nm))
-        _z_cap += _h_lay
+        _sec = _scale_section_u(_lay["section"], cap_width) if cap_width else _lay["section"]
+        _nm = (f"{L['xa_mu']} #{_li + 1}" if _multi else L["xa_mu"])
+        traces.append(_cap_mesh(_sec, z, _x, _lay["D"], _COL["xa_mu"], _nm))
+        _x += _lay["D"]
     return [t for t in traces if t is not None]
 
 
@@ -276,8 +294,8 @@ def _plan_mesh(section, z0, H, x_ctr, color, name):
     return _mesh(parts, color, name)
 
 
-def _cap_mesh(section, z0, D, x_ctr, color, name):
-    """Xà mũ: section (u,v) → (y=u ngang, z=v', cao), đùn dọc cầu x sâu D.
+def _cap_mesh(section, z0, x0, D, color, name):
+    """Xà mũ: section (u,v) → (y=u ngang, z=v', cao), đùn dọc cầu x từ x0..x0+D.
     v' = v - vmin (lật dương lên), đặt đáy thấp nhất tại z0 (đỉnh thân)."""
     if not section or len(section.get("outer", [])) < 3:
         return None
@@ -288,7 +306,7 @@ def _cap_mesh(section, z0, D, x_ctr, color, name):
 
     outer = _conv(section["outer"])
     holes = [_conv(h) for h in section.get("holes", [])]
-    parts = _extrude(outer, holes, "yz", x_ctr - D / 2.0, D)
+    parts = _extrude(outer, holes, "yz", x0, D)
     return _mesh(parts, color, name)
 
 
@@ -308,7 +326,7 @@ def build_pier_preview_fig(pier: dict, H_tru: float = None,
     fig.update_layout(
         scene=dict(xaxis_title="Dọc cầu (m)", yaxis_title="Ngang cầu (m)",
                    zaxis_title="Cao độ (m)", aspectmode="data"),
-        template="plotly_dark", height=520,
+        template="plotly_dark", height=660,
         margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor="#0e1117",
         scene_camera=dict(eye=dict(x=1.6, y=-1.6, z=1.0)),
     )
@@ -349,11 +367,17 @@ def pier_elevation_rects(pier: dict, H_tru: float = None,
     rects.append(_rect(L["than"], _COL["than"],
                        _plan_doc_width_m(than.get("section")), z, H_than))
     z += H_than
-    for _li, _lay in enumerate(_cap_layers(cap)):
+    # Xà mũ: các đoạn xếp DỌC CẦU (cạnh nhau), cùng đáy z; mỗi đoạn cao riêng.
+    _caps = _cap_layers(cap)
+    _total_D = sum(l["D"] for l in _caps) or 1.8
+    _x = x_ctr - _total_D / 2.0
+    for _lay in _caps:
         _, _, _vmin, _vmax = _bbox_ab(_lay["section"].get("outer", [[0, 0]]))
         _h_lay = (_vmax - _vmin) * MM
-        rects.append(_rect(L["xa_mu"], _COL["xa_mu"], _lay["D"], z, _h_lay))
-        z += _h_lay
+        rects.append({"name": L["xa_mu"], "color": _COL["xa_mu"],
+                      "xs": [_x, _x + _lay["D"], _x + _lay["D"], _x],
+                      "zs": [z, z, z + _h_lay, z + _h_lay]})
+        _x += _lay["D"]
     return rects
 
 
@@ -509,7 +533,7 @@ def build_abutment_preview_fig(mo: dict, H_tru: float = None,
     fig.update_layout(
         scene=dict(xaxis_title="Dọc cầu (m)", yaxis_title="Ngang cầu (m)",
                    zaxis_title="Cao độ (m)", aspectmode="data"),
-        template="plotly_dark", height=520,
+        template="plotly_dark", height=660,
         margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor="#0e1117",
         scene_camera=dict(eye=dict(x=1.7, y=-1.5, z=0.9)),
     )
