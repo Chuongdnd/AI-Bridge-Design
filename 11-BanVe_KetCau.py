@@ -2648,9 +2648,9 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None):
             x=0.5, font=dict(size=12)
         ),
         xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
-                   range=[-_Xv, _Xv], constrain="domain"),
+                   range=[-_Xv, _Xv]),
         yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1"),
-        height=560, template="plotly_white",
+        height=500, template="plotly_white",
         legend=dict(orientation="h", y=-0.20, font=dict(size=9)),
         margin=dict(l=65, r=40, t=60, b=100),
     )
@@ -2818,11 +2818,10 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
         title=dict(text=f"MẶT BẰNG CỌC — {g['title_vt']} | {len(piles)} cọc · {_src}",
                    x=0.5, font=dict(size=12)),
         xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
-                   range=[-_R, _R], constrain="domain"),
+                   range=[-_R, _R]),
         yaxis=dict(title="Dọc cầu (m)", scaleanchor="x", scaleratio=1,
-                   range=[-_R, _R], constrain="domain",
                    showgrid=True, gridcolor="#ecf0f1"),
-        height=460, template="plotly_white",
+        height=500, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=60, r=40, t=60, b=80),
     )
@@ -2901,11 +2900,10 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None):
     fig.update_layout(
         title=dict(text=f"MẶT BẰNG KẾT CẤU — {g['title_vt']}", x=0.5, font=dict(size=12)),
         xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
-                   range=[-_R, _R], constrain="domain"),
+                   range=[-_R, _R]),
         yaxis=dict(title="Dọc cầu (m)", scaleanchor="x", scaleratio=1,
-                   range=[-_R, _R], constrain="domain",
                    showgrid=True, gridcolor="#ecf0f1"),
-        height=460, template="plotly_white",
+        height=500, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=60, r=40, t=60, b=80),
     )
@@ -2984,9 +2982,9 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
         title=dict(text=f"MẶT CẮT DỌC — {g['title_vt']} | Lý trình ≈ {g['x_cut']:.1f} m",
                    x=0.5, font=dict(size=12)),
         xaxis=dict(title="Dọc cầu (m)", showgrid=True, gridcolor="#ecf0f1",
-                   range=[-x_span, x_span], constrain="domain"),
+                   range=[-x_span, x_span]),
         yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1"),
-        height=560, template="plotly_white",
+        height=500, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=65, r=40, t=60, b=80),
     )
