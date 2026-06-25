@@ -115,36 +115,14 @@ def _rec(ctype: str, ten: str, **fields) -> dict:
 
 # ── Dữ liệu mẫu mặc định ─────────────────────────────────────────────────────
 def default_library() -> dict:
-    """Thư viện seed ban đầu — vài mẫu phổ biến cho mỗi loại."""
-    dam = [
-        _rec("dam", "Super-T 38m", loai_dam="Super-T", chieu_dai=38.2,
-             chieu_cao=1.75, khoang_cach_dam=2.2, so_luong_dam=5,
-             be_rong_canh=1.20, ghi_chu="Nhịp giản đơn phổ biến"),
-        _rec("dam", "Super-T 24m", loai_dam="Super-T", chieu_dai=24.7,
-             chieu_cao=1.20, khoang_cach_dam=2.0, so_luong_dam=6,
-             be_rong_canh=1.00, ghi_chu=""),
-        _rec("dam", "Dầm I 33m", loai_dam="Dầm I", chieu_dai=33.0,
-             chieu_cao=1.65, khoang_cach_dam=2.4, so_luong_dam=5,
-             be_rong_canh=0.65, ghi_chu=""),
-        _rec("dam", "Bản rỗng 18m", loai_dam="Bản rỗng", chieu_dai=18.0,
-             chieu_cao=0.90, khoang_cach_dam=0.0, so_luong_dam=1,
-             be_rong_canh=0.0, ghi_chu="Bản rỗng đổ tại chỗ"),
-    ]
-    tru = [
-        _rec("tru", "Trụ thân đặc", loai_tru="Trụ thân đặc", B_tru=1.6,
-             D_than=1.2, H_than=8.0, be_rong_xa_mu=2.0, ghi_chu="H ≤ 10m"),
-        _rec("tru", "Trụ 2 cột", loai_tru="Trụ thân cột", B_tru=1.2,
-             D_than=1.0, H_than=9.0, be_rong_xa_mu=1.8,
-             ghi_chu="Trụ thân cột tròn/đa giác"),
-        _rec("tru", "Trụ thân hẹp", loai_tru="Trụ thân hẹp", B_tru=1.0,
-             D_than=0.8, H_than=7.0, be_rong_xa_mu=1.6, ghi_chu=""),
-    ]
-    mo = [
-        _rec("mo", "Mố chữ U", loai_mo="Mố chữ U", chieu_cao=6.0,
-             be_rong=10.0, be_day_tuong=0.5, ghi_chu="Mố trọng lực chữ U"),
-        _rec("mo", "Mố vùi", loai_mo="Mố vùi", chieu_cao=4.0,
-             be_rong=9.0, be_day_tuong=0.4, ghi_chu=""),
-    ]
+    """Thư viện seed ban đầu.
+
+    Dầm/Trụ/Mố nay dùng các kho card riêng (beams/caps/stems/footings/mos),
+    nên KHÔNG seed bản ghi tham số cũ cho dam/tru/mo nữa — chỉ seed mong
+    (kho Móng vẫn dùng store components)."""
+    dam: list = []
+    tru: list = []
+    mo:  list = []
     mong = [
         _rec("mong", "Cọc khoan nhồi D1.0", loai_mong="Cọc khoan nhồi",
              tiet_dien="Tròn", canh_b=1000.0, canh_h=0.0, so_canh=0,
@@ -518,11 +496,16 @@ def _make_part_store(filename: str, json_key: str):
 # tự tải về và tự upload lại.
 # ══════════════════════════════════════════════════════════════════════════
 def export_bundle() -> dict:
-    """Gộp toàn bộ thư viện thành 1 dict (để ghi ra 1 file JSON)."""
+    """Gộp toàn bộ thư viện thành 1 dict (để ghi ra 1 file JSON).
+
+    `components` chỉ mang theo kho Móng (mong) — dầm/trụ/mố đã chuyển sang
+    các kho card riêng nên không gộp seed tham số cũ vào bundle nữa."""
+    _lib = normalize(load_library())
+    _comp = {"version": _lib.get("version", VERSION), "mong": _lib.get("mong", [])}
     return {
         "version":    VERSION,
         "kind":       "ai-bridge-library",
-        "components": normalize(load_library()),
+        "components": _comp,
         "beams":      load_beams(),
         "piers":      load_piers(),
         "mos":        load_mos(),

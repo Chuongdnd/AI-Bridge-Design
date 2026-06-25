@@ -4342,10 +4342,14 @@ def _render_library_io() -> None:
     with _io1:
         try:
             _bundle = CLIB.export_bundle()
-            _n = (sum(len(_bundle.get("components", {}).get(c, []))
-                      for c in CLIB.COMPONENT_TYPES)
-                  + len(_bundle.get("beams", [])) + len(_bundle.get("piers", []))
-                  + len(_bundle.get("mos", [])) + len(_bundle.get("railings", [])))
+            _comp = _bundle.get("components", {})
+            # Đếm THEO thư viện đang hiển thị (không tính seed tham số cũ dầm/trụ/mố)
+            _n = (len(_bundle.get("beams", []))
+                  + len(_bundle.get("caps", [])) + len(_bundle.get("stems", []))
+                  + len(_bundle.get("footings", []))
+                  + len(_bundle.get("mos", []))
+                  + len(_comp.get("mong", []))
+                  + len(_bundle.get("railings", [])))
             _data = json.dumps(_bundle, ensure_ascii=False, indent=2).encode("utf-8")
             st.download_button(
                 f"⬇️ Tải toàn bộ thư viện ({_n} mục)", data=_data,
