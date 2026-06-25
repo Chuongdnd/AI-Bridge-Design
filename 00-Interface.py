@@ -3153,6 +3153,13 @@ def _build_pa_d(base_d: dict, ribbon: str) -> dict:
     return d
 
 
+def _maybe_fragment(fn):
+    """Bọc hàm bằng st.fragment nếu phiên bản Streamlit hỗ trợ — để thao tác
+    bên trong (tích chọn ô) chỉ rerun cục bộ, KHÔNG reload cả trang."""
+    _f = getattr(st, "fragment", None) or getattr(st, "experimental_fragment", None)
+    return _f(fn) if _f else fn
+
+
 def _render_kl_table(rows: list, title: str = None, key: str = None) -> None:
     """Hiển thị 1 bảng khối lượng: Cấu kiện · Số lượng · BT(m³) · Ván khuôn(m²) · Cốt thép(kg)."""
     if title:
@@ -4729,14 +4736,15 @@ with _col_main:
     
             # ── Sub-tabs ────────────────────────────────────────────────────
             (tab_3d, tab_btc, tab_mcn_vt,
-             tab_spt, tab_export,
-             tab_dutoan) = st.tabs([
+             tab_spt, tab_thkl, tab_dutoan,
+             tab_export) = st.tabs([
                 "🏗️ 3D Tổng hợp"  + (" 🗺️" if has_terr else " (sơ đồ)"),
                 "📋 Bố trí chung",
                 "✂️ MCN Mố/Trụ",
                 "🔩 Chi tiết dầm",
-                "📤 Xuất bản vẽ",
+                "📊 THKL",
                 "💰 Dự toán",
+                "📤 Xuất hồ sơ",
             ])
     
             # ── TAB 1: 3D Tổng hợp ─────────────────────────────────────────
@@ -5412,139 +5420,186 @@ with _col_main:
                     st.error(f"Lỗi tab Chi tiết dầm: {_e}")
                     with st.expander("Chi tiết lỗi"):
                         st.code(traceback.format_exc())
-    
+
+            # ── TAB: THKL — Thống kê khối lượng toàn cầu (dạng bảng Excel) ──
+            with tab_thkl:
+                st.markdown("##### 📊 Thống kê khối lượng toàn cầu — " + selected_ribbon)
+                st.caption("Tổng hợp khối lượng các hạng mục cho **toàn cầu** "
+                           "(số lượng · bê tông · ván khuôn · cốt thép). Tải về **.xlsx** để dùng tiếp.")
+                try:
+                    _thkl_rows = KL.bang_toan_cau(d, dam_roles=_pa_dam_roles(d, selected_ribbon))
+                    _tt = KL.tong_hop(_thkl_rows)
+                    _df_thkl = pd.DataFrame([{
+                        "TT":             i + 1,
+                        "Hạng mục":       r["ten"],
+                        "Số lượng":       str(r["so_luong"]),
+                        "Bê tông (m³)":   r["bt_m3"],
+                        "Ván khuôn (m²)": r["coppha_m2"],
+                        "Cốt thép (kg)":  r["thep_kg"],
+                        "Ghi chú":        r.get("ghi_chu", ""),
+                    } for i, r in enumerate(_thkl_rows)])
+                    # Dòng TỔNG CỘNG
+                    _df_thkl.loc[len(_df_thkl)] = {
+                        "TT": "", "Hạng mục": "TỔNG CỘNG", "Số lượng": "",
+                        "Bê tông (m³)": _tt["bt_m3"], "Ván khuôn (m²)": _tt["coppha_m2"],
+                        "Cốt thép (kg)": _tt["thep_kg"], "Ghi chú": "",
+                    }
+                    st.dataframe(_df_thkl, use_container_width=True, hide_index=True,
+                                 key=f"thkl_table_{selected_ribbon}")
+                    _c1, _c2, _c3 = st.columns(3)
+                    _c1.metric("Σ Bê tông",  f"{_tt['bt_m3']:.1f} m³")
+                    _c2.metric("Σ Ván khuôn", f"{_tt['coppha_m2']:.0f} m²")
+                    _c3.metric("Σ Cốt thép",  f"{_tt['thep_kg']/1000:.2f} tấn")
+                    # Xuất .xlsx
+                    try:
+                        _xbuf = io.BytesIO()
+                        with pd.ExcelWriter(_xbuf, engine="openpyxl") as _xw:
+                            _df_thkl.to_excel(_xw, index=False, sheet_name="THKL_toan_cau")
+                        st.download_button(
+                            "⬇️ Tải bảng THKL (.xlsx)", data=_xbuf.getvalue(),
+                            file_name=f"THKL_{selected_ribbon.replace(' ', '_')}.xlsx",
+                            mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                            key=f"thkl_xlsx_{selected_ribbon}")
+                    except Exception as _ex:
+                        st.caption(f"(Không xuất được .xlsx: {_ex})")
+                except Exception as _e:
+                    st.error(f"Lỗi THKL: {_e}")
+
             # ── TAB: Xuất bản vẽ ───────────────────────────────────────────
             with tab_export:
-                st.subheader("📤 Xuất hồ sơ — chọn theo cây thư mục")
-                st.caption("Tích chọn các phần cần lấy theo **thư mục**, rồi "
-                           "**📦 Đóng gói (.zip)** — cấu trúc thư mục được giữ "
-                           "nguyên trong gói tải về. Tệp nặng (IFC/địa hình) chỉ "
-                           "được tạo khi bấm đóng gói.")
-                _PA_TAG = selected_ribbon.replace(" ", "_")
+                @_maybe_fragment
+                def _export_frag():
+                    st.subheader("📤 Xuất hồ sơ — chọn theo cây thư mục")
+                    st.caption("Tích chọn các phần cần lấy theo **thư mục**, rồi "
+                               "**📦 Đóng gói (.zip)** — cấu trúc thư mục được giữ "
+                               "nguyên trong gói tải về. Tệp nặng (IFC/địa hình) chỉ "
+                               "được tạo khi bấm đóng gói.")
+                    _PA_TAG = selected_ribbon.replace(" ", "_")
 
-                def _terrain_ifc_bytes():
-                    if _df_geo is None or getattr(_df_geo, "empty", True):
+                    def _terrain_ifc_bytes():
+                        if _df_geo is None or getattr(_df_geo, "empty", True):
+                            return None
+                        import tempfile as _tmp
+                        _, _mx, _my, _mz = TV.ve_dia_hinh_3d(
+                            _df_geo, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3)
+                        _p = os.path.join(_tmp.gettempdir(), "terrain_export.ifc")
+                        if TV.export_terrain_to_ifc(_mx, _my, _mz, _p, "DiaHinh_KhaoSat"):
+                            with open(_p, "rb") as _fh:
+                                return _fh.read()
                         return None
-                    import tempfile as _tmp
-                    _, _mx, _my, _mz = TV.ve_dia_hinh_3d(
-                        _df_geo, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3)
-                    _p = os.path.join(_tmp.gettempdir(), "terrain_export.ifc")
-                    if TV.export_terrain_to_ifc(_mx, _my, _mz, _p, "DiaHinh_KhaoSat"):
-                        with open(_p, "rb") as _fh:
-                            return _fh.read()
-                    return None
 
-                # Cây xuất 3 cấp: (thư mục, dir, [ (cấu kiện, sub_dir,
-                #   [ (id, định dạng, tệp, producer) ]) ]). Quy ước: 2D→DXF, 3D→IFC.
-                _exp_tree = [
-                    ("🌉 Kết cấu cầu", "KetCauCau", [
-                        ("Mặt cắt ngang", "MatCatNgang", [
-                            ("mcn2d", "2D — DXF",            "mat_cat_ngang.dxf",
-                             lambda: EXP.export_mcn_dxf(d)),
-                            ("mcn3d", "3D — IFC (kéo dọc cầu)", "mat_cat_ngang_3d.ifc",
-                             lambda: EXP.export_bridge_ifc(d)),
+                    # Cây xuất 3 cấp: (thư mục, dir, [ (cấu kiện, sub_dir,
+                    #   [ (id, định dạng, tệp, producer) ]) ]). Quy ước: 2D→DXF, 3D→IFC.
+                    _exp_tree = [
+                        ("🌉 Kết cấu cầu", "KetCauCau", [
+                            ("Mặt cắt ngang", "MatCatNgang", [
+                                ("mcn2d", "2D — DXF",            "mat_cat_ngang.dxf",
+                                 lambda: EXP.export_mcn_dxf(d)),
+                                ("mcn3d", "3D — IFC (kéo dọc cầu)", "mat_cat_ngang_3d.ifc",
+                                 lambda: EXP.export_bridge_ifc(d)),
+                            ]),
+                            ("Trắc dọc", "TracDoc", [
+                                ("td2d", "2D — DXF", "trac_doc.dxf",
+                                 lambda: EXP.export_trac_doc_dxf(d)),
+                            ]),
+                            ("Trụ cầu", "Tru", [
+                                ("tru2d", "2D — DXF", "tru.dxf",
+                                 lambda: EXP.export_tru_dxf(d)),
+                                ("tru3d", "3D — IFC", "tru.ifc",
+                                 lambda: EXP.export_pier_ifc(d)),
+                            ]),
+                            ("Kết cấu toàn cầu", "ToanCau", [
+                                ("cau3d", "3D — IFC", "ket_cau_cau.ifc",
+                                 lambda: EXP.export_bridge_ifc(d)),
+                            ]),
                         ]),
-                        ("Trắc dọc", "TracDoc", [
-                            ("td2d", "2D — DXF", "trac_doc.dxf",
-                             lambda: EXP.export_trac_doc_dxf(d)),
+                        ("🗺️ Địa hình", "DiaHinh", [
+                            ("Địa hình khảo sát", "KhaoSat", [
+                                ("dh3d", "3D — IFC", "dia_hinh.ifc", _terrain_ifc_bytes),
+                            ]),
                         ]),
-                        ("Trụ cầu", "Tru", [
-                            ("tru2d", "2D — DXF", "tru.dxf",
-                             lambda: EXP.export_tru_dxf(d)),
-                            ("tru3d", "3D — IFC", "tru.ifc",
-                             lambda: EXP.export_pier_ifc(d)),
+                        ("📚 Dữ liệu / Thư viện", "DuLieu", [
+                            ("Thư viện cấu kiện", "ThuVien", [
+                                ("lib", "Toàn bộ (JSON)", "thu_vien.json",
+                                 lambda: json.dumps(CLIB.export_bundle(), ensure_ascii=False,
+                                                    indent=2).encode("utf-8")),
+                            ]),
+                            ("Phương án", "PhuongAn", [
+                                ("par", "Thông số & kết quả (JSON)", "thong_so_phuong_an.json",
+                                 lambda: json.dumps(
+                                     {k: d.get(k) for k in
+                                      ("bc", "B", "H", "vtk", "kcn_result", "tru_result",
+                                       "mong_result", "lop_phu_result", "geo_logic", "span_layout")},
+                                     ensure_ascii=False, indent=2, default=str).encode("utf-8")),
+                            ]),
                         ]),
-                        ("Kết cấu toàn cầu", "ToanCau", [
-                            ("cau3d", "3D — IFC", "ket_cau_cau.ifc",
-                             lambda: EXP.export_bridge_ifc(d)),
-                        ]),
-                    ]),
-                    ("🗺️ Địa hình", "DiaHinh", [
-                        ("Địa hình khảo sát", "KhaoSat", [
-                            ("dh3d", "3D — IFC", "dia_hinh.ifc", _terrain_ifc_bytes),
-                        ]),
-                    ]),
-                    ("📚 Dữ liệu / Thư viện", "DuLieu", [
-                        ("Thư viện cấu kiện", "ThuVien", [
-                            ("lib", "Toàn bộ (JSON)", "thu_vien.json",
-                             lambda: json.dumps(CLIB.export_bundle(), ensure_ascii=False,
-                                                indent=2).encode("utf-8")),
-                        ]),
-                        ("Phương án", "PhuongAn", [
-                            ("par", "Thông số & kết quả (JSON)", "thong_so_phuong_an.json",
-                             lambda: json.dumps(
-                                 {k: d.get(k) for k in
-                                  ("bc", "B", "H", "vtk", "kcn_result", "tru_result",
-                                   "mong_result", "lop_phu_result", "geo_logic", "span_layout")},
-                                 ensure_ascii=False, indent=2, default=str).encode("utf-8")),
-                        ]),
-                    ]),
-                ]
+                    ]
 
-                # Tất cả key (3 cấp) — phục vụ nút chọn/bỏ chọn tất cả
-                _all_keys = [f"exp_{_PA_TAG}_{_id}"
-                             for _, _, _subs in _exp_tree
-                             for _, _, _fmts in _subs
-                             for _id, *_ in _fmts]
-                _bt1, _bt2, _ = st.columns([1, 1, 3])
-                if _bt1.button("✅ Chọn tất cả", key=f"exp_selall_{_PA_TAG}",
-                               use_container_width=True):
-                    for _k in _all_keys:
-                        st.session_state[_k] = True
-                    st.rerun()
-                if _bt2.button("⬜ Bỏ chọn", key=f"exp_selnone_{_PA_TAG}",
-                               use_container_width=True):
-                    for _k in _all_keys:
-                        st.session_state[_k] = False
-                    st.rerun()
+                    # Tất cả key (3 cấp) — phục vụ nút chọn/bỏ chọn tất cả
+                    _all_keys = [f"exp_{_PA_TAG}_{_id}"
+                                 for _, _, _subs in _exp_tree
+                                 for _, _, _fmts in _subs
+                                 for _id, *_ in _fmts]
+                    _bt1, _bt2, _ = st.columns([1, 1, 3])
+                    if _bt1.button("✅ Chọn tất cả", key=f"exp_selall_{_PA_TAG}",
+                                   use_container_width=True):
+                        for _k in _all_keys:
+                            st.session_state[_k] = True
+                        st.rerun()
+                    if _bt2.button("⬜ Bỏ chọn", key=f"exp_selnone_{_PA_TAG}",
+                                   use_container_width=True):
+                        for _k in _all_keys:
+                            st.session_state[_k] = False
+                        st.rerun()
 
-                _sel_items = []     # (dir_đầy_đủ, fname, producer, label)
-                for _flabel, _fdir, _subs in _exp_tree:
-                    _ids_in = [f"exp_{_PA_TAG}_{_id}"
-                               for _, _, _fmts in _subs for _id, *_ in _fmts]
-                    _n_on = sum(1 for _k in _ids_in if st.session_state.get(_k))
-                    with st.expander(f"{_flabel}  ({_n_on}/{len(_ids_in)})", expanded=True):
-                        for _slabel, _sdir, _fmts in _subs:
-                            st.markdown(f"**↳ {_slabel}**")
-                            for _id, _fmtlbl, _fn, _mk in _fmts:
-                                if st.checkbox(
-                                        f"　{_fmtlbl}  ·  `{_fdir}/{_sdir}/{_fn}`",
-                                        key=f"exp_{_PA_TAG}_{_id}"):
-                                    _sel_items.append(
-                                        (f"{_fdir}/{_sdir}", _fn, _mk,
-                                         f"{_slabel} · {_fmtlbl}"))
+                    _sel_items = []     # (dir_đầy_đủ, fname, producer, label)
+                    for _flabel, _fdir, _subs in _exp_tree:
+                        _ids_in = [f"exp_{_PA_TAG}_{_id}"
+                                   for _, _, _fmts in _subs for _id, *_ in _fmts]
+                        _n_on = sum(1 for _k in _ids_in if st.session_state.get(_k))
+                        with st.expander(f"{_flabel}  ({_n_on}/{len(_ids_in)})", expanded=True):
+                            for _slabel, _sdir, _fmts in _subs:
+                                st.markdown(f"**↳ {_slabel}**")
+                                for _id, _fmtlbl, _fn, _mk in _fmts:
+                                    if st.checkbox(
+                                            f"　{_fmtlbl}  ·  `{_fdir}/{_sdir}/{_fn}`",
+                                            key=f"exp_{_PA_TAG}_{_id}"):
+                                        _sel_items.append(
+                                            (f"{_fdir}/{_sdir}", _fn, _mk,
+                                             f"{_slabel} · {_fmtlbl}"))
 
-                st.markdown("---")
-                _cz1, _cz2 = st.columns([1, 1])
-                if _cz1.button(f"📦 Đóng gói {len(_sel_items)} mục đã chọn (.zip)",
-                               type="primary", use_container_width=True,
-                               disabled=(not _sel_items), key=f"exp_zip_{_PA_TAG}"):
-                    _buf = io.BytesIO(); _ok = []; _err = []
-                    with zipfile.ZipFile(_buf, "w", zipfile.ZIP_DEFLATED) as _zf:
-                        for _fdir, _fn, _mk, _lbl in _sel_items:
-                            try:
-                                _b = _mk()
-                                if _b:
-                                    _zf.writestr(f"{_fdir}/{_fn}", _b); _ok.append(_lbl)
-                                else:
-                                    _err.append(f"{_lbl} (không có dữ liệu)")
-                            except Exception as _ex:
-                                _err.append(f"{_lbl}: {_ex}")
-                    st.session_state[f"_exp_zip_{_PA_TAG}"] = _buf.getvalue()
-                    st.session_state[f"_exp_zip_sum_{_PA_TAG}"] = (_ok, _err)
-                    st.rerun()
+                    st.markdown("---")
+                    _cz1, _cz2 = st.columns([1, 1])
+                    if _cz1.button(f"📦 Đóng gói {len(_sel_items)} mục đã chọn (.zip)",
+                                   type="primary", use_container_width=True,
+                                   disabled=(not _sel_items), key=f"exp_zip_{_PA_TAG}"):
+                        _buf = io.BytesIO(); _ok = []; _err = []
+                        with zipfile.ZipFile(_buf, "w", zipfile.ZIP_DEFLATED) as _zf:
+                            for _fdir, _fn, _mk, _lbl in _sel_items:
+                                try:
+                                    _b = _mk()
+                                    if _b:
+                                        _zf.writestr(f"{_fdir}/{_fn}", _b); _ok.append(_lbl)
+                                    else:
+                                        _err.append(f"{_lbl} (không có dữ liệu)")
+                                except Exception as _ex:
+                                    _err.append(f"{_lbl}: {_ex}")
+                        st.session_state[f"_exp_zip_{_PA_TAG}"] = _buf.getvalue()
+                        st.session_state[f"_exp_zip_sum_{_PA_TAG}"] = (_ok, _err)
+                        st.rerun()
 
-                _zbytes = st.session_state.get(f"_exp_zip_{_PA_TAG}")
-                if _zbytes:
-                    _ok, _err = st.session_state.get(f"_exp_zip_sum_{_PA_TAG}", ([], []))
-                    if _ok:
-                        st.success("✅ Đã đóng gói: " + ", ".join(_ok))
-                    if _err:
-                        st.warning("⚠️ Bỏ qua: " + "; ".join(_err))
-                    _cz2.download_button(
-                        "⬇️ Tải gói .zip", data=_zbytes,
-                        file_name=f"ho_so_{_PA_TAG}.zip", mime="application/zip",
-                        use_container_width=True, key=f"exp_dl_{_PA_TAG}")
+                    _zbytes = st.session_state.get(f"_exp_zip_{_PA_TAG}")
+                    if _zbytes:
+                        _ok, _err = st.session_state.get(f"_exp_zip_sum_{_PA_TAG}", ([], []))
+                        if _ok:
+                            st.success("✅ Đã đóng gói: " + ", ".join(_ok))
+                        if _err:
+                            st.warning("⚠️ Bỏ qua: " + "; ".join(_err))
+                        _cz2.download_button(
+                            "⬇️ Tải gói .zip", data=_zbytes,
+                            file_name=f"ho_so_{_PA_TAG}.zip", mime="application/zip",
+                            use_container_width=True, key=f"exp_dl_{_PA_TAG}")
+                _export_frag()
 
             # ── TAB CUỐI: Dự toán (từ bảng khối lượng toàn cầu) ──────────
             with tab_dutoan:
