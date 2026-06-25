@@ -1645,7 +1645,7 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
             _PB = _get_PB()
             for _pt in _PB.build_pier_mesh_traces(
                     pier_assembly, H_tru=(z_cap_t - z_be_b),
-                    x_ctr=xt, z_base=z_be_b):
+                    x_ctr=xt, z_base=z_be_b, cap_width=bc):
                 _pt.showlegend = bool(sl)   # chỉ chú giải ở trụ đầu
                 traces.append(_pt)
             continue
