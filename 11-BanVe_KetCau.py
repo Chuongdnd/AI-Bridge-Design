@@ -2726,10 +2726,11 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
 # 8b. BỐ HÌNH MỐ – TRỤ THEO VỊ TRÍ — 4 hình: mặt bằng KC, mặt bằng cọc,
 #     mặt cắt ngang (ở trên), mặt cắt dọc. Dùng chung 1 bộ hình học _pos_geometry.
 # ===========================================================================
-def _pos_geometry(d, vi_tri):
+def _pos_geometry(d, vi_tri, pier_assembly=None):
     """Tập hợp toàn bộ kích thước/hình học cho 1 vị trí (mố/trụ) — dùng chung
     cho cả 4 hình để đảm bảo nhất quán. Kích thước theo DỌC cầu suy từ sơ đồ
-    cọc khai báo (nếu có), nếu không dùng mặc định."""
+    cọc khai báo (nếu có), nếu không dùng mặc định.
+    pier_assembly: nếu có → lấy chiều cao xà mũ/bệ THẬT (thay 0.80/1.50 cũ)."""
     kcn   = d.get("kcn_result") or d.get("ai_result", {})
     geo   = d.get("geo_logic", {})
     tru_r = d.get("tru_result", {}) or {}
@@ -2753,7 +2754,14 @@ def _pos_geometry(d, vi_tri):
 
     cap_W = max(2.0, bc * 0.18 + 1.0)   # nửa BỀ RỘNG xà mũ (ngang)
     be_W  = cap_W + 0.8                  # nửa BỀ RỘNG bệ cọc (ngang)
-    cap_H = 0.80; be_H = 1.50
+    cap_H = 0.80; be_H = 1.50            # mặc định khi chưa lắp trụ thật
+    if pier_assembly:                    # lấy chiều cao xà mũ/bệ THẬT
+        _PB = _get_PB()
+        _pp = _PB.migrate_pier(pier_assembly).get("parts", {})
+        cap_H = _PB._part_height_m(_pp.get("xa_mu", {}), "xa_mu") or cap_H
+        _bl = _PB.stem_layers_of(_pp.get("be", {}))
+        be_H = (_PB.stem_total_height(_bl) if _bl
+                else float(_pp.get("be", {}).get("H", be_H))) or be_H
 
     is_mo = str(vi_tri).startswith("mo")
     if vi_tri == "mo_trai":
@@ -2895,7 +2903,7 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
 
 def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
     """MẶT BẰNG KẾT CẤU MỐ/TRỤ — nhìn từ trên: x = ngang cầu, y = dọc cầu."""
-    g = _pos_geometry(d, vi_tri)
+    g = _pos_geometry(d, vi_tri, pier_assembly)
     fig = go.Figure()
     bhn, bhd = g["be_half_ngang"], g["be_half_doc"]
     bc = g["bc"]
@@ -2979,7 +2987,7 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
 
 def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
     """MẶT CẮT DỌC tại vị trí — cắt dọc tim cầu qua mố/trụ: x = dọc cầu, y = cao độ."""
-    g = _pos_geometry(d, vi_tri)
+    g = _pos_geometry(d, vi_tri, pier_assembly)
     fig = go.Figure()
     bhd = g["be_half_doc"]
     h_tn = g["h_tn"]
