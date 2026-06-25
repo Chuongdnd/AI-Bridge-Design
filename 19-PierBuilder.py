@@ -189,19 +189,21 @@ def _bbox_ab(pts):
 
 
 def _cap_layers(cap: dict) -> list:
-    """Danh sách TẦNG xà mũ [{section, D}] — hỗ trợ cả định dạng cũ ({section,D}
-    = 1 tầng) lẫn mới ({layers:[...]}). Tầng xếp chồng từ dưới lên."""
+    """Danh sách ĐOẠN xà mũ [{section, D, loft}] dọc cầu — hỗ trợ cả định dạng
+    cũ ({section,D}=1 đoạn) lẫn mới ({layers:[...]}). loft=True → vuốt sang đoạn sau."""
     cap = cap or {}
     if cap.get("layers"):
         out = []
         for lay in cap["layers"]:
-            if lay and lay.get("section", {}).get("outer"):
+            if lay and (lay.get("section") or {}).get("outer"):
                 out.append({"section": lay["section"],
-                            "D": float(lay.get("D", 1.8) or 1.8)})
+                            "D": float(lay.get("D", 1.8) or 1.8),
+                            "loft": bool(lay.get("loft"))})
         if out:
             return out
-    if cap.get("section", {}).get("outer"):
-        return [{"section": cap["section"], "D": float(cap.get("D", 1.8) or 1.8)}]
+    if (cap.get("section") or {}).get("outer"):
+        return [{"section": cap["section"],
+                 "D": float(cap.get("D", 1.8) or 1.8), "loft": False}]
     return []
 
 
@@ -263,17 +265,9 @@ def build_pier_mesh_traces(pier: dict, H_tru: float = None,
     traces.append(_plan_mesh(than.get("section"), z, H_than, x_ctr,
                              _COL["than"], L["than"]))
     z += H_than
-    # 3) XÀ MŨ — 1..3 ĐOẠN xếp theo phương DỌC CẦU (x), cùng đáy tại đỉnh thân.
-    #    Mỗi đoạn 1 mặt cắt ngang + chiều sâu dọc cầu D; tổng D căn giữa tại x_ctr.
-    _caps = _cap_layers(cap)
-    _multi = len(_caps) > 1
-    _total_D = sum(l["D"] for l in _caps) or 1.8
-    _x = x_ctr - _total_D / 2.0
-    for _li, _lay in enumerate(_caps):
-        _sec = _scale_section_u(_lay["section"], cap_width) if cap_width else _lay["section"]
-        _nm = (f"{L['xa_mu']} #{_li + 1}" if _multi else L["xa_mu"])
-        traces.append(_cap_mesh(_sec, z, _x, _lay["D"], _COL["xa_mu"], _nm))
-        _x += _lay["D"]
+    # 3) XÀ MŨ — các đoạn xếp theo DỌC CẦU, đoạn loft vuốt sang đoạn sau.
+    traces += cap_traces(_cap_layers(cap), z, x_ctr, cap_width=cap_width,
+                         color=_COL["xa_mu"], name=L["xa_mu"])
     return [t for t in traces if t is not None]
 
 
@@ -319,10 +313,87 @@ def _mesh(parts, color, name, opacity=0.96):
                      hovertemplate=f"{name}<extra></extra>")
 
 
-def build_pier_preview_fig(pier: dict, H_tru: float = None,
-                           labels: dict = None) -> go.Figure:
-    """Figure 3D xem trước 1 trụ/mố (panel thư viện)."""
-    fig = go.Figure(build_pier_mesh_traces(pier, H_tru=H_tru, labels=labels))
+# ── LOFT xà mũ: vuốt nối giữa 2 mặt cắt dọc cầu (giống loft dầm) ─────────────
+def _resample_ring(pts, n):
+    arr = np.array([[p[0], p[1]] for p in pts], dtype=float)
+    if len(arr) < 2:
+        return arr
+    loop = np.vstack([arr, arr[:1]])
+    seg = np.sqrt((np.diff(loop, axis=0) ** 2).sum(1))
+    cl = np.concatenate([[0.0], np.cumsum(seg)])
+    total = cl[-1]
+    if total < 1e-9:
+        return arr[:n]
+    t = np.linspace(0.0, total, n, endpoint=False)
+    return np.column_stack([np.interp(t, cl, loop[:, 0]),
+                            np.interp(t, cl, loop[:, 1])])
+
+
+def _best_roll(ra, rb):
+    """Căn rb khớp ra (thử cả chiều đảo + mọi offset) → loft không bắt chéo."""
+    n = len(ra); best, bd = rb, float("inf")
+    for cand in (rb, rb[::-1]):
+        for off in range(n):
+            r = np.roll(cand, off, axis=0)
+            d = np.hypot(ra[:, 0] - r[:, 0], ra[:, 1] - r[:, 1]).sum()
+            if d < bd:
+                bd, best = d, r
+    return best
+
+
+def _cap_loft_mesh(secA, secB, z0, x0, D, color, name, N=44, M=12):
+    """Vuốt nối mặt cắt A→B dọc cầu x0..x0+D. Mỗi mặt cắt (u,v)→(y=u, z=v'-vmin+z0)."""
+    oA = (secA or {}).get("outer"); oB = (secB or {}).get("outer")
+    if not oA or not oB or len(oA) < 3 or len(oB) < 3:
+        return _cap_mesh(secA, z0, x0, D, color, name)
+    _, _, vminA, _ = _bbox_ab(oA); _, _, vminB, _ = _bbox_ab(oB)
+    A = [[u * MM, (v - vminA) * MM + z0] for (u, v) in oA]
+    B = [[u * MM, (v - vminB) * MM + z0] for (u, v) in oB]
+    ra = _resample_ring(A, N); rb = _best_roll(_resample_ring(A, N), _resample_ring(B, N))
+    vx, vy, vz = [], [], []
+    for i in range(M + 1):
+        t = i / M
+        x = x0 + D * t
+        ring = ra * (1 - t) + rb * t
+        for (y, z) in ring:
+            vx.append(x); vy.append(y); vz.append(z)
+    I, J, K = [], [], []
+    for i in range(M):
+        for j in range(N):
+            a = i * N + j;            b = i * N + (j + 1) % N
+            c = (i + 1) * N + (j + 1) % N; e = (i + 1) * N + j
+            I += [a, a]; J += [b, c]; K += [c, e]
+    return go.Mesh3d(x=vx, y=vy, z=vz, i=I, j=J, k=K, color=color, opacity=0.96,
+                     name=name, showlegend=bool(name), flatshading=True,
+                     hovertemplate=f"{name}<extra></extra>")
+
+
+def cap_traces(layers, z0, x_ctr, cap_width=None, color=None, name="Xà mũ"):
+    """Render xà mũ: list đoạn [{section,D,loft}] xếp dọc cầu, đoạn loft vuốt
+    sang đoạn sau. Tổng bề dày căn giữa tại x_ctr; co bề rộng theo cap_width."""
+    color = color or _COL["xa_mu"]
+    layers = [l for l in (layers or []) if (l.get("section") or {}).get("outer")]
+    if not layers:
+        return []
+    total_D = sum(float(l.get("D", 1.8) or 1.8) for l in layers) or 1.8
+    x = x_ctr - total_D / 2.0
+    multi = len(layers) > 1
+    out = []
+    for i, lay in enumerate(layers):
+        _D = float(lay.get("D", 1.8) or 1.8)
+        secA = _scale_section_u(lay["section"], cap_width) if cap_width else lay["section"]
+        nm = f"{name} #{i + 1}" if multi else name
+        if lay.get("loft") and i + 1 < len(layers):
+            _nx = layers[i + 1]["section"]
+            secB = _scale_section_u(_nx, cap_width) if cap_width else _nx
+            out.append(_cap_loft_mesh(secA, secB, z0, x, _D, color, nm))
+        else:
+            out.append(_cap_mesh(secA, z0, x, _D, color, nm))
+        x += _D
+    return [t for t in out if t is not None]
+
+
+def _part_scene_layout(fig):
     fig.update_layout(
         scene=dict(xaxis_title="Dọc cầu (m)", yaxis_title="Ngang cầu (m)",
                    zaxis_title="Cao độ (m)", aspectmode="data"),
@@ -331,6 +402,28 @@ def build_pier_preview_fig(pier: dict, H_tru: float = None,
         scene_camera=dict(eye=dict(x=1.6, y=-1.6, z=1.0)),
     )
     return fig
+
+
+def build_pier_preview_fig(pier: dict, H_tru: float = None,
+                           labels: dict = None) -> go.Figure:
+    """Figure 3D xem trước 1 trụ/mố (panel thư viện)."""
+    return _part_scene_layout(
+        go.Figure(build_pier_mesh_traces(pier, H_tru=H_tru, labels=labels)))
+
+
+def build_plan_part_fig(section: dict, H: float, color: str = "#5d8aa8",
+                        name: str = "") -> go.Figure:
+    """3D 1 bộ phận mặt-bằng (THÂN/BỆ): mặt cắt (u,v) đùn cao H — xem độc lập."""
+    tr = _plan_mesh(section, 0.0, float(H or 1.0), 0.0, color, name)
+    return _part_scene_layout(go.Figure([t for t in [tr] if t is not None]))
+
+
+def build_cap_part_fig(cap_layers: list, cap_width: float = None) -> go.Figure:
+    """3D xà mũ độc lập từ list đoạn [{section,D,loft}] — đặt đáy tại z=0."""
+    return _part_scene_layout(
+        go.Figure(cap_traces(cap_layers, z0=0.0, x_ctr=0.0,
+                             cap_width=cap_width, color=_COL["xa_mu"],
+                             name="Xà mũ")))
 
 
 def _plan_doc_width_m(section: dict) -> float:

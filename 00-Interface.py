@@ -3553,7 +3553,14 @@ def _render_xamu_layers(kind, part) -> dict:
                 f"Bề dày dọc cầu D (m) — đoạn {i+1}", 0.3, 10.0,
                 float(cur.get("D", 1.8) or 1.8), 0.1,
                 key=f"pp_{kind}_xamu_D_L{i}")
-        new_layers.append({"section": sec, "D": float(_D)})
+            _loft = False
+            if i < _n - 1:      # đoạn cuối không loft
+                _loft = st.checkbox(
+                    "Vuốt nối (loft) sang đoạn sau",
+                    value=bool(cur.get("loft", False)),
+                    key=f"pp_{kind}_xamu_loft_L{i}",
+                    help="Bật để mặt cắt đoạn này vuốt mượt sang mặt cắt đoạn kế.")
+        new_layers.append({"section": sec, "D": float(_D), "loft": bool(_loft)})
     return {"layers": new_layers}
 
 
@@ -3698,6 +3705,250 @@ def _assembly_picker(d, kind: str) -> None:
              f"đã dựng trong Thư viện (tự co chiều cao theo cao độ đáy dầm).")
     d[cfg["id_key"]] = (None if _sel == _opts[0]
                         else items[_opts.index(_sel) - 1].get("id"))
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 3 THƯ VIỆN BỘ PHẬN TRỤ ĐỘC LẬP: Xà mũ (loft) · Thân trụ · Bệ trụ
+# ══════════════════════════════════════════════════════════════════════════
+_SIMPLE_PART_CFG = {
+    "stem": {"ss": "lib_stems", "icon": "🏛️", "label": "Thân trụ", "color": "#5d8aa8",
+             "load": "load_stems", "save": "save_stems", "upsert": "upsert_stem",
+             "delete": "delete_stem", "get": "get_stem", "mkid": "make_stem_id",
+             "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc cầu) — đùn theo chiều cao."},
+    "footing": {"ss": "lib_footings", "icon": "🟫", "label": "Bệ trụ", "color": "#7f8c9b",
+                "load": "load_footings", "save": "save_footings", "upsert": "upsert_footing",
+                "delete": "delete_footing", "get": "get_footing", "mkid": "make_footing_id",
+                "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc cầu) — đùn theo chiều cao."},
+}
+
+
+def _clear_cap_widgets():
+    for i in range(3):
+        for k in (f"cap_dxf_xamu_L{i}", f"_cap_sig_xamu_L{i}",
+                  f"pp_cap_xamu_D_L{i}", f"pp_cap_xamu_loft_L{i}"):
+            st.session_state.pop(k, None)
+    st.session_state.pop("nlay_cap_xamu", None)
+    st.session_state.pop("_cap_name", None)
+
+
+def render_cap_library():
+    """Thư viện XÀ MŨ — nhiều đoạn mặt cắt xếp dọc cầu, có loft (giống tạo dầm)."""
+    if "lib_caps" not in st.session_state:
+        st.session_state.lib_caps = CLIB.load_caps()
+    caps = st.session_state.lib_caps
+    if st.session_state.get("_cap_panel"):
+        _render_cap_edit_panel()
+        return
+    _h1, _h2 = st.columns([3, 1])
+    with _h1:
+        st.markdown("##### 🧢 Xà mũ (đùn dọc cầu · có loft)")
+        st.caption("Mỗi xà mũ = 1–3 đoạn mặt cắt ngang xếp **dọc cầu**; đoạn loft "
+                   "vuốt mượt sang đoạn sau. Lắp vào cầu ở **Bố trí chung**.")
+    with _h2:
+        if st.button("➕ Tạo xà mũ mới", type="primary", use_container_width=True,
+                     key="cap_new"):
+            _clear_cap_widgets()
+            st.session_state["_cap_draft"] = {"ten": "", "layers": []}
+            st.session_state.pop("_cap_edit_id", None)
+            st.session_state["_cap_panel"] = "new"
+            st.rerun()
+    if not caps:
+        st.info("Chưa có xà mũ nào. Bấm **➕ Tạo xà mũ mới**.")
+        return
+    for c in sorted(caps, key=lambda x: str(x.get("ten", "")).lower()):
+        _lays = c.get("layers", [])
+        _info, _e, _del = st.columns([8, 1, 1])
+        _info.markdown(
+            f"<div style='background:#141420;border:1px solid #2a2a3a;"
+            f"border-left:4px solid #6d9dc5;border-radius:8px;padding:8px 12px'>"
+            f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>🧢 "
+            f"{c.get('ten','(không tên)')}</span>"
+            f"<span style='font-size:11px;color:#888;margin-left:10px'>"
+            f"{len(_lays)} đoạn · dày "
+            f"{'/'.join(str(l.get('D','?')) for l in _lays)}m</span></div>",
+            unsafe_allow_html=True)
+        if _e.button("✏️", key=f"cap_edit_{c['id']}", use_container_width=True):
+            _clear_cap_widgets()
+            st.session_state["_cap_draft"] = dict(c)
+            st.session_state["_cap_edit_id"] = c["id"]
+            st.session_state["_cap_panel"] = c["id"]
+            st.rerun()
+        if _del.button("🗑️", key=f"cap_del_{c['id']}", use_container_width=True):
+            st.session_state.lib_caps = CLIB.delete_cap(caps, c["id"])
+            CLIB.save_caps(st.session_state.lib_caps)
+            st.rerun()
+
+
+def _render_cap_edit_panel():
+    eid = st.session_state.get("_cap_edit_id")
+    draft = st.session_state.get("_cap_draft") or {"ten": "", "layers": []}
+    st.markdown(
+        f"<div style='background:#0a1f35;border:1px solid #007acc;border-radius:8px;"
+        f"padding:8px 12px;margin:6px 0'><b style='color:#4fc3f7'>"
+        f"{'✏️ Sửa xà mũ' if eid else '➕ Tạo xà mũ mới'}</b> — khai báo đoạn mặt cắt "
+        f"dọc cầu (có loft), rồi 💾 Lưu.</div>", unsafe_allow_html=True)
+    _ten = st.text_input("Tên xà mũ", value=draft.get("ten", ""), key="_cap_name",
+                         placeholder="VD: Xà mũ trụ T 2 đoạn")
+    _part = _render_xamu_layers("cap", {"layers": draft.get("layers", [])})
+    _layers = _part["layers"]
+    st.session_state["_cap_draft"] = {"ten": _ten, "layers": _layers}
+
+    st.markdown("---")
+    st.markdown("**🧊 Xem trước 3D xà mũ** (độc lập · kéo xoay)")
+    try:
+        st.plotly_chart(PB.build_cap_part_fig(_layers), use_container_width=True,
+                        key="cap_prev3d")
+    except Exception as _e:
+        st.error(f"Lỗi xem trước 3D: {_e}")
+
+    _s1, _s2, _ = st.columns([1, 1, 3])
+    if _s1.button("💾 Lưu xà mũ", type="primary", use_container_width=True,
+                  key="cap_save"):
+        if not _ten.strip():
+            st.warning("⚠️ Nhập **tên xà mũ**.")
+        elif not any((l.get("section") or {}).get("outer") for l in _layers):
+            st.warning("⚠️ Cần ít nhất 1 đoạn có mặt cắt (upload DXF).")
+        else:
+            caps = st.session_state.get("lib_caps", CLIB.load_caps())
+            rid = eid or CLIB.make_cap_id(_ten, caps)
+            rec = {"id": rid, "ten": _ten.strip(), "layers": _layers,
+                   "created_by": (AUTH.current_user() or {}).get("name", ""),
+                   "updated_at": time.strftime("%Y-%m-%d %H:%M")}
+            st.session_state.lib_caps = CLIB.upsert_cap(caps, rec)
+            CLIB.save_caps(st.session_state.lib_caps)
+            for _k in ("_cap_panel", "_cap_edit_id", "_cap_draft"):
+                st.session_state.pop(_k, None)
+            st.toast(f"Đã lưu xà mũ “{_ten}”.", icon="✅")
+            st.rerun()
+    if _s2.button("Hủy", use_container_width=True, key="cap_cancel"):
+        for _k in ("_cap_panel", "_cap_edit_id", "_cap_draft"):
+            st.session_state.pop(_k, None)
+        st.rerun()
+
+
+def render_simple_part_library(kind: str):
+    """Thư viện THÂN TRỤ / BỆ TRỤ — 1 mặt cắt mặt bằng + chiều cao H, 3D độc lập."""
+    cfg = _SIMPLE_PART_CFG[kind]
+    ss = cfg["ss"]
+    _load = getattr(CLIB, cfg["load"])
+    if ss not in st.session_state:
+        st.session_state[ss] = _load()
+    items = st.session_state[ss]
+    if st.session_state.get(f"_{kind}_panel"):
+        _render_simple_part_panel(kind, cfg)
+        return
+    _h1, _h2 = st.columns([3, 1])
+    with _h1:
+        st.markdown(f"##### {cfg['icon']} {cfg['label']}")
+        st.caption(cfg["hint"] + " Lắp vào cầu ở **Bố trí chung**.")
+    with _h2:
+        if st.button(f"➕ Tạo {cfg['label'].lower()} mới", type="primary",
+                     use_container_width=True, key=f"{kind}_new"):
+            st.session_state[f"_{kind}_draft"] = {"ten": "", "section": {}, "H": 5.0}
+            st.session_state.pop(f"_{kind}_edit_id", None)
+            for _k in (f"{kind}_dxf_part", f"_{kind}_sig_part",
+                       f"pp_{kind}_H", f"_{kind}_name"):
+                st.session_state.pop(_k, None)
+            st.session_state[f"_{kind}_panel"] = "new"
+            st.rerun()
+    if not items:
+        st.info(f"Chưa có {cfg['label'].lower()} nào.")
+        return
+    for it in sorted(items, key=lambda x: str(x.get("ten", "")).lower()):
+        _info, _e, _del = st.columns([8, 1, 1])
+        _info.markdown(
+            f"<div style='background:#141420;border:1px solid #2a2a3a;"
+            f"border-left:4px solid {cfg['color']};border-radius:8px;padding:8px 12px'>"
+            f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
+            f"{cfg['icon']} {it.get('ten','(không tên)')}</span>"
+            f"<span style='font-size:11px;color:#888;margin-left:10px'>"
+            f"H={it.get('H','?')}m</span></div>", unsafe_allow_html=True)
+        if _e.button("✏️", key=f"{kind}_edit_{it['id']}", use_container_width=True):
+            st.session_state[f"_{kind}_draft"] = dict(it)
+            st.session_state[f"_{kind}_edit_id"] = it["id"]
+            for _k in (f"{kind}_dxf_part", f"_{kind}_sig_part",
+                       f"pp_{kind}_H", f"_{kind}_name"):
+                st.session_state.pop(_k, None)
+            st.session_state[f"_{kind}_panel"] = it["id"]
+            st.rerun()
+        if _del.button("🗑️", key=f"{kind}_del_{it['id']}", use_container_width=True):
+            st.session_state[ss] = getattr(CLIB, cfg["delete"])(items, it["id"])
+            getattr(CLIB, cfg["save"])(st.session_state[ss])
+            st.rerun()
+
+
+def _render_simple_part_panel(kind: str, cfg: dict):
+    eid = st.session_state.get(f"_{kind}_edit_id")
+    draft = st.session_state.get(f"_{kind}_draft") or {}
+    st.markdown(
+        f"<div style='background:#0a1f35;border:1px solid #007acc;border-radius:8px;"
+        f"padding:8px 12px;margin:6px 0'><b style='color:#4fc3f7'>"
+        f"{'✏️ Sửa ' if eid else '➕ Tạo '}{cfg['label'].lower()}</b> — upload mặt cắt "
+        f"mặt bằng + chiều cao, rồi 💾 Lưu.</div>", unsafe_allow_html=True)
+    _ten = st.text_input(f"Tên {cfg['label'].lower()}", value=draft.get("ten", ""),
+                         key=f"_{kind}_name")
+    st.caption(cfg["hint"])
+    sec = dict(draft.get("section") or {})
+    _up = st.file_uploader(f"⬆ Upload mặt cắt {cfg['label'].lower()} (DXF/DWG)",
+                           type=["dxf", "dwg"], key=f"{kind}_dxf_part")
+    if _up is not None:
+        _sig = f"{_up.name}:{_up.size}"
+        if st.session_state.get(f"_{kind}_sig_part") != _sig:
+            try:
+                _res = _BB_ENGINE.parse_dxf_bytes(_up.read())
+                if _res.get("error"):
+                    st.error(f"Lỗi đọc DXF: {_res['error']}")
+                elif len(_res.get("outer", [])) >= 3:
+                    sec = {"outer": _res["outer"], "holes": _res.get("holes", [])}
+                    st.session_state[f"_{kind}_sig_part"] = _sig
+                    st.success(f"✅ Đã nạp: {len(sec['outer'])} đỉnh.")
+                else:
+                    st.warning("Không tìm thấy biên kín trong DXF.")
+            except Exception as _e:
+                st.error(f"Lỗi xử lý DXF: {_e}")
+    _c1, _c2 = st.columns([3, 2])
+    with _c1:
+        _f = _asm_section_fig(sec)
+        if _f is not None:
+            st.plotly_chart(_f, use_container_width=True, key=f"{kind}_secfig_part")
+        else:
+            st.info("Chưa có mặt cắt — upload DXF.")
+    with _c2:
+        _H = st.number_input("Chiều cao H (m)", 0.3, 60.0,
+                             float(draft.get("H", 5.0) or 5.0), 0.1,
+                             key=f"pp_{kind}_H")
+
+    st.markdown("---")
+    st.markdown(f"**🧊 Xem trước 3D {cfg['label'].lower()}** (độc lập)")
+    try:
+        st.plotly_chart(PB.build_plan_part_fig(sec, _H, cfg["color"], cfg["label"]),
+                        use_container_width=True, key=f"{kind}_prev3d")
+    except Exception as _e:
+        st.error(f"Lỗi 3D: {_e}")
+
+    _s1, _s2, _ = st.columns([1, 1, 3])
+    if _s1.button(f"💾 Lưu {cfg['label'].lower()}", type="primary",
+                  use_container_width=True, key=f"{kind}_save"):
+        if not _ten.strip():
+            st.warning(f"⚠️ Nhập **tên {cfg['label'].lower()}**.")
+        elif not sec.get("outer"):
+            st.warning("⚠️ Cần upload mặt cắt.")
+        else:
+            items = st.session_state.get(cfg["ss"], getattr(CLIB, cfg["load"])())
+            rid = eid or getattr(CLIB, cfg["mkid"])(_ten, items)
+            rec = {"id": rid, "ten": _ten.strip(), "section": sec, "H": float(_H),
+                   "created_by": (AUTH.current_user() or {}).get("name", ""),
+                   "updated_at": time.strftime("%Y-%m-%d %H:%M")}
+            st.session_state[cfg["ss"]] = getattr(CLIB, cfg["upsert"])(items, rec)
+            getattr(CLIB, cfg["save"])(st.session_state[cfg["ss"]])
+            for _k in (f"_{kind}_panel", f"_{kind}_edit_id", f"_{kind}_draft"):
+                st.session_state.pop(_k, None)
+            st.toast(f"Đã lưu {cfg['label'].lower()} “{_ten}”.", icon="✅")
+            st.rerun()
+    if _s2.button("Hủy", use_container_width=True, key=f"{kind}_cancel"):
+        for _k in (f"_{kind}_panel", f"_{kind}_edit_id", f"_{kind}_draft"):
+            st.session_state.pop(_k, None)
+        st.rerun()
 
 
 def render_assembly_library(kind: str) -> None:
@@ -4090,7 +4341,8 @@ def _render_library_io() -> None:
                 _counts = CLIB.import_bundle(_bundle)
                 # Xóa cache session để nạp lại từ file vừa ghi
                 for _k in ("component_library", "dam_beams", "dam_piers",
-                           "dam_mos", "lib_railings"):
+                           "dam_mos", "lib_railings", "lib_caps", "lib_stems",
+                           "lib_footings"):
                     st.session_state.pop(_k, None)
                 st.success("Đã nạp thư viện: " + ", ".join(
                     f"{k}={v}" for k, v in _counts.items()) + ".")
@@ -4138,7 +4390,9 @@ def render_thu_vien() -> None:
                   "mong": "🦵 Móng", "rail": "🚧 Lan can/GPC"}
     _lib_count = {
         "dam":  len(st.session_state.dam_beams),
-        "tru":  len(st.session_state.dam_piers),
+        "tru":  (len(st.session_state.get("lib_caps") or CLIB.load_caps())
+                 + len(st.session_state.get("lib_stems") or CLIB.load_stems())
+                 + len(st.session_state.get("lib_footings") or CLIB.load_footings())),
         "mo":   len(st.session_state.dam_mos),
         "mong": len(lib.get("mong", [])),
         "rail": len(st.session_state.lib_railings),
@@ -4151,7 +4405,17 @@ def render_thu_vien() -> None:
     if _sel == "dam":
         render_dam_library(d)
     elif _sel == "tru":
-        render_assembly_library("tru")
+        # 3 thư viện bộ phận trụ độc lập (lắp ghép khi gắn cầu)
+        _tru_sub = st.radio(
+            "Bộ phận trụ", ["🧢 Xà mũ", "🏛️ Thân trụ", "🟫 Bệ trụ"],
+            horizontal=True, key="_tru_part_sub", label_visibility="collapsed")
+        st.markdown("")
+        if _tru_sub.startswith("🧢"):
+            render_cap_library()
+        elif _tru_sub.startswith("🏛️"):
+            render_simple_part_library("stem")
+        else:
+            render_simple_part_library("footing")
     elif _sel == "mo":
         render_assembly_library("mo")
     elif _sel == "mong":

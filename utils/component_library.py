@@ -453,8 +453,69 @@ def get_railing(railings: list, rail_id: str):
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# XUẤT / NHẬP TOÀN BỘ THƯ VIỆN — gộp 5 kho (cấu kiện tham số, dầm, trụ, mố,
-# lan can) thành 1 bundle JSON để người dùng tự tải về và tự upload lại.
+# 3 THƯ VIỆN BỘ PHẬN TRỤ ĐỘC LẬP — lắp ghép khi gắn cầu:
+#   caps    (xà mũ)   — schema giống DẦM: {sections, segs, fill_sec} + loft
+#   stems   (thân trụ) — {section, H, flex}
+#   footings(bệ trụ)  — {section, H}
+# Lưu riêng caps.json / stems.json / footings.json. CRUD chung qua factory.
+# ══════════════════════════════════════════════════════════════════════════
+def _make_part_store(filename: str, json_key: str):
+    """Tạo bộ hàm (load, save, mkid, upsert, delete, get) cho 1 kho list[dict]."""
+    path = os.path.join(LIBRARY_DIR, filename)
+
+    def _load() -> list:
+        if os.path.exists(path):
+            try:
+                with open(path, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                rows = data.get(json_key, []) if isinstance(data, dict) else data
+                return [r for r in rows if isinstance(r, dict)]
+            except (OSError, json.JSONDecodeError):
+                pass
+        return []
+
+    def _save(rows: list) -> None:
+        _ensure_dir()
+        _txt = json.dumps({"version": VERSION, json_key: list(rows or [])},
+                          ensure_ascii=False, indent=2)
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(_txt)
+
+    def _mkid(ten: str, existing: list = None) -> str:
+        base = slugify(ten) or json_key[:3]
+        ids = {r.get("id") for r in (existing or [])}
+        if base not in ids:
+            return base
+        i = 2
+        while f"{base}-{i}" in ids:
+            i += 1
+        return f"{base}-{i}"
+
+    def _upsert(rows: list, rec: dict) -> list:
+        out = [r for r in (rows or []) if r.get("id") != rec.get("id")]
+        out.append(rec)
+        return out
+
+    def _delete(rows: list, rid: str) -> list:
+        return [r for r in (rows or []) if r.get("id") != rid]
+
+    def _get(rows: list, rid: str):
+        return next((r for r in (rows or []) if r.get("id") == rid), None)
+
+    return path, _load, _save, _mkid, _upsert, _delete, _get
+
+
+(CAPS_PATH, load_caps, save_caps, make_cap_id, upsert_cap, delete_cap, get_cap
+ ) = _make_part_store("caps.json", "caps")
+(STEMS_PATH, load_stems, save_stems, make_stem_id, upsert_stem, delete_stem, get_stem
+ ) = _make_part_store("stems.json", "stems")
+(FOOTINGS_PATH, load_footings, save_footings, make_footing_id, upsert_footing,
+ delete_footing, get_footing) = _make_part_store("footings.json", "footings")
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# XUẤT / NHẬP TOÀN BỘ THƯ VIỆN — gộp các kho thành 1 bundle JSON để người dùng
+# tự tải về và tự upload lại.
 # ══════════════════════════════════════════════════════════════════════════
 def export_bundle() -> dict:
     """Gộp toàn bộ thư viện thành 1 dict (để ghi ra 1 file JSON)."""
@@ -466,6 +527,9 @@ def export_bundle() -> dict:
         "piers":      load_piers(),
         "mos":        load_mos(),
         "railings":   load_railings(),
+        "caps":       load_caps(),
+        "stems":      load_stems(),
+        "footings":   load_footings(),
     }
 
 
@@ -483,6 +547,9 @@ def import_bundle(bundle: dict) -> dict:
         ("piers",    save_piers),
         ("mos",      save_mos),
         ("railings", save_railings),
+        ("caps",     save_caps),
+        ("stems",    save_stems),
+        ("footings", save_footings),
     ):
         if key in bundle:
             rows = [x for x in (bundle.get(key) or []) if isinstance(x, dict)]
