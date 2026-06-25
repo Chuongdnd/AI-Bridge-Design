@@ -1422,9 +1422,13 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None):
                   _lab.get(_nm, _nm) if _sl else "", opacity=0.88, showlegend=_sl)
         _than = [pl for pl in _polys if pl["name"] == "Thân trụ"]
         _be   = [pl for pl in _polys if pl["name"] == "Bệ trụ"]
+        _cap  = [pl for pl in _polys if pl["name"] == "Xà mũ"]
+        z_cap_b_s = min((y for pl in _cap for y in pl["ys"]),
+                        default=z_cap_t_s - cap_H_sub)
         z_sh_b_s = min((y for pl in _than for y in pl["ys"]),
-                       default=z_cap_t_s - cap_H_sub - H_show)
+                       default=z_cap_b_s - H_show)
         z_be_b_s = min((y for pl in _be for y in pl["ys"]), default=z_sh_b_s - be_H_sub)
+        z_be_t_s = z_sh_b_s
         _stem_centers = [sum(pl["xs"]) / len(pl["xs"]) for pl in _than]
         _allx = [x for pl in _polys for x in pl["xs"]]
         if _allx:
