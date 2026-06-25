@@ -519,6 +519,58 @@ def main_span_index(supports, x_tim):
     return (len(spans) // 2) if spans else -1
 
 
+def _add_elevation_table(fig, d, loc="tl"):
+    """Bảng CAO ĐỘ THIẾT KẾ tham chiếu (neo theo khung giấy) cho bản vẽ."""
+    def _g(k):
+        v = (d or {}).get(k)
+        try:
+            return float(v) if v not in (None, "") else None
+        except (TypeError, ValueError):
+            return None
+    rows = []
+    for lbl, key in (("MNCN", "MNCN"), ("MNTT", "MNTT"), ("MNTN", "MNTN")):
+        v = _g(key)
+        if v is not None:
+            rows.append(f"{lbl} = {v:6.2f}")
+    mc, dd = _g("cao_mat_cau"), _g("cao_day_dam")
+    if mc is not None:
+        rows.append(f"Mặt cầu = {mc:6.2f}")
+    if dd is not None:
+        rows.append(f"Đáy dầm = {dd:6.2f}")
+    if not rows:
+        return
+    txt = "<b>CAO ĐỘ (m)</b><br>" + "<br>".join(rows)
+    x, xa = (0.005, "left") if loc.endswith("l") else (0.995, "right")
+    y, ya = (0.99, "top") if loc.startswith("t") else (0.02, "bottom")
+    fig.add_annotation(
+        xref="paper", yref="paper", x=x, y=y, xanchor=xa, yanchor=ya,
+        text=txt, showarrow=False, align="left",
+        font=dict(size=8, color="#2c3e50", family="Courier New, monospace"),
+        bgcolor="rgba(255,255,255,0.92)", bordercolor="#7f8c8d",
+        borderwidth=1, borderpad=4)
+
+
+_MAT_NOTES = (
+    "<b>GHI CHÚ VẬT LIỆU</b><br>"
+    "• Dầm BTCT DƯL · f'c = 40 MPa<br>"
+    "• Mố/trụ/bệ BT · f'c = 30 MPa<br>"
+    "• Cốt thép CB400-V · fy = 400 MPa<br>"
+    "• Lớp phủ BTN dày 70mm + lớp phòng nước"
+)
+
+
+def _add_material_notes(fig, loc="bl"):
+    """Ghi chú vật liệu & tiêu chuẩn (neo theo khung giấy)."""
+    x, xa = (0.005, "left") if loc.endswith("l") else (0.995, "right")
+    y, ya = (0.99, "top") if loc.startswith("t") else (0.02, "bottom")
+    fig.add_annotation(
+        xref="paper", yref="paper", x=x, y=y, xanchor=xa, yanchor=ya,
+        text=_MAT_NOTES, showarrow=False, align="left",
+        font=dict(size=8, color="#34495e"),
+        bgcolor="rgba(255,255,255,0.92)", bordercolor="#95a5a6",
+        borderwidth=1, borderpad=4)
+
+
 def mong_dims(mong):
     """Chuẩn hoá kích thước cọc từ mong_result (AI) HOẶC bản ghi thư viện móng.
 
@@ -1194,6 +1246,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         margin=dict(l=70, r=30, t=70, b=130),
         hovermode="closest",
     )
+    _add_elevation_table(fig, d, loc="tl")
     return fig
 
 
@@ -1475,6 +1528,7 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None):
         legend=dict(orientation="h", y=-0.15, font=dict(size=9)),
         margin=dict(l=70, r=80, t=90, b=100),
     )
+    _add_material_notes(fig, loc="bl")
     return fig
 
 
@@ -2630,11 +2684,14 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         ),
         xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
                    range=[-_Xv, _Xv]),
-        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1"),
+        # MCN là mặt cắt true-shape → khóa tỉ lệ 1:1 cho khỏi méo hình trụ.
+        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1",
+                   scaleanchor="x", scaleratio=1),
         height=480, template="plotly_white",
         legend=dict(orientation="h", y=-0.20, font=dict(size=9)),
         margin=dict(l=60, r=40, t=60, b=100),
     )
+    _add_elevation_table(fig, d, loc="tr")
     return fig
 
 
