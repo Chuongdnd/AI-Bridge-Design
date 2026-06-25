@@ -1199,10 +1199,11 @@ def _render_param_table(d_loai, st):
                   "Giá trị":  [r[1] for r in rows]})
 
 
-def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix=""):
+def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_fig_3d=None):
     """
     Render tab chi tiết cho một loại dầm cố định.
     Hiển thị MCN A-A/B-B, mặt cắt dọc, mặt bằng, 3D.
+    beam_fig_3d: nếu có → dùng mô hình 3D dầm THƯ VIỆN (thay dầm tham số cũ).
     """
     d_loai = _make_d_for_loai(loai_fixed, d_actual)
     kcn    = d_loai["kcn_result"]
@@ -1267,14 +1268,15 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix=""):
     except Exception as e:
         st.error(f"Lỗi mặt bằng: {e}")
 
-    # ④ 3D dầm
+    # ④ 3D dầm — ưu tiên MÔ HÌNH THƯ VIỆN (người dùng dựng), fallback tham số
     st.markdown("**④ Mô hình 3D — Shaded (xoay tự do)**")
     try:
-        fig_3d = ve_chi_tiet_3d(d_loai)
+        fig_3d = beam_fig_3d if beam_fig_3d is not None else ve_chi_tiet_3d(d_loai)
         st.plotly_chart(fig_3d, use_container_width=True,
                         config={"scrollZoom": True, "displayModeBar": True},
                         key=f"{key_prefix}_3d")
-        st.caption("Kéo để xoay · Scroll để zoom · Shift+drag để pan · Nháy đúp để reset")
+        st.caption(("Mô hình dầm từ Thư viện. " if beam_fig_3d is not None else "")
+                   + "Kéo để xoay · Scroll để zoom · Shift+drag để pan · Nháy đúp để reset")
     except Exception as e:
         import traceback
         st.error(f"Lỗi 3D: {e}")
