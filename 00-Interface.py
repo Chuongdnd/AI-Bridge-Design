@@ -5938,8 +5938,10 @@ with _col_main:
                     _y_bot_btc = -(_H_dam_btc + _t_ban_btc + 0.15)   # ngay dưới đáy dầm
                     _y_top_btc = _t_phu_btc + 1.40                    # trên đỉnh lan can
 
+                    _pa_tru_mcn = _resolve_assembly(d, "tru")
+
                     def _build_mcn_fig(_which):
-                        _fig = BVK.ve_mat_cat_ngang_2d(d)
+                        _fig = BVK.ve_mat_cat_ngang_2d(d, pier_assembly=_pa_tru_mcn)
                         try:
                             _trs = BBUI.get_mcn_overlay_traces(d, pfx=_spt_pfx, which=_which)
                             if _trs:
