@@ -190,6 +190,49 @@ def _bbox_ab(pts):
     return min(xs), max(xs), min(ys), max(ys)
 
 
+def _section_solids(section: dict) -> list:
+    """Trả về list các KHỐI đặc [{outer, holes}] của mặt cắt.
+
+    Mặt cắt nhiều khối rời (vd thân trụ 2 cột) lưu ở section['solids'].
+    Tương thích ngược: mặt cắt cũ chỉ có outer/holes → 1 khối."""
+    if not section:
+        return []
+    sl = section.get("solids")
+    if sl:
+        return [{"outer": s.get("outer", []), "holes": s.get("holes", [])}
+                for s in sl if len(s.get("outer", [])) >= 3]
+    o = section.get("outer", [])
+    if len(o) < 3:
+        return []
+    return [{"outer": o, "holes": section.get("holes", [])}]
+
+
+def _solids_bbox(solids: list):
+    """Bbox (umin,umax,vmin,vmax) gộp mọi khối."""
+    xs, ys = [], []
+    for s in solids:
+        for (u, v) in s["outer"]:
+            xs.append(u); ys.append(v)
+    if not xs:
+        return 0.0, 0.0, 0.0, 0.0
+    return min(xs), max(xs), min(ys), max(ys)
+
+
+def _merge_parts(plist: list):
+    """Gộp nhiều (X,Y,Z,I,J,K) thành 1 mesh (dời chỉ số đỉnh)."""
+    plist = [p for p in plist if p]
+    if not plist:
+        return None
+    X, Y, Z, I, J, K = [], [], [], [], [], []
+    off = 0
+    for (x, y, z, i, j, k) in plist:
+        X += list(x); Y += list(y); Z += list(z)
+        I += [v + off for v in i]; J += [v + off for v in j]; K += [v + off for v in k]
+        off += len(x)
+    return X, Y, Z, I, J, K
+
+
+
 def _cap_layers(cap: dict) -> list:
     """Danh sách ĐOẠN xà mũ [{section, D, loft}] dọc cầu — hỗ trợ cả định dạng
     cũ ({section,D}=1 đoạn) lẫn mới ({layers:[...]}). loft=True → vuốt sang đoạn sau."""
@@ -226,14 +269,20 @@ def _scale_section_u(section: dict, target_w_m: float) -> dict:
     u=0, giữ nguyên chiều cao). Dùng để xà mũ khớp BỀ RỘNG CẦU khi gắn vào cầu."""
     if not section or not section.get("outer") or not target_w_m:
         return section
-    umin, umax, _, _ = _bbox_ab(section["outer"])
+    solids = _section_solids(section)
+    umin, umax, _, _ = _solids_bbox(solids)   # gộp mọi khối → giữ khoảng cách cột
     w = umax - umin
     if w < 1e-6:
         return section
     f = (target_w_m * 1000.0) / w           # target (m) → mm
     _sc = lambda pts: [[u * f, v] for (u, v) in pts]
-    return {"outer": _sc(section["outer"]),
-            "holes": [_sc(h) for h in section.get("holes", [])]}
+    out = {"outer": _sc(section["outer"]),
+           "holes": [_sc(h) for h in section.get("holes", [])]}
+    if section.get("solids"):
+        out["solids"] = [{"outer": _sc(s["outer"]),
+                          "holes": [_sc(h) for h in s.get("holes", [])]}
+                         for s in solids]
+    return out
 
 
 def build_pier_mesh_traces(pier: dict, H_tru: float = None,
@@ -274,36 +323,43 @@ def build_pier_mesh_traces(pier: dict, H_tru: float = None,
 
 
 def _plan_mesh(section, z0, H, x_ctr, color, name):
-    """Bệ/thân: section (u,v) mm → mặt bằng (x=v dọc, y=u ngang), đùn z."""
-    if not section or len(section.get("outer", [])) < 3:
+    """Bệ/thân: section (u,v) mm → mặt bằng (x=v dọc, y=u ngang), đùn z.
+    Hỗ trợ NHIỀU khối rời (vd thân trụ 2 cột) → gộp thành 1 mesh."""
+    solids = _section_solids(section)
+    if not solids:
         return None
     cu = 0.0  # u (ngang) đã căn tim tại 0 theo parser
-    umin, umax, vmin, vmax = _bbox_ab(section["outer"])
+    _, _, vmin, vmax = _solids_bbox(solids)
     cv = (vmin + vmax) / 2.0  # căn giữa theo dọc cầu
 
     def _conv(pts):
         return [((v - cv) * MM + x_ctr, (u - cu) * MM) for (u, v) in pts]
 
-    outer = _conv(section["outer"])
-    holes = [_conv(h) for h in section.get("holes", [])]
-    parts = _extrude(outer, holes, "xy", z0, H)
-    return _mesh(parts, color, name)
+    parts = []
+    for s in solids:
+        outer = _conv(s["outer"])
+        holes = [_conv(h) for h in s.get("holes", [])]
+        parts.append(_extrude(outer, holes, "xy", z0, H))
+    return _mesh(_merge_parts(parts), color, name)
 
 
 def _cap_mesh(section, z0, x0, D, color, name):
     """Xà mũ: section (u,v) → (y=u ngang, z=v', cao), đùn dọc cầu x từ x0..x0+D.
     v' = v - vmin (lật dương lên), đặt đáy thấp nhất tại z0 (đỉnh thân)."""
-    if not section or len(section.get("outer", [])) < 3:
+    solids = _section_solids(section)
+    if not solids:
         return None
-    umin, umax, vmin, vmax = _bbox_ab(section["outer"])
+    _, _, vmin, _ = _solids_bbox(solids)
 
     def _conv(pts):
         return [(u * MM, (v - vmin) * MM + z0) for (u, v) in pts]
 
-    outer = _conv(section["outer"])
-    holes = [_conv(h) for h in section.get("holes", [])]
-    parts = _extrude(outer, holes, "yz", x0, D)
-    return _mesh(parts, color, name)
+    parts = []
+    for s in solids:
+        outer = _conv(s["outer"])
+        holes = [_conv(h) for h in s.get("holes", [])]
+        parts.append(_extrude(outer, holes, "yz", x0, D))
+    return _mesh(_merge_parts(parts), color, name)
 
 
 def _mesh(parts, color, name, opacity=0.96):
@@ -583,10 +639,12 @@ def build_abutment_mesh_traces(mo: dict, H_tru: float = None, x_face: float = 0.
         return [(x_face + out_dir * u * MM, z_body0 + (w - wmin) * MM * vsc)
                 for (u, w) in pts]
 
-    outer = _conv(sec["outer"])
-    holes = [_conv(h) for h in sec.get("holes", [])]
-    mesh = _extrude(outer, holes, "xz", -B / 2.0, B)
-    traces.append(_mesh(mesh, _COL["than"], L["than"]))
+    _mp = []
+    for s in _sec_solids:
+        outer = _conv(s["outer"])
+        holes = [_conv(h) for h in s.get("holes", [])]
+        _mp.append(_extrude(outer, holes, "xz", -B / 2.0, B))
+    traces.append(_mesh(_merge_parts(_mp), _COL["than"], L["than"]))
     return [t for t in traces if t is not None]
 
 
