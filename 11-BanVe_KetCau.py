@@ -521,27 +521,50 @@ def main_span_index(supports, x_tim):
 
 
 def validate_span_layout(d, x0, x_end, x_tim, B_tk):
-    """Kiểm tra bố trí 2 tầng → list cảnh báo (rỗng nếu hợp lệ)."""
-    sl = (d or {}).get("span_layout") or {}
+    """Kiểm tra bố trí NHỊP / DẦM / BỀ RỘNG → list cảnh báo (rỗng nếu hợp lệ)."""
+    d = d or {}
+    sl  = d.get("span_layout") or {}
+    kcn = d.get("kcn_result") or d.get("ai_result") or {}
     warns = []
-    if sl.get("mode") != "two_tier":
-        return warns
-    L_clear = B_tk + 2.0 * _PIER_SAFETY
-    L_main  = sl.get("L_main")
-    if L_main and float(L_main) + 1e-6 < L_clear:
+
+    # 1) Dầm có lấp đủ BỀ RỘNG cầu? (n−1)·@ + 2·hẫng ≈ bc
+    bc    = float(d.get("bc", 0) or 0)
+    n_dam = int(float(kcn.get("so_luong_dam", 0) or 0))
+    kc    = float(kcn.get("khoang_cach_dam", 0) or 0)
+    oh    = float(d.get("overhang", 0.5) or 0.5)
+    if bc > 0 and n_dam >= 2 and kc > 0:
+        used = (n_dam - 1) * kc + 2 * oh
+        if abs(used - bc) > 0.30:
+            warns.append(
+                f"Bố trí {n_dam} dầm @ {kc:.2f}m + 2×hẫng {oh:.2f}m = {used:.2f}m, "
+                f"lệch bề rộng cầu {bc:.2f}m ({used - bc:+.2f}m) — chỉnh số dầm / "
+                f"khoảng cách dầm / bề rộng cầu cho khớp.")
+
+    # 2) Chiều dài DẦM có đủ vượt NHỊP bố trí?
+    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk)
+    L_dam = float(kcn.get("chieu_dai", 0) or 0)
+    if L_dam > 0 and L_std and L_dam + 0.5 < float(L_std):
         warns.append(
-            f"Nhịp chính L={float(L_main):.1f}m < tĩnh không yêu cầu "
-            f"{L_clear:.1f}m → đã tự nâng lên {_snap_up_std(L_clear):.1f}m.")
-    supports, _ = resolve_supports(d, x0, x_end, x_tim, B_tk)
-    if supports:
-        if supports[0] > x0 + 1e-6:
+            f"Chiều dài dầm {L_dam:.1f}m < nhịp bố trí {float(L_std):.1f}m — "
+            f"dầm không đủ vượt nhịp; tăng chiều dài dầm hoặc giảm nhịp.")
+
+    # 3) Bố trí 2 tầng: tĩnh không & khoảng hở đầu/cuối
+    if sl.get("mode") == "two_tier":
+        L_clear = B_tk + 2.0 * _PIER_SAFETY
+        L_main  = sl.get("L_main")
+        if L_main and float(L_main) + 1e-6 < L_clear:
             warns.append(
-                f"Bố trí bắt đầu tại {supports[0]:.1f}m > mố trái {x0:.1f}m "
-                f"— có khoảng hở đầu cầu.")
-        if supports[-1] < x_end - 1e-6:
-            warns.append(
-                f"Bố trí kết thúc tại {supports[-1]:.1f}m < mố phải "
-                f"{x_end:.1f}m — có khoảng hở cuối cầu.")
+                f"Nhịp chính L={float(L_main):.1f}m < tĩnh không yêu cầu "
+                f"{L_clear:.1f}m → đã tự nâng lên {_snap_up_std(L_clear):.1f}m.")
+        if supports:
+            if supports[0] > x0 + 1e-6:
+                warns.append(
+                    f"Bố trí bắt đầu tại {supports[0]:.1f}m > mố trái {x0:.1f}m "
+                    f"— có khoảng hở đầu cầu.")
+            if supports[-1] < x_end - 1e-6:
+                warns.append(
+                    f"Bố trí kết thúc tại {supports[-1]:.1f}m < mố phải "
+                    f"{x_end:.1f}m — có khoảng hở cuối cầu.")
     return warns
 
 
