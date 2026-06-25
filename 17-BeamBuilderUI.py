@@ -1308,15 +1308,20 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt", show_type: bool = True):
     _cad_init(pfx, bb)
 
     # ═══ DẦM BIẾN THỂ THEO VAI TRÒ (kế thừa từ dầm gốc) ═══════════════════════
+    # Ẩn trong Thư viện (show_type=False) — dầm thư viện chỉ là 1 cây, không cần
+    # khai biến thể dầm biên / nhịp biên.
     _base_pfx = pfx
-    with st.container():
-        _vc1, _vc2 = st.columns(2)
-        _tg_dam  = _vc1.toggle("Dầm biên khác dầm giữa",
-                               key=f"{_base_pfx}_tg_dambien",
-                               help="Bật để dựng riêng cây dầm BIÊN (cây ngoài cùng)")
-        _tg_nhip = _vc2.toggle("Nhịp biên khác nhịp giữa",
-                               key=f"{_base_pfx}_tg_nhipbien",
-                               help="Bật để dựng riêng dầm ở NHỊP BIÊN (nhịp mố–trụ)")
+    if show_type:
+        with st.container():
+            _vc1, _vc2 = st.columns(2)
+            _tg_dam  = _vc1.toggle("Dầm biên khác dầm giữa",
+                                   key=f"{_base_pfx}_tg_dambien",
+                                   help="Bật để dựng riêng cây dầm BIÊN (cây ngoài cùng)")
+            _tg_nhip = _vc2.toggle("Nhịp biên khác nhịp giữa",
+                                   key=f"{_base_pfx}_tg_nhipbien",
+                                   help="Bật để dựng riêng dầm ở NHỊP BIÊN (nhịp mố–trụ)")
+    else:
+        _tg_dam = _tg_nhip = False
 
     # Tập biến thể đang bật → để hàm đặt dầm định tuyến (đọc qua _active_variants)
     _active = set()
