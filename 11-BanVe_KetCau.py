@@ -520,6 +520,24 @@ def main_span_index(supports, x_tim):
     return (len(spans) // 2) if spans else -1
 
 
+def mong_dims(mong):
+    """Chuẩn hoá kích thước cọc từ mong_result (AI) HOẶC bản ghi thư viện móng.
+
+    Trả (D_coc_m, L_coc_m, n_coc). Hỗ trợ mọi bộ tên khóa đang dùng:
+      • AI:       D_coc_mm (mm), L_coc_tu (m), So_coc_tu
+      • Thư viện: duong_kinh_coc (m), chieu_dai_coc (m), so_coc
+      • Khối lượng: kich_thuoc_mm (mm), so_coc_be
+    """
+    m = mong or {}
+    if m.get("D_coc_mm") or m.get("kich_thuoc_mm"):
+        D = float(m.get("D_coc_mm") or m.get("kich_thuoc_mm") or 600) / 1000.0
+    else:
+        D = float(m.get("duong_kinh_coc", 0) or 0) or 0.6
+    L = float(m.get("L_coc_tu") or m.get("chieu_dai_coc") or 30) or 30.0
+    n = int(float(m.get("So_coc_tu") or m.get("so_coc_be") or m.get("so_coc") or 4) or 4)
+    return D, L, max(1, n)
+
+
 def validate_span_layout(d, x0, x_end, x_tim, B_tk):
     """Kiểm tra bố trí NHỊP / DẦM / BỀ RỘNG → list cảnh báo (rỗng nếu hợp lệ)."""
     d = d or {}
@@ -817,9 +835,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     B_tk    = float(d.get("B", 20.0))
     H_tk    = float(d.get("H", 3.0))
     mong    = d.get("mong_result") or {}
-    L_coc   = float(mong.get("L_coc_tu", 30) or 30)
-    D_coc_m = float(mong.get("D_coc_mm", 600) or 600) / 1000.0
-    n_coc_row = max(2, min(4, int(mong.get("So_coc_tu", 4) or 4)))
+    D_coc_m, L_coc, _n_coc = mong_dims(mong)
+    n_coc_row = max(2, min(4, _n_coc))
 
     # Tọa độ Lý trình thực địa
     x0    = float(geo.get("x_mo_trai", -L_cau / 2))
@@ -1325,9 +1342,8 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None):
     # ── Kết cấu bên dưới dầm: Xà mũ → Thân trụ → Bệ cọc → Cọc (MCN) ──────
     H_tru_sub  = float(d.get("H_tru_est", 5.0))
     mong_sub   = d.get("mong_result") or {}
-    D_coc_sub  = float(mong_sub.get("D_coc_mm", 600) or 600) / 1000.0
-    L_coc_sub  = float(mong_sub.get("L_coc_tu", 30) or 30)
-    n_coc_sub  = max(3, int(mong_sub.get("So_coc_tu", 4) or 4))
+    D_coc_sub, L_coc_sub, _n_coc_sub = mong_dims(mong_sub)
+    n_coc_sub  = max(3, _n_coc_sub)
 
     cap_H_sub  = 0.80
     cap_W_sub  = min(bc * 0.46, bc / 2 - 0.10)
@@ -1476,7 +1492,7 @@ def ve_mat_dung_tru_2d(d):
     t_ban = float(d.get("t_ban_mm", 200)) / 1000.0
     loai_t= str(tru.get("loai_tru", "Thân cột 2 trụ"))
     mong  = d.get("mong_result", {})
-    D_coc = float(mong.get("D_coc_mm", 600)) / 1000.0 if mong else 0.6
+    D_coc = mong_dims(mong)[0]
 
     cap_H = 0.80
     cap_W = max(2.0, bc * 0.18 + 1.0)
@@ -1506,7 +1522,7 @@ def ve_mat_dung_tru_2d(d):
           _C["be"], _C["be_dk"], "Bệ cọc")
 
     # Cọc
-    L_coc = float(mong.get("L_coc_tu", 35)) if mong else 35
+    L_coc = mong_dims(mong)[1]
     n_coc_row = 3 if be_W >= 2.5 else 2
     coc_xs = np.linspace(-be_W * 0.7, be_W * 0.7, n_coc_row)
     for i, xc in enumerate(coc_xs):
@@ -2007,8 +2023,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         MNTN   = float(d.get("MNTN", 0.5))
         H_tru  = float(d.get("H_tru_est", 5.0))
         cao_dd = float(d.get("cao_day_dam", H_tru + 5.0))
-        D_coc  = float(mong_r.get("D_coc_mm", 600)) / 1000.0 if mong_r else 0.6
-        L_coc  = float(mong_r.get("L_coc_tu", 35)) if mong_r else 35.0
+        D_coc, L_coc, _ = mong_dims(mong_r)
 
         L_cau = float(geo.get("L_cau", n_nhip * L_nhip))
         x0    = float(geo.get("x_mo_trai", -L_cau / 2))
@@ -2654,8 +2669,8 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                 fig, _piles_vt, x_center=0.0, z_top=z_beb, color=_C["be_dk"],
                 legend_name=f"Cọc ({len(_piles_vt)} cọc)")
         else:
-            D_coc = float(mong.get("D_coc_mm", 600)) / 1000.0 if mong else 0.6
-            L_coc = float(mong.get("L_coc_tu", 35)) if mong else 35
+            D_coc = mong_dims(mong)[0]
+            L_coc = mong_dims(mong)[1]
             n_coc = 3 if be_W >= 2.5 else 2
             for i_coc, xc in enumerate(np.linspace(-be_W * 0.7, be_W * 0.7, n_coc)):
                 fig.add_trace(go.Scatter(
@@ -2763,8 +2778,8 @@ def _pos_geometry(d, vi_tri):
 
     # Cọc khai báo + kích thước theo DỌC cầu
     piles = _layout_piles(d, vi_tri)
-    D_coc = float(mong.get("D_coc_mm", 600)) / 1000.0 if mong else 0.6
-    L_coc = float(mong.get("L_coc_tu", 35)) if mong else 35.0
+    D_coc = mong_dims(mong)[0]
+    L_coc = mong_dims(mong)[1]
     if piles:
         Dmax = max(p["D"] for p in piles)
         ys = [p["y"] for p in piles]; xs = [p["x"] for p in piles]
