@@ -1199,12 +1199,15 @@ def _render_param_table(d_loai, st):
                   "Giá trị":  [r[1] for r in rows]})
 
 
-def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_fig_3d=None):
+def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None):
     """
     Render tab chi tiết cho một loại dầm cố định.
     Hiển thị MCN A-A/B-B, mặt cắt dọc, mặt bằng, 3D.
-    beam_fig_3d: nếu có → dùng mô hình 3D dầm THƯ VIỆN (thay dầm tham số cũ).
+    beam_figs: dict {mcn,elev,plan,solid} — nếu có → dùng hình từ MÔ HÌNH DẦM
+               THƯ VIỆN (người dùng dựng) thay cho các hình tham số cũ.
     """
+    beam_figs = beam_figs or {}
+    _from_lib = bool(beam_figs.get("solid") or beam_figs.get("mcn"))
     d_loai = _make_d_for_loai(loai_fixed, d_actual)
     kcn    = d_loai["kcn_result"]
     H  = float(kcn.get("chieu_cao_dam", 1.75))
@@ -1216,42 +1219,51 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_fig_3d=No
         f"**{loai_fixed.upper()}** — L={L:.1f}m | H={H*1000:.0f}mm | "
         f"kc={kc*1000:.0f}mm | {nd} dầm/MCN | tỷ lệ L/H={L/H:.1f}"
     )
+    if _from_lib:
+        st.caption("📐 Các hình dưới đây dựng từ **mô hình dầm trong Thư viện**.")
     _render_param_table(d_loai, st)
 
-    # ① MCN A-A chi tiết (Super-T máng hở)
-    if "super" in loai_fixed.lower():
-        st.markdown("**① Mặt cắt A-A — Dầm Super-T (máng hở, có khoang rỗng)**")
+    # ① MẶT CẮT NGANG — ưu tiên mặt cắt thư viện thật
+    if beam_figs.get("mcn") is not None:
+        st.markdown("**① Mặt cắt ngang — các vị trí đã khai báo (A-A, B-B, …)**")
+        st.plotly_chart(beam_figs["mcn"], use_container_width=True,
+                        config={"scrollZoom": True, "displayModeBar": True},
+                        key=f"{key_prefix}_mcn_lib")
+    else:
+        # ① MCN A-A chi tiết (Super-T máng hở)
+        if "super" in loai_fixed.lower():
+            st.markdown("**① Mặt cắt A-A — Dầm Super-T (máng hở, có khoang rỗng)**")
+            try:
+                fig_aa = ve_spt_aa_detail(d_loai)
+                st.plotly_chart(fig_aa, use_container_width=True,
+                                config={"scrollZoom": True, "displayModeBar": True},
+                                key=f"{key_prefix}_aa_detail")
+            except Exception as e:
+                import traceback
+                st.error(f"Lỗi A-A chi tiết: {e}")
+                with st.expander("Chi tiết"):
+                    st.code(traceback.format_exc())
+
+        _mcn_label = ("**① Mặt cắt ngang tổng quan — A-A (đặc), B-B (hở), C-C (trụ)**"
+                      if "super" in loai_fixed.lower()
+                      else "**① Mặt cắt ngang — A-A (đầu dầm/gối) và B-B (giữa nhịp)**")
+        st.markdown(_mcn_label)
         try:
-            fig_aa = ve_spt_aa_detail(d_loai)
-            st.plotly_chart(fig_aa, use_container_width=True,
+            fig_mcn = ve_chi_tiet_mcn(d_loai)
+            st.plotly_chart(fig_mcn, use_container_width=True,
                             config={"scrollZoom": True, "displayModeBar": True},
-                            key=f"{key_prefix}_aa_detail")
+                            key=f"{key_prefix}_mcn")
         except Exception as e:
             import traceback
-            st.error(f"Lỗi A-A chi tiết: {e}")
+            st.error(f"Lỗi MCN: {e}")
             with st.expander("Chi tiết"):
                 st.code(traceback.format_exc())
-
-    # ① MCN A-A + B-B + C-C (tổng quan 3 panel)
-    _mcn_label = ("**① Mặt cắt ngang tổng quan — A-A (đặc), B-B (hở), C-C (trụ)**"
-                  if "super" in loai_fixed.lower()
-                  else "**① Mặt cắt ngang — A-A (đầu dầm/gối) và B-B (giữa nhịp)**")
-    st.markdown(_mcn_label)
-    try:
-        fig_mcn = ve_chi_tiet_mcn(d_loai)
-        st.plotly_chart(fig_mcn, use_container_width=True,
-                        config={"scrollZoom": True, "displayModeBar": True},
-                        key=f"{key_prefix}_mcn")
-    except Exception as e:
-        import traceback
-        st.error(f"Lỗi MCN: {e}")
-        with st.expander("Chi tiết"):
-            st.code(traceback.format_exc())
 
     # ② Mặt cắt dọc
     st.markdown("**② Mặt cắt dọc — Tim dầm**")
     try:
-        fig_doc = ve_chi_tiet_mat_cat_doc(d_loai)
+        fig_doc = (beam_figs["elev"] if beam_figs.get("elev") is not None
+                   else ve_chi_tiet_mat_cat_doc(d_loai))
         st.plotly_chart(fig_doc, use_container_width=True,
                         config={"scrollZoom": True, "displayModeBar": True},
                         key=f"{key_prefix}_doc")
@@ -1261,7 +1273,8 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_fig_3d=No
     # ③ Mặt bằng
     st.markdown("**③ Mặt bằng dầm — Nhìn từ trên**")
     try:
-        fig_mb = ve_chi_tiet_mat_bang(d_loai)
+        fig_mb = (beam_figs["plan"] if beam_figs.get("plan") is not None
+                  else ve_chi_tiet_mat_bang(d_loai))
         st.plotly_chart(fig_mb, use_container_width=True,
                         config={"scrollZoom": True, "displayModeBar": True},
                         key=f"{key_prefix}_mb")
@@ -1271,12 +1284,12 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_fig_3d=No
     # ④ 3D dầm — ưu tiên MÔ HÌNH THƯ VIỆN (người dùng dựng), fallback tham số
     st.markdown("**④ Mô hình 3D — Shaded (xoay tự do)**")
     try:
-        fig_3d = beam_fig_3d if beam_fig_3d is not None else ve_chi_tiet_3d(d_loai)
+        fig_3d = (beam_figs["solid"] if beam_figs.get("solid") is not None
+                  else ve_chi_tiet_3d(d_loai))
         st.plotly_chart(fig_3d, use_container_width=True,
                         config={"scrollZoom": True, "displayModeBar": True},
                         key=f"{key_prefix}_3d")
-        st.caption(("Mô hình dầm từ Thư viện. " if beam_fig_3d is not None else "")
-                   + "Kéo để xoay · Scroll để zoom · Shift+drag để pan · Nháy đúp để reset")
+        st.caption("Kéo để xoay · Scroll để zoom · Shift+drag để pan · Nháy đúp để reset")
     except Exception as e:
         import traceback
         st.error(f"Lỗi 3D: {e}")

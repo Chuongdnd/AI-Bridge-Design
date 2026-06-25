@@ -2392,16 +2392,13 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     return result
 
 
-def beam_record_solid_fig(rec: dict, N: int = 40):
-    """3D SOLID (Shaded) của 1 DẦM từ bản ghi thư viện (sections + segs + fill_sec).
-
-    Dùng cho tab Chi tiết dầm để thay mô hình dầm tham số cũ bằng mô hình
-    người dùng đã dựng (mặt cắt + đoạn loft). Trả go.Figure hoặc None."""
+def _model_from_record(rec: dict):
+    """Dựng bb.BeamModel từ bản ghi dầm thư viện. Trả (m, L_mm, bb) hoặc (None,...)."""
     bb = _get_bb()
     rec = rec or {}
     secs = rec.get("sections") or {}
     if not any((v or {}).get("outer") for v in secs.values()):
-        return None
+        return None, 0.0, bb
     L_mm = float(rec.get("chieu_dai", 38.2) or 38.2) * 1000.0
     m = bb.BeamModel(length=L_mm, mirror=True)
     m.sections = {
@@ -2417,19 +2414,22 @@ def beam_record_solid_fig(rec: dict, N: int = 40):
     if fs:
         seglist.append(bb.Segment("constant", section=fs, length="fill"))
     m.segments = seglist
+    return m, L_mm, bb
+
+
+def _beam_record_solid_traces(m, L_mm, N=40):
     rings = _beam_rings(m, N)
     if len(rings) < 2:
         return None
-
     vx, vy, vz = [], [], []
     for frac, R in rings:
         yy = frac * L_mm / 1000.0
         for i in range(N):
-            vx.append(R[i, 0] / 1000.0)   # ngang dầm (m)
-            vy.append(yy)                 # dọc dầm (m)
-            vz.append(R[i, 1] / 1000.0)   # cao (m)
+            vx.append(R[i, 0] / 1000.0)
+            vy.append(yy)
+            vz.append(R[i, 1] / 1000.0)
     ii, jj, kk = _tube_faces(len(rings), N)
-    mesh = go.Mesh3d(
+    return go.Mesh3d(
         x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
         color="#5d8aa8", opacity=0.96, flatshading=True,
         lighting=dict(ambient=0.55, diffuse=0.85, specular=0.30,
@@ -2437,6 +2437,16 @@ def beam_record_solid_fig(rec: dict, N: int = 40):
         lightposition=dict(x=500, y=300, z=1500),
         name="Dầm (mô hình thư viện)", showlegend=True,
         hovertemplate="<b>Dầm thư viện</b><extra></extra>")
+
+
+def beam_record_solid_fig(rec: dict, N: int = 40):
+    """3D SOLID (Shaded) của 1 DẦM từ bản ghi thư viện. Trả go.Figure | None."""
+    m, L_mm, _ = _model_from_record(rec)
+    if m is None:
+        return None
+    mesh = _beam_record_solid_traces(m, L_mm, N)
+    if mesh is None:
+        return None
     fig = go.Figure([mesh])
     fig.update_layout(
         template="plotly_dark", paper_bgcolor="#0e1117", height=460,
@@ -2446,6 +2456,129 @@ def beam_record_solid_fig(rec: dict, N: int = 40):
                    camera=dict(eye=dict(x=1.7, y=-1.9, z=0.8))),
     )
     return fig
+
+
+def _order_sec_names(names):
+    """Sắp mặt cắt theo A-A, B-B, C-C, … (chữ cái), phần khác xếp sau."""
+    def _key(n):
+        s = str(n).strip().upper()
+        return (0, s) if s and s[0].isalpha() else (1, s)
+    return sorted(names, key=_key)
+
+
+def beam_record_mcn_fig(rec: dict):
+    """Các MẶT CẮT NGANG đã khai báo của dầm (A-A, B-B, …) xếp cạnh nhau."""
+    m, _L, _bb = _model_from_record(rec)
+    if m is None:
+        return None
+    names = [n for n in _order_sec_names(m.sections.keys())
+             if m.sections[n].outer]
+    if not names:
+        return None
+    fig = go.Figure()
+    x_off, gap = 0.0, 350.0
+    ticks, tickt = [], []
+    for nm in names:
+        sec = m.sections[nm]
+        us = [p[0] for p in sec.outer]
+        cx = (min(us) + max(us)) / 2.0
+        w = (max(us) - min(us)) or 600.0
+        xs = [(p[0] - cx) + x_off for p in sec.outer] + [(sec.outer[0][0] - cx) + x_off]
+        ys = [p[1] for p in sec.outer] + [sec.outer[0][1]]
+        fig.add_trace(go.Scatter(
+            x=xs, y=ys, fill="toself", fillcolor="rgba(100,160,200,0.35)",
+            line=dict(color="#34607a", width=1.7), mode="lines",
+            name=nm, hoverinfo="skip"))
+        for h in sec.holes:
+            if len(h) < 3:
+                continue
+            hx = [(p[0] - cx) + x_off for p in h] + [(h[0][0] - cx) + x_off]
+            hy = [p[1] for p in h] + [h[0][1]]
+            fig.add_trace(go.Scatter(
+                x=hx, y=hy, fill="toself", fillcolor="white",
+                line=dict(color="#34607a", width=1), mode="lines",
+                showlegend=False, hoverinfo="skip"))
+        ticks.append(x_off); tickt.append(nm)
+        x_off += w + gap
+    fig.update_layout(
+        template="plotly_white", height=380,
+        title=dict(text="① Mặt cắt ngang các vị trí (mm)", x=0.5, font=dict(size=12)),
+        xaxis=dict(tickvals=ticks, ticktext=tickt, showgrid=False, zeroline=False),
+        yaxis=dict(title="Cao (mm)", scaleanchor="x", scaleratio=1,
+                   showgrid=True, gridcolor="#eef2f3", zeroline=False),
+        margin=dict(l=55, r=20, t=50, b=40), showlegend=True,
+        legend=dict(orientation="h", y=-0.12, font=dict(size=9)))
+    return fig
+
+
+def _beam_envelopes(rec: dict, N=64):
+    m, L_mm, _ = _model_from_record(rec)
+    if m is None:
+        return None
+    rings = _beam_rings(m, N)
+    if len(rings) < 2:
+        return None
+    xs, ztop, zbot, yl, yr = [], [], [], [], []
+    for frac, R in rings:
+        xs.append(frac * L_mm / 1000.0)
+        ztop.append(float(R[:, 1].max()) / 1000.0)
+        zbot.append(float(R[:, 1].min()) / 1000.0)
+        yl.append(float(R[:, 0].min()) / 1000.0)
+        yr.append(float(R[:, 0].max()) / 1000.0)
+    return xs, ztop, zbot, yl, yr, L_mm / 1000.0
+
+
+def beam_record_elev_fig(rec: dict):
+    """MẶT CẮT DỌC tim dầm — bao hình chiều cao theo chiều dài."""
+    e = _beam_envelopes(rec)
+    if not e:
+        return None
+    xs, zt, zb, yl, yr, L = e
+    fig = go.Figure(go.Scatter(
+        x=xs + xs[::-1], y=zt + zb[::-1], fill="toself",
+        fillcolor="rgba(100,160,200,0.35)", line=dict(color="#34607a", width=1.7),
+        mode="lines", name="Mặt cắt dọc", hoverinfo="skip"))
+    fig.update_layout(
+        template="plotly_white", height=300,
+        title=dict(text=f"② Mặt cắt dọc tim dầm · L={L:.1f}m", x=0.5, font=dict(size=12)),
+        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="#eef2f3"),
+        yaxis=dict(title="Cao (m)", showgrid=True, gridcolor="#eef2f3"),
+        margin=dict(l=55, r=20, t=50, b=45))
+    return fig
+
+
+def beam_record_plan_fig(rec: dict):
+    """MẶT BẰNG dầm (nhìn từ trên) — bao hình bề rộng theo chiều dài."""
+    e = _beam_envelopes(rec)
+    if not e:
+        return None
+    xs, zt, zb, yl, yr, L = e
+    fig = go.Figure(go.Scatter(
+        x=xs + xs[::-1], y=yr + yl[::-1], fill="toself",
+        fillcolor="rgba(120,170,140,0.35)", line=dict(color="#3a6a4a", width=1.7),
+        mode="lines", name="Mặt bằng", hoverinfo="skip"))
+    fig.update_layout(
+        template="plotly_white", height=280,
+        title=dict(text=f"③ Mặt bằng dầm (nhìn từ trên) · L={L:.1f}m",
+                   x=0.5, font=dict(size=12)),
+        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="#eef2f3"),
+        yaxis=dict(title="Ngang (m)", showgrid=True, gridcolor="#eef2f3"),
+        margin=dict(l=55, r=20, t=50, b=45))
+    return fig
+
+
+def beam_record_figs(rec: dict):
+    """Gói 4 hình (mcn/elev/plan/solid) của 1 dầm thư viện. {} nếu không dựng được."""
+    if not (rec and rec.get("sections")):
+        return {}
+    out = {}
+    for key, fn in (("mcn", beam_record_mcn_fig), ("elev", beam_record_elev_fig),
+                    ("plan", beam_record_plan_fig), ("solid", beam_record_solid_fig)):
+        try:
+            out[key] = fn(rec)
+        except Exception:
+            out[key] = None
+    return out
 
 
 def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
