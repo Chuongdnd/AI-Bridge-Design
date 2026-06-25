@@ -1679,21 +1679,23 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
                 _piles_tru3d, x_center=xt, y_center=0.0,
                 z_top=z_be_b, color="#566573",
                 legend_name=(f"Cọc trụ ({len(_piles_tru3d)})" if sl else None)))
+        # TRỤ: CHỈ dùng mô hình lắp ghép (xà mũ/thân/bệ) người dùng đã tạo.
+        _ptr = []
         if pier_assembly:
             _PB = _get_PB()
-            for _pt in _PB.build_pier_mesh_traces(
-                    pier_assembly, H_tru=(z_cap_t - z_be_b),
-                    x_ctr=xt, z_base=z_be_b, cap_width=bc):
+            _ptr = _PB.build_pier_mesh_traces(
+                pier_assembly, H_tru=(z_cap_t - z_be_b),
+                x_ctr=xt, z_base=z_be_b, cap_width=bc)
+        if _ptr:
+            for _pt in _ptr:
                 _pt.showlegend = bool(sl)   # chỉ chú giải ở trụ đầu
                 traces.append(_pt)
-            continue
-        traces.append(_box3d(xt-be_W, -be_W*0.6, z_be_b, xt+be_W, be_W*0.6, z_be_t,
-                             color="#aab7b8", name="Bệ cọc" if sl else "", sl=sl))
-        traces.append(_box3d(xt-W_tru/2, -W_tru*0.8, z_sh_b,
-                             xt+W_tru/2,  W_tru*0.8, z_cap_b,
-                             color="#c8d6c0", name="Thân trụ" if sl else "", sl=sl))
-        traces.append(_box3d(xt-cap_W, -bc/2*0.9, z_cap_b, xt+cap_W, bc/2*0.9, z_cap_t,
-                             color="#d5dbdb", name="Xà mũ" if sl else "", sl=sl))
+        else:
+            # Chưa gắn mô hình trụ → khối MỜ TẠM (không phải trụ tham số "giả").
+            traces.append(_box3d(
+                xt - 1.0, -1.0, z_be_b, xt + 1.0, 1.0, z_cap_t,
+                color="#7f8c8d", opacity=0.22,
+                name="Trụ (chưa gắn mô hình)" if sl else "", sl=sl))
 
     # ── Dầm chính: mô hình 3D do người dùng dựng (tab Chi tiết dầm) được chèn
     #    ở 00-Interface qua get_beam_model_mesh_traces — KHÔNG vẽ dầm AI tại đây.
