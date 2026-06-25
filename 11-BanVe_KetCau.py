@@ -2432,7 +2432,8 @@ def ve_binh_do_2d(d, df_tim_line=None):
 # ===========================================================================
 # 8. MẶT CẮT NGANG TẠI VỊ TRÍ MỐ / TRỤ
 # ===========================================================================
-def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None):
+def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
+                  x_half=None):
     """
     MCN cắt vuông góc tim cầu tại vị trí mố hoặc trụ cụ thể.
     vi_tri: 'mo_trai' | 'mo_phai' | 'tru_1' | 'tru_2' | ...
@@ -2640,8 +2641,9 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None):
         _dim_h(fig, z_deck + 2.2, -cap_W, cap_W, f"B_xà mũ = {cap_W*2:.1f} m",
                color="#8e44ad", dy=0)
 
-    # Khung nhìn: bám theo kết cấu (không để địa hình rộng kéo dãn khung)
-    _Xv = max(bc / 2, B_tk / 2, be_W, cap_W) + 4.0
+    # Khung nhìn: bám theo kết cấu (không để địa hình rộng kéo dãn khung).
+    # x_half: nếu cho → ép tầm nhìn ngang chung (thẳng trục với mặt bằng kết cấu).
+    _Xv = float(x_half) if x_half else (max(bc / 2, B_tk / 2, be_W, cap_W) + 4.0)
     fig.update_layout(
         title=dict(
             text=f"MẶT CẮT NGANG — {title_vt} | Lý trình ≈ {x_cut:.1f} m",
@@ -2650,9 +2652,9 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None):
         xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
                    range=[-_Xv, _Xv]),
         yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1"),
-        height=500, template="plotly_white",
+        height=480, template="plotly_white",
         legend=dict(orientation="h", y=-0.20, font=dict(size=9)),
-        margin=dict(l=65, r=40, t=60, b=100),
+        margin=dict(l=60, r=40, t=60, b=100),
     )
     return fig
 
@@ -2821,14 +2823,14 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
                    range=[-_R, _R]),
         yaxis=dict(title="Dọc cầu (m)", scaleanchor="x", scaleratio=1,
                    showgrid=True, gridcolor="#ecf0f1"),
-        height=500, template="plotly_white",
+        height=400, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
-        margin=dict(l=60, r=40, t=60, b=80),
+        margin=dict(l=55, r=30, t=60, b=80),
     )
     return fig
 
 
-def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None):
+def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
     """MẶT BẰNG KẾT CẤU MỐ/TRỤ — nhìn từ trên: x = ngang cầu, y = dọc cầu."""
     g = _pos_geometry(d, vi_tri)
     fig = go.Figure()
@@ -2897,13 +2899,15 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None):
     _struct_x = max(bhn, g["cap_W"], (bc / 2 + 0.5) if g["is_mo"] else 0)
     _struct_y = max(bhd, g.get("cap_half_doc", 0))
     _R = max(_struct_x, _struct_y) + 1.5
+    # x_half: ép tầm nhìn ngang CHUNG để thẳng trục với mặt cắt ngang bên dưới.
+    _xr = float(x_half) if x_half else _R
     fig.update_layout(
         title=dict(text=f"MẶT BẰNG KẾT CẤU — {g['title_vt']}", x=0.5, font=dict(size=12)),
         xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
-                   range=[-_R, _R]),
+                   range=[-_xr, _xr]),
         yaxis=dict(title="Dọc cầu (m)", scaleanchor="x", scaleratio=1,
                    showgrid=True, gridcolor="#ecf0f1"),
-        height=500, template="plotly_white",
+        height=400, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=60, r=40, t=60, b=80),
     )
@@ -2984,9 +2988,9 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
         xaxis=dict(title="Dọc cầu (m)", showgrid=True, gridcolor="#ecf0f1",
                    range=[-x_span, x_span]),
         yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1"),
-        height=500, template="plotly_white",
+        height=480, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
-        margin=dict(l=65, r=40, t=60, b=80),
+        margin=dict(l=55, r=30, t=60, b=100),
     )
     return fig
 

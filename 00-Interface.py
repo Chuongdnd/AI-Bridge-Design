@@ -6043,42 +6043,43 @@ with _col_main:
                 _vt_label_cur = _vi_tri_labels[_vt_idx]
                 _render_so_do_coc_ui(d, _selected_vt, _vt_label_cur)
 
-                st.markdown(f"**Bố trí {_vt_label_cur} — 4 hình:** "
-                            "mặt bằng kết cấu · mặt bằng cọc · mặt cắt ngang · mặt cắt dọc")
-                # Hàng 1: mặt bằng kết cấu | mặt bằng cọc
-                _r1c1, _r1c2 = st.columns(2)
-                with _r1c1:
+                st.markdown(
+                    f"**Bố trí {_vt_label_cur}** — TRÁI: mặt bằng kết cấu · mặt cắt "
+                    "ngang (thẳng trục Ngang cầu) | PHẢI: mặt bằng cọc · mặt cắt dọc")
+                _pa_tru = _resolve_assembly(d, "tru")   # dựng 1 lần, dùng lại
+                # Tầm nhìn ngang CHUNG cho 2 hình cột TRÁI → thẳng trục Ngang cầu
+                _xh = max(float(d.get("bc", 12.0)) / 2.0 + 4.0, 11.0)
+                # Cột TRÁI rộng (~67%): mặt bằng kết cấu trên · mặt cắt ngang dưới.
+                # Cột PHẢI hẹp (~33%): mặt bằng cọc trên · mặt cắt dọc dưới.
+                _colL, _colR = st.columns([2, 1], gap="medium")
+                with _colL:
                     try:
                         st.plotly_chart(BVK.ve_mat_bang_mo_tru(
                                             d, vi_tri=_selected_vt,
-                                            pier_assembly=_resolve_assembly(d, "tru")),
+                                            pier_assembly=_pa_tru, x_half=_xh),
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt bằng kết cấu: {_e}")
-                with _r1c2:
+                    try:
+                        st.plotly_chart(BVK.ve_mcn_vi_tri(
+                                            d, vi_tri=_selected_vt, df_geology=_df_geo,
+                                            pier_assembly=_pa_tru, x_half=_xh),
+                                        use_container_width=True,
+                                        config={"scrollZoom": True, "displayModeBar": True})
+                    except Exception as _e:
+                        st.error(f"Lỗi vẽ mặt cắt ngang: {_e}")
+                with _colR:
                     try:
                         st.plotly_chart(BVK.ve_mat_bang_coc(d, vi_tri=_selected_vt),
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt bằng cọc: {_e}")
-                # Hàng 2: mặt cắt ngang | mặt cắt dọc
-                _r2c1, _r2c2 = st.columns(2)
-                with _r2c1:
-                    try:
-                        st.plotly_chart(BVK.ve_mcn_vi_tri(
-                                            d, vi_tri=_selected_vt, df_geology=_df_geo,
-                                            pier_assembly=_resolve_assembly(d, "tru")),
-                                        use_container_width=True,
-                                        config={"scrollZoom": True, "displayModeBar": True})
-                    except Exception as _e:
-                        st.error(f"Lỗi vẽ mặt cắt ngang: {_e}")
-                with _r2c2:
                     try:
                         st.plotly_chart(BVK.ve_mat_cat_doc_vi_tri(
                                             d, vi_tri=_selected_vt,
-                                            pier_assembly=_resolve_assembly(d, "tru")),
+                                            pier_assembly=_pa_tru),
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
