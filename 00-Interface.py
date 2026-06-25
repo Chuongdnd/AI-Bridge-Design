@@ -3494,7 +3494,12 @@ def _asm_section_fig(section: dict):
         sec, show_grid_pts=False,
         x_range=(min(xs) - mx, max(xs) + mx),
         z_range=(min(zs) - mz, max(zs) + mz))
-    fig.update_layout(height=210, margin=dict(l=40, r=10, t=10, b=30))
+    # constrain="domain": giữ tỷ lệ thật của mặt cắt NHƯNG khung luôn cao 210px,
+    # letterbox phần thừa → mọi ô xem trước có CÙNG KÍCH THƯỚC (lưới cân đối).
+    fig.update_xaxes(constrain="domain")
+    fig.update_yaxes(constrain="domain")
+    fig.update_layout(height=210, margin=dict(l=40, r=10, t=10, b=30),
+                      autosize=True)
     return fig
 
 
