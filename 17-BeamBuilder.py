@@ -339,15 +339,21 @@ N_STAT   = 10   # trạm dọc trên mỗi đoạn loft
 
 
 def _best_rotation(ra: np.ndarray, rb: np.ndarray) -> np.ndarray:
-    """Tìm offset vòng cho rb sao cho tổng khoảng cách tới ra nhỏ nhất."""
+    """Căn rb khớp ra để LOFT không bị bắt chéo: thử CẢ 2 chiều quay (winding)
+    và mọi offset vòng, chọn tổng khoảng cách nhỏ nhất.
+
+    Nguyên nhân vuốt nối bị chéo (bowtie): 2 mặt cắt có chiều quay ngược nhau
+    (1 CW, 1 CCW — thường gặp khi vẽ DXF khác chiều). Chỉ xoay (roll) không sửa
+    được → phải thử cả chiều ĐẢO của rb."""
     n = len(ra)
-    best_off, best_d = 0, float("inf")
-    for off in range(n):
-        rb_rot = np.roll(rb, off, axis=0)
-        d = np.sum(np.hypot(ra[:, 0] - rb_rot[:, 0], ra[:, 1] - rb_rot[:, 1]))
-        if d < best_d:
-            best_d, best_off = d, off
-    return np.roll(rb, best_off, axis=0)
+    best, best_d = rb, float("inf")
+    for cand in (rb, rb[::-1]):          # thuận chiều + đảo chiều (sửa ngược winding)
+        for off in range(n):
+            rb_rot = np.roll(cand, off, axis=0)
+            d = np.sum(np.hypot(ra[:, 0] - rb_rot[:, 0], ra[:, 1] - rb_rot[:, 1]))
+            if d < best_d:
+                best_d, best = d, rb_rot
+    return best
 
 
 def _loft_wireframe_traces(ra: np.ndarray, rb: np.ndarray,
