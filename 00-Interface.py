@@ -4045,6 +4045,11 @@ def _render_simple_part_panel(kind: str, cfg: dict):
                     sec = {"outer": _res["outer"], "holes": _res.get("holes", []),
                            "solids": _res.get("solids")}
                     st.session_state[f"_{kind}_sig_part"] = _sig
+                    # GIỮ qua rerun: bấm Lưu là 1 rerun mới, uploader giữ file
+                    # nhưng sig không đổi → khối parse bị bỏ qua. Lưu vào draft.
+                    _dr = dict(st.session_state.get(f"_{kind}_draft") or {})
+                    _dr["section"] = sec
+                    st.session_state[f"_{kind}_draft"] = _dr
                     _ns = _res.get("n_solids", 1)
                     st.success(f"✅ Đã nạp: {len(sec['outer'])} đỉnh"
                                + (f" · {_ns} khối." if _ns > 1 else "."))
