@@ -3841,11 +3841,40 @@ def _pier_part_libs():
             st.session_state["lib_footings"])
 
 
+def _current_pier_parts():
+    """Lựa chọn trụ HIỆN TẠI — đọc TRỰC TIẾP từ session_state của widget picker.
+
+    Nhờ vậy mọi bản vẽ (kể cả vẽ TRƯỚC picker trong cùng 1 lần chạy) đều thấy
+    lựa chọn mới ngay → KHÔNG cần st.rerun() (tránh vòng lặp cập nhật / lag)."""
+    caps, stems, foots = _pier_part_libs()
+    if not (caps or stems or foots):
+        return None
+    _custom = "🔧 Tùy chỉnh bộ phận…"
+    sel = st.session_state.get("tru_preset_sel")
+    if sel and sel != _custom:
+        for p in _PIER_PRESETS:
+            if p["ten"] == sel:
+                return {"ten": p["ten"], "cap_id": p["cap_id"],
+                        "stem_id": p["stem_id"], "footing_id": p["footing_id"]}
+    if sel == _custom:
+        def _id(key, items):
+            v = st.session_state.get(key)
+            if not v or v == "(không)":
+                return None
+            return next((it.get("id") for it in items if it.get("ten") == v), None)
+        return {"ten": "Trụ tùy chỉnh", "cap_id": _id("tru_cap_sel", caps),
+                "stem_id": _id("tru_stem_sel", stems),
+                "footing_id": _id("tru_footing_sel", foots)}
+    p = _PIER_PRESETS[0]                       # chưa render picker → preset đầu
+    return {"ten": p["ten"], "cap_id": p["cap_id"],
+            "stem_id": p["stem_id"], "footing_id": p["footing_id"]}
+
+
 def _resolve_assembly(d, kind: str) -> dict:
     """Bản ghi trụ/mố lắp ghép đang gán cho cầu (None nếu dùng mặc định)."""
     cfg = _asm_cfg(kind)
     if kind == "tru":
-        pp = (d or {}).get("pier_parts")
+        pp = _current_pier_parts()
         if pp and (pp.get("cap_id") or pp.get("stem_id") or pp.get("footing_id")):
             caps, stems, foots = _pier_part_libs()
             cap  = CLIB.get_cap(caps, pp.get("cap_id"))
@@ -3896,31 +3925,24 @@ def _pier_assembler(d) -> None:
              "Khi gắn vào cầu, xà mũ tự co bề rộng theo cầu, thân tự co chiều cao.")
     if _sel != _opts[-1]:
         p = _PIER_PRESETS[_opts.index(_sel)]
-        _new_pp = {"ten": p["ten"], "cap_id": p["cap_id"],
-                   "stem_id": p["stem_id"], "footing_id": p["footing_id"]}
-        st.caption(_pier_parts_label(_new_pp, caps, stems, foots))
+        st.caption(_pier_parts_label(
+            {"cap_id": p["cap_id"], "stem_id": p["stem_id"],
+             "footing_id": p["footing_id"]}, caps, stems, foots))
     else:
         def _pick(label, items, key, cur_id):
             _o = ["(không)"] + [it.get("ten", "(?)") for it in items]
             _i = next((k + 1 for k, it in enumerate(items)
                        if it.get("id") == cur_id), 0)
-            _s = st.selectbox(label, _o, index=_i, key=key)
-            return None if _s == _o[0] else items[_o.index(_s) - 1].get("id")
+            st.selectbox(label, _o, index=_i, key=key)
         _c1, _c2, _c3 = st.columns(3)
         with _c1:
-            cid = _pick("🧢 Xà mũ", caps, "tru_cap_sel", cur.get("cap_id"))
+            _pick("🧢 Xà mũ", caps, "tru_cap_sel", cur.get("cap_id"))
         with _c2:
-            sid = _pick("🏛️ Thân trụ", stems, "tru_stem_sel", cur.get("stem_id"))
+            _pick("🏛️ Thân trụ", stems, "tru_stem_sel", cur.get("stem_id"))
         with _c3:
-            fid = _pick("🟫 Bệ trụ", foots, "tru_footing_sel", cur.get("footing_id"))
-        _new_pp = {"ten": "Trụ tùy chỉnh", "cap_id": cid,
-                   "stem_id": sid, "footing_id": fid}
-    # Đổi lựa chọn → rerun để MỌI bản vẽ phía trên (3D, trắc dọc, mặt bằng,
-    # MCN) dựng lại bằng trụ mới (các bản vẽ chạy trước picker trong cùng 1 lần).
-    if _new_pp != (d.get("pier_parts") or None):
-        d["pier_parts"] = _new_pp
-        st.rerun()
-    d["pier_parts"] = _new_pp
+            _pick("🟫 Bệ trụ", foots, "tru_footing_sel", cur.get("footing_id"))
+    # Nguồn sự thật là widget state (đọc qua _current_pier_parts) → KHÔNG rerun.
+    d["pier_parts"] = _current_pier_parts()
 
 
 
