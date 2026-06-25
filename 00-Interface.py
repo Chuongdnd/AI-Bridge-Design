@@ -3573,11 +3573,17 @@ def _clear_asm_widgets(kind: str) -> None:
 
 
 def _asm_section_fig(section: dict):
-    """Xem trước 2D 1 mặt cắt (tái dùng make_section_fig của BeamBuilder)."""
+    """Xem trước 2D 1 mặt cắt (tái dùng make_section_fig của BeamBuilder).
+    Hỗ trợ nhiều khối rời (vd thân trụ 2 cột) → vẽ thêm các khối phụ."""
     outer = (section or {}).get("outer", [])
     if len(outer) < 3:
         return None
-    xs = [p[0] for p in outer]; zs = [p[1] for p in outer]
+    solids = (section or {}).get("solids") or [
+        {"outer": outer, "holes": section.get("holes", [])}]
+    # Khung bao mọi khối để cả 2 cột đều lọt khung
+    _ax = [p[0] for s in solids for p in s["outer"]]
+    _az = [p[1] for s in solids for p in s["outer"]]
+    xs, zs = _ax, _az
     mx = max(200.0, (max(xs) - min(xs)) * 0.08)
     mz = max(200.0, (max(zs) - min(zs)) * 0.08)
     sec = _BB_ENGINE.CrossSection("MC", list(outer),
@@ -3586,6 +3592,25 @@ def _asm_section_fig(section: dict):
         sec, show_grid_pts=False,
         x_range=(min(xs) - mx, max(xs) + mx),
         z_range=(min(zs) - mz, max(zs) + mz))
+    # Vẽ thêm các KHỐI PHỤ (khối thứ 2 trở đi) cùng kiểu màu
+    import plotly.graph_objects as _go
+    for s in solids[1:]:
+        _o = s.get("outer", [])
+        if len(_o) < 3:
+            continue
+        fig.add_trace(_go.Scatter(
+            x=[p[0] for p in _o] + [_o[0][0]], y=[p[1] for p in _o] + [_o[0][1]],
+            fill="toself", fillcolor="rgba(100,160,200,0.20)",
+            line=dict(color="#6db1d6", width=2), mode="lines",
+            hoverinfo="skip", showlegend=False))
+        for _h in s.get("holes", []):
+            if len(_h) < 3:
+                continue
+            fig.add_trace(_go.Scatter(
+                x=[p[0] for p in _h] + [_h[0][0]], y=[p[1] for p in _h] + [_h[0][1]],
+                fill="toself", fillcolor="#0e1117",
+                line=dict(color="#6db1d6", width=1), mode="lines",
+                hoverinfo="skip", showlegend=False))
     # constrain="domain": giữ tỷ lệ thật của mặt cắt NHƯNG khung luôn cao 210px,
     # letterbox phần thừa → mọi ô xem trước có CÙNG KÍCH THƯỚC (lưới cân đối).
     fig.update_xaxes(constrain="domain")
@@ -3636,7 +3661,8 @@ def _render_xamu_layers(kind, part) -> dict:
                             st.error(f"DXF: {_res['error']}")
                         elif len(_res.get("outer", [])) >= 3:
                             sec = {"outer": _res["outer"],
-                                   "holes": _res.get("holes", [])}
+                                   "holes": _res.get("holes", []),
+                                   "solids": _res.get("solids")}
                             secs[i] = sec
                             st.session_state[f"_{kind}_sig_xamu_L{i}"] = _sig
                             st.success(f"✅ {len(sec['outer'])} đỉnh")
@@ -3699,7 +3725,8 @@ def _render_asm_part_editor(kind, spec, part) -> dict:
                 if _res.get("error"):
                     st.error(f"Lỗi đọc DXF: {_res['error']}")
                 elif len(_res.get("outer", [])) >= 3:
-                    sec = {"outer": _res["outer"], "holes": _res.get("holes", [])}
+                    sec = {"outer": _res["outer"], "holes": _res.get("holes", []),
+                           "solids": _res.get("solids")}
                     st.session_state[f"_{kind}_sig_{role}"] = _sig
                     st.success(f"✅ Đã nạp mặt cắt {label}: {len(sec['outer'])} đỉnh"
                                f"{', ' + str(len(sec['holes'])) + ' lỗ' if sec['holes'] else ''}.")
@@ -4015,9 +4042,12 @@ def _render_simple_part_panel(kind: str, cfg: dict):
                 if _res.get("error"):
                     st.error(f"Lỗi đọc DXF: {_res['error']}")
                 elif len(_res.get("outer", [])) >= 3:
-                    sec = {"outer": _res["outer"], "holes": _res.get("holes", [])}
+                    sec = {"outer": _res["outer"], "holes": _res.get("holes", []),
+                           "solids": _res.get("solids")}
                     st.session_state[f"_{kind}_sig_part"] = _sig
-                    st.success(f"✅ Đã nạp: {len(sec['outer'])} đỉnh.")
+                    _ns = _res.get("n_solids", 1)
+                    st.success(f"✅ Đã nạp: {len(sec['outer'])} đỉnh"
+                               + (f" · {_ns} khối." if _ns > 1 else "."))
                 else:
                     st.warning("Không tìm thấy biên kín trong DXF.")
             except Exception as _e:

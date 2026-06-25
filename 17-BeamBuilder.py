@@ -1155,7 +1155,10 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
             )
         }
 
-    # Tính diện tích → outer = lớn nhất
+    # Phân loại KHỐI / LỖ theo BAO HÀM (containment) thay vì "lớn nhất = outer".
+    # Đa giác lồng cấp CHẴN (0,2,…) = khối đặc; cấp LẺ = lỗ của khối chứa nó.
+    # → Hai cột thân trụ vẽ RỜI nhau được mô hình thành HAI khối (không phải
+    #   lỗ của nhau như trước).
     def _area(pts: list[tuple[float, float]]) -> float:
         n = len(pts) - 1 if pts[0] == pts[-1] else len(pts)
         a = 0.0
@@ -1164,14 +1167,54 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
             a += pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1]
         return abs(a) / 2.0
 
-    areas = [_area(p) for p in polys]
-    idx_outer = areas.index(max(areas))
-    outer_raw = polys[idx_outer]
-    holes_raw = [p for i, p in enumerate(polys) if i != idx_outer]
+    def _rep_point(pts):
+        r = pts[:-1] if pts[0] == pts[-1] else pts
+        n = len(r); a2 = cx = cy = 0.0
+        for i in range(n):
+            j = (i + 1) % n
+            cr = r[i][0] * r[j][1] - r[j][0] * r[i][1]
+            a2 += cr; cx += (r[i][0] + r[j][0]) * cr; cy += (r[i][1] + r[j][1]) * cr
+        if abs(a2) < 1e-9:
+            return (sum(p[0] for p in r) / n, sum(p[1] for p in r) / n)
+        return (cx / (3 * a2), cy / (3 * a2))
 
-    # Bounding box của outer
-    xs = [p[0] for p in outer_raw]
-    ys = [p[1] for p in outer_raw]
+    def _pip(pt, poly):
+        x, y = pt
+        r = poly[:-1] if poly[0] == poly[-1] else poly
+        n = len(r); inside = False; j = n - 1
+        for i in range(n):
+            xi, yi = r[i]; xj, yj = r[j]
+            if ((yi > y) != (yj > y)) and \
+               (x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi):
+                inside = not inside
+            j = i
+        return inside
+
+    areas = [_area(p) for p in polys]
+    reps  = [_rep_point(p) for p in polys]
+    depth = [0] * len(polys)
+    cont  = [[] for _ in polys]
+    for i in range(len(polys)):
+        for k in range(len(polys)):
+            if k != i and areas[k] > areas[i] and _pip(reps[i], polys[k]):
+                depth[i] += 1; cont[i].append(k)
+    hole_parent = {}
+    for i in range(len(polys)):
+        if depth[i] % 2 == 1:                       # lỗ → gán cho khối chứa nhỏ nhất
+            _cand = [k for k in cont[i] if depth[k] == depth[i] - 1] or cont[i]
+            hole_parent[i] = min(_cand, key=lambda k: areas[k]) if _cand else None
+    solids_grp = []                                  # [(idx, outer, [holes])] khối đặc
+    for si in [i for i in range(len(polys)) if depth[i] % 2 == 0]:
+        _hs = [polys[h] for h, par in hole_parent.items() if par == si]
+        solids_grp.append((si, polys[si], _hs))
+    solids_grp.sort(key=lambda g: areas[g[0]], reverse=True)
+
+    outer_raw = solids_grp[0][1]
+    holes_raw = solids_grp[0][2]
+
+    # Bounding box TOÀN mặt cắt (mọi khối) — để dò tim & căn giữa đúng giữa 2 cột
+    xs = [p[0] for g in solids_grp for p in g[1]]
+    ys = [p[1] for g in solids_grp for p in g[1]]
     xmin, xmax = min(xs), max(xs)
     ymin, ymax = min(ys), max(ys)
 
@@ -1230,27 +1273,33 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
     if _x_tim is not None:
         x_mid = _x_tim                       # 1) ưu tiên tim dầm vẽ trong CAD
     else:
-        _co = _centroid_x(outer_raw)
-        if _co is None:
-            x_mid = (xmin + xmax) / 2.0      # 3) fallback: giữa bbox
-        else:
-            _cx_o, _a_o = _co                # 2) trọng tâm diện tích (trừ lỗ)
-            _num, _den = _cx_o * _a_o, _a_o
-            for _h in holes_raw:
+        # 2) trọng tâm diện tích GỘP mọi khối (trừ lỗ) — đúng giữa 2 cột
+        _num = _den = 0.0
+        for _si, _so, _shs in solids_grp:
+            _co = _centroid_x(_so)
+            if not _co:
+                continue
+            _cx_o, _a_o = _co
+            _num += _cx_o * _a_o; _den += _a_o
+            for _h in _shs:
                 _ch = _centroid_x(_h)
                 if _ch:
                     _cx_h, _a_h = _ch
-                    _num -= _cx_h * _a_h
-                    _den -= _a_h
-            x_mid = _num / _den if _den > 1e-9 else _cx_o
+                    _num -= _cx_h * _a_h; _den -= _a_h
+        x_mid = _num / _den if _den > 1e-9 else (xmin + xmax) / 2.0  # 3) giữa bbox
     y_top  = ymax   # mặt trên → Z = 0
 
     def _center(pts: list[tuple[float, float]]) -> list[list[float]]:
         return [[round(p[0] - x_mid, 3), round(p[1] - y_top, 3)] for p in pts]
 
+    _solids_out = [{"outer": _center(_so), "holes": [_center(h) for h in _shs]}
+                   for (_si, _so, _shs) in solids_grp]
+
     return {
         "outer":     _center(outer_raw),
         "holes":     [_center(h) for h in holes_raw],
+        "solids":    _solids_out,
+        "n_solids":  len(_solids_out),
         "raw_count": len(polys),
         "bbox_raw":  [xmin, xmax, ymin, ymax],
         "width_mm":  round(xmax - xmin, 1),
