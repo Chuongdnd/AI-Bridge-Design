@@ -2392,6 +2392,62 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     return result
 
 
+def beam_record_solid_fig(rec: dict, N: int = 40):
+    """3D SOLID (Shaded) của 1 DẦM từ bản ghi thư viện (sections + segs + fill_sec).
+
+    Dùng cho tab Chi tiết dầm để thay mô hình dầm tham số cũ bằng mô hình
+    người dùng đã dựng (mặt cắt + đoạn loft). Trả go.Figure hoặc None."""
+    bb = _get_bb()
+    rec = rec or {}
+    secs = rec.get("sections") or {}
+    if not any((v or {}).get("outer") for v in secs.values()):
+        return None
+    L_mm = float(rec.get("chieu_dai", 38.2) or 38.2) * 1000.0
+    m = bb.BeamModel(length=L_mm, mirror=True)
+    m.sections = {
+        k: bb.CrossSection(name=k, outer=list(v.get("outer", [])),
+                           holes=[list(h) for h in v.get("holes", [])], open=False)
+        for k, v in secs.items() if (v or {}).get("outer")
+    }
+    _has = lambda *n: all(x in m.sections for x in n)
+    seglist = _segdicts_to_segments(bb, rec.get("segs", []), _has, m.sections)
+    fs = rec.get("fill_sec")
+    if not fs or not _has(fs):
+        fs = next(iter(m.sections), None)
+    if fs:
+        seglist.append(bb.Segment("constant", section=fs, length="fill"))
+    m.segments = seglist
+    rings = _beam_rings(m, N)
+    if len(rings) < 2:
+        return None
+
+    vx, vy, vz = [], [], []
+    for frac, R in rings:
+        yy = frac * L_mm / 1000.0
+        for i in range(N):
+            vx.append(R[i, 0] / 1000.0)   # ngang dầm (m)
+            vy.append(yy)                 # dọc dầm (m)
+            vz.append(R[i, 1] / 1000.0)   # cao (m)
+    ii, jj, kk = _tube_faces(len(rings), N)
+    mesh = go.Mesh3d(
+        x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
+        color="#5d8aa8", opacity=0.96, flatshading=True,
+        lighting=dict(ambient=0.55, diffuse=0.85, specular=0.30,
+                      roughness=0.65, fresnel=0.05),
+        lightposition=dict(x=500, y=300, z=1500),
+        name="Dầm (mô hình thư viện)", showlegend=True,
+        hovertemplate="<b>Dầm thư viện</b><extra></extra>")
+    fig = go.Figure([mesh])
+    fig.update_layout(
+        template="plotly_dark", paper_bgcolor="#0e1117", height=460,
+        margin=dict(l=0, r=0, t=30, b=0),
+        scene=dict(xaxis_title="Ngang dầm (m)", yaxis_title="Dọc dầm (m)",
+                   zaxis_title="Cao (m)", aspectmode="data",
+                   camera=dict(eye=dict(x=1.7, y=-1.9, z=0.8))),
+    )
+    return fig
+
+
 def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
                                       pfx: str = "spt") -> list:
     """Như get_beam_model_mesh_traces nhưng đặt dầm trong hệ toạ độ VN-2000 ĐÃ
