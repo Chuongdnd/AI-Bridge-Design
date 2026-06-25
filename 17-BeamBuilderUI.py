@@ -1267,12 +1267,14 @@ def _segdicts_to_segments(bb, seg_dicts, has_fn, avail, reverse=False):
     return out
 
 
-def render_cad_spt_tab(d: dict, pfx: str = "spt"):
+def render_cad_spt_tab(d: dict, pfx: str = "spt", show_type: bool = True):
     """
     Tab chi tiết dầm — hỗ trợ Super-T, T ngược, I-Beam.
     Layout: dropdown loại dầm → upload cards → khai báo đoạn + sơ đồ → 3D toàn rộng.
-    d   : design_data dict từ session_state
-    pfx : prefix tránh collision session-state key
+    d         : design_data dict từ session_state
+    pfx       : prefix tránh collision session-state key
+    show_type : False → ẩn ô chọn loại dầm (Thư viện dầm — dầm định nghĩa bằng
+                DXF, không cần chọn loại). Vẫn giữ loại trong session để tương thích.
     """
     _orig_pfx_arg = pfx     # giữ pfx gốc để cache pfx hiệu dụng (cho Thư viện)
     # ── Loại dầm ─────────────────────────────────────────────────────────────
@@ -1284,13 +1286,18 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt"):
     }
     _bt_names = list(_BTYPES.keys())
     _bt_key   = f"{pfx}_beam_type"
-    _bt_sel   = st.selectbox(
-        "🏗️ Loại dầm",
-        _bt_names,
-        index=_bt_names.index(st.session_state.get(_bt_key, "Super-T")),
-        key=_bt_key,
-        help="Mỗi loại dầm có bộ mặt cắt và cấu hình riêng biệt",
-    )
+    if show_type:
+        _bt_sel = st.selectbox(
+            "🏗️ Loại dầm",
+            _bt_names,
+            index=_bt_names.index(st.session_state.get(_bt_key, "Super-T")),
+            key=_bt_key,
+            help="Mỗi loại dầm có bộ mặt cắt và cấu hình riêng biệt",
+        )
+    else:
+        _bt_sel = st.session_state.get(_bt_key, "Super-T")
+        if _bt_sel not in _BTYPES:
+            _bt_sel = "Super-T"
     _bt_suffix, _bt_label, _bt_fill_default = _BTYPES[_bt_sel]
     # Super-T giữ pfx="spt" để tương thích dữ liệu đã lưu; loại khác thêm suffix
     if _bt_suffix:

@@ -3249,7 +3249,7 @@ def _render_dam_edit_panel(d: dict) -> None:
         _kcn_panel = {**(d.get("kcn_result") or d.get("ai_result") or {}),
                       "chieu_dai": _decl_L}
         _d_panel = {**d, "kcn_result": _kcn_panel, "ai_result": _kcn_panel}
-        BBUI.render_cad_spt_tab(_d_panel, pfx=base)
+        BBUI.render_cad_spt_tab(_d_panel, pfx=base, show_type=False)
     except Exception as _e:
         import traceback
         st.error(f"Lỗi dựng dầm: {_e}")
