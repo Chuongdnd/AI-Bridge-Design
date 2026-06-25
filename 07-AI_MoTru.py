@@ -554,6 +554,8 @@ def estimate_pier_height(
     vi_tri_tru="trong_nuoc_be_thap",
     Z_tu_nhien=None,
     h_xa_mu=1.2,
+    t_ban=0.20,
+    t_phu=0.05,
 ):
     """
     Ước tính chiều cao thân trụ theo ba tình huống thiết kế.
@@ -594,7 +596,9 @@ def estimate_pier_height(
         Phát sinh cảnh báo: xói cục bộ chân cọc lộ, lực đẩy nổi, va trôi.
     """
     cao_day_dam   = MNCN + H_tinh_khong          # cao độ đáy dầm
-    cao_mat_cau   = cao_day_dam + H_dam + 0.25   # bản mặt cầu ~25 cm
+    # Mặt cầu hoàn thiện = đáy dầm + chiều cao dầm + bản BTCT + lớp phủ
+    # (đồng bộ với bản vẽ: z_deck = đáy dầm + H_dam + t_ban; mặt phủ trên đó).
+    cao_mat_cau   = cao_day_dam + H_dam + float(t_ban) + float(t_phu)
     cao_dinh_tru  = cao_day_dam                  # đỉnh trụ = đỉnh xà mũ = đáy dầm
     cao_dinh_than = cao_day_dam - h_xa_mu        # đỉnh thân = đáy xà mũ
 
