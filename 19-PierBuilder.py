@@ -120,7 +120,9 @@ def _triangulate(outer_ab, holes_ab):
     ext = [Vec2(p[0], p[1]) for p in outer_ab]
     holes = [[Vec2(q[0], q[1]) for q in h] for h in (holes_ab or []) if len(h) >= 3]
     try:
-        tris = _earcut(ext, holes if holes else None)
+        # earcut yêu cầu holes là LIST (gọi len(holes)); truyền None sẽ raise
+        # TypeError → rơi xuống fan-fallback gây gấp nếp mặt cắt LÕM (xà mũ).
+        tris = _earcut(ext, holes)
     except Exception:
         tris = []
     out = []
