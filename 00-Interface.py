@@ -6201,18 +6201,18 @@ with _col_main:
                             if _brec.get("so_luong_dam"):
                                 _kcn_r["so_luong_dam"] = int(_brec["so_luong_dam"])
                         _d_role = {**d, "kcn_result": _kcn_r, "ai_result": _kcn_r}
-                        # 3D từ MÔ HÌNH DẦM THƯ VIỆN (thay dầm tham số cũ)
-                        _beam3d = None
+                        # 2D + 3D từ MÔ HÌNH DẦM THƯ VIỆN (thay hình tham số cũ)
+                        _bfigs = {}
                         if _brec and (_brec.get("sections")):
                             try:
-                                _beam3d = BBUI.beam_record_solid_fig(_brec)
+                                _bfigs = BBUI.beam_record_figs(_brec)
                             except Exception:
-                                _beam3d = None
+                                _bfigs = {}
                         try:
                             CTD.render_chi_tiet_loai(
                                 _d_role, st, _loai_r,
                                 key_prefix=f"ctd_{selected_ribbon}_{_ri}",
-                                beam_fig_3d=_beam3d)
+                                beam_figs=_bfigs)
                             _shown += 1
                         except Exception as _er:
                             st.error(f"Lỗi chi tiết {_lbl}: {_er}")
