@@ -5552,22 +5552,22 @@ with _col_main:
                         _pct_ok = 100*(min(_lt_max2,_xmo_p)-max(_lt_min2,_xmo_t))/max(1,_xmo_p-_xmo_t)
                         st.success(f"✅ Cầu khớp địa hình ({_pct_ok:.0f}% chiều dài cầu nằm trong phạm vi địa hình)")
     
-                    col_o1, col_o2, col_o3, col_o4 = st.columns(4)
-                    with col_o1:
-                        che_do_view = st.selectbox("🎨 Địa hình:",
-                            ["Bề mặt mịn","Đường đồng mức","Lưới tam giác"], key="cd3d")
-                    with col_o2:
-                        he_so_z = st.slider("↕️ Phóng đại Z:", 0.05, 3.00, 0.50, 0.05, key="hsz3d")
-                    with col_o3:
-                        do_min_view = st.select_slider("✨ Mịn hoá:",
-                            options=[1,3,5,7], value=3, key="dm3d")
-                    with col_o4:
-                        render_mode_3d = st.selectbox(
-                            "🖥️ Chế độ hiển thị:",
-                            ["Shaded", "Realistic", "X-Ray", "Wireframe"],
-                            key="rm3d",
-                            help="Shaded: mặc định • Realistic: đổ bóng cao • X-Ray: xuyên thấu • Wireframe: khung lưới"
-                        )
+                    with st.expander("⚙️ Tùy chỉnh hiển thị 3D", expanded=False):
+                        _o1, _o2 = st.columns(2)
+                        with _o1:
+                            che_do_view = st.selectbox("🎨 Địa hình:",
+                                ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"], key="cd3d")
+                            do_min_view = st.select_slider("✨ Mịn hoá:",
+                                options=[1, 3, 5, 7], value=3, key="dm3d")
+                        with _o2:
+                            he_so_z = st.slider("↕️ Phóng đại Z:", 0.05, 3.00, 0.50, 0.05,
+                                                key="hsz3d")
+                            render_mode_3d = st.selectbox(
+                                "🖥️ Chế độ hiển thị:",
+                                ["Shaded", "Realistic", "X-Ray", "Wireframe"],
+                                key="rm3d",
+                                help="Shaded: mặc định • Realistic: đổ bóng cao • "
+                                     "X-Ray: xuyên thấu • Wireframe: khung lưới")
                     # Compute VN-2000 origin from min-lý-trình centre-line point
                     _x_origin_vn2000 = 0.0
                     _y_origin_vn2000 = 0.0
@@ -5652,12 +5652,7 @@ with _col_main:
                             if _err_overlay:
                                 st.error(f"Lỗi overlay kết cấu: {_err_overlay}")
                             elif _n_after == _n_before:
-                                st.warning("⚠️ Không thêm được trace kết cấu — kiểm tra cột df_geology bên dưới")
-                                with st.expander("Debug df_geology"):
-                                    st.write("Columns:", list(_df_geo.columns))
-                                    st.write("Offset values:", sorted(_df_geo['Offset'].unique()[:10].tolist()) if 'Offset' in _df_geo.columns else "N/A")
-                                    st.write("x_mo_trai:", d.get('geo_logic',{}).get('x_mo_trai'))
-                                    st.write("Lý trình range:", float(_df_geo['Lý trình'].min()), "→", float(_df_geo['Lý trình'].max()) if 'Lý trình' in _df_geo.columns else "N/A")
+                                st.warning("⚠️ Không thêm được trace kết cấu — kiểm tra dữ liệu địa chất.")
                         else:
                             st.error("Không tạo được mô hình địa hình.")
                     except Exception as _e:

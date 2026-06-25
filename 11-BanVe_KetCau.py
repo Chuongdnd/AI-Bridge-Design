@@ -6,7 +6,6 @@ Khi có df_tim_line (địa hình) → tự động overlay vào sơ đồ nhị
 Hàm xuất:
   ve_so_do_nhip_2d(d, df_tim_line=None) — Sơ đồ nhịp với trụ đặt ngoài tĩnh không
   ve_mat_cat_ngang_2d(d)               — MCN điển hình đầy đủ
-  ve_mat_dung_tru_2d(d)               — Mặt đứng trụ cầu 2D
   ve_cau_3d(d, df_tim_line=None)       — Mô hình 3D kết cấu + địa hình nếu có
 """
 
@@ -1478,89 +1477,6 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None):
     )
     return fig
 
-
-# ===========================================================================
-# 3. MẶT ĐỨNG TRỤ CẦU (2D)
-# ===========================================================================
-def ve_mat_dung_tru_2d(d):
-    """Mặt đứng trụ cầu điển hình với bệ cọc, thân, xà mũ và kích thước."""
-    tru   = d.get("tru_result", {})
-    kcn   = d.get("kcn_result") or d.get("ai_result", {})
-    bc    = float(d.get("bc", 12.0))
-    H_tru = float(d.get("H_tru_est", 5.0))
-    H_dam = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
-    t_ban = float(d.get("t_ban_mm", 200)) / 1000.0
-    loai_t= str(tru.get("loai_tru", "Thân cột 2 trụ"))
-    mong  = d.get("mong_result", {})
-    D_coc = mong_dims(mong)[0]
-
-    cap_H = 0.80
-    cap_W = max(2.0, bc * 0.18 + 1.0)
-    be_H  = 1.50
-    be_W  = cap_W + 0.8
-    n_cot = 3 if "3" in loai_t else (2 if "cột" in loai_t.lower() else 1)
-    W_cot = min(1.2, bc * 0.08 + 0.5)
-
-    fig = go.Figure()
-
-    # Xà mũ
-    _poly(fig, [-cap_W, cap_W, cap_W, -cap_W], [0, 0, cap_H, cap_H],
-          _C["btong"], _C["dam_dk"], "Xà mũ (cap beam)")
-    # Thân trụ
-    if n_cot == 1:
-        W_don = min(cap_W * 0.7, 1.2)
-        _poly(fig, [-W_don, W_don, W_don, -W_don], [-H_tru, -H_tru, 0, 0],
-              _C["btong"], _C["btong_dk"], "Thân trụ đặc")
-    else:
-        starts = np.linspace(-cap_W * 0.6, cap_W * 0.6, n_cot)
-        for i, xc in enumerate(starts):
-            _poly(fig, [xc-W_cot/2, xc+W_cot/2, xc+W_cot/2, xc-W_cot/2],
-                  [-H_tru, -H_tru, 0, 0], _C["btong"], _C["btong_dk"],
-                  f"Thân cột {i+1}" if i == 0 else "", showlegend=(i == 0))
-    # Bệ cọc
-    _poly(fig, [-be_W, be_W, be_W, -be_W], [-H_tru-be_H, -H_tru-be_H, -H_tru, -H_tru],
-          _C["be"], _C["be_dk"], "Bệ cọc")
-
-    # Cọc
-    L_coc = mong_dims(mong)[1]
-    n_coc_row = 3 if be_W >= 2.5 else 2
-    coc_xs = np.linspace(-be_W * 0.7, be_W * 0.7, n_coc_row)
-    for i, xc in enumerate(coc_xs):
-        fig.add_trace(go.Scatter(
-            x=[xc, xc], y=[-H_tru-be_H, -H_tru-be_H-L_coc],
-            mode="lines", line=dict(color=_C["be_dk"], width=4),
-            name="Cọc (ký hiệu)" if i == 0 else "", showlegend=(i == 0),
-        ))
-
-    # Dimensions
-    _dim_h(fig, cap_H + 0.4, -cap_W, cap_W, f"B_xà mũ = {cap_W*2:.1f}m", dy=0)
-    _dim_h(fig, -H_tru-be_H-0.4, -be_W, be_W, f"B_bệ cọc = {be_W*2:.1f}m", dy=0)
-    _dim_v(fig, cap_W+0.5, 0, cap_H, f"cap {cap_H}m", dx=0.2)
-    _dim_v(fig, cap_W+1.3, -H_tru, 0, f"H_trụ={H_tru:.1f}m", dx=0.2)
-    _dim_v(fig, cap_W+2.1, -H_tru-be_H, -H_tru, f"bệ {be_H:.1f}m", dx=0.2)
-
-    fig.add_annotation(x=coc_xs[-1], y=-H_tru-be_H-L_coc/2,
-        text=f"Cọc Ø{int(D_coc*1000)}mm<br>L≈{L_coc:.0f}m",
-        showarrow=True, arrowhead=2, ax=35, ay=0,
-        font=dict(size=8), bgcolor="rgba(255,255,255,0.85)")
-
-    fig.add_shape(type="line", x0=0, y0=-H_tru-be_H-2, x1=0, y1=cap_H+0.5,
-                  line=dict(color="#aab7b8", width=1, dash="dashdot"))
-    fig.add_annotation(x=0, y=cap_H+0.5, text="CL", showarrow=False,
-                       font=dict(size=9, color="#aab7b8"))
-
-    fig.update_layout(
-        title=dict(text=f"MẶT ĐỨNG TRỤ — {loai_t.upper()} | H_trụ={H_tru:.1f}m",
-                   x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Bề rộng ngang (m)", showgrid=True, gridcolor="#ecf0f1",
-                   range=[-be_W-2.8, be_W+2.8]),
-        yaxis=dict(title="Chiều cao (m)", scaleanchor="x", scaleratio=1,
-                   showgrid=True, gridcolor="#ecf0f1"),
-        height=580, template="plotly_white",
-        legend=dict(orientation="h", y=-0.15, font=dict(size=9)),
-        margin=dict(l=70, r=55, t=70, b=100),
-    )
-    return fig
 
 
 # ===========================================================================
