@@ -2037,36 +2037,46 @@ def _tube_faces(M: int, N: int):
     return ii, jj, kk
 
 
-def _ring_cap_faces(R, base: int, flip: bool = False):
-    """Tam giác hoá NẮP của 1 vòng R (Nx2 mm) → list (i,j,k) tham chiếu đỉnh
-    base..base+N-1. Dùng earcut (đúng cho mặt cắt LÕM như máng Super-T); thất
-    bại → fan (dự phòng). flip: đảo chiều pháp tuyến cho mặt đối diện."""
+def _ring_cap_faces(R, base: int, ydir: float):
+    """Tam giác hoá NẮP của 1 vòng R (Nx2: [ngang x, cao z]) → list (i,j,k) tham
+    chiếu đỉnh base..base+N-1. earcut (đúng cho mặt cắt LÕM như máng Super-T);
+    fan dự phòng cho mặt cắt lồi.
+
+    Mỗi tam giác được ĐỊNH HƯỚNG để thành phần pháp tuyến theo trục DỌC Y cùng
+    dấu với ydir (+1/−1) → nắp được tô sáng ĐỀU như thành ống (hết loang màu/tối
+    ở vách ngăn & đầu dầm do chiều quay earcut không nhất quán)."""
+    R = np.asarray(R, dtype=float)
+    n = len(R)
+    tris = None
     try:
         from ezdxf.math import Vec2
         from ezdxf.math._mapbox_earcut import earcut as _earcut
         pts = [Vec2(float(p[0]), float(p[1])) for p in R]
-        tris = _earcut(pts, [])
+        raw = _earcut(pts, [])
         idx = {}
-        for n, p in enumerate(R):
-            idx[(round(float(p[0]), 3), round(float(p[1]), 3))] = n
+        for m, p in enumerate(R):
+            idx[(round(float(p[0]), 3), round(float(p[1]), 3))] = m
         out = []
-        for tri in tris:
+        ok = True
+        for tri in raw:
             try:
-                t = tuple(idx[(round(v.x, 3), round(v.y, 3))] for v in tri)
+                out.append(tuple(idx[(round(v.x, 3), round(v.y, 3))] for v in tri))
             except KeyError:
-                continue
-            if flip:
-                t = (t[0], t[2], t[1])
-            out.append((base + t[0], base + t[1], base + t[2]))
-        if out:
-            return out
+                ok = False; break
+        tris = out if (ok and out) else None
     except Exception:
-        pass
-    # Fan dự phòng (mặt cắt lồi)
-    n = len(R)
-    if flip:
-        return [(base, base + i + 1, base + i) for i in range(1, n - 1)]
-    return [(base, base + i, base + i + 1) for i in range(1, n - 1)]
+        tris = None
+    if not tris:                                  # fan dự phòng (mặt cắt lồi)
+        tris = [(0, i, i + 1) for i in range(1, n - 1)]
+    faces = []
+    for (a, b, c) in tris:
+        ax, az = R[b, 0] - R[a, 0], R[b, 1] - R[a, 1]
+        bx, bz = R[c, 0] - R[a, 0], R[c, 1] - R[a, 1]
+        ny = az * bx - ax * bz                     # thành phần Y pháp tuyến (Y=const)
+        if ny != 0.0 and (ny < 0.0) != (ydir < 0.0):
+            b, c = c, b                            # sai chiều → đảo để khớp ydir
+        faces.append((base + a, base + b, base + c))
+    return faces
 
 
 def _same_ring_shape(Ra, Rb, tol: float = 1.0) -> bool:
@@ -2101,12 +2111,12 @@ def _beam_solid_faces(rings, N: int, eps: float = 1e-4):
             a, b, c, e = b0 + i, b0 + i1, b1 + i, b1 + i1
             ii.extend([a, a]); jj.extend([b, e]); kk.extend([e, c])
 
-    def _cap(r, flip):
-        for (p, q, s) in _ring_cap_faces(rings[r][1], r * N, flip):
+    def _cap(r, ydir):
+        for (p, q, s) in _ring_cap_faces(rings[r][1], r * N, ydir):
             ii.append(p); jj.append(q); kk.append(s)
 
     if M >= 1:
-        _cap(0, flip=False)                       # nắp đầu dầm
+        _cap(0, ydir=-1.0)                        # nắp đầu dầm (mặt −Y)
     for r in range(M - 1):
         if abs(rings[r + 1][0] - rings[r][0]) > eps:
             _band(r)                              # thành ống
@@ -2114,10 +2124,10 @@ def _beam_solid_faces(rings, N: int, eps: float = 1e-4):
             Ra, Rb = rings[r][1], rings[r + 1][1]
             same = _same_ring_shape(Ra, Rb)       # bất biến theo điểm bắt đầu/xoay
             if not same:                          # đổi mặt cắt → bịt 2 nắp
-                _cap(r, flip=True)
-                _cap(r + 1, flip=False)
+                _cap(r, ydir=+1.0)                # mặt cuối đoạn trước (+Y)
+                _cap(r + 1, ydir=-1.0)            # mặt đầu đoạn sau (−Y)
     if M >= 1:
-        _cap(M - 1, flip=True)                    # nắp cuối dầm
+        _cap(M - 1, ydir=+1.0)                    # nắp cuối dầm (mặt +Y)
     return ii, jj, kk
 
 
@@ -2489,8 +2499,8 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
                 name="Dầm DXF thực tế" if _legend else "",
                 showlegend=_legend,
                 flatshading=True,
-                lighting=dict(ambient=0.55, diffuse=0.85, specular=0.30,
-                              roughness=0.65, fresnel=0.05),
+                lighting=dict(ambient=0.82, diffuse=0.40, specular=0.08,
+                              roughness=0.75, fresnel=0.03),
                 lightposition=dict(x=500, y=300, z=1500),
                 hovertemplate="<b>Dầm DXF</b><extra></extra>" if _legend else None,
             ))
@@ -2538,8 +2548,8 @@ def _beam_record_solid_traces(m, L_mm, N=40):
     return go.Mesh3d(
         x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
         color="#5d8aa8", opacity=0.96, flatshading=True,
-        lighting=dict(ambient=0.55, diffuse=0.85, specular=0.30,
-                      roughness=0.65, fresnel=0.05),
+        lighting=dict(ambient=0.82, diffuse=0.40, specular=0.08,
+                      roughness=0.75, fresnel=0.03),
         lightposition=dict(x=500, y=300, z=1500),
         name="Dầm (mô hình thư viện)", showlegend=True,
         hovertemplate="<b>Dầm thư viện</b><extra></extra>")
@@ -2826,8 +2836,8 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
                 name="Dầm DXF thực tế" if _legend else "",
                 showlegend=_legend,
                 flatshading=True,
-                lighting=dict(ambient=0.55, diffuse=0.85, specular=0.30,
-                              roughness=0.65, fresnel=0.05),
+                lighting=dict(ambient=0.82, diffuse=0.40, specular=0.08,
+                              roughness=0.75, fresnel=0.03),
                 lightposition=dict(x=500, y=300, z=1500),
                 hovertemplate="<b>Dầm DXF</b><extra></extra>" if _legend else None,
             ))
