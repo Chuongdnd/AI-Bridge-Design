@@ -191,6 +191,26 @@ def effective_pfx(base_pfx: str, beam_type: str = None) -> str:
     return f"{base_pfx}_{suffix}" if suffix else base_pfx
 
 
+def _resolve_storage_pfx(base_pfx: str) -> str:
+    """pfx THỰC nơi mặt cắt đang được lưu. Builder lưu kèm hậu tố theo loại dầm
+    (effective_pfx) nên khi ĐỌC ta phải dò: loại đang chọn → base → các hậu tố
+    loại khác, chọn pfx đầu tiên có mặt cắt. Khắc phục lỗi 3D toàn cầu không cập
+    nhật dầm mới với Dầm I / Dầm T ngược (sections nằm ở base_ibeam/base_tinv)."""
+    def _has_secs(p):
+        s = st.session_state.get(_cad_key(p, "sections")) or {}
+        return any(getattr(v, "outer", None) for v in s.values())
+    cands = [effective_pfx(base_pfx), base_pfx]
+    cands += [f"{base_pfx}_{s}" for s in BTYPE_SUFFIX.values() if s]
+    seen = set()
+    for p in cands:
+        if p in seen:
+            continue
+        seen.add(p)
+        if _has_secs(p):
+            return p
+    return base_pfx
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # DRAG-RESIZE — inject CSS + JS để kéo thả thay đổi kích thước khung nhìn
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -1828,6 +1848,7 @@ def _resolve_beam_sections(pfx: str = "spt"):
     3) preset built-in (Super-T A-A/B-B/C-C).
     Đảm bảo mọi view luôn có dầm để vẽ kể cả khi chưa mở tab Chi tiết dầm."""
     bb = _get_bb()
+    pfx = _resolve_storage_pfx(pfx)   # dò pfx thực (kèm hậu tố loại dầm)
     secs      = st.session_state.get(_cad_key(pfx, "sections"))
     cad_state = st.session_state.get(_cad_key(pfx, "state"), {}) or {}
     fill_sec  = cad_state.get("fill_sec")
@@ -1929,6 +1950,7 @@ def _beam_model_from_pfx(pfx: str, L_mm: float):
     """Dựng bb.BeamModel từ state của 1 vai trò (pfx): mặt cắt + đoạn (segs/segs_right)
     + fill + cờ asym. Trả None nếu không có mặt cắt."""
     bb = _get_bb()
+    pfx = _resolve_storage_pfx(pfx)   # dò pfx thực (kèm hậu tố loại dầm)
     secs_st   = st.session_state.get(_cad_key(pfx, "sections")) or {}
     cad_state = st.session_state.get(_cad_key(pfx, "state"), {}) or {}
     avail = {k: v for k, v in secs_st.items() if getattr(v, "outer", None)}
