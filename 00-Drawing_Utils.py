@@ -3,6 +3,25 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
+# ── Lưới 2D: NÉT MỜ XÁM, MẢNH (theo layer 8 — xám 0.09mm) ───────────────────
+GRID_2D_COLOR = "rgba(128,128,128,0.28)"   # xám nhạt (nét mờ)
+GRID_2D_WIDTH = 0.5                          # nét mảnh
+
+
+def style_grid_2d(fig):
+    """Đặt MÀU + ĐỘ DÀY lưới 2D = nét mờ xám mảnh (layer 8) cho mọi trục đề-các.
+    KHÔNG bật lưới ở trục đang tắt (tôn trọng thiết kế từng hình); chỉ đổi
+    màu/độ dày nơi lưới đang hiển thị. Hình 3D (scene) không bị ảnh hưởng."""
+    try:
+        fig.update_xaxes(gridcolor=GRID_2D_COLOR, gridwidth=GRID_2D_WIDTH,
+                         zerolinecolor=GRID_2D_COLOR, zerolinewidth=GRID_2D_WIDTH)
+        fig.update_yaxes(gridcolor=GRID_2D_COLOR, gridwidth=GRID_2D_WIDTH,
+                         zerolinecolor=GRID_2D_COLOR, zerolinewidth=GRID_2D_WIDTH)
+    except Exception:
+        pass
+    return fig
+
+
 # =============================================================================
 # QUY TẮC THỂ HIỆN BẢN VẼ (CAD standard) — nguồn dùng chung cho mọi bản vẽ 2D
 # Bảng LAYER / TEXT / KÍCH THƯỚC theo bộ quy tắc thể hiện bản vẽ của dự án.
@@ -187,11 +206,12 @@ def aspect_control(fig, key=None, label=None, st_obj=None, default="equal"):
     """ĐÃ BỎ tùy chọn tỷ lệ trên giao diện. Theo quy tắc thể hiện bản vẽ, mọi
     bản vẽ 2D được khóa CỐ ĐỊNH theo `default` (mặc định 'equal' = đúng tỷ lệ
     1:1). Không còn vẽ radio/slider. Giữ nguyên chữ ký cũ (key/label/st_obj) để
-    không vỡ các nơi đang gọi. Áp tỷ lệ trực tiếp lên fig và trả về fig.
+    không vỡ các nơi đang gọi. Áp tỷ lệ + lưới mờ xám (layer 8) rồi trả về fig.
 
     Riêng các sơ đồ KHÔNG đúng tỷ lệ thực (vd MCN đường — cao độ biểu trưng) sẽ
     truyền default='keep' tại chỗ gọi để giữ tỷ lệ thiết kế, khỏi bị dẹt."""
-    return apply_aspect(fig, default)
+    apply_aspect(fig, default)
+    return style_grid_2d(fig)        # lưới mờ xám mảnh (layer 8) cho mọi bản vẽ 2D
 
 
 def ve_ky_hieu_muc_nuoc_plotly(fig, x_pos, y_val, label, color):

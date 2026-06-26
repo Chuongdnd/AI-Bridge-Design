@@ -988,10 +988,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     z_deck   = cao_dd + H_dam + t_ban
     z_cap_t  = cao_dd
     z_cap_b  = cao_dd - 0.80
-    z_sh_b   = z_cap_b - H_tru       # đáy thân trụ (= đỉnh bệ cọc)
+    z_sh_b   = z_cap_b - H_tru       # đáy thân trụ đại diện (mố/ghi chú dùng)
     z_be_t   = z_sh_b
-    z_be_b   = z_sh_b - 1.50         # đáy bệ cọc
-    z_min    = min(z_be_b - L_coc - 2.0, MNTN - 0.5)
+    z_be_b   = z_sh_b - 1.50         # đáy bệ cọc đại diện
+    # Đỉnh bệ MỖI trụ bám ĐƯỜNG TỰ NHIÊN (đỉnh bệ = ĐTN − 0.5m) → bệ sâu nhất nằm
+    # tại trụ có đáy sông thấp nhất; lấy mốc đáy hình theo trụ sâu nhất đó.
+    _z_terr_piers = [_tz(p) for p in piers] if piers else [h_tn]
+    _z_be_b_min   = min((zt - 0.5 - 1.50) for zt in _z_terr_piers)
+    z_min    = min(_z_be_b_min - L_coc - 2.0, z_be_b - L_coc - 2.0, MNTN - 0.5)
 
     W_cap = max(2.0, L_cau / n_nhip * 0.05 + 1.0)
     W_tru = 1.2
@@ -1130,14 +1134,21 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     # ── Trụ giữa (đặt NGOÀI tĩnh không + 2m an toàn) ─────────────────────
     for i, xt in enumerate(piers):
         sl = (i == 0)
-        z_terr_tru = _tz(xt)   # cao độ địa hình tại vị trí trụ (thực tế)
+        z_terr_tru = _tz(xt)   # cao độ địa hình (đường tự nhiên) tại vị trí trụ
+
+        # Đỉnh bệ trụ CHÔN 0.5m DƯỚI ĐƯỜNG TỰ NHIÊN tại lý trình trụ (KHÔNG theo
+        # MNTN). Thân trụ kéo từ đỉnh bệ lên đáy xà mũ (z_cap_b); xà mũ luôn ở đáy
+        # dầm (z_cap_t = cao_dd) nên DẦM LUÔN GỐI LÊN XÀ MŨ — trụ không "lơ lửng".
+        z_be_t_i = min(z_terr_tru - 0.5, z_cap_b - 0.5)  # chừa tối thiểu 0.5m thân trụ
+        z_sh_b_i = z_be_t_i                              # đáy thân trụ = đỉnh bệ
+        z_be_b_i = z_be_t_i - 1.50                       # đáy bệ cọc
 
         # Trụ LẮP GHÉP từ thư viện: vẽ bóng mặt đứng dọc theo mặt cắt thật
         if pier_assembly:
             _PB = _get_PB()
             for _rc in _PB.pier_elevation_rects(
-                    pier_assembly, H_tru=(z_cap_t - z_be_b),
-                    x_ctr=xt, z_base=z_be_b):
+                    pier_assembly, H_tru=(z_cap_t - z_be_b_i),
+                    x_ctr=xt, z_base=z_be_b_i):
                 _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["dam_dk"],
                       (_rc["name"] if sl else ""), showlegend=sl)
             fig.add_annotation(
@@ -1148,50 +1159,56 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             _piles_tru = _layout_piles(d, f"tru_{i+1}")
             if _piles_tru:
                 _draw_piles_elevation(
-                    fig, _piles_tru, x_center=xt, z_top=z_be_b, color=_C["be_dk"],
+                    fig, _piles_tru, x_center=xt, z_top=z_be_b_i, color=_C["be_dk"],
                     legend_name=(f"Cọc trụ ({len(_piles_tru)} cọc)" if sl else None))
             else:
                 n_show = max(2, min(n_coc_row, 4))
                 coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
                 for j, xc in enumerate(coc_xs_tru):
                     fig.add_trace(go.Scatter(
-                        x=[xc, xc], y=[z_be_b, z_be_b - L_coc], mode="lines",
+                        x=[xc, xc], y=[z_be_b_i, z_be_b_i - L_coc], mode="lines",
                         line=dict(color=_C["be_dk"], width=max(2, int(D_coc_m * 12))),
                         name=(f"Cọc trụ Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
                               if (sl and j == 0) else ""),
                         showlegend=(sl and j == 0)))
                 fig.add_trace(go.Scatter(
-                    x=list(coc_xs_tru), y=[z_be_b - L_coc] * n_show, mode="markers",
+                    x=list(coc_xs_tru), y=[z_be_b_i - L_coc] * n_show, mode="markers",
                     marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
                     showlegend=False, hoverinfo="skip"))
             continue
 
         # Phần NGẦM: bệ cọc + thân trụ dưới mặt đất → nét đứt mờ
-        z_underground_top = min(z_sh_b, z_terr_tru)  # thân trụ ngập đến terrain
-        if z_be_b < z_terr_tru:
+        if z_be_b_i < z_terr_tru:
             # Bệ cọc ngầm
             _poly(fig,
                 [xt-W_be, xt+W_be, xt+W_be, xt-W_be],
-                [z_be_b, z_be_b, min(z_be_t, z_terr_tru), min(z_be_t, z_terr_tru)],
+                [z_be_b_i, z_be_b_i, min(z_be_t_i, z_terr_tru), min(z_be_t_i, z_terr_tru)],
                 "rgba(170,183,184,0.3)", _C["be_dk"],
                 "Bệ cọc (ngầm)" if sl else "", showlegend=sl, lw=1)
             # Thân trụ ngầm (nếu có)
-            if z_sh_b < z_terr_tru:
+            if z_sh_b_i < z_terr_tru:
                 _poly(fig,
                     [xt-W_tru/2, xt+W_tru/2, xt+W_tru/2, xt-W_tru/2],
-                    [z_sh_b, z_sh_b, z_terr_tru, z_terr_tru],
+                    [z_sh_b_i, z_sh_b_i, z_terr_tru, z_terr_tru],
                     "rgba(200,214,192,0.3)", _C["btong_dk"],
                     "", showlegend=False, lw=1)
+        else:
+            # Đáy sông thấp hơn đáy bệ → bệ + thân nổi trên đáy sông: vẽ bệ ĐẶC
+            _poly(fig,
+                [xt-W_be, xt+W_be, xt+W_be, xt-W_be],
+                [z_be_b_i, z_be_b_i, z_be_t_i, z_be_t_i],
+                _C["btong"], _C["be_dk"],
+                "Bệ cọc" if sl else "", showlegend=sl)
 
-        # Phần NỔI: thân trụ từ terrain → đáy xà mũ
-        z_shaft_visible_bot = max(z_sh_b, z_terr_tru)
+        # Phần NỔI: thân trụ nhìn thấy từ mặt đất (hoặc đỉnh bệ nếu bệ nổi) → đáy xà mũ
+        z_shaft_visible_bot = max(z_sh_b_i, z_terr_tru)
         if z_shaft_visible_bot < z_cap_b:
             _poly(fig,
                 [xt-W_tru/2, xt+W_tru/2, xt+W_tru/2, xt-W_tru/2],
                 [z_shaft_visible_bot, z_shaft_visible_bot, z_cap_b, z_cap_b],
                 _C["btong"], _C["btong_dk"], f"Thân trụ T{i+1}", showlegend=sl)
 
-        # Xà mũ (luôn nổi)
+        # Xà mũ (luôn nổi, đỉnh = đáy dầm → dầm gối trực tiếp lên xà mũ)
         _poly(fig,
             [xt-W_cap, xt+W_cap, xt+W_cap, xt-W_cap],
             [z_cap_b, z_cap_b, z_cap_t, z_cap_t],
@@ -1211,14 +1228,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         _piles_tru = _layout_piles(d, f"tru_{i+1}")
         if _piles_tru:
             _draw_piles_elevation(
-                fig, _piles_tru, x_center=xt, z_top=z_be_b, color=_C["be_dk"],
+                fig, _piles_tru, x_center=xt, z_top=z_be_b_i, color=_C["be_dk"],
                 legend_name=(f"Cọc trụ ({len(_piles_tru)} cọc)" if sl else None))
         else:
             n_show = max(2, min(n_coc_row, 4))
             coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
             for j, xc in enumerate(coc_xs_tru):
                 fig.add_trace(go.Scatter(
-                    x=[xc, xc], y=[z_be_b, z_be_b - L_coc],
+                    x=[xc, xc], y=[z_be_b_i, z_be_b_i - L_coc],
                     mode="lines",
                     line=dict(color=_C["be_dk"], width=max(2, int(D_coc_m * 12))),
                     name=f"Cọc trụ Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
@@ -1226,7 +1243,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                     showlegend=(sl and j == 0),
                 ))
             fig.add_trace(go.Scatter(
-                x=list(coc_xs_tru), y=[z_be_b - L_coc] * n_show,
+                x=list(coc_xs_tru), y=[z_be_b_i - L_coc] * n_show,
                 mode="markers",
                 marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
                 showlegend=False, hoverinfo="skip",
@@ -1286,10 +1303,11 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         showarrow=False, font=dict(size=9, color=_C["tk_line"]),
         bgcolor="rgba(255,255,255,0.8)")
 
-    # Gióng thẳng vị trí biên tĩnh không → trụ
+    # Gióng thẳng vị trí biên tĩnh không → trụ (từ đáy bệ thực của trụ → mặt cầu)
     for xp in piers:
+        _y0_gp = min(_tz(xp) - 0.5 - 1.50, z_be_b)
         fig.add_shape(type="line",
-            x0=xp, y0=z_be_b, x1=xp, y1=z_deck,
+            x0=xp, y0=_y0_gp, x1=xp, y1=z_deck,
             line=dict(color="#aab7b8", width=0.8, dash="dashdot"))
 
     # ── Dimension tổng ────────────────────────────────────────────────────
@@ -1308,10 +1326,11 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     _dim_v(fig, x_end+W_mo+0.3, z_sh_b, z_cap_b, f"H_trụ={H_tru:.1f}m", dx=0.2)
     _dim_v(fig, x0-W_mo-0.3, cao_dd, cao_dd+H_dam, f"H_dầm={H_dam:.2f}m", dx=0.2)
     if piers:
-        _dim_v(fig, piers[0] + W_be + 0.6, z_be_b - L_coc, z_be_b,
+        _z_be_b0 = min(_tz(piers[0]) - 0.5 - 1.50, z_be_b)  # đáy bệ thực của trụ đầu
+        _dim_v(fig, piers[0] + W_be + 0.6, _z_be_b0 - L_coc, _z_be_b0,
                f"L_cọc≈{L_coc:.0f}m", color="#8e44ad", dx=0.2)
         fig.add_annotation(
-            x=piers[0] + W_be + 1.6, y=z_be_b - L_coc * 0.5,
+            x=piers[0] + W_be + 1.6, y=_z_be_b0 - L_coc * 0.5,
             text=f"Cọc Ø{int(D_coc_m*1000)}mm<br>L≈{L_coc:.0f}m",
             showarrow=True, arrowhead=2, arrowcolor=_C["be_dk"],
             ax=30, ay=0,
@@ -1325,8 +1344,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                   f" | L_cầu={L_cau:.1f}m | B_tk={B_tk:.1f}m"),
             x=0.5, font=dict(size=13)
         ),
-        xaxis=dict(title="Lý trình (m)", showgrid=True, gridcolor="#ecf0f1"),
-        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1"),
+        xaxis=dict(title="Lý trình (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
+        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
         height=680 if dia_chat_data else 580,
         template="plotly_white",
         legend=dict(orientation="h", y=-0.20, font=dict(size=9)),
@@ -1611,10 +1630,10 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None):
                   f"</span>"),
             x=0.5, font=dict(size=13)
         ),
-        xaxis=dict(title="Bề rộng (m)", showgrid=True, gridcolor="#ecf0f1",
+        xaxis=dict(title="Bề rộng (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5,
                    range=[-bc/2 - 3.5, bc/2 + 5.5]),
         yaxis=dict(title="Cao độ (m)", scaleanchor="x", scaleratio=1,
-                   showgrid=True, gridcolor="#ecf0f1",
+                   showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5,
                    range=[z_substructure_bot, t_phu + H_lc + 0.6]),
         height=700, template="plotly_white",
         legend=dict(orientation="h", y=-0.15, font=dict(size=9)),
@@ -2686,9 +2705,9 @@ def ve_binh_do_2d(d, df_tim_line=None):
                   + (f" | Góc xiên α={goc:.0f}°" if goc < 89.0 else "")),
             x=0.5, font=dict(size=12)
         ),
-        xaxis=dict(title="Lý trình (m)", showgrid=True, gridcolor="#ecf0f1",
+        xaxis=dict(title="Lý trình (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5,
                    scaleanchor="y", scaleratio=1),
-        yaxis=dict(title="Ngang (m)", showgrid=True, gridcolor="#ecf0f1"),
+        yaxis=dict(title="Ngang (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
         height=420, template="plotly_white",
         legend=dict(orientation="h", y=-0.22, font=dict(size=9)),
         margin=dict(l=60, r=40, t=60, b=90),
@@ -2938,10 +2957,10 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             text=f"MẶT CẮT NGANG — {title_vt} | Lý trình ≈ {x_cut:.1f} m",
             x=0.5, font=dict(size=12)
         ),
-        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
+        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5,
                    range=[-_Xv, _Xv]),
         # MCN là mặt cắt true-shape → khóa tỉ lệ 1:1 cho khỏi méo hình trụ.
-        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1",
+        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5,
                    scaleanchor="x", scaleratio=1),
         height=480, template="plotly_white",
         legend=dict(orientation="h", y=-0.20, font=dict(size=9)),
@@ -3120,10 +3139,10 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
     fig.update_layout(
         title=dict(text=f"MẶT BẰNG CỌC — {g['title_vt']} | {len(piles)} cọc · {_src}",
                    x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
+        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5,
                    range=[-_R, _R]),
         yaxis=dict(title="Dọc cầu (m)", scaleanchor="x", scaleratio=1,
-                   showgrid=True, gridcolor="#ecf0f1"),
+                   showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
         height=400, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=55, r=30, t=60, b=80),
@@ -3205,10 +3224,10 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
     _xr = float(x_half) if x_half else _R
     fig.update_layout(
         title=dict(text=f"MẶT BẰNG KẾT CẤU — {g['title_vt']}", x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="#ecf0f1",
+        xaxis=dict(title="Ngang cầu (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5,
                    range=[-_xr, _xr]),
         yaxis=dict(title="Dọc cầu (m)", scaleanchor="x", scaleratio=1,
-                   showgrid=True, gridcolor="#ecf0f1"),
+                   showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
         height=400, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=60, r=40, t=60, b=80),
@@ -3288,9 +3307,9 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
     fig.update_layout(
         title=dict(text=f"MẶT CẮT DỌC — {g['title_vt']} | Lý trình ≈ {g['x_cut']:.1f} m",
                    x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Dọc cầu (m)", showgrid=True, gridcolor="#ecf0f1",
+        xaxis=dict(title="Dọc cầu (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5,
                    range=[-x_span, x_span]),
-        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="#ecf0f1"),
+        yaxis=dict(title="Cao độ (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
         height=480, template="plotly_white",
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=55, r=30, t=60, b=100),

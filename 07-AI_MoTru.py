@@ -573,7 +573,9 @@ def estimate_pier_height(
     Z_day_song    : Cao độ đáy sông tự nhiên (m) — bắt buộc cho bệ cao
     h_xoi_chung   : Chiều sâu xói chung tính toán (m), mặc định 0
     vi_tri_tru    : 'tren_can' | 'trong_nuoc_be_thap' | 'trong_nuoc_be_cao'
-    Z_tu_nhien    : Cao độ mặt đất tự nhiên tại vị trí trụ (m) — dùng khi tren_can
+    Z_tu_nhien    : Cao độ ĐƯỜNG TỰ NHIÊN tại vị trí trụ (m) — cơ sở tính đỉnh bệ
+                    (đỉnh bệ = Z_tu_nhien − 0.5m). Là đáy sông nếu trụ trong nước,
+                    mặt đất nếu trụ trên cạn. Nên truyền theo từng vị trí trụ.
     h_xa_mu       : Chiều cao xà mũ (m), mặc định 1.2
 
     Returns
@@ -581,18 +583,18 @@ def estimate_pier_height(
     dict gồm: H_than_tru, cao_day_dam, cao_mat_cau, Z_dinh_be,
               cao_dinh_tru, can_than_rong, canh_bao, vi_tri_tru
 
-    Tình huống 1 — tren_can
-        Đỉnh bệ nhô lên mặt đất tự nhiên 0.25m để thoát nước và thi công.
-        Z_dinh_be = Z_tu_nhien + 0.25
+    Quy tắc đỉnh bệ (Z_dinh_be):
 
-    Tình huống 2 — trong_nuoc_be_thap  (phổ biến nhất, cấp IV–VI)
-        Đài cọc chìm dưới MNTN 0.4m, mỹ quan khi nước cạn, giảm cản dòng.
-        Z_dinh_be = MNTN - 0.4
+    • Bệ thấp / trên cạn (mặc định) — đỉnh bệ CHÔN ~0.5m DƯỚI ĐƯỜNG TỰ NHIÊN
+        tại vị trí trụ; KHÔNG lấy theo MNTN cho toàn tuyến. "Đường tự nhiên" tại
+        trụ là cao độ đáy sông (trụ trong nước) hoặc mặt đất (trụ trên cạn) → mỗi
+        trụ một cao độ riêng nên chiều cao thân trụ cũng khác nhau.
+        Z_dinh_be = Z_tu_nhien − 0.5
+        (đồng bộ quy ước đỉnh bệ MỐ trong _classify_abutment: chôn 0.5m dưới ĐTN).
 
-    Tình huống 3 — trong_nuoc_be_cao
-        Đài cọc cao lộ trước dòng chảy, đỉnh bệ phải dưới đáy sông sau xói
-        và dự phòng 0.5m theo TCVN 11823.
-        Z_dinh_be = Z_day_song - h_xoi_chung - 0.5
+    • trong_nuoc_be_cao — trường hợp đặc biệt, đài cọc cao lộ trước dòng chảy:
+        đỉnh bệ khống chế theo đáy sông sau xói + dự phòng 0.5m (TCVN 11823).
+        Z_dinh_be = Z_day_song − h_xoi_chung − 0.5
         Phát sinh cảnh báo: xói cục bộ chân cọc lộ, lực đẩy nổi, va trôi.
     """
     cao_day_dam   = MNCN + H_tinh_khong          # cao độ đáy dầm
@@ -604,11 +606,9 @@ def estimate_pier_height(
 
     canh_bao_list = []
 
-    if vi_tri_tru == "tren_can":
-        z0 = Z_tu_nhien if Z_tu_nhien is not None else MNTN
-        Z_dinh_be = z0 + 0.25
-
-    elif vi_tri_tru == "trong_nuoc_be_cao":
+    if vi_tri_tru == "trong_nuoc_be_cao":
+        # Trường hợp đặc biệt: bệ cao, cọc lộ trước dòng chảy → đỉnh bệ khống chế
+        # theo đáy sông sau xói (KHÔNG theo đường tự nhiên).
         if Z_day_song is None:
             canh_bao_list.append(
                 "THIẾU Z_day_song — tạm dùng MNTN - 1.0m để ước tính"
@@ -622,9 +622,23 @@ def estimate_pier_height(
         ])
 
     else:
-        # trong_nuoc_be_thap — mặc định, phổ biến nhất
-        vi_tri_tru = "trong_nuoc_be_thap"
-        Z_dinh_be  = MNTN - 0.4
+        # Quy tắc chung (bệ thấp / trên cạn): đỉnh bệ CHÔN ~0.5m DƯỚI ĐƯỜNG TỰ
+        # NHIÊN tại vị trí trụ — KHÔNG lấy theo MNTN cho toàn tuyến.
+        if Z_tu_nhien is not None:
+            z_tn = float(Z_tu_nhien)
+        elif Z_day_song is not None:
+            z_tn = float(Z_day_song)
+        else:
+            # Dự phòng cuối: thiếu địa hình → xấp xỉ đáy sông ≈ MNTN (chỉ để hàm
+            # vẫn chạy; nên truyền Z_tu_nhien theo từng trụ để chính xác).
+            z_tn = MNTN
+            canh_bao_list.append(
+                "THIẾU cao độ tự nhiên tại trụ — tạm lấy ≈ MNTN; khai báo địa hình "
+                "để đỉnh bệ bám đúng đường tự nhiên (đỉnh bệ = ĐTN − 0.5m)"
+            )
+        Z_dinh_be = z_tn - 0.5
+        if vi_tri_tru not in ("tren_can", "trong_nuoc_be_thap"):
+            vi_tri_tru = "trong_nuoc_be_thap"
 
     H_than_tru    = max(0.5, cao_dinh_than - Z_dinh_be)
     can_than_rong = H_than_tru > 10.0
