@@ -2020,7 +2020,8 @@ def _cell_rings(base_pfx, active, ringmap, i_span, n_span, i_dam, n_dam):
 
 
 def _tube_faces(M: int, N: int):
-    """Tam giác hoá ống: M vòng × N điểm + 2 nắp đầu."""
+    """Tam giác hoá ống: M vòng × N điểm + 2 nắp đầu (FAN — chỉ đúng cho mặt
+    cắt LỒI). Giữ lại cho tương thích; mesh dầm dùng _beam_solid_faces."""
     ii, jj, kk = [], [], []
     for r in range(M - 1):
         b0, b1 = r * N, (r + 1) * N
@@ -2033,6 +2034,90 @@ def _tube_faces(M: int, N: int):
     _last = (M - 1) * N
     for i in range(1, N - 1):           # nắp cuối
         ii.append(_last); jj.append(_last + i + 1); kk.append(_last + i)
+    return ii, jj, kk
+
+
+def _ring_cap_faces(R, base: int, flip: bool = False):
+    """Tam giác hoá NẮP của 1 vòng R (Nx2 mm) → list (i,j,k) tham chiếu đỉnh
+    base..base+N-1. Dùng earcut (đúng cho mặt cắt LÕM như máng Super-T); thất
+    bại → fan (dự phòng). flip: đảo chiều pháp tuyến cho mặt đối diện."""
+    try:
+        from ezdxf.math import Vec2
+        from ezdxf.math._mapbox_earcut import earcut as _earcut
+        pts = [Vec2(float(p[0]), float(p[1])) for p in R]
+        tris = _earcut(pts, [])
+        idx = {}
+        for n, p in enumerate(R):
+            idx[(round(float(p[0]), 3), round(float(p[1]), 3))] = n
+        out = []
+        for tri in tris:
+            try:
+                t = tuple(idx[(round(v.x, 3), round(v.y, 3))] for v in tri)
+            except KeyError:
+                continue
+            if flip:
+                t = (t[0], t[2], t[1])
+            out.append((base + t[0], base + t[1], base + t[2]))
+        if out:
+            return out
+    except Exception:
+        pass
+    # Fan dự phòng (mặt cắt lồi)
+    n = len(R)
+    if flip:
+        return [(base, base + i + 1, base + i) for i in range(1, n - 1)]
+    return [(base, base + i, base + i + 1) for i in range(1, n - 1)]
+
+
+def _same_ring_shape(Ra, Rb, tol: float = 1.0) -> bool:
+    """2 vòng có CÙNG hình không (bất biến theo điểm bắt đầu / chiều xoay)?
+    So khớp tập điểm đã sắp xếp — tránh bịt nắp thừa ở mối nối liên tục mà
+    _best_rotation đã xoay lệch index (vd loft→fill cùng mặt cắt)."""
+    if getattr(Ra, "shape", None) != getattr(Rb, "shape", None):
+        return False
+    a = Ra[np.lexsort((Ra[:, 1], Ra[:, 0]))]
+    b = Rb[np.lexsort((Rb[:, 1], Rb[:, 0]))]
+    return bool(np.max(np.hypot(a[:, 0] - b[:, 0], a[:, 1] - b[:, 1])) < tol)
+
+
+def _beam_solid_faces(rings, N: int, eps: float = 1e-4):
+    """Tam giác hoá khối dầm từ list (frac, R) — XỬ LÝ ĐÚNG vách ngăn/đổi mặt cắt.
+
+    • Hai vòng cách nhau (Δfrac>eps) → THÀNH ống (band) như cũ.
+    • Mối nối dài-0 (Δfrac≈0) ĐỔI mặt cắt (vd thân↔vách ngăn) → KHÔNG nối band
+      xoắn nữa, mà BỊT NẮP phẳng 2 mặt (mặt cuối đoạn trước + mặt đầu đoạn sau).
+      Silhouette ngoài trùng nhau → thành ngoài liền mạch (xuyên suốt); máng được
+      lấp bằng mặt đặc của vách ngăn — hết lỗi mặt xoắn ở vách ngăn.
+    • Mối nối dài-0 nhưng CÙNG hình → liền mạch (bỏ qua, không nắp).
+    • 2 đầu dầm luôn bịt nắp.
+    """
+    M = len(rings)
+    ii, jj, kk = [], [], []
+
+    def _band(r):
+        b0, b1 = r * N, (r + 1) * N
+        for i in range(N):
+            i1 = (i + 1) % N
+            a, b, c, e = b0 + i, b0 + i1, b1 + i, b1 + i1
+            ii.extend([a, a]); jj.extend([b, e]); kk.extend([e, c])
+
+    def _cap(r, flip):
+        for (p, q, s) in _ring_cap_faces(rings[r][1], r * N, flip):
+            ii.append(p); jj.append(q); kk.append(s)
+
+    if M >= 1:
+        _cap(0, flip=False)                       # nắp đầu dầm
+    for r in range(M - 1):
+        if abs(rings[r + 1][0] - rings[r][0]) > eps:
+            _band(r)                              # thành ống
+        else:
+            Ra, Rb = rings[r][1], rings[r + 1][1]
+            same = _same_ring_shape(Ra, Rb)       # bất biến theo điểm bắt đầu/xoay
+            if not same:                          # đổi mặt cắt → bịt 2 nắp
+                _cap(r, flip=True)
+                _cap(r + 1, flip=False)
+    if M >= 1:
+        _cap(M - 1, flip=True)                    # nắp cuối dầm
     return ii, jj, kk
 
 
@@ -2396,7 +2481,7 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
                     vx.append(ch)
                     vy.append(beam_y + _sgn * R[i, 0] / 1000.0)
                     vz.append(z_top + R[i, 1] / 1000.0)
-            _ii, _jj, _kk = _tube_faces(M, Np)
+            _ii, _jj, _kk = _beam_solid_faces(rings, Np)
             result.append(go.Mesh3d(
                 x=vx, y=vy, z=vz,
                 i=_ii, j=_jj, k=_kk,
@@ -2449,7 +2534,7 @@ def _beam_record_solid_traces(m, L_mm, N=40):
             vx.append(R[i, 0] / 1000.0)
             vy.append(yy)
             vz.append(R[i, 1] / 1000.0)
-    ii, jj, kk = _tube_faces(len(rings), N)
+    ii, jj, kk = _beam_solid_faces(rings, N)
     return go.Mesh3d(
         x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
         color="#5d8aa8", opacity=0.96, flatshading=True,
@@ -2733,7 +2818,7 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
                 for i in range(Np):
                     X, Y = _vn(ch, beam_y + _sgn * R[i, 0] / 1000.0)
                     vX.append(X); vY.append(Y); vZ.append((z_top + R[i, 1] / 1000.0) * he_so_z)
-            _ii, _jj, _kk = _tube_faces(M, Np)
+            _ii, _jj, _kk = _beam_solid_faces(rings, Np)
             result.append(go.Mesh3d(
                 x=vX, y=vY, z=vZ,
                 i=_ii, j=_jj, k=_kk,
