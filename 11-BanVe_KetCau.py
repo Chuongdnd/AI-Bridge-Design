@@ -1658,6 +1658,17 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
 
     traces = []
 
+    # Gán NHÓM (legendgroup) để bật/tắt theo cụm trong 3D (click chú giải ẩn cả
+    # cụm — groupclick='togglegroup'). Trả về trace/list đã gắn.
+    def _g(tr, grp):
+        items = tr if isinstance(tr, (list, tuple)) else [tr]
+        for _t in items:
+            try:
+                _t.legendgroup = grp
+            except Exception:
+                pass
+        return tr
+
     # ── Địa hình 3D (từ df_tim_line) ─────────────────────────────────────
     if df_tim_line is not None and not df_tim_line.empty:
         lt_col = next((c for c in df_tim_line.columns
@@ -1680,24 +1691,24 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
                                      np.full_like(xvals,  W_belt)])
                 z_surf = np.vstack([zvals, zvals])
 
-                traces.append(go.Surface(
+                traces.append(_g(go.Surface(
                     x=x_surf, y=y_surf, z=z_surf,
                     colorscale="earth", opacity=0.70,
                     showscale=False, name="Địa hình (khảo sát)",
                     hovertemplate="Lý trình: %{x:.1f}m<br>Cao độ: %{z:.3f}m<extra>Địa hình</extra>"
-                ))
+                ), "Địa hình"))
     else:
         # Không có khảo sát: hiển thị mực nước phẳng
         mg_3d = 20
         x_rng = [x0-mg_3d, x_end+mg_3d]
         y_rng = [-bc*1.5, bc*1.5]
-        traces.append(go.Surface(
+        traces.append(_g(go.Surface(
             x=[[x_rng[0], x_rng[1]],[x_rng[0], x_rng[1]]],
             y=[[y_rng[0], y_rng[0]],[y_rng[1], y_rng[1]]],
             z=[[MNCN, MNCN],[MNCN, MNCN]],
             colorscale=[[0, "rgba(52,152,219,0.45)"], [1, "rgba(52,152,219,0.45)"]],
             showscale=False, opacity=0.45, name="Mặt nước (MNCN)",
-        ))
+        ), "Mặt nước"))
 
     # ── Mố ────────────────────────────────────────────────────────────────
     #   x_face = lý trình mặt trước (đỡ gối); out_dir = hướng RA sau lưng.
@@ -1706,10 +1717,11 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
         # Cọc khai báo từ DXF (nếu có) — đặt tại tâm bệ mố
         _piles_mo3d = _layout_piles(d, "mo_trai" if _im == 0 else "mo_phai")
         if _piles_mo3d:
-            traces.extend(_pile_traces_3d(
+            traces.extend(_g(_pile_traces_3d(
                 _piles_mo3d, x_center=xm + mo_W/2, y_center=0.0,
                 z_top=z_be_b, color="#7d5a32",
-                legend_name=(f"Cọc mố ({len(_piles_mo3d)})" if _im == 0 else None)))
+                legend_name=(f"Cọc mố ({len(_piles_mo3d)})" if _im == 0 else None)),
+                "Cọc"))
         if abutment_assembly:
             _PB = _get_PB()
             # Đỉnh mố (vai kê gối) = ĐÁY DẦM (z_cap_t = cao_dd).
@@ -1717,10 +1729,10 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
                     abutment_assembly, H_tru=(z_cap_t - z_be_b),
                     x_face=x_face, out_dir=out_dir, z_base=z_be_b):
                 _at.showlegend = bool(_im == 0)
-                traces.append(_at)
+                traces.append(_g(_at, "Mố"))
             continue
-        traces.append(_box3d(xm, -bc/2-0.5, z_be_b, xm+mo_W, bc/2+0.5, z_deck,
-                             color="#c0a06b", name=nm))
+        traces.append(_g(_box3d(xm, -bc/2-0.5, z_be_b, xm+mo_W, bc/2+0.5, z_deck,
+                             color="#c0a06b", name=nm), "Mố"))
 
     # ── Đường đầu cầu: nền đắp + mặt đường vươn 50m mỗi bên ──────────────────
     _L_app3d = 50.0
@@ -1728,7 +1740,7 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
         for _at in _approach_road_traces(
                 _xm, _xm + _od * _L_app3d, bc, z_deck, h_tn, taluy=1.5,
                 sl=(_od < 0)):
-            traces.append(_at)
+            traces.append(_g(_at, "Đường đầu cầu"))
 
     # ── Trụ (đặt NGOÀI tĩnh không) ────────────────────────────────────────
     for i, xt in enumerate(piers):
@@ -1736,10 +1748,11 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
         # Cọc khai báo từ DXF (nếu có) — đặt tại tâm bệ trụ
         _piles_tru3d = _layout_piles(d, f"tru_{i+1}")
         if _piles_tru3d:
-            traces.extend(_pile_traces_3d(
+            traces.extend(_g(_pile_traces_3d(
                 _piles_tru3d, x_center=xt, y_center=0.0,
                 z_top=z_be_b, color="#566573",
-                legend_name=(f"Cọc trụ ({len(_piles_tru3d)})" if sl else None)))
+                legend_name=(f"Cọc trụ ({len(_piles_tru3d)})" if sl else None)),
+                "Cọc"))
         # TRỤ: CHỈ dùng mô hình lắp ghép (xà mũ/thân/bệ) người dùng đã tạo.
         _ptr = []
         if pier_assembly:
@@ -1750,13 +1763,13 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
         if _ptr:
             for _pt in _ptr:
                 _pt.showlegend = bool(sl)   # chỉ chú giải ở trụ đầu
-                traces.append(_pt)
+                traces.append(_g(_pt, "Trụ"))
         else:
             # Chưa gắn mô hình trụ → khối MỜ TẠM (không phải trụ tham số "giả").
-            traces.append(_box3d(
+            traces.append(_g(_box3d(
                 xt - 1.0, -1.0, z_be_b, xt + 1.0, 1.0, z_cap_t,
                 color="#7f8c8d", opacity=0.22,
-                name="Trụ (chưa gắn mô hình)" if sl else "", sl=sl))
+                name="Trụ (chưa gắn mô hình)" if sl else "", sl=sl), "Trụ"))
 
     # ── Dầm chính: mô hình 3D do người dùng dựng (tab Chi tiết dầm) được chèn
     #    ở 00-Interface qua get_beam_model_mesh_traces — KHÔNG vẽ dầm AI tại đây.
@@ -1764,13 +1777,13 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
     # ── Bản mặt cầu ───────────────────────────────────────────────────────
     for i_nhip, (xs, xe) in enumerate(spans):
         sl = (i_nhip == 0)
-        traces.append(_box3d(xs, -bc/2, cao_dd+H_dam, xe, bc/2, z_deck,
+        traces.append(_g(_box3d(xs, -bc/2, cao_dd+H_dam, xe, bc/2, z_deck,
                              color="#e8eaf0", opacity=0.55,
-                             name="Bản mặt cầu" if sl else "", sl=sl))
+                             name="Bản mặt cầu" if sl else "", sl=sl), "Bản mặt cầu"))
 
     # ── Lan can / Giải phân cách — kéo MCN chạy dọc toàn cầu ──────────────
     try:
-        traces.extend(_railing_traces_3d(d, x0, x_end, bc, z_deck))
+        traces.extend(_g(_railing_traces_3d(d, x0, x_end, bc, z_deck), "Lan can"))
     except Exception as _e:
         print(f"[ve_cau_3d] lan can lỗi: {_e}")
 
@@ -1786,6 +1799,7 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
                MNCN+float(d.get('H',3.0)), MNCN],
             mode="lines", line=dict(color="#e74c3c", width=3),
             name="Tĩnh không" if y == y_tk[0] else "", showlegend=(y == y_tk[0]),
+            legendgroup="Tĩnh không",
         ))
 
     fig.update_layout(
@@ -1805,7 +1819,10 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
             bgcolor="white",
         ),
         height=640,
-        legend=dict(orientation="h", y=-0.06, font=dict(size=9)),
+        # Click nhóm trong chú giải → ẩn/hiện CẢ CỤM cấu kiện (groupclick).
+        legend=dict(orientation="h", y=-0.06, font=dict(size=9),
+                    groupclick="togglegroup",
+                    title=dict(text="Bấm để ẩn/hiện cấu kiện ▾", font=dict(size=9))),
         margin=dict(l=0, r=0, t=60, b=50),
         paper_bgcolor="white",
     )
@@ -2186,6 +2203,16 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
             )
 
+        # Gán nhóm + thêm trace; click chú giải ẩn/hiện cả cụm (groupclick).
+        _grp_state = {"g": None}
+        def _ag(tr):
+            if _grp_state["g"]:
+                try:
+                    tr.legendgroup = _grp_state["g"]
+                except Exception:
+                    pass
+            fig.add_trace(tr)
+
         # =========================================================
         # LỚP 1 — THỦY VĂN & TĨNH KHÔNG
         # =========================================================
@@ -2193,15 +2220,17 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         yw_local = B_tk * 1.2          # độ rộng ngang (vuông góc tim)
         xL_water = x_tim - B_tk / 2   # giới hạn dọc = chiều rộng TK
         xR_water = x_tim + B_tk / 2
+        _grp_state["g"] = "Mặt nước"
         for z_w, lbl, clr, op in [
             (MNCN * hz, f"MNCN = {MNCN:.3f}m", "#2980b9", 0.50),
             (MNTT * hz, f"MNTT = {MNTT:.3f}m", "#3498db", 0.35),
             (MNTN * hz, f"MNTN = {MNTN:.3f}m", "#1abc9c", 0.25),
         ]:
-            fig.add_trace(_abox(xL_water, xR_water, -yw_local, yw_local,
+            _ag(_abox(xL_water, xR_water, -yw_local, yw_local,
                                 z_w - 0.05 * hz, z_w, clr, op, lbl))
 
         # Khung tĩnh không B×H (dây đỏ)
+        _grp_state["g"] = "Tĩnh không"
         xL_tk = x_tim - B_tk/2; xR_tk = x_tim + B_tk/2
         xrL, yrL = _vn(xL_tk, 0); xrR, yrR = _vn(xR_tk, 0)
         z_tkb = MNCN * hz; z_tkt = (MNCN + H_tk) * hz
@@ -2211,14 +2240,14 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             (xrL,yrL, xrL,yrL, z_tkb,z_tkt, "Cột trái TK"),
             (xrR,yrR, xrR,yrR, z_tkb,z_tkt, "Cột phải TK"),
         ]:
-            fig.add_trace(go.Scatter3d(
+            _ag(go.Scatter3d(
                 x=[xs,xe], y=[ys,ye], z=[z0,z1],
                 mode="lines+markers",
                 line=dict(color="#e74c3c", width=6),
                 marker=dict(size=5, color="#e74c3c"),
-                name=nm, showlegend=True,
+                name=nm, showlegend=(nm == "Đáy TK"),
             ))
-        fig.add_trace(go.Scatter3d(
+        _ag(go.Scatter3d(
             x=[(xrL+xrR)/2], y=[(yrL+yrR)/2], z=[(z_tkb+z_tkt)/2],
             mode="text", text=[f"B={B_tk}m × H={H_tk}m"],
             textfont=dict(color="#e74c3c", size=11), showlegend=False,
@@ -2233,7 +2262,8 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             xc, yc = _vn(s, 0)
             XP.append(xc); YP.append(yc)
             ZP.append(float(np.interp(s, lt_v, vz_v)) * hz)
-        fig.add_trace(go.Scatter3d(x=XP, y=YP, z=ZP, mode="lines",
+        _grp_state["g"] = "Trắc dọc"
+        _ag(go.Scatter3d(x=XP, y=YP, z=ZP, mode="lines",
                                    line=dict(color="#27ae60", width=4),
                                    name="Địa hình TN tim tuyến"))
 
@@ -2250,7 +2280,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         for s in np.linspace(x0-5, x_end+5, 80):
             xc, yc = _vn(s, 0)
             XRD.append(xc); YRD.append(yc); ZRD.append(_rdz(s))
-        fig.add_trace(go.Scatter3d(x=XRD, y=YRD, z=ZRD, mode="lines",
+        _ag(go.Scatter3d(x=XRD, y=YRD, z=ZRD, mode="lines",
                                    line=dict(color="#e74c3c", width=5),
                                    name="Đường đỏ thiết kế"))
 
@@ -2260,15 +2290,17 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
         # Lớp phủ BTN + Bản mặt cầu — QUÉT dọc tim tuyến (bám đường cong),
         # KHÔNG vẽ hộp thẳng nối đầu–cuối.
-        fig.add_trace(_aswept(x0, x_end, -bc/2, bc/2,
+        _grp_state["g"] = "Mặt cầu"
+        _ag(_aswept(x0, x_end, -bc/2, bc/2,
                               z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
-        fig.add_trace(_aswept(x0, x_end, -bc/2, bc/2,
+        _ag(_aswept(x0, x_end, -bc/2, bc/2,
                               z_bant, z_deck, "#d5d8dc", 0.82, "Bản mặt cầu"))
 
         # Lan can / Giải phân cách — kéo MCN bám đường cong tim tuyến
+        _grp_state["g"] = "Lan can"
         try:
             for _rt in _railing_curve_traces(d, _vn, x0, x_end, bc, z_phu):
-                fig.add_trace(_rt)
+                _ag(_rt)
         except Exception as _e:
             print(f"[add_all] lan can lỗi: {_e}")
 
@@ -2279,18 +2311,19 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # LỚP 4 — TRỤ CẦU (Mesh3d KHỐI 3D)
         # =========================================================
 
+        _grp_state["g"] = "Trụ"
         for i_p, xt in enumerate(piers):
             sl = (i_p == 0)
 
             # Xà mũ
-            fig.add_trace(_abox(xt-cap_thick, xt+cap_thick, -cap_W, cap_W,
+            _ag(_abox(xt-cap_thick, xt+cap_thick, -cap_W, cap_W,
                                 z_capb, z_capt, "#d5dbdb", 0.90,
                                 "Xà mũ" if sl else "", sl=sl))
 
             # Thân trụ (n_cot cột)
             col_offs = np.linspace(-cap_W*0.6, cap_W*0.6, n_cot)
             for i_c, off_c in enumerate(col_offs):
-                fig.add_trace(_abox(
+                _ag(_abox(
                     xt - W_tru/2, xt + W_tru/2,
                     off_c - W_cot/2, off_c + W_cot/2,
                     z_shb, z_sht, "#c8d6c0", 0.92,
@@ -2307,11 +2340,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             sl = (i_p == 0)
 
             # Bệ cọc (hộp)
-            fig.add_trace(_abox(xt-be_long, xt+be_long, -be_W, be_W,
+            _grp_state["g"] = "Bệ cọc"
+            _ag(_abox(xt-be_long, xt+be_long, -be_W, be_W,
                                 z_beb, z_bet, "#aab7b8", 0.90,
                                 "Bệ cọc" if sl else "", sl=sl))
 
             # Cọc (line - OK vì cọc thực tế cũng tròn/mảnh)
+            _grp_state["g"] = "Cọc"
             c_ds = np.linspace(-be_W*0.65, be_W*0.65, n_coc_row)
             c_ls = np.linspace(-be_long*0.65, be_long*0.65, n_coc_row)
             for dl in c_ls:
@@ -2319,7 +2354,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                     xp, yp = _vn(xt + dl, dt)
                     lbl_coc = (f"Cọc Ø{int(D_coc*1000)}mm L={L_coc:.0f}m"
                                if (sl and dl == c_ls[0] and dt == c_ds[0]) else "")
-                    fig.add_trace(go.Scatter3d(
+                    _ag(go.Scatter3d(
                         x=[xp, xp], y=[yp, yp], z=[z_bet, z_pileb],
                         mode="lines",
                         line=dict(color="#4a4a4a", width=5),
@@ -2331,10 +2366,11 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # LỚP 6 — MỐ HAI ĐẦU (Mesh3d KHỐI 3D)
         # =========================================================
 
+        _grp_state["g"] = "Mố"
         for xm, nm in [(x0, "Mố trái"), (x_end, "Mố phải")]:
             sl = (nm == "Mố trái")
             sign = 1 if xm == x0 else -1
-            fig.add_trace(_abox(xm, xm + sign*mo_L, -bc/2-0.5, bc/2+0.5,
+            _ag(_abox(xm, xm + sign*mo_L, -bc/2-0.5, bc/2+0.5,
                                 z_beb, z_deck, "#c0a06b", 0.85, nm, sl=sl))
 
         # ── ĐƯỜNG ĐẦU CẦU: nền đắp + mặt đường vươn 50m mỗi bên ──────────────
@@ -2417,15 +2453,16 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
         # Cao độ mặt đường đầu cầu KHỚP mặt cầu (z_phu) tại lưng mố, hạ dần ra
         # ngoài theo dốc dọc i_geo → liền mạch, không bị chênh bậc tại khe nối.
+        _grp_state["g"] = "Đường đầu cầu"
         _L_app_t = 50.0
         for _xm, _od in [(x0, -1.0), (x_end, 1.0)]:
             _s1 = _xm + _od * _L_app_t
             def _z_app(s, _xm=_xm):
                 return z_phu - i_geo * abs(s - _xm) * hz
-            fig.add_trace(_approach_emb(
+            _ag(_approach_emb(
                 _xm, _s1, _z_app, taluy=1.5,
                 name="Nền đắp đầu cầu" if _od < 0 else "", sl=(_od < 0)))
-            fig.add_trace(_approach_road(
+            _ag(_approach_road(
                 _xm, _s1, _z_app,
                 name="Mặt đường đầu cầu" if _od < 0 else "", sl=(_od < 0)))
 
@@ -2439,11 +2476,14 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                       f"Tĩnh không B={B_tk}m×H={H_tk}m</sup>"),
                 x=0.5, font=dict(size=12),
             ),
+            showlegend=True,
             legend=dict(
                 orientation="v", x=1.01, y=0.5,
                 font=dict(size=8),
                 bgcolor="rgba(255,255,255,0.85)",
                 bordercolor="#ccc", borderwidth=1,
+                groupclick="togglegroup",   # click nhóm → ẩn/hiện cả cụm
+                title=dict(text="Ẩn/hiện cấu kiện ▾", font=dict(size=9)),
             ),
         )
 
@@ -3221,10 +3261,23 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
 # ===========================================================================
 # 9. CHẾ ĐỘ HIỂN THỊ 3D (tương tự Revit: Shaded / Wireframe / X-Ray / Realistic)
 # ===========================================================================
+# Các khối GIỮ trong suốt kể cả chế độ đặc (mặt nước, tĩnh không, khối mờ tạm…)
+_TRANSLUCENT_KEYS = ("nước", "Mặt nước", "MNCN", "MNTT", "MNTN", "MNTC",
+                     "Tĩnh không", "chưa gắn", "tạm")
+
+
+def _is_translucent(trace) -> bool:
+    nm = str(getattr(trace, "name", "") or "")
+    return any(k in nm for k in _TRANSLUCENT_KEYS)
+
+
 def apply_render_mode(fig, mode="Shaded"):
     """
     Áp dụng chế độ hiển thị lên figure 3D sau khi đã tạo.
     mode: 'Shaded' | 'Wireframe' | 'X-Ray' | 'Realistic'
+
+    'Shaded'/'Realistic' = ĐẶC (opacity 1.0) cho cấu kiện kết cấu → không nhìn
+    xuyên, đỡ rối mắt khi zoom (mặt nước & tĩnh không vẫn trong suốt).
     """
     for trace in fig.data:
         if isinstance(trace, go.Mesh3d):
@@ -3242,9 +3295,13 @@ def apply_render_mode(fig, mode="Shaded"):
                     roughness=0.25, fresnel=0.50
                 )
                 trace.lightposition = dict(x=200, y=200, z=500)
-            else:  # Shaded (mặc định)
+                if not _is_translucent(trace):
+                    trace.opacity = 1.0
+            else:  # Shaded (mặc định) — ĐẶC
                 trace.flatshading = True
-                trace.lighting = dict(ambient=0.65, diffuse=0.85, specular=0.2)
+                trace.lighting = dict(ambient=0.55, diffuse=0.9, specular=0.25)
+                if not _is_translucent(trace):
+                    trace.opacity = 1.0
 
     if mode == "Wireframe":
         # Thêm contour lines cho tất cả Mesh3d
