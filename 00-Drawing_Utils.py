@@ -3,6 +3,25 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
+# ── Lưới 2D: NÉT MỜ XÁM, MẢNH (theo layer 8 — xám 0.09mm) ───────────────────
+GRID_2D_COLOR = "rgba(128,128,128,0.28)"   # xám nhạt (nét mờ)
+GRID_2D_WIDTH = 0.5                          # nét mảnh
+
+
+def style_grid_2d(fig):
+    """Đặt MÀU + ĐỘ DÀY lưới 2D = nét mờ xám mảnh (layer 8) cho mọi trục đề-các.
+    KHÔNG bật lưới ở trục đang tắt (tôn trọng thiết kế từng hình); chỉ đổi
+    màu/độ dày nơi lưới đang hiển thị. Hình 3D (scene) không bị ảnh hưởng."""
+    try:
+        fig.update_xaxes(gridcolor=GRID_2D_COLOR, gridwidth=GRID_2D_WIDTH,
+                         zerolinecolor=GRID_2D_COLOR, zerolinewidth=GRID_2D_WIDTH)
+        fig.update_yaxes(gridcolor=GRID_2D_COLOR, gridwidth=GRID_2D_WIDTH,
+                         zerolinecolor=GRID_2D_COLOR, zerolinewidth=GRID_2D_WIDTH)
+    except Exception:
+        pass
+    return fig
+
+
 # ── Tùy chỉnh TỶ LỆ cho mặt cắt 2D (mặc định khóa 1:1) ──────────────────────
 def apply_aspect(fig, mode="keep", ratio=1.0):
     """Đặt tỷ lệ trục cho 1 hình 2D.
@@ -41,7 +60,8 @@ def aspect_control(fig, key, label="⚖️ Tỷ lệ", st_obj=None):
     ratio = 1.0
     if mode == "custom":
         ratio = _st.slider("cao : ngang", 0.2, 5.0, 1.0, 0.1, key=f"aspr_{key}")
-    return apply_aspect(fig, mode, ratio)
+    apply_aspect(fig, mode, ratio)
+    return style_grid_2d(fig)        # lưới mờ xám mảnh (layer 8) cho mọi bản vẽ 2D
 
 
 def ve_ky_hieu_muc_nuoc_plotly(fig, x_pos, y_val, label, color):
