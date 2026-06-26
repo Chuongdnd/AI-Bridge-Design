@@ -34,7 +34,8 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 st.markdown("""
 <style>
 /* ── Ẩn Streamlit toolbar/menu/footer ── */
-[data-testid="stToolbarActions"]  { display: none !important; }
+/* TẠM cho hiện lại 3 ký hiệu GitHub (toolbar actions) để thử — bỏ ẩn:
+[data-testid="stToolbarActions"]  { display: none !important; } */
 [data-testid="stDecoration"]      { display: none !important; }
 [data-testid="stStatusWidget"]    { display: none !important; }
 .stDeployButton                   { display: none !important; }
