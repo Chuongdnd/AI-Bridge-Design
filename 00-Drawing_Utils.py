@@ -88,9 +88,10 @@ _TRANSLUCENT_KEYS_3D = ("nước", "Mặt nước", "MNCN", "MNTT", "MNTN", "MNT
 
 
 def to_concrete_3d(fig, keep_colors=None):
-    """Quy MỌI khối kết cấu (go.Mesh3d) trong figure 3D về một màu bê tông đặc.
-    Bỏ qua: khối môi trường (asphalt/địa hình), khối trong suốt (opacity<0.5),
-    và khối có tên thuộc nhóm trong suốt. keep_colors: thêm màu cần giữ nguyên."""
+    """Quy MỌI khối kết cấu (go.Mesh3d) trong figure 3D về một màu bê tông ĐẶC,
+    KHÔNG nhìn xuyên (opacity=1.0, flatshading). Bỏ qua: khối môi trường
+    (asphalt/địa hình), khối cố tình trong suốt (opacity<0.5 hoặc tên thuộc nhóm
+    trong suốt: mặt nước, tĩnh không…). keep_colors: thêm màu cần giữ nguyên."""
     keep = set(_NON_CONCRETE_3D)
     if keep_colors:
         keep |= {str(c).strip().lower() for c in keep_colors}
@@ -102,13 +103,15 @@ def to_concrete_3d(fig, keep_colors=None):
             continue
         try:
             if tr.opacity is not None and float(tr.opacity) < 0.5:
-                continue
+                continue   # khối cố tình trong suốt (khối bao, vùng mờ) → giữ
         except Exception:
             pass
         col = str(getattr(tr, "color", "") or "").strip().lower()
         if col in keep:
             continue
         tr.color = CONCRETE_3D
+        tr.opacity = 1.0          # ĐẶC — không nhìn xuyên
+        tr.flatshading = True
     return fig
 
 
