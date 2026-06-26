@@ -2589,7 +2589,8 @@ def _beam_record_solid_traces(m, L_mm, N=40):
             vy.append(yy)
             vz.append(R[i, 1] / 1000.0)
     ii, jj, kk = _beam_solid_faces(rings, N)
-    return go.Mesh3d(
+    M = len(rings)
+    mesh = go.Mesh3d(
         x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
         color="#5d8aa8", opacity=0.96, flatshading=True,
         lighting=dict(ambient=0.82, diffuse=0.40, specular=0.08,
@@ -2597,6 +2598,8 @@ def _beam_record_solid_traces(m, L_mm, N=40):
         lightposition=dict(x=500, y=300, z=1500),
         name="Dầm (mô hình thư viện)", showlegend=True,
         hovertemplate="<b>Dầm thư viện</b><extra></extra>")
+    # Mesh + đường bao/cạnh để nhìn rõ nét trên 3D
+    return [mesh, _beam_edge_trace(vx, vy, vz, M, N)]
 
 
 def beam_record_solid_fig(rec: dict, N: int = 40):
@@ -2604,10 +2607,10 @@ def beam_record_solid_fig(rec: dict, N: int = 40):
     m, L_mm, _ = _model_from_record(rec)
     if m is None:
         return None
-    mesh = _beam_record_solid_traces(m, L_mm, N)
-    if mesh is None:
+    traces = _beam_record_solid_traces(m, L_mm, N)
+    if not traces:
         return None
-    fig = go.Figure([mesh])
+    fig = go.Figure(traces)
     fig.update_layout(
         template="plotly_dark", paper_bgcolor="#0e1117", height=460,
         margin=dict(l=0, r=0, t=30, b=0),

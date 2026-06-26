@@ -967,13 +967,29 @@ def _box3d_simple(x0, y0, z0, x1, y1, z1,
     ii = [0,0, 4,4, 0,0, 3,3, 0,0, 1,1]
     jj = [1,2, 5,6, 1,5, 2,6, 3,7, 2,6]
     kk = [2,3, 6,7, 5,4, 6,7, 7,4, 6,5]
-    return go.Mesh3d(
+    mesh = go.Mesh3d(
         x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
         color=color, opacity=opacity,
         name=name, showlegend=sl and bool(name), flatshading=True,
         lighting=dict(ambient=0.65, diffuse=0.85, specular=0.22),
         hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
     )
+    # 12 cạnh hộp (Revit shaded edges) — nhìn rõ nét khối đầu dầm
+    c = [(x0,y0,z0),(x1,y0,z0),(x1,y1,z0),(x0,y1,z0),
+         (x0,y0,z1),(x1,y0,z1),(x1,y1,z1),(x0,y1,z1)]
+    ex, ey, ez = [], [], []
+    for lp in ((0,1,2,3,0), (4,5,6,7,4)):
+        for idx in lp:
+            ex.append(c[idx][0]); ey.append(c[idx][1]); ez.append(c[idx][2])
+        ex.append(None); ey.append(None); ez.append(None)
+    for a, b in ((0,4),(1,5),(2,6),(3,7)):
+        ex += [c[a][0], c[b][0], None]
+        ey += [c[a][1], c[b][1], None]
+        ez += [c[a][2], c[b][2], None]
+    edges = go.Scatter3d(x=ex, y=ey, z=ez, mode="lines",
+                         line=dict(color="#3a3a3a", width=1.4),
+                         name="", showlegend=False, hoverinfo="skip")
+    return [mesh, edges]
 
 
 def ve_chi_tiet_3d(d):
@@ -1017,14 +1033,14 @@ def ve_chi_tiet_3d(d):
             opacity=1.0,
         )
         # Khối đầu dầm TẠI MỐ (x=0 đến L_end) — A-A đặc
-        traces.append(_box3d_simple(
+        traces.extend(_box3d_simple(
             0.0,      yc - hw, -H,
             L_end,    yc + hw,  0.0,
             color="#6c8498", opacity=0.97,
             name="Đầu dầm/Mố — A-A (đặc)" if sl else "", sl=sl,
         ))
         # Khối đầu dầm TẠI TRỤ (x=L-L_end đến L) — A-A đặc
-        traces.append(_box3d_simple(
+        traces.extend(_box3d_simple(
             L - L_end, yc - hw, -H,
             L,         yc + hw,  0.0,
             color="#7a96ac", opacity=0.97,
@@ -1050,7 +1066,7 @@ def ve_chi_tiet_3d(d):
     for i, yc in enumerate(beam_positions):
         for xp in [0.0, L - L_goi]:
             sl_g = (i == 0 and xp == 0.0)
-            traces.append(_box3d_simple(
+            traces.extend(_box3d_simple(
                 xp, yc - goi_hw, -H - goi_t,
                 xp + L_goi, yc + goi_hw, -H,
                 color="#b7950b", opacity=1.0,
