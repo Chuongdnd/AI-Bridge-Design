@@ -6309,25 +6309,47 @@ with _col_main:
 
                     _pa_tru_mcn = _resolve_assembly(d, "tru")
 
+                    # Từ khoá nhận diện trace/dim của KẾT CẤU DƯỚI (trụ/bệ/cọc)
+                    _SUB_KW = ("Xà mũ", "xà mũ", "Thân trụ", "Bệ cọc", "Bệ ",
+                               "B_bệ", "Cọc", "cọc", "a_cọc", "H_trụ")
+
                     def _build_mcn_fig(_which):
-                        _fig = BVK.ve_mat_cat_ngang_2d(d, pier_assembly=_pa_tru_mcn)
+                        # Lấy mặt cắt dầm THỰC trước → biết đáy dầm (đầu/giữa)
                         try:
-                            # ve_mat_cat_ngang_2d KHÔNG vẽ dầm tham số (chỉ có nhãn).
-                            # Chèn dầm thư viện + bỏ NHÃN "BTCT DƯL" trùng.
                             _trs = BBUI.get_mcn_overlay_traces(d, pfx=_spt_pfx, which=_which)
-                            if _trs:
-                                _fig.layout.annotations = tuple(
-                                    a for a in (_fig.layout.annotations or [])
-                                    if 'BTCT DƯL' not in str(getattr(a, 'text', ''))
-                                )
-                                for _tr in _trs:
-                                    _fig.add_trace(_tr)
                         except Exception:
-                            pass
-                        _fig.update_layout(
-                            yaxis=dict(range=[_y_bot_btc, _y_top_btc], autorange=False),
-                            height=340,   # full-width + 1:1 (rộng–thấp) → khung thấp vừa
-                        )
+                            _trs = []
+                        _ys = [y for _tr in (_trs or [])
+                               for y in (list(_tr.y) if _tr.y is not None else [])
+                               if y is not None]
+                        # Super‑T: đỉnh xà mũ kê tại ĐÁY DẦM ĐẦU DẦM (mặt cắt đầu)
+                        _cap_y = (min(_ys) if (_which == "end" and _ys) else None)
+                        _fig = BVK.ve_mat_cat_ngang_2d(
+                            d, pier_assembly=_pa_tru_mcn, cap_top_y=_cap_y)
+                        if _trs:
+                            _fig.layout.annotations = tuple(
+                                a for a in (_fig.layout.annotations or [])
+                                if 'BTCT DƯL' not in str(getattr(a, 'text', '')))
+                            for _tr in _trs:
+                                _fig.add_trace(_tr)
+                        if _which == "mid":
+                            # GIỮA NHỊP không có trụ → ẩn xà mũ/thân/bệ/cọc + dim của chúng
+                            _fig.data = tuple(
+                                t for t in _fig.data
+                                if not any(k in str(getattr(t, "name", "") or "")
+                                           for k in _SUB_KW))
+                            _fig.layout.annotations = tuple(
+                                a for a in (_fig.layout.annotations or [])
+                                if not any(k in str(getattr(a, "text", "") or "")
+                                           for k in _SUB_KW))
+                            _ybot = (min(_ys) - 0.3) if _ys else _y_bot_btc
+                            _fig.update_layout(
+                                yaxis=dict(range=[_ybot, _y_top_btc], autorange=False),
+                                height=340)
+                        else:
+                            _fig.update_layout(
+                                yaxis=dict(range=[_y_bot_btc, _y_top_btc], autorange=False),
+                                height=340)
                         return _fig
 
                     # MCN cầu rất RỘNG–THẤP (≈6:1); khóa 1:1 trong cột nửa trang

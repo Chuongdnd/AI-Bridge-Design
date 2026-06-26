@@ -1362,12 +1362,15 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
 # ===========================================================================
 
 
-def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None):
+def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None):
     """MCN điển hình: bản, lớp phủ, dầm, lan can, kích thước, chú thích lớp.
 
     beam_params : dict | None — nếu có, ưu tiên dùng giá trị từ beam_params_final
                                 thay cho kcn_result (từ AI/catalog).
     pier_assembly : dict | None — nếu có, vẽ TRỤ LẮP GHÉP thật thay trụ 2 cột cũ.
+    cap_top_y : float | None — cao độ ĐỈNH XÀ MŨ (m, hệ MCN). Với dầm Super‑T,
+                truyền ĐÁY DẦM TẠI ĐẦU DẦM (mặt cắt đầu) để xà mũ kê đúng đầu dầm.
+                None → mặc định −t_bản − H_dầm.
     """
     kcn   = d.get("kcn_result") or d.get("ai_result", {})
     bc    = float(d.get("bc", 12.0))
@@ -1511,7 +1514,8 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None):
     be_W_sub   = min(cap_W_sub * 1.12, bc / 2 - 0.05)
     H_show     = min(H_tru_sub, 3.5)   # trụ cao > 3.5m → dùng ký hiệu cắt
 
-    z_bot_sub  = -t_ban - H_dam
+    # Đỉnh xà mũ: Super‑T kê tại ĐẦU DẦM → dùng cap_top_y (đáy dầm đầu) nếu có.
+    z_bot_sub  = float(cap_top_y) if cap_top_y is not None else (-t_ban - H_dam)
     z_cap_t_s  = z_bot_sub
     r_coc_sub  = D_coc_sub / 2
     _stem_centers = []   # tâm ngang từng thân → vẽ ký hiệu cắt
