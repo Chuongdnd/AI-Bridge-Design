@@ -4,10 +4,12 @@ import streamlit as st
 
 
 # ── Tùy chỉnh TỶ LỆ cho mặt cắt 2D (mặc định khóa 1:1) ──────────────────────
-def apply_aspect(fig, mode="equal", ratio=1.0):
+def apply_aspect(fig, mode="keep", ratio=1.0):
     """Đặt tỷ lệ trục cho 1 hình 2D.
-    mode: 'equal' (khóa đúng tỷ lệ 1:1, mặc định) | 'free' (giãn lấp khung) |
-          'custom' (cao:ngang = ratio)."""
+    mode: 'keep' (giữ nguyên thiết kế gốc, KHÔNG sửa) | 'equal' (khóa 1:1) |
+          'free' (giãn lấp khung) | 'custom' (cao:ngang = ratio)."""
+    if mode == "keep":
+        return fig
     try:
         fig.update_xaxes(scaleanchor=None)
         if mode == "free":
@@ -21,21 +23,24 @@ def apply_aspect(fig, mode="equal", ratio=1.0):
     return fig
 
 
-_ASPECT_OPTS = ["Đúng tỷ lệ 1:1", "Giãn theo khung", "Tùy chỉnh…"]
+_ASPECT_OPTS = ["Mặc định", "Đúng tỷ lệ 1:1", "Giãn theo khung", "Tùy chỉnh…"]
+_ASPECT_MODE = {"Mặc định": "keep", "Đúng tỷ lệ 1:1": "equal",
+                "Giãn theo khung": "free", "Tùy chỉnh…": "custom"}
 
 
 def aspect_control(fig, key, label="⚖️ Tỷ lệ", st_obj=None):
-    """Hiện điều khiển chọn tỷ lệ cho 1 mặt cắt 2D rồi áp vào fig.
-    Trả về fig (đã chỉnh). st_obj: truyền st từ caller (mặc định dùng st nội bộ)."""
+    """Hiện điều khiển chọn tỷ lệ cho 1 hình 2D rồi áp vào fig.
+    Mặc định 'Mặc định' = giữ nguyên thiết kế gốc (mặt cắt vẫn 1:1, mặt bằng/
+    trắc dọc vẫn theo khung). Trả về fig (đã chỉnh).
+
+    Dùng radio ngang (KHÔNG tạo cột) để an toàn khi gọi bên trong st.columns —
+    tránh lỗi lồng cột quá 1 cấp của Streamlit."""
     _st = st_obj or st
-    _c = _st.columns([1.2, 1.2, 2.6])
-    sel = _c[0].selectbox(label, _ASPECT_OPTS, key=f"asp_{key}")
-    mode, ratio = "equal", 1.0
-    if sel == _ASPECT_OPTS[1]:
-        mode = "free"
-    elif sel == _ASPECT_OPTS[2]:
-        mode = "custom"
-        ratio = _c[1].slider("cao : ngang", 0.2, 5.0, 1.0, 0.1, key=f"aspr_{key}")
+    sel = _st.radio(label, _ASPECT_OPTS, horizontal=True, key=f"asp_{key}")
+    mode = _ASPECT_MODE.get(sel, "keep")
+    ratio = 1.0
+    if mode == "custom":
+        ratio = _st.slider("cao : ngang", 0.2, 5.0, 1.0, 0.1, key=f"aspr_{key}")
     return apply_aspect(fig, mode, ratio)
 
 

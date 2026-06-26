@@ -12,6 +12,20 @@ import numpy as np
 import pandas as pd
 import plotly.graph_objects as go
 import streamlit as st
+import importlib as _il
+try:                                    # helper tỷ lệ mặt cắt 2D dùng chung
+    _PLOT = _il.import_module("00-Drawing_Utils")
+except Exception:
+    _PLOT = None
+
+
+def _aspect(fig, key):
+    if _PLOT is not None:
+        try:
+            return _PLOT.aspect_control(fig, key, st_obj=st)
+        except Exception:
+            pass
+    return fig
 
 # ── Lấy engine từ sys.modules (được load trước bởi caller) ──────────────────
 def _get_bb():
@@ -726,7 +740,9 @@ def _render_3d_view():
     with celev:
         st.markdown("**Mặt cắt dọc**")
         try:
-            st.plotly_chart(bb.make_elevation_fig(m), use_container_width=True,
+            _felev = bb.make_elevation_fig(m)
+            _aspect(_felev, "bb_elev_view")
+            st.plotly_chart(_felev, use_container_width=True,
                             key="elev_view")
         except Exception as ex:
             st.warning(f"Lỗi elevation: {ex}")
@@ -737,6 +753,7 @@ def _render_3d_view():
             fsec = bb.make_section_fig(sec=m.sections[active], snap_grid=0,
                                        show_grid_pts=False)
             fsec.update_layout(height=260, margin=dict(l=30, r=10, t=20, b=30))
+            _aspect(fsec, "bb_sec_prev")
             st.plotly_chart(fsec, use_container_width=True, key="sec_prev")
 
     # JSON
