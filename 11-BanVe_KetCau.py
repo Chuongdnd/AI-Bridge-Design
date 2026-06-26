@@ -549,6 +549,13 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
         L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
 
     if sl.get("mode") != "two_tier":
+        # Bố trí ĐỀU. Ưu tiên chiều dài người dùng đặt/áp dầm thư viện
+        # (span_layout['L_dan']/['L_main']); nếu chưa có thì dùng L_nhip mặc định
+        # (đã bám tĩnh không từ predict_kcn_default). Trước đây nhánh này bỏ qua
+        # L_dan → gán dầm/khai báo chiều dài không có tác dụng.
+        L_user = sl.get("L_dan") or sl.get("L_main")
+        if L_user and float(L_user) > 0:
+            L_nhip = float(L_user)
         return _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
 
     L_clear = B_tk + 2.0 * _PIER_SAFETY

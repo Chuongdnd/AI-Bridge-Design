@@ -759,6 +759,53 @@ def predict_kcn(B_tk, H_tk, goc, B_cau, moi_truong,
     }
 
 
+def predict_kcn_default(B_tk, goc, B_cau, L_cau_tong=None):
+    """
+    Phương án MẶC ĐỊNH cho 'cầu tổng' — nhịp **bám tĩnh không**.
+
+    Khác với predict_kcn (luôn trả PA1 tối ưu chi phí → chọn dầm DÀI NHẤT, vì
+    vậy chiều dài nhịp luôn kẹt ở 38.2m bất kể tĩnh không), hàm này chọn chiều
+    dài định hình catalog NHỎ NHẤT thỏa điều kiện tĩnh không (_L_nhip_min). Đổi
+    tĩnh không (B_tk / góc) → chiều dài nhịp đổi theo ngay. Người dùng có thể
+    tăng nhịp bằng cách gán dầm dài hơn từ thư viện (ghi đè qua span_layout).
+
+    Trả về dict cùng cấu trúc với một phương án của predict_kcn.
+    """
+    L_min   = _L_nhip_min(B_tk, goc)
+    elig    = [l for l in STD_LENGTHS if l >= L_min - 1e-6]
+    L_def   = float(min(elig)) if elig else float(max(STD_LENGTHS))
+
+    # Dầm catalog gần chiều dài định hình nhất (lấy H/B/S/công nghệ thực tế)
+    loai, L_cat, B_cat, H_cat, S_cat, cong_nghe = get_beam_from_catalog(L_def)
+
+    n_nhip = _n_nhip_from(L_cau_tong, L_def) if (L_cau_tong and L_cau_tong > 0) else 1
+
+    n_dam = max(2, int(B_cau / S_cat) + 1)
+    oh = round((B_cau - (n_dam - 1) * S_cat) / 2, 2)
+    if oh < 0.15:
+        n_dam = max(2, n_dam - 1)
+        oh = round((B_cau - (n_dam - 1) * S_cat) / 2, 2)
+    if oh > max(1.2, 0.8 * S_cat):
+        n_dam += 1
+        oh = round((B_cau - (n_dam - 1) * S_cat) / 2, 2)
+
+    return {
+        "loai_dam":        loai,
+        "chieu_dai":       L_def,
+        "chieu_cao_dam":   H_cat,
+        "be_rong_dam":     B_cat,
+        "khoang_cach_dam": S_cat,
+        "tong_so_nhip":    n_nhip,
+        "so_luong_dam":    n_dam,
+        "overhang":        max(0.10, oh),
+        "ti_le_L_H":       round(L_def / H_cat, 1) if H_cat > 0 else 0,
+        "cong_nghe":       cong_nghe,
+        "phuong_phap":     "Mặc định (bám tĩnh không)",
+        "ghi_chu":         (f"Nhịp định hình nhỏ nhất thỏa tĩnh không: {loai} "
+                            f"L={L_def:g}m, {n_nhip} nhịp."),
+    }
+
+
 # ---------------------------------------------------------------------------
 # 6. CHẤM ĐIỂM PHƯƠNG ÁN (100 ĐIỂM)
 # ---------------------------------------------------------------------------
