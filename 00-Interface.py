@@ -4254,32 +4254,55 @@ def _cap_match_beam(loai_dam, caps):
     return None
 
 
-def _auto_cap_by_beam(d, pp):
-    """Cầu tổng: tự thay XÀ MŨ của trụ cho khớp loại dầm (giữ thân/bệ đang chọn).
+def _current_beam_loai(d, ribbon):
+    """Loại dầm THỰC đang dùng cho PA: ưu tiên dầm thư viện đã áp dụng, rồi kcn."""
+    try:
+        bid = (d.get("lib_dam_applied") or {}).get(ribbon)
+        if bid:
+            rec = CLIB.get_beam(st.session_state.get("dam_beams")
+                                or CLIB.load_beams(), bid)
+            if rec and rec.get("loai_dam"):
+                return rec["loai_dam"]
+    except Exception:
+        pass
+    return (d.get("kcn_result") or {}).get("loai_dam")
+
+
+def _auto_pier_on_beam_change(d, ribbon):
+    """Cầu tổng: KHI loại dầm thật ĐỔI → tự chọn trụ có xà mũ khớp (giữ THÂN đang
+    chọn). Giữa các lần đổi → KHÔNG đụng → tôn trọng lựa chọn THỦ CÔNG của user.
     Tắt bằng d['_auto_pier_cap'] = False."""
     if not d.get("_auto_pier_cap", True):
-        return pp
-    kcn = d.get("kcn_result") or d.get("ai_result") or {}
-    caps, _stems, _foots = _pier_part_libs()
-    cid = _cap_match_beam(kcn.get("loai_dam", ""), caps)
-    if not cid:
-        return pp
-    pp = dict(pp or {})
-    if pp.get("pier_id"):             # trụ tổng đã lưu → rã thành parts rồi đổi xà mũ
-        rec = CLIB.get_pier(_saved_piers(), pp["pier_id"]) or {}
-        src = rec.get("source") or {}
-        pp = {"ten": rec.get("ten", "Trụ"), "cap_id": cid,
-              "stem_id": src.get("stem_id"), "footing_id": src.get("footing_id")}
-    else:
-        pp["cap_id"] = cid
-    return pp
+        return
+    caps, _s, _f = _pier_part_libs()
+    want_cap = _cap_match_beam(_current_beam_loai(d, ribbon), caps)
+    if not want_cap or st.session_state.get("_auto_pier_last_cap") == want_cap:
+        return                                  # chưa đổi loại → không can thiệp
+    piers = _saved_piers()
+    cur = _current_pier_parts() or {}
+    cur_stem = cur.get("stem_id")
+    if cur.get("pier_id"):
+        rec = CLIB.get_pier(piers, cur["pier_id"]) or {}
+        cur_stem = (rec.get("source") or {}).get("stem_id", cur_stem)
+    def _src(p): return p.get("source") or {}
+    match = next((p for p in piers if _src(p).get("cap_id") == want_cap
+                  and _src(p).get("stem_id") == cur_stem), None) \
+        or next((p for p in piers if _src(p).get("cap_id") == want_cap), None)
+    if not match:
+        return
+    _opts, meta = _pier_options()
+    for lbl, (kind_sel, ref) in meta.items():
+        if kind_sel == "saved" and ref == match["id"]:
+            st.session_state["tru_preset_sel"] = lbl
+            st.session_state["_auto_pier_last_cap"] = want_cap
+            break
 
 
 def _resolve_assembly(d, kind: str) -> dict:
     """Bản ghi trụ/mố lắp ghép đang gán cho cầu (None nếu dùng mặc định)."""
     cfg = _asm_cfg(kind)
     if kind == "tru":
-        pp = _auto_cap_by_beam(d, _current_pier_parts())
+        pp = _current_pier_parts()
         if pp and pp.get("pier_id"):              # TRỤ TỔNG đã lưu
             rec = CLIB.get_pier(_saved_piers(), pp["pier_id"])
             if rec:
@@ -6146,6 +6169,11 @@ with _col_main:
         kcn = d.get("kcn_result") or d.get("ai_result")
         tru = d.get("tru_result")
         has_ai = kcn is not None
+        # Tự đổi TRỤ theo loại dầm khi loại dầm thật thay đổi (giữ lựa chọn tay).
+        try:
+            _auto_pier_on_beam_change(d, selected_ribbon)
+        except Exception:
+            pass
         # Mô hình trụ/mố lắp ghép → để KHỐI LƯỢNG tính theo mô hình mới (nếu có)
         try:
             d["_pier_model"] = _resolve_assembly(d, "tru")
