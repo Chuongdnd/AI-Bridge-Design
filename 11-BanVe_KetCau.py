@@ -1557,11 +1557,11 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None)
     be_W_sub   = min(cap_W_sub * 1.12, bc / 2 - 0.05)
     H_show     = min(H_tru_sub, 3.5)   # trụ cao > 3.5m → dùng ký hiệu cắt
 
-    # Đỉnh xà mũ: Super‑T kê tại ĐẦU DẦM → dùng cap_top_y (đáy dầm đầu) nếu có.
-    # Dầm kê trên GỐI nên đỉnh xà mũ THẤP HƠN đáy dầm = chiều cao gối.
+    # MCN điển hình (giữa nhịp): KHÔNG có gối/đá kê → dầm đặt TRỰC TIẾP trên xà
+    # mũ, đỉnh xà mũ = đáy dầm (không để khoảng hở).
     h_goi_s    = _h_goi(d)
     z_dam_b_s  = float(cap_top_y) if cap_top_y is not None else (-t_ban - H_dam)
-    z_bot_sub  = z_dam_b_s - h_goi_s          # đỉnh xà mũ
+    z_bot_sub  = z_dam_b_s                     # đỉnh xà mũ = đáy dầm (dầm kê thẳng)
     z_cap_t_s  = z_bot_sub
     r_coc_sub  = D_coc_sub / 2
     _stem_centers = []   # tâm ngang từng thân → vẽ ký hiệu cắt
@@ -1628,32 +1628,34 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None)
             showarrow=False, font=dict(size=7, color=_C["dim"]),
             bgcolor="rgba(255,255,255,0.8)")
 
-    # Cọc — hiển thị dưới dạng mặt cắt tròn
+    # Cọc — MẶT ĐỨNG: cọc thẳng đứng từ đáy bệ đi xuống (không vẽ mặt bằng tròn)
     n_coc_show = max(3, min(n_coc_sub, 8))
     coc_ys = np.linspace(-be_W_sub * 0.80, be_W_sub * 0.80, n_coc_show)
-    theta  = np.linspace(0, 2 * np.pi, 24)
+    _z_pile_top = z_be_b_s
+    _z_pile_bot = z_be_b_s - L_coc_sub
+    _pile_lw    = max(3, int(D_coc_sub * 12))
     for j, yc in enumerate(coc_ys):
-        cx_arr = yc + r_coc_sub * np.cos(theta)
-        cz_arr = (z_be_b_s - r_coc_sub * 1.15) + r_coc_sub * np.sin(theta)
         fig.add_trace(go.Scatter(
-            x=list(cx_arr) + [cx_arr[0]], y=list(cz_arr) + [cz_arr[0]],
-            fill="toself", fillcolor=_C["be"],
-            line=dict(color=_C["be_dk"], width=1.2), mode="lines",
+            x=[yc, yc], y=[_z_pile_top, _z_pile_bot], mode="lines",
+            line=dict(color=_C["be_dk"], width=_pile_lw),
             name=f"Cọc Ø{int(D_coc_sub*1000)}mm (MCN)" if j == 0 else "",
-            showlegend=(j == 0),
+            showlegend=(j == 0), hoverinfo="skip",
         ))
+    fig.add_trace(go.Scatter(
+        x=list(coc_ys), y=[_z_pile_bot] * n_coc_show, mode="markers",
+        marker=dict(symbol="triangle-down", size=6, color=_C["be_dk"]),
+        showlegend=False, hoverinfo="skip"))
 
-    # Kích thước bệ cọc và khoảng cách cọc
-    z_coc_center = z_be_b_s - r_coc_sub * 1.15
-    _dim_h(fig, z_coc_center - r_coc_sub - 0.35,
+    # Kích thước bệ cọc và khoảng cách cọc (đặt ngay dưới đáy bệ)
+    _dim_h(fig, z_be_b_s - 0.35,
            -be_W_sub, be_W_sub, f"B_bệ = {be_W_sub*2:.1f}m", dy=0)
     if n_coc_show >= 2:
         kc_coc_show = abs(coc_ys[1] - coc_ys[0])
-        _dim_h(fig, z_coc_center - r_coc_sub - 0.90,
+        _dim_h(fig, z_be_b_s - 0.90,
                coc_ys[0], coc_ys[1], f"a_cọc={kc_coc_show:.2f}m",
                color="#8e44ad", dy=0)
     fig.add_annotation(
-        x=be_W_sub + 0.6, y=z_coc_center,
+        x=be_W_sub + 0.6, y=(_z_pile_top + _z_pile_bot) / 2,
         text=f"Cọc Ø{int(D_coc_sub*1000)}mm<br>L≈{L_coc_sub:.0f}m",
         showarrow=True, arrowhead=2, arrowcolor=_C["be_dk"],
         ax=40, ay=0,
@@ -1665,15 +1667,9 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None)
     _dim_v(fig, be_W_sub + 1.8, z_be_b_s, z_be_t_s,
            f"bệ {be_H_sub:.2f}m", dx=0.2)
 
-    # ── GỐI cầu dưới mỗi dầm (đáy dầm kê trên gối, trên đỉnh xà mũ) ─────────
-    if h_goi_s > 0:
-        _wg = min(0.6, max(0.3, kc * 0.5))
-        for _ig in range(n_dam):
-            _xg = x_first + _ig * kc
-            _goi_block_2d(fig, _xg, z_cap_t_s, h_goi_s, w=_wg,
-                          name="Gối cầu" if _ig == 0 else "", sl=(_ig == 0))
+    # MCN điển hình giữa nhịp: KHÔNG vẽ gối/đá kê (dầm kê thẳng trên xà mũ).
 
-    z_substructure_bot = z_coc_center - r_coc_sub - 1.0
+    z_substructure_bot = _z_pile_bot - 1.0
 
     # Tỷ lệ ước tính (dựa vào bề rộng)
     ty_le = max(50, int(bc * 8))
