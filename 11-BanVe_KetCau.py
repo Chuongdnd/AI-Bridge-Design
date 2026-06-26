@@ -79,6 +79,26 @@ def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None, lw=1
         hovertemplate=(f"<b>{name}</b><extra></extra>" if name else None),
     ))
 
+def _h_goi(d) -> float:
+    """Chiều cao GỐI cầu (m): khoảng hở đáy dầm ↔ đỉnh xà mũ. Khai báo qua
+    d['h_goi_m'] (mặc định 0.15m). Dầm SPT kê trên gối nên đỉnh xà mũ THẤP HƠN
+    đáy dầm đúng bằng chiều cao gối."""
+    try:
+        return max(0.0, float(d.get("h_goi_m", 0.15)))
+    except (TypeError, ValueError):
+        return 0.15
+
+
+def _goi_block_2d(fig, xc, z_cap_t, h_goi, w=0.45, color="#34495e",
+                  name="", sl=False):
+    """Khối GỐI (mặt đứng/MCN 2D): hộp nhỏ từ đỉnh xà mũ lên đáy dầm tại 1 gối."""
+    if h_goi <= 0:
+        return
+    _poly(fig, [xc - w/2, xc + w/2, xc + w/2, xc - w/2],
+          [z_cap_t, z_cap_t, z_cap_t + h_goi, z_cap_t + h_goi],
+          color, "#1c2833", name, opacity=0.95, showlegend=sl, lw=1.0)
+
+
 def _hline(fig, y, x0, x1, label, color, dash="dot", lw=1.5):
     fig.add_shape(type="line", x0=x0, y0=y, x1=x1, y1=y,
                   line=dict(color=color, width=lw, dash=dash))
@@ -995,9 +1015,11 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     spans    = [(supports[i], supports[i+1]) for i in range(len(supports)-1)]
 
     # ── Cao độ kết cấu (tuyệt đối) ───────────────────────────────────────
+    h_goi    = _h_goi(d)             # chiều cao gối (đáy dầm → đỉnh xà mũ)
     z_deck   = cao_dd + H_dam + t_ban
-    z_cap_t  = cao_dd
-    z_cap_b  = cao_dd - 0.80
+    z_dam_b  = cao_dd                # đáy dầm SPT (kê trên gối)
+    z_cap_t  = cao_dd - h_goi        # đỉnh xà mũ = đáy dầm − gối (dầm kê trên gối)
+    z_cap_b  = z_cap_t - 0.80
     z_sh_b   = z_cap_b - H_tru       # đáy thân trụ đại diện (mố/ghi chú dùng)
     z_be_t   = z_sh_b
     z_be_b   = z_sh_b - 1.50         # đáy bệ cọc đại diện
@@ -1367,6 +1389,12 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         margin=dict(l=70, r=30, t=70, b=130),
         hovermode="closest",
     )
+    # ── GỐI cầu tại mỗi vị trí đỡ (đáy dầm kê trên gối, trên đỉnh xà mũ) ────
+    if h_goi > 0:
+        for _is, _xs in enumerate(supports):
+            _goi_block_2d(fig, _xs, z_cap_t, h_goi, w=0.5,
+                          name="Gối cầu" if _is == 0 else "", sl=(_is == 0))
+
     _add_elevation_table(fig, d, loc="tl")
     _apply_layers_2d(fig)
     return fig
@@ -1530,7 +1558,10 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None)
     H_show     = min(H_tru_sub, 3.5)   # trụ cao > 3.5m → dùng ký hiệu cắt
 
     # Đỉnh xà mũ: Super‑T kê tại ĐẦU DẦM → dùng cap_top_y (đáy dầm đầu) nếu có.
-    z_bot_sub  = float(cap_top_y) if cap_top_y is not None else (-t_ban - H_dam)
+    # Dầm kê trên GỐI nên đỉnh xà mũ THẤP HƠN đáy dầm = chiều cao gối.
+    h_goi_s    = _h_goi(d)
+    z_dam_b_s  = float(cap_top_y) if cap_top_y is not None else (-t_ban - H_dam)
+    z_bot_sub  = z_dam_b_s - h_goi_s          # đỉnh xà mũ
     z_cap_t_s  = z_bot_sub
     r_coc_sub  = D_coc_sub / 2
     _stem_centers = []   # tâm ngang từng thân → vẽ ký hiệu cắt
@@ -1634,6 +1665,14 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None)
     _dim_v(fig, be_W_sub + 1.8, z_be_b_s, z_be_t_s,
            f"bệ {be_H_sub:.2f}m", dx=0.2)
 
+    # ── GỐI cầu dưới mỗi dầm (đáy dầm kê trên gối, trên đỉnh xà mũ) ─────────
+    if h_goi_s > 0:
+        _wg = min(0.6, max(0.3, kc * 0.5))
+        for _ig in range(n_dam):
+            _xg = x_first + _ig * kc
+            _goi_block_2d(fig, _xg, z_cap_t_s, h_goi_s, w=_wg,
+                          name="Gối cầu" if _ig == 0 else "", sl=(_ig == 0))
+
     z_substructure_bot = z_coc_center - r_coc_sub - 1.0
 
     # Tỷ lệ ước tính (dựa vào bề rộng)
@@ -1723,9 +1762,11 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
     W_tru = 1.2
     mo_W  = 3.5
 
+    h_goi    = _h_goi(d)                 # chiều cao gối (đáy dầm → đỉnh xà mũ)
     z_deck   = cao_dd + H_dam + t_ban
-    z_cap_t  = cao_dd
-    z_cap_b  = cao_dd - cap_H
+    z_dam_b  = cao_dd                     # đáy dầm (kê trên gối)
+    z_cap_t  = cao_dd - h_goi             # đỉnh xà mũ = đáy dầm − gối
+    z_cap_b  = z_cap_t - cap_H
     z_sh_b   = z_cap_b - H_tru
     z_be_t   = z_sh_b
     z_be_b   = z_sh_b - be_H
@@ -1860,6 +1901,14 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
         traces.extend(_g(_railing_traces_3d(d, x0, x_end, bc, z_deck), "Lan can"))
     except Exception as _e:
         print(f"[ve_cau_3d] lan can lỗi: {_e}")
+
+    # ── GỐI cầu tại mỗi vị trí đỡ (đáy dầm kê trên gối, trên đỉnh xà mũ) ───
+    if h_goi > 0:
+        for _is, _xs in enumerate(supports):
+            traces.append(_g(_box3d(
+                _xs - 0.30, -bc/2 + 0.4, z_cap_t, _xs + 0.30, bc/2 - 0.4, z_dam_b,
+                color="#2c3e50", opacity=1.0,
+                name="Gối cầu" if _is == 0 else "", sl=(_is == 0)), "Gối"))
 
     fig = go.Figure(data=traces)
 
@@ -3041,8 +3090,11 @@ def _pos_geometry(d, vi_tri, pier_assembly=None):
         x_cut = piers[idx] if idx < len(piers) else x_tim
         title_vt = f"TRỤ T{idx + 1}"
 
+    h_goi  = _h_goi(d)               # chiều cao gối (đáy dầm → đỉnh xà mũ)
     z_deck = cao_dd + H_dam + t_ban
-    z_capb = cao_dd - cap_H
+    z_dam_b = cao_dd                 # đáy dầm (kê trên gối)
+    z_cap_t = cao_dd - h_goi         # đỉnh xà mũ = đáy dầm − gối
+    z_capb = z_cap_t - cap_H
     z_shb  = z_capb - H_tru
     z_beb  = z_shb - be_H
 
@@ -3069,6 +3121,7 @@ def _pos_geometry(d, vi_tri, pier_assembly=None):
     return dict(
         bc=bc, B_tk=B_tk, H_tru=H_tru, H_dam=H_dam, t_ban=t_ban, h_tn=h_tn,
         cao_dd=cao_dd, z_deck=z_deck, z_capb=z_capb, z_shb=z_shb, z_beb=z_beb,
+        z_cap_t=z_cap_t, z_dam_b=z_dam_b, h_goi=h_goi,
         cap_W=cap_W, be_W=be_W, cap_H=cap_H, be_H=be_H,
         is_mo=is_mo, x_cut=x_cut, title_vt=title_vt,
         n_cot=n_cot, W_cot=W_cot, col_offs=col_offs, loai_t=loai_t,
@@ -3277,7 +3330,7 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
         _PBm = _get_PB()
         _seen = set()
         for _rc in _PBm.pier_elevation_rects(
-                pier_assembly, H_tru=(g["cao_dd"] - g["z_beb"]),
+                pier_assembly, H_tru=(g["z_cap_t"] - g["z_beb"]),
                 x_ctr=0.0, z_base=g["z_beb"]):
             _nm = _rc["name"]; _sl = _nm not in _seen; _seen.add(_nm)
             _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["be_dk"],
@@ -3304,9 +3357,14 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
               _C["btong"], _C["btong_dk"], "Thân trụ")
         _poly(fig, [-g["cap_half_doc"], g["cap_half_doc"],
                     g["cap_half_doc"], -g["cap_half_doc"]],
-              [g["z_capb"], g["z_capb"], g["cao_dd"], g["cao_dd"]],
+              [g["z_capb"], g["z_capb"], g["z_cap_t"], g["z_cap_t"]],
               _C["btong"], _C["dam_dk"], "Xà mũ")
         z_top_pile = g["z_beb"]
+
+    # ── GỐI cầu: đáy dầm kê trên gối, trên đỉnh xà mũ ──────────────────────
+    if g.get("h_goi", 0) > 0:
+        _goi_block_2d(fig, 0.0, g["z_cap_t"], g["h_goi"],
+                      w=max(0.4, g["cap_half_doc"] * 0.5), name="Gối cầu", sl=True)
 
     # Cọc (chiếu lên mặt phẳng dọc, có độ xiên ix)
     _piles = g["piles"] or _auto_pile_grid(g)
