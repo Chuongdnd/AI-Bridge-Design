@@ -4220,6 +4220,49 @@ def _resolve_assembly(d, kind: str) -> dict:
     return cfg["get"](items, rid)
 
 
+def _sync_beam_height(d, ribbon):
+    """Đồng bộ CHIỀU CAO DẦM THỰC (mô hình thư viện đang áp dụng) vào kcn để
+    cao độ đáy dầm & chiều cao thân trụ KHỚP nhau — dầm kê đúng lên xà mũ trụ.
+
+    Giữ CỐ ĐỊNH: cao độ mặt cầu (đường) + đỉnh bệ (theo địa hình). Khi chiều cao
+    dầm đổi → đáy dầm dời, THÂN TRỤ co/giãn tương ứng (foundation đứng yên).
+    Idempotent: mỗi lần render khởi từ giá trị danh nghĩa rồi áp 1 lần."""
+    kcn = d.get("kcn_result") or {}
+    try:
+        beams = st.session_state.get("dam_beams") or CLIB.load_beams()
+    except Exception:
+        beams = []
+    if not beams:
+        return
+    _rec = None
+    _bid = (d.get("lib_dam_applied") or {}).get(ribbon)
+    if _bid:
+        _rec = CLIB.get_beam(beams, _bid)
+    if _rec is None:                       # tự khớp theo loại + chiều dài gần nhất
+        _loai = str(kcn.get("loai_dam", "Super-T")).lower()
+        _L = float(kcn.get("chieu_dai", 38.0) or 38.0)
+        _cs = [b for b in beams if b.get("sections")
+               and str(b.get("loai_dam", "")).lower() == _loai] \
+            or [b for b in beams if b.get("sections")]
+        _rec = (min(_cs, key=lambda b: abs(float(b.get("chieu_dai", 0) or 0) - _L))
+                if _cs else None)
+    if not _rec or not _rec.get("chieu_cao"):
+        return
+    H_actual = float(_rec["chieu_cao"])
+    H_old = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75) or 1.75)
+    if abs(H_actual - H_old) < 1e-3:
+        return
+    dH = H_actual - H_old                  # +: dầm cao hơn → đáy dầm thấp, trụ ngắn
+    kcn = dict(kcn)
+    kcn["chieu_cao_dam"] = H_actual
+    d["kcn_result"] = kcn
+    d["ai_result"]  = kcn
+    if d.get("cao_day_dam") is not None:
+        d["cao_day_dam"] = float(d["cao_day_dam"]) - dH
+    if d.get("H_tru_est") is not None:
+        d["H_tru_est"] = max(0.5, float(d["H_tru_est"]) - dH)
+
+
 def _pier_parts_label(pp, caps, stems, foots) -> str:
     """Tóm tắt tên 3 bộ phận của 1 cấu hình trụ lắp ghép."""
     _c = CLIB.get_cap(caps, pp.get("cap_id")) if pp else None
@@ -5809,6 +5852,12 @@ with _col_main:
         _3pa = d.get("kcn_3_pa") or {}
         if _3pa.get(_pa_key):
             d = {**d, "kcn_result": dict(_3pa[_pa_key])}
+        # Đồng bộ chiều cao dầm THỰC (thư viện) → đáy dầm/thân trụ khớp, dầm kê
+        # đúng lên trụ ở MỌI bản vẽ (MCN, 3D, bố trí chung). Làm TRƯỚC khi vẽ.
+        try:
+            _sync_beam_height(d, selected_ribbon)
+        except Exception:
+            pass
         kcn = d.get("kcn_result") or d.get("ai_result")
         tru = d.get("tru_result")
         has_ai = kcn is not None
