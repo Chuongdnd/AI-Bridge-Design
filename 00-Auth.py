@@ -14,6 +14,9 @@ import streamlit as st
 
 _AUTH_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "auth_users.json")
 
+# Tạm ẩn đăng ký tự phục vụ (hệ thống chưa phổ biến rộng). Đặt True để bật lại.
+ALLOW_SELF_REGISTER = False
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Hash / verify
 # ─────────────────────────────────────────────────────────────────────────────
@@ -164,17 +167,17 @@ footer                           { display: none !important; }
 
     _, mid, _ = st.columns([1.2, 1, 1.2])
     with mid:
+        _sub = ("Đăng nhập hoặc đăng ký để tiếp tục" if ALLOW_SELF_REGISTER
+                else "Vui lòng đăng nhập để tiếp tục")
         st.markdown(
             "<h2 style='text-align:center;color:#f0f0f0;margin-bottom:4px'>🏗️ Hệ thống Thiết kế Cầu AI</h2>"
-            "<p style='text-align:center;color:#888;font-size:13px;margin-bottom:24px'>"
-            "UTH — Đăng nhập hoặc đăng ký để tiếp tục</p>",
+            f"<p style='text-align:center;color:#888;font-size:13px;margin-bottom:24px'>"
+            f"UTH — {_sub}</p>",
             unsafe_allow_html=True,
         )
 
-        tab_login, tab_reg = st.tabs(["🔐 Đăng nhập", "📝 Đăng ký"])
-
         # ── Đăng nhập ──────────────────────────────────────────────────────
-        with tab_login:
+        def _do_login():
             with st.form("login_form", clear_on_submit=False):
                 username = st.text_input("Tên đăng nhập", placeholder="username", key="lf_user")
                 password = st.text_input("Mật khẩu", type="password", placeholder="••••••••", key="lf_pass")
@@ -194,8 +197,8 @@ footer                           { display: none !important; }
                 else:
                     st.error("❌ Tên đăng nhập hoặc mật khẩu không đúng.", icon=None)
 
-        # ── Đăng ký ────────────────────────────────────────────────────────
-        with tab_reg:
+        # ── Đăng ký (ẩn khi ALLOW_SELF_REGISTER = False) ───────────────────
+        def _do_register():
             with st.form("register_form", clear_on_submit=False):
                 r_user = st.text_input("Tên đăng nhập", placeholder="username", key="rf_user")
                 r_name = st.text_input("Họ và tên", placeholder="Nguyễn Văn A", key="rf_name")
@@ -213,6 +216,15 @@ footer                           { display: none !important; }
                         st.success("✅ " + msg + " Chuyển sang tab Đăng nhập.")
                     else:
                         st.error("❌ " + msg)
+
+        if ALLOW_SELF_REGISTER:
+            tab_login, tab_reg = st.tabs(["🔐 Đăng nhập", "📝 Đăng ký"])
+            with tab_login:
+                _do_login()
+            with tab_reg:
+                _do_register()
+        else:
+            _do_login()
 
     return is_authenticated()
 
