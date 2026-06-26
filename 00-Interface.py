@@ -48,6 +48,16 @@ footer                            { display: none !important; }
 }
 [data-testid="stMetricValue"] { font-size: 16px !important; color: #4fc3f7 !important; }
 
+/* ── Bảng st.table / dataframe: nền SÁNG, chữ tối (đồng bộ nền sáng) ── */
+[data-testid="stTable"] table,
+[data-testid="stTable"] th,
+[data-testid="stTable"] td {
+    background: #ffffff !important; color: #1f2937 !important;
+    border-color: #d8dce4 !important;
+}
+[data-testid="stTable"] thead th { background: #eef1f6 !important; color: #1f2937 !important; }
+[data-testid="stDataFrame"] { background: #ffffff !important; }
+
 /* ── Sidebar — kích thước do JS điều khiển qua CSS var ──
    Chỉ khóa width khi sidebar ĐANG MỞ. Khi người dùng bấm nút thu gọn (collapse)
    của Streamlit, JS gắn class .cau-sb-collapsed lên <html> → bỏ khóa để Streamlit

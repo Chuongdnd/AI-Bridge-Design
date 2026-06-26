@@ -2459,20 +2459,20 @@ def get_plan_beam_traces(d: dict, pfx: str = "spt") -> list:
 
 
 def _beam_edge_trace(vx, vy, vz, M, Np, name="", color="#3a3a3a", width=1.4):
-    """Đường BAO/cạnh khối dầm (Scatter3d): viền mặt cắt tại từng vòng quét +
-    cạnh dọc nối các vòng → nhìn rõ NÉT trên mô hình 3D (kiểu Shaded có cạnh).
-    vx/vy/vz là lưới M vòng × Np điểm (ring-major) đã dựng cho Mesh3d."""
+    """Chỉ vẽ NÉT ĐƯỜNG BAO khối dầm (Scatter3d): cạnh DỌC nối các mặt phẳng
+    (góc tiết diện chạy dọc dầm) + viền mặt cắt 2 ĐẦU. KHÔNG vẽ viền tại từng
+    vòng quét → tránh rối lưới. vx/vy/vz là lưới M vòng × Np điểm (ring-major)."""
     ex, ey, ez = [], [], []
-    for r in range(M):                       # viền mặt cắt (đóng vòng) tại mỗi vòng
+    for i in range(Np):                      # cạnh DỌC (nét kết nối giữa 2 mặt)
+        for r in range(M):
+            k = r * Np + i
+            ex.append(vx[k]); ey.append(vy[k]); ez.append(vz[k])
+        ex.append(None); ey.append(None); ez.append(None)
+    for r in (0, M - 1):                      # viền mặt cắt CHỈ ở 2 đầu dầm
         b = r * Np
         for i in range(Np):
             ex.append(vx[b + i]); ey.append(vy[b + i]); ez.append(vz[b + i])
         ex.append(vx[b]); ey.append(vy[b]); ez.append(vz[b])
-        ex.append(None); ey.append(None); ez.append(None)
-    for i in range(Np):                      # cạnh dọc thân nối các vòng
-        for r in range(M):
-            k = r * Np + i
-            ex.append(vx[k]); ey.append(vy[k]); ez.append(vz[k])
         ex.append(None); ey.append(None); ez.append(None)
     return go.Scatter3d(x=ex, y=ey, z=ez, mode="lines",
                         line=dict(color=color, width=width),
