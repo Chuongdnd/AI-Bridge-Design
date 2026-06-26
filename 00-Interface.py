@@ -5470,6 +5470,12 @@ with _col_main:
         kcn = d.get("kcn_result") or d.get("ai_result")
         tru = d.get("tru_result")
         has_ai = kcn is not None
+        # Mô hình trụ/mố lắp ghép → để KHỐI LƯỢNG tính theo mô hình mới (nếu có)
+        try:
+            d["_pier_model"] = _resolve_assembly(d, "tru")
+            d["_mo_model"]   = _resolve_assembly(d, "mo")
+        except Exception:
+            d["_pier_model"] = d["_mo_model"] = None
 
         st.markdown("---")
     

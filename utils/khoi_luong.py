@@ -59,6 +59,124 @@ def _poly_perimeter_mm(outer):
     return per
 
 
+# ── KHỐI LƯỢNG THEO MÔ HÌNH TRỤ LẮP GHÉP (xà mũ/thân/bệ thật) ───────────────
+def _sec_solids(section):
+    """List khối đặc [{outer,holes}] của 1 mặt cắt (hỗ trợ nhiều khối)."""
+    section = section or {}
+    sl = section.get("solids")
+    if sl:
+        return [s for s in sl if len(s.get("outer", [])) >= 3]
+    o = section.get("outer", [])
+    if len(o) < 3:
+        return []
+    return [{"outer": o, "holes": section.get("holes", [])}]
+
+
+def _layers_of(part):
+    """Tầng [{section,H,D}] của 1 bộ phận (hỗ trợ định dạng {section,H} cũ)."""
+    part = part or {}
+    if part.get("layers"):
+        return [dict(l) for l in part["layers"]]
+    if (part.get("section") or {}).get("outer"):
+        return [{"section": part["section"],
+                 "H": _f(part.get("H"), 1.5), "D": _f(part.get("D"), 1.8)}]
+    return []
+
+
+def _scaled_ngang(section, target_w_m):
+    """Co/giãn mặt cắt theo phương NGANG (u) để bề rộng = target_w_m (cho xà mũ)."""
+    sols = _sec_solids(section)
+    if not sols or not target_w_m:
+        return section
+    us = [p[0] for s in sols for p in s["outer"]]
+    w = (max(us) - min(us)) if us else 0.0
+    if w < 1e-6:
+        return section
+    f = (float(target_w_m) * 1000.0) / w
+    _sc = lambda pts: [[p[0] * f, p[1]] for p in pts]
+    return {"solids": [{"outer": _sc(s["outer"]),
+                        "holes": [_sc(h) for h in s.get("holes", [])]} for s in sols]}
+
+
+def _net_area_perim_m(section):
+    """(diện tích THỰC m² đã trừ lỗ, chu vi m) của 1 mặt cắt (mọi khối)."""
+    A = P = 0.0
+    for s in _sec_solids(section):
+        a = _poly_area_mm2(s["outer"]) - sum(_poly_area_mm2(h) for h in (s.get("holes") or []))
+        A += a * _MM2M * _MM2M
+        P += _poly_perimeter_mm(s["outer"]) * _MM2M
+        for h in (s.get("holes") or []):
+            P += _poly_perimeter_mm(h) * _MM2M
+    return A, P
+
+
+def _vert_part_takeoff(part, H_total=None, width_m=None):
+    """Bệ/thân: mỗi tầng đùn ĐỨNG theo H. → (bt m³, ván khuôn m²)."""
+    lays = _layers_of(part)
+    if not lays:
+        return 0.0, 0.0
+    if H_total is not None:                      # co chiều cao các tầng = H_total
+        cur = sum(_f(l.get("H")) for l in lays) or 1.0
+        fct = float(H_total) / cur
+        lays = [{**l, "H": _f(l.get("H")) * fct} for l in lays]
+    bt = vk_side = 0.0
+    a_first = a_last = 0.0
+    for i, l in enumerate(lays):
+        sec = _scaled_ngang(l.get("section"), width_m) if width_m else l.get("section")
+        A, P = _net_area_perim_m(sec)
+        H = _f(l.get("H"))
+        bt += A * H
+        vk_side += P * H
+        if i == 0:
+            a_first = A
+        a_last = A
+    return bt, vk_side + a_first + a_last        # + nắp đáy & đỉnh
+
+
+def _cap_takeoff(part, width_m=None):
+    """Xà mũ: mỗi đoạn đùn DỌC cầu theo D. → (bt m³, ván khuôn m²)."""
+    bt = vk = 0.0
+    for l in _layers_of(part):
+        sec = _scaled_ngang(l.get("section"), width_m) if width_m else l.get("section")
+        A, P = _net_area_perim_m(sec)
+        D = _f(l.get("D"), 1.8)
+        bt += A * D
+        vk += P * D + 2 * A                       # mặt bên + 2 đầu
+    return bt, vk
+
+
+def _part_height_m(part):
+    """Chiều cao (m) của 1 bộ phận đùn đứng = Σ chiều cao tầng."""
+    return sum(_f(l.get("H")) for l in _layers_of(part)) or 1.5
+
+
+def _cap_height_m(part):
+    """Chiều cao xà mũ (m) = đoạn cao nhất (v-extent lớn nhất)."""
+    hs = []
+    for l in _layers_of(part):
+        for s in _sec_solids(l.get("section")):
+            vs = [p[1] for p in s["outer"]]
+            if vs:
+                hs.append((max(vs) - min(vs)) * _MM2M)
+    return max(hs) if hs else 1.2
+
+
+def pier_model_takeoff(pier, H_than=None, cap_width=None):
+    """Khối lượng trụ từ MÔ HÌNH lắp ghép → {be,than,xa_mu: (bt m³, vk m²)} | None.
+    H_than: chiều cao THÂN mục tiêu (m) để co tầng cho khớp tĩnh không."""
+    parts = (pier or {}).get("parts") or {}
+    be, than, cap = parts.get("be"), parts.get("than"), parts.get("xa_mu")
+    if not (be or than or cap):
+        return None
+    if H_than is not None:
+        H_than = max(0.3, float(H_than))
+    out = {}
+    out["be"]    = _vert_part_takeoff(be) if be else (0.0, 0.0)
+    out["than"]  = _vert_part_takeoff(than, H_total=H_than) if than else (0.0, 0.0)
+    out["xa_mu"] = _cap_takeoff(cap, width_m=cap_width) if cap else (0.0, 0.0)
+    return out
+
+
 def _row(ten, so_luong, bt_m3, coppha_m2, thep_kg, ghi_chu=""):
     return {
         "ten":       ten,
@@ -288,16 +406,23 @@ def khoi_luong_mo(d):
     ]
 
 
+def _tru_bt_cop(d, dm):
+    """Trả (than, xa_mu, be) = [(bt,cop),...] + ghi_chú nguồn. Ưu tiên MÔ HÌNH."""
+    _tk = pier_model_takeoff((d or {}).get("_pier_model"),
+                             H_than=dm.get("H_tru"), cap_width=dm.get("bc"))
+    if _tk:
+        return _tk["than"], _tk["xa_mu"], _tk["be"], "theo mô hình"
+    return than_tru_1(dm), xa_mu_1(dm), dai_coc_1(dm), ""
+
+
 def khoi_luong_tru(d):
     """Khối lượng 1 TRỤ (thân + xà mũ + đài cọc + cọc)."""
     dm = _dims(d)
-    bt_t, cop_t = than_tru_1(dm)
-    bt_x, cop_x = xa_mu_1(dm)
-    bt_b, cop_b = dai_coc_1(dm)
+    (bt_t, cop_t), (bt_x, cop_x), (bt_b, cop_b), _src = _tru_bt_cop(d, dm)
     return [
-        _row("Thân trụ", 1, bt_t, cop_t, bt_t * RHO_THEP["than_tru"]),
-        _row("Xà mũ", 1, bt_x, cop_x, bt_x * RHO_THEP["xa_mu"]),
-        _row("Đài cọc (bệ)", 1, bt_b, cop_b, bt_b * RHO_THEP["dai_coc"]),
+        _row("Thân trụ", 1, bt_t, cop_t, bt_t * RHO_THEP["than_tru"], _src),
+        _row("Xà mũ", 1, bt_x, cop_x, bt_x * RHO_THEP["xa_mu"], _src),
+        _row("Đài cọc (bệ)", 1, bt_b, cop_b, bt_b * RHO_THEP["dai_coc"], _src),
         _coc_row(dm),
     ]
 
@@ -347,24 +472,29 @@ def bang_toan_cau(d, dam_roles=None):
     rows.append(_row("Bản mặt cầu", 1, bt_b, cop_b, th_b,
                      f"{dm['bc']:.1f}×{dm['L_cau']:.0f}m, dày {dm['t_ban']*1000:.0f}mm"))
 
-    # Trụ (×n_tru)
-    if dm["n_tru"] > 0:
-        bt_t, cop_t = than_tru_1(dm)
-        rows.append(_row("Thân trụ", dm["n_tru"], bt_t * dm["n_tru"],
-                         cop_t * dm["n_tru"], bt_t * dm["n_tru"] * RHO_THEP["than_tru"]))
-        bt_x, cop_x = xa_mu_1(dm)
-        rows.append(_row("Xà mũ trụ", dm["n_tru"], bt_x * dm["n_tru"],
-                         cop_x * dm["n_tru"], bt_x * dm["n_tru"] * RHO_THEP["xa_mu"]))
+    # Trụ (×n_tru) — ưu tiên MÔ HÌNH lắp ghép
+    (bt_t, cop_t), (bt_x, cop_x), (bt_be_m, cop_be_m), _src = _tru_bt_cop(d, dm)
+    nt = dm["n_tru"]
+    if nt > 0:
+        rows.append(_row("Thân trụ", nt, bt_t * nt, cop_t * nt,
+                         bt_t * nt * RHO_THEP["than_tru"], _src))
+        rows.append(_row("Xà mũ trụ", nt, bt_x * nt, cop_x * nt,
+                         bt_x * nt * RHO_THEP["xa_mu"], _src))
 
     # Mố (×2)
     bt_m, cop_m = mo_1(dm)
     rows.append(_row("Mố cầu", 2, bt_m * 2, cop_m * 2, bt_m * 2 * RHO_THEP["mo"]))
 
-    # Đài cọc (n_tru + 2)
-    n_be = dm["n_tru"] + 2
+    # Đài cọc (bệ): trụ theo mô hình (nếu có), mố theo tham số
+    n_be = nt + 2
     bt_dc, cop_dc = dai_coc_1(dm)
-    rows.append(_row("Đài cọc (bệ móng)", n_be, bt_dc * n_be, cop_dc * n_be,
-                     bt_dc * n_be * RHO_THEP["dai_coc"]))
+    if _src:
+        bt_dc_tot  = bt_be_m * nt + bt_dc * 2
+        cop_dc_tot = cop_be_m * nt + cop_dc * 2
+    else:
+        bt_dc_tot, cop_dc_tot = bt_dc * n_be, cop_dc * n_be
+    rows.append(_row("Đài cọc (bệ móng)", n_be, bt_dc_tot, cop_dc_tot,
+                     bt_dc_tot * RHO_THEP["dai_coc"], _src))
 
     # Cọc (tổng)
     n_coc = dm["so_coc_be"] * n_be
