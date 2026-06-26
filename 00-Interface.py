@@ -5808,7 +5808,10 @@ with _col_main:
                                 try:
                                     _spt_t_traces = BBUI.get_beam_model_mesh_traces_vn2000(
                                         d, _df_geo, he_so_z, pfx=_spt_pfx)
-                                    for _spt_t in (_spt_t_traces or []):
+                                    for _i_b, _spt_t in enumerate(_spt_t_traces or []):
+                                        _spt_t.legendgroup = "Dầm"
+                                        try: _spt_t.showlegend = (_i_b == 0)
+                                        except Exception: pass
                                         _fig_t.add_trace(_spt_t)
                                 except Exception:
                                     pass
@@ -5826,7 +5829,13 @@ with _col_main:
                             _z_cam_ref = float(d.get("cao_mat_cau") or d.get("cao_day_dam", 8.0))
                             _z_cam_sc  = _z_cam_ref * he_so_z
                             _fig_t.update_layout(
-                                showlegend=False,  # ẩn bảng chú thích (đè lên thanh cao độ)
+                                # Hiện chú giải để bấm ẩn/hiện cấu kiện (đặt trên
+                                # cùng, ngang — tránh đè thanh cao độ bên phải).
+                                showlegend=True,
+                                legend=dict(orientation="h", x=0, y=1.0,
+                                            yanchor="bottom", font=dict(size=9),
+                                            groupclick="togglegroup",
+                                            bgcolor="rgba(255,255,255,0.75)"),
                                 scene_camera=dict(
                                     eye=dict(x=0.0, y=-2.5, z=1.2),
                                     center=dict(x=0.0, y=0.0, z=0.0),
@@ -5868,7 +5877,10 @@ with _col_main:
                         try:
                             _spt_tr = BBUI.get_beam_model_mesh_traces(d, pfx=_spt_pfx)
                             if _spt_tr:
-                                for _tr in _spt_tr:
+                                for _i_b, _tr in enumerate(_spt_tr):
+                                    _tr.legendgroup = "Dầm"
+                                    try: _tr.showlegend = (_i_b == 0)
+                                    except Exception: pass
                                     fig_3d.add_trace(_tr)
                                 st.caption("🔩 Dầm thực tế từ mô hình thư viện")
                         except Exception:
