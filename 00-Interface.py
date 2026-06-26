@@ -321,6 +321,7 @@ _DESIGN_SAVE_KEYS = [
     'is_urban','geo_logic','ai_result','kcn_result','tru_result',
     'mong_result','lop_phu_result', 'cao_day_dam', 'H_tru_est',
     'lib_dam_applied', 'pile_layouts', 'railing_by_pa', 'span_layout_by_pa',
+    'h_goi_m',
 ]
 
 def _cur_user_pid():
@@ -6289,11 +6290,24 @@ with _col_main:
                     # ── 1. Trắc dọc cầu ──────────────────────────────────────
                     st.markdown("**Trắc dọc cầu**")
                     if not _pa3:        # PA3: cấu kiện do AI dự báo, không cho chọn
-                        _pck1, _pck2 = st.columns(2)
+                        _pck1, _pck2, _pck3 = st.columns([2, 2, 1.4])
                         with _pck1:
                             _assembly_picker(d, "tru")
                         with _pck2:
                             _assembly_picker(d, "mo")
+                        with _pck3:
+                            _hg = st.number_input(
+                                "Chiều cao gối (m)", min_value=0.0, max_value=1.0,
+                                value=float(st.session_state.design_data.get("h_goi_m", 0.15)),
+                                step=0.01, key="inp_h_goi",
+                                help="Khoảng hở đáy dầm ↔ đỉnh xà mũ. Dầm SPT kê "
+                                     "trên gối nên đỉnh xà mũ thấp hơn đáy dầm.")
+                            if abs(_hg - float(st.session_state.design_data.get("h_goi_m", 0.15))) > 1e-9:
+                                st.session_state.design_data["h_goi_m"] = float(_hg)
+                                d["h_goi_m"] = float(_hg)
+                                _save_design_inputs(st.session_state.design_data)
+                            else:
+                                d["h_goi_m"] = float(_hg)
                     _pa_obj = _resolve_assembly(d, "tru")
                     _ab_obj = _resolve_assembly(d, "mo")
                     _dc_data = st.session_state.get("dia_chat_data")
@@ -6345,7 +6359,7 @@ with _col_main:
 
                     # Từ khoá nhận diện trace/dim của KẾT CẤU DƯỚI (trụ/bệ/cọc)
                     _SUB_KW = ("Xà mũ", "xà mũ", "Thân trụ", "Bệ cọc", "Bệ ",
-                               "B_bệ", "Cọc", "cọc", "a_cọc", "H_trụ")
+                               "B_bệ", "Cọc", "cọc", "a_cọc", "H_trụ", "Gối", "gối")
 
                     def _build_mcn_fig(_which):
                         # Lấy mặt cắt dầm THỰC trước → biết đáy dầm (đầu/giữa)
