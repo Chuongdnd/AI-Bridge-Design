@@ -2567,7 +2567,7 @@ def beam_record_mcn_fig(rec: dict):
         title=dict(text="① Mặt cắt ngang các vị trí (mm)", x=0.5, font=dict(size=12)),
         xaxis=dict(tickvals=ticks, ticktext=tickt, showgrid=False, zeroline=False),
         yaxis=dict(title="Cao (mm)", scaleanchor="x", scaleratio=1,
-                   showgrid=True, gridcolor="#eef2f3", zeroline=False),
+                   showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5, zeroline=False),
         margin=dict(l=70, r=20, t=50, b=50), showlegend=True,
         legend=dict(orientation="h", y=-0.14, font=dict(size=9)))
     return fig
@@ -2603,8 +2603,8 @@ def beam_record_elev_fig(rec: dict):
     fig.update_layout(
         template="plotly_white", height=300,
         title=dict(text=f"② Mặt cắt dọc tim dầm · L={L:.1f}m", x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="#eef2f3"),
-        yaxis=dict(title="Cao (m)", showgrid=True, gridcolor="#eef2f3"),
+        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
+        yaxis=dict(title="Cao (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
         margin=dict(l=55, r=20, t=50, b=45))
     return fig
 
@@ -2623,8 +2623,8 @@ def beam_record_plan_fig(rec: dict):
         template="plotly_white", height=280,
         title=dict(text=f"③ Mặt bằng dầm (nhìn từ trên) · L={L:.1f}m",
                    x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="#eef2f3"),
-        yaxis=dict(title="Ngang (m)", showgrid=True, gridcolor="#eef2f3"),
+        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
+        yaxis=dict(title="Ngang (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
         margin=dict(l=55, r=20, t=50, b=45))
     return fig
 
