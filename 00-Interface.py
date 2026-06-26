@@ -6494,6 +6494,32 @@ with _col_main:
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt cắt dọc: {_e}")
 
+                # ── 🧊 Mô hình 3D tương ứng vị trí đang chọn (mố / trụ) ──────
+                st.markdown("---")
+                st.markdown(f"**🧊 Mô hình 3D — {_vt_label_cur}** (kéo xoay)")
+                try:
+                    _is_mo_vt = _selected_vt in ("mo_trai", "mo_phai")
+                    _Htru_vt  = float(d.get("H_tru_est") or 0) or None
+                    if _is_mo_vt:
+                        _asm_vt  = _resolve_assembly(d, "mo")
+                        _fig3d_vt = (PB.build_abutment_preview_fig(_asm_vt, H_tru=_Htru_vt)
+                                     if _asm_vt else None)
+                    else:
+                        _asm_vt  = _pa_tru
+                        _fig3d_vt = (PB.build_pier_preview_fig(_asm_vt, H_tru=_Htru_vt)
+                                     if _asm_vt else None)
+                    if _fig3d_vt is not None:
+                        PLOT.to_concrete_3d(_fig3d_vt)   # khối đặc theo mã màu hạng mục
+                        st.plotly_chart(
+                            _fig3d_vt, use_container_width=True,
+                            config={"scrollZoom": True, "displayModeBar": True},
+                            key=f"vt3d_{selected_ribbon}_{_selected_vt}")
+                    else:
+                        st.caption("Chưa gắn mô hình lắp ghép cho vị trí này — dựng ở "
+                                   "**THƯ VIỆN → Trụ / Mố** rồi gắn vào cầu để xem 3D.")
+                except Exception as _e3d_vt:
+                    st.error(f"Lỗi vẽ 3D {_vt_label_cur}: {_e3d_vt}")
+
                 # ── Khối lượng ĐỘC LẬP cho vị trí đang chọn (gồm cọc) ────────
                 st.markdown("---")
                 st.markdown(f"### 📊 Khối lượng — {_vt_label_cur} (gồm cọc)")
