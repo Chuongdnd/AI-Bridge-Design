@@ -4782,7 +4782,9 @@ def render_mong_library(lib: dict) -> None:
                              key=f"mong_ghi_{_pk}")
     with _c2:
         try:
-            st.plotly_chart(_pile_section_fig(_shape, _b, _h, _n),
+            _f_ps = _pile_section_fig(_shape, _b, _h, _n)
+            PLOT.aspect_control(_f_ps, f"pile_sec_{_pk}")
+            st.plotly_chart(_f_ps,
                             use_container_width=True, config={"displayModeBar": False})
         except Exception as _e:
             st.error(f"Lỗi vẽ mặt cắt: {_e}")
@@ -5500,6 +5502,7 @@ with _col_main:
                 _c2d, _c3d = st.columns(2)
                 with _c2d:
                     fig_mcn_2d = PLOT.ve_mat_cat_ngang(res_mcn, bridge_mode=False)
+                    PLOT.aspect_control(fig_mcn_2d, "mcn_oto_2d")
                     st.plotly_chart(fig_mcn_2d, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True},
                                     key="mcn_oto_2d")
@@ -6123,12 +6126,16 @@ with _col_main:
                     _mc1, _mc2 = st.columns(2)
                     with _mc1:
                         st.caption("📍 MCN tại **đầu dầm** (trên gối)")
-                        st.plotly_chart(_build_mcn_fig("end"), use_container_width=True,
+                        _fe = _build_mcn_fig("end")
+                        PLOT.aspect_control(_fe, "mcn_btc_end")
+                        st.plotly_chart(_fe, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True},
                                         key="mcn_btc_end")
                     with _mc2:
                         st.caption("📍 MCN tại **giữa dầm** (giữa nhịp)")
-                        st.plotly_chart(_build_mcn_fig("mid"), use_container_width=True,
+                        _fm = _build_mcn_fig("mid")
+                        PLOT.aspect_control(_fm, "mcn_btc_mid")
+                        st.plotly_chart(_fm, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True},
                                         key="mcn_btc_mid")
 
@@ -6214,9 +6221,11 @@ with _col_main:
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt bằng kết cấu: {_e}")
                     try:
-                        st.plotly_chart(BVK.ve_mcn_vi_tri(
-                                            d, vi_tri=_selected_vt, df_geology=_df_geo,
-                                            pier_assembly=_pa_tru, x_half=_xh),
+                        _f_mcnvt = BVK.ve_mcn_vi_tri(
+                            d, vi_tri=_selected_vt, df_geology=_df_geo,
+                            pier_assembly=_pa_tru, x_half=_xh)
+                        PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
+                        st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:

@@ -1,6 +1,44 @@
 import numpy as np
 import plotly.graph_objects as go
 import streamlit as st
+
+
+# ── Tùy chỉnh TỶ LỆ cho mặt cắt 2D (mặc định khóa 1:1) ──────────────────────
+def apply_aspect(fig, mode="equal", ratio=1.0):
+    """Đặt tỷ lệ trục cho 1 hình 2D.
+    mode: 'equal' (khóa đúng tỷ lệ 1:1, mặc định) | 'free' (giãn lấp khung) |
+          'custom' (cao:ngang = ratio)."""
+    try:
+        fig.update_xaxes(scaleanchor=None)
+        if mode == "free":
+            fig.update_yaxes(scaleanchor=None)
+        elif mode == "custom":
+            fig.update_yaxes(scaleanchor="x", scaleratio=float(ratio))
+        else:  # equal 1:1
+            fig.update_yaxes(scaleanchor="x", scaleratio=1.0)
+    except Exception:
+        pass
+    return fig
+
+
+_ASPECT_OPTS = ["Đúng tỷ lệ 1:1", "Giãn theo khung", "Tùy chỉnh…"]
+
+
+def aspect_control(fig, key, label="⚖️ Tỷ lệ", st_obj=None):
+    """Hiện điều khiển chọn tỷ lệ cho 1 mặt cắt 2D rồi áp vào fig.
+    Trả về fig (đã chỉnh). st_obj: truyền st từ caller (mặc định dùng st nội bộ)."""
+    _st = st_obj or st
+    _c = _st.columns([1.2, 1.2, 2.6])
+    sel = _c[0].selectbox(label, _ASPECT_OPTS, key=f"asp_{key}")
+    mode, ratio = "equal", 1.0
+    if sel == _ASPECT_OPTS[1]:
+        mode = "free"
+    elif sel == _ASPECT_OPTS[2]:
+        mode = "custom"
+        ratio = _c[1].slider("cao : ngang", 0.2, 5.0, 1.0, 0.1, key=f"aspr_{key}")
+    return apply_aspect(fig, mode, ratio)
+
+
 def ve_ky_hieu_muc_nuoc_plotly(fig, x_pos, y_val, label, color):
     """Vẽ ký hiệu mực nước tương tác bằng nét vẽ của Plotly"""
     fig.add_trace(go.Scatter(

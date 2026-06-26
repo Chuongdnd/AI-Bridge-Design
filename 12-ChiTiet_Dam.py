@@ -20,6 +20,21 @@ Hàm xuất:
 import numpy as np
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
+import importlib as _il
+try:                                   # helper tỷ lệ mặt cắt 2D dùng chung
+    _PLOT = _il.import_module("00-Drawing_Utils")
+except Exception:
+    _PLOT = None
+
+
+def _aspect(fig, st, key):
+    """Hiện chọn tỷ lệ + áp vào fig (an toàn nếu thiếu module helper)."""
+    if _PLOT is not None:
+        try:
+            return _PLOT.aspect_control(fig, key, st_obj=st)
+        except Exception:
+            pass
+    return fig
 
 # ── Bảng màu ─────────────────────────────────────────────────────────────────
 _C = {
@@ -1226,6 +1241,7 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None
     # ① MẶT CẮT NGANG — ưu tiên mặt cắt thư viện thật
     if beam_figs.get("mcn") is not None:
         st.markdown("**① Mặt cắt ngang — các vị trí đã khai báo (A-A, B-B, …)**")
+        _aspect(beam_figs["mcn"], st, f"{key_prefix}_mcn_lib")
         st.plotly_chart(beam_figs["mcn"], use_container_width=True,
                         config={"scrollZoom": True, "displayModeBar": True},
                         key=f"{key_prefix}_mcn_lib")
@@ -1235,6 +1251,7 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None
             st.markdown("**① Mặt cắt A-A — Dầm Super-T (máng hở, có khoang rỗng)**")
             try:
                 fig_aa = ve_spt_aa_detail(d_loai)
+                _aspect(fig_aa, st, f"{key_prefix}_aa_detail")
                 st.plotly_chart(fig_aa, use_container_width=True,
                                 config={"scrollZoom": True, "displayModeBar": True},
                                 key=f"{key_prefix}_aa_detail")
@@ -1250,6 +1267,7 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None
         st.markdown(_mcn_label)
         try:
             fig_mcn = ve_chi_tiet_mcn(d_loai)
+            _aspect(fig_mcn, st, f"{key_prefix}_mcn")
             st.plotly_chart(fig_mcn, use_container_width=True,
                             config={"scrollZoom": True, "displayModeBar": True},
                             key=f"{key_prefix}_mcn")
