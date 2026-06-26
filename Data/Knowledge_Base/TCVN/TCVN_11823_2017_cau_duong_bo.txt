@@ -1,0 +1,145 @@
+TCVN 11823:2017 — THIẾT KẾ CẦU ĐƯỜNG BỘ
+(Tóm tắt các điều khoản thiết yếu cho hệ thống AI-Bridge-Design)
+Nguồn: Bộ Giao thông Vận tải, ban hành năm 2017
+
+═══════════════════════════════════════════════════════
+PHẦN 1 — PHÂN LOẠI VÀ TẢI TRỌNG THIẾT KẾ
+═══════════════════════════════════════════════════════
+
+Điều 3.4 — Phân loại cầu theo tải trọng
+- Cầu cấp đặc biệt: Tải trọng HL-93 hoặc theo yêu cầu riêng, khổ xe thông hành ≥ 3.5m mỗi làn
+- Cầu cấp I, II: Tải trọng HL-93
+- Cầu cấp III, IV: Tải trọng HL-93 hoặc H30-XB80
+
+Điều 3.4.1 — Tải trọng xe HL-93
+Tổ hợp 1: Xe tải thiết kế (Truck) 145+145+35 kN + Tải trọng làn 9.3 kN/m
+Tổ hợp 2: Xe 2 trục (Tandem) 2×110 kN + Tải trọng làn 9.3 kN/m
+Tổ hợp 3: Tải trọng làn 9.3 kN/m (cho cầu nhiều nhịp)
+Hệ số xung kích IM = 33% cho trạng thái giới hạn mỏi, 75% cho còn lại
+
+Điều 3.6 — Hoạt tải người đi bộ
+Tải trọng người đi bộ: 4.8 kN/m² cho vỉa hè và lề bộ hành
+
+═══════════════════════════════════════════════════════
+PHẦN 2 — YÊU CẦU TĨNH KHÔNG CẦU
+═══════════════════════════════════════════════════════
+
+Điều 2.3.2 — Tĩnh không dưới cầu đường bộ
+- Đường cao tốc, quốc lộ cấp I: H ≥ 4.75m tính từ mặt đường đến đáy kết cấu
+- Đường cấp II, III: H ≥ 4.50m
+- Đường cấp IV, V, VI: H ≥ 4.25m
+- Cầu thành thị: H ≥ 4.75m (kể cả khổ tương lai)
+
+Điều 2.3.3 — Tĩnh không dưới cầu vượt qua đường sắt
+- Đường sắt thường: H ≥ 6.55m tính từ đỉnh ray
+- Đường sắt tốc độ cao: H ≥ 7.25m
+
+Điều 2.3.4 — Tĩnh không thông thuyền
+- Cấp I (sông lớn): H ≥ 9m, B ≥ 50m
+- Cấp II: H ≥ 7m, B ≥ 40m
+- Cấp III: H ≥ 5m, B ≥ 30m
+- Cấp IV: H ≥ 3.5m, B ≥ 20m
+
+═══════════════════════════════════════════════════════
+PHẦN 3 — THIẾT KẾ KẾT CẤU NHỊP
+═══════════════════════════════════════════════════════
+
+Điều 5.4 — Yêu cầu chung cho dầm BTCT
+- Bê tông: Cường độ f'c ≥ 28 MPa (B35) cho dầm chịu lực
+- Dầm DUL: f'c ≥ 40 MPa (B50) là thông thường
+- Cốt thép thường: Giới hạn chảy fy = 420 MPa (CB400)
+- Cáp DUL: fpu = 1860 MPa (Tao cáp 7 sợi Ø12.7mm)
+
+Điều 5.4.2 — Tỉ lệ nhịp-chiều cao (L/H)
+Dầm Super-T: L/H ≤ 25 (thường 18–22 là tối ưu)
+Dầm I (AASHTO): L/H ≤ 22 (thường 16–20)
+Dầm T: L/H ≤ 15
+Dầm bản rỗng: L/H ≤ 16 (thường 10–14)
+
+Điều 5.5 — Phạm vi nhịp thông dụng
+Dầm Super-T: Phạm vi nhịp 30–45m, tối ưu 33–40m
+Dầm I (AASHTO Type IV–VI): Phạm vi 20–40m, tối ưu 25–35m
+Dầm T ngược: Phạm vi 10–25m, tối ưu 15–20m
+Dầm bản rỗng: Phạm vi 6–20m
+Dầm hộp liên tục: Phạm vi 40–100m+
+
+Điều 5.6 — Khoảng cách tim dầm
+Khoảng cách tim dầm S = 1.5–2.8m cho dầm Super-T và Dầm I
+Khoảng cách nhỏ nhất: S ≥ b_cánh_trên + 0.15m (khe cốp pha)
+Số dầm tối thiểu cho bề rộng cầu B_c:
+  n_dam = ceil(B_c / S_max) + 1 (thêm 1 dầm ngoài biên)
+
+Điều 5.9 — Liên kết ngang giữa các dầm
+Dầm Super-T và Dầm I phải có hệ dầm ngang tại mỗi đầu và giữa nhịp
+Khoảng cách dầm ngang ≤ 8m theo chiều dài nhịp
+
+═══════════════════════════════════════════════════════
+PHẦN 4 — THIẾT KẾ TRỤ, MỐ CẦU
+═══════════════════════════════════════════════════════
+
+Điều 11.3 — Phân loại và lựa chọn loại trụ
+Trụ đặc (solid pier): Dùng cho nhịp ≤ 35m, chiều cao cột ≤ 8m
+Trụ cột đơn (hammerhead): Thông dụng cho nhịp 30–60m
+Trụ cột đôi (twin column): Dùng khi bề rộng cầu > 10m
+Trụ rỗng (hollow pier): Dùng cho chiều cao trụ > 12m
+
+Điều 11.3.2 — Kích thước tối thiểu thân trụ
+Chiều rộng tối thiểu theo phương dọc cầu: b_tru ≥ 0.8m
+Chiều dài theo phương ngang cầu: L_tru ≥ 0.6 × B_cau (bề rộng cầu)
+Tỉ lệ chiều cao/chiều rộng: H/b ≤ 12 (khuyến nghị ≤ 8)
+
+Điều 11.5 — Thiết kế mố cầu
+Mố chữ U: Phổ biến cho cầu cấp III–VI, tải nhẹ đến vừa
+Mố chân dê (nhẹ): Dùng khi địa chất tốt, chiều cao thấp
+Mố lệch: Khi góc giao nhau giữa đường và sông > 15°
+Chiều dài bản dẫn đằng sau mố: ≥ 3m, khuyến nghị 4–6m
+
+Điều 11.6.2 — Tải trọng ngang trên mố trụ
+Áp lực đất chủ động Ka = tan²(45° - φ/2)
+Áp lực nước ngầm theo TCVN 9358:2012
+
+═══════════════════════════════════════════════════════
+PHẦN 5 — GỐI CẦU, KHE CO GIÃN
+═══════════════════════════════════════════════════════
+
+Điều 14.4 — Gối cầu cao su bản thép (Elastomeric bearing)
+Áp dụng cho: Nhịp ≤ 50m, tải trọng phản lực ≤ 500 kN
+Kích thước thông dụng: 250×350×45mm đến 400×600×100mm
+Đơn giá tham chiếu: 3,000–8,000 nghìn đồng/cái (QĐ 409/2025)
+Vật liệu: Cao su tự nhiên hoặc tổng hợp, bản thép Ø3–6mm
+
+Điều 14.4.2 — Gối POT (Pot bearing)
+Áp dụng cho: Nhịp > 50m, tải trọng lớn
+Loại cố định (fixed): 1 cái tại mỗi trụ đối với cầu liên tục
+Loại trượt (sliding): Dùng tại các đầu nhịp để hấp thụ biến dạng nhiệt
+
+Điều 14.5 — Khe co giãn (Expansion joint)
+Khe co giãn modular/finger: Dùng cho chuyển vị > 50mm
+Khe co giãn đàn hồi nén (compression seal): Chuyển vị < 50mm
+Đơn giá khe co giãn: 3,000–6,000 nghìn đồng/m (QĐ 409/2025)
+Số khe cần thiết: Mỗi đầu cầu 1 khe (2 khe/cầu đơn giản)
+
+═══════════════════════════════════════════════════════
+PHẦN 6 — BIẾN DẠNG VÀ ĐỘ VỒNG
+═══════════════════════════════════════════════════════
+
+Điều 5.7.3 — Giới hạn độ võng
+Hoạt tải HL-93: δ_HL93 ≤ L/800 (không có lề người đi)
+Hoạt tải HL-93 + người đi: δ ≤ L/1000
+Tải trọng rung: δ ≤ L/1000
+
+Điều 5.7.3.2 — Độ vồng ngược (Camber)
+Độ vồng ngược để bù độ võng do tĩnh tải: Camber = δ_TT × 1.2
+Thường được chỉ định trên bản vẽ kỹ thuật
+
+═══════════════════════════════════════════════════════
+PHẦN 7 — XÓI LỞ VÀ BẢO VỆ CÔNG TRÌNH
+═══════════════════════════════════════════════════════
+
+Điều 2.6 — Thiết kế xói lở
+Chiều sâu xói tổng = Xói chung + Xói cục bộ tại trụ/mố
+Xói cục bộ quanh cọc đơn: ys = 2.0 × K1 × K2 × K3 × (a/y1)^0.65 × Fr1^0.43 × y1
+Độ sâu đặt móng phải dưới chiều sâu xói thiết kế ≥ 0.5m
+
+Lưu ý: Tất cả các số liệu và quy định nêu trên là tóm tắt tham khảo.
+Cần đối chiếu trực tiếp với văn bản TCVN 11823:2017 gốc khi lập hồ sơ chính thức.

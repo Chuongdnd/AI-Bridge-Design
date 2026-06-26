@@ -1,0 +1,152 @@
+TCVN 10304:2014 — MÓNG CỌC - TIÊU CHUẨN THIẾT KẾ
+(Tóm tắt các điều khoản thiết yếu — bản trích lọc cho hệ thống RAG)
+Nguồn: Bộ Khoa học Công nghệ, ban hành 2014
+
+═══════════════════════════════════════════════════════
+PHẦN 1 — PHÂN LOẠI CỌC VÀ YÊU CẦU CHUNG
+═══════════════════════════════════════════════════════
+
+Điều 3 — Phân loại cọc theo phương pháp thi công
+a) Cọc đúc sẵn (precast): Cọc bê tông cốt thép đúc sẵn, tiết diện vuông hoặc tròn
+b) Cọc khoan nhồi (bored/cast-in-place): Khoan tạo lỗ rồi đổ bê tông tại chỗ
+c) Cọc ép (jacked): Ép thủy lực vào đất, tiết diện vuông 250×250 đến 400×400mm
+d) Cọc thép (steel H-pile): Dùng trong đất bùn yếu hoặc tải trọng lớn
+
+Điều 3.2 — Phân loại cọc theo cơ chế chịu tải
+- Cọc ma sát (friction pile): Tải trọng truyền vào đất qua ma sát bên thành cọc
+- Cọc chống (end-bearing pile): Tải trọng chủ yếu truyền qua mũi cọc vào đất cứng/đá
+
+═══════════════════════════════════════════════════════
+PHẦN 2 — CỌC KHOAN NHỒI (DRILLED SHAFT / BORED PILE)
+═══════════════════════════════════════════════════════
+
+Điều 6.3 — Yêu cầu kỹ thuật cọc khoan nhồi
+
+6.3.1 Phạm vi áp dụng
+Cọc khoan nhồi phù hợp cho:
+- Tải trọng lớn (P > 1,000 kN/cọc)
+- Địa chất có lớp đất cứng/đá ở độ sâu lớn
+- Không muốn chấn động (khu vực đô thị, gần công trình hiện hữu)
+- Chiều sâu > 20m
+
+6.3.2 Đường kính cọc khoan nhồi
+Đường kính tối thiểu phổ biến: D ≥ 600mm (theo thực tế kỹ thuật Việt Nam)
+Đường kính tiêu chuẩn thường dùng trong cầu đường:
+  D600: Tải nhẹ, nhịp ngắn, cầu cấp IV–VI
+  D800: Cầu cấp III, tải trung bình (phổ biến nhất)
+  D1000: Cầu cấp II, tải lớn
+  D1200–D1500: Cầu cấp I, tải rất lớn
+  D2000–D2500: Cầu lớn, trụ cao, tải đặc biệt lớn
+
+Lưu ý: TCVN 10304:2014 không quy định cứng nhắc đường kính tối thiểu cho cọc khoan nhồi.
+Đường kính được chọn dựa trên sức chịu tải yêu cầu và điều kiện địa chất.
+
+6.3.3 Chiều sâu cắm vào đất tốt (bearing layer penetration)
+Cọc phải cắm vào lớp đất tốt hoặc đá một chiều sâu đủ để phát huy sức chịu tải:
+- Đất sét cứng (N ≥ 30): Chiều sâu tối thiểu 3D (3 lần đường kính cọc)
+- Đất cát chặt (N ≥ 30): Chiều sâu tối thiểu 4D
+- Đất cát rất chặt hoặc cuội sỏi (N ≥ 50): Chiều sâu tối thiểu 5D
+- Đá mềm (RQD < 25%): Chiều sâu ≥ 0.5D vào đá
+- Đá cứng (RQD ≥ 25%): Chiều sâu ≥ 0.3D vào đá
+
+Thực tế thiết kế cầu Việt Nam: Thường lấy chiều sâu cắm vào lớp tốt = 5D–6D
+để đảm bảo an toàn và giảm lún dài hạn.
+
+Điều 6.3.4 — Khoảng cách tối thiểu giữa các cọc
+Khoảng cách tim đến tim: s ≥ 3D (khuyến nghị 3D–4D)
+Khoảng cách tim cọc đến mép bệ: e ≥ D (tối thiểu), khuyến nghị 1.5D
+
+6.3.5 Cốt thép cọc khoan nhồi
+Hàm lượng cốt thép dọc: ρ_s = 0.5%–4% diện tích tiết diện cọc
+  Thông thường: ρ_s ≈ 0.8%–1.5% cho cọc chịu tải đúng tâm
+  Tăng lên 2%–3% nếu có tải trọng ngang lớn (động đất, va tàu)
+Cốt thép đai xoắn (spiral): φ8–φ12, bước đai:
+  Phần trên cọc (1m từ đầu): Bước đai ≤ 50mm
+  Phần còn lại: Bước đai ≤ min(D/4, 150mm)
+Chiều dày lớp bê tông bảo vệ cọc trong đất: ≥ 75mm
+Chiều dày lớp bê tông bảo vệ cọc trong nước biển: ≥ 100mm
+
+═══════════════════════════════════════════════════════
+PHẦN 3 — SỨC CHỊU TẢI CỌC
+═══════════════════════════════════════════════════════
+
+Điều 7 — Phương pháp xác định sức chịu tải dọc trục
+
+7.1 Sức chịu tải cho phép theo đất nền
+Qa = (Qs + Qp) / FS
+Trong đó:
+  Qs = sức chịu tải ma sát bên = Σ(fi × Asi)
+  Qp = sức chịu tải mũi cọc = qp × Ap
+  FS = hệ số an toàn, thường lấy FS = 2–3
+
+7.2 Sức ma sát đơn vị (fs) theo đất sét
+Phương pháp α: fs = α × cu
+  α = 0.5 cho cu ≤ 100 kPa
+  α = 0.25 cho cu > 200 kPa (đất sét cứng)
+  cu = sức kháng cắt không thoát nước (kPa)
+
+7.3 Sức ma sát theo đất rời (phương pháp β)
+fs = β × σ'v (ứng suất hữu hiệu đứng)
+β = Ks × tan(δ)
+  Ks = 0.8–1.5 (hệ số áp lực đất ngang)
+  δ = góc ma sát đất-cọc ≈ (2/3) × φ'
+
+7.4 Sức chịu tải mũi cọc (Qp)
+Đất: qp = Nq × σ'v (Nq = hệ số sức chịu tải mũi cọc)
+Đá: qp = min(qu × Nφ, RQD × qu)
+
+═══════════════════════════════════════════════════════
+PHẦN 4 — THIẾT KẾ BỆ MÓNG CỌC
+═══════════════════════════════════════════════════════
+
+Điều 9.2 — Bệ cọc (Pile cap)
+Chiều dày tối thiểu bệ cọc: h_be ≥ max(D_coc, 0.8m)
+Thông thường: h_be = 1.0–2.0m
+
+Chiều rộng bệ cọc theo phương ngang cầu (W_be):
+W_be = s_coc × (n_hang - 1) + 2 × e_bien
+e_bien = khoảng cách từ tim cọc ngoài đến mép bệ ≥ 0.5D_coc + 0.1m
+
+Bê tông bệ cọc: B25 (f'c = 25 MPa) cho bệ trong đất thông thường
+                 B35 (f'c = 35 MPa) nếu bệ tiếp xúc nước biển hoặc hung
+
+Cốt thép bệ cọc: Lưới thép 2 lớp trên + dưới
+Hàm lượng cốt thép: ρ_min = 0.12% (theo phương dài) và 0.10% (phương ngang)
+
+Điều 9.3 — Số cọc trên bệ móng
+Tải trọng tác dụng lên mỗi cọc: P_coc ≤ Qa (sức chịu tải cho phép)
+Số cọc tối thiểu mỗi bệ: n ≥ P_total / Qa
+Thường bố trí: 4, 5, 6, 8, 9, 12 cọc tùy tải trọng và kích thước bệ
+
+═══════════════════════════════════════════════════════
+PHẦN 5 — KIỂM TRA VÀ THÍ NGHIỆM CỌC
+═══════════════════════════════════════════════════════
+
+Điều 11 — Thí nghiệm kiểm tra cọc khoan nhồi
+- Thí nghiệm nén tĩnh (static load test): Bắt buộc với ≥ 1% số cọc (tối thiểu 2 cọc)
+- Thí nghiệm PDA (động cao): Cho phép thay thế một phần thí nghiệm tĩnh
+- Kiểm tra tính toàn vẹn cọc (sonic logging / CSL): Bắt buộc với 100% cọc D ≥ 600mm
+  Gắn ống sonic (thường 3 ống đối với D600, 4 ống với D ≥ 1000mm)
+
+═══════════════════════════════════════════════════════
+PHẦN 6 — ĐỘ SÂU CHÔN MÓNG VÀ CHIỀU DÀI CỌC ĐIỂN HÌNH
+═══════════════════════════════════════════════════════
+
+Đất khu vực đồng bằng Nam Bộ (điển hình):
+Lớp 1 — Đất bùn sét mềm: 0–15m (N SPT = 1–5)
+Lớp 2 — Sét dẻo cứng: 15–25m (N SPT = 8–15)
+Lớp 3 — Cát chặt vừa đến chặt: 25–40m (N SPT = 20–35)
+Lớp 4 — Cuội sỏi hoặc cát rất chặt: 40–60m (N SPT > 50)
+
+Chiều dài cọc thông thường cầu cấp III–IV đồng bằng Nam Bộ:
+  D600: L = 20–30m (cắm vào lớp cát chặt)
+  D800: L = 25–35m
+  D1000: L = 30–40m
+  D1200: L = 35–50m
+
+Chiều dài cọc vùng ĐBSCL (đất yếu sâu hơn):
+  D800: L = 35–45m
+  D1000: L = 40–55m
+
+Lưu ý: Chiều dài cọc cụ thể phải xác định dựa trên kết quả khảo sát địa chất (SPT, CPT).
+Các số liệu trên chỉ mang tính tham khảo sơ bộ.
