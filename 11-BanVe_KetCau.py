@@ -1187,6 +1187,33 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                            showarrow=False, font=dict(size=8, color=_C["dam_dk"]),
                            bgcolor="rgba(255,255,255,0.8)")
 
+    # ── ĐƯỜNG ĐẦU CẦU (nền đắp + mặt đường sau mố) ──────────────────────────
+    L_app  = max(12.0, mg * 0.85)          # chiều dài đoạn đường đầu cầu hiển thị
+    taluy  = 1.5                           # mái dốc taluy 1:1.5
+    z_road = z_deck                        # cao độ mặt đường = mặt cầu
+    for xm, od in [(x0, -1.0), (x_end, 1.0)]:
+        x_far = xm + od * L_app
+        z_g   = _tz(xm)                     # cao độ địa hình gần mố
+        toe_x = x_far + od * max(0.0, (z_road - z_g)) * taluy   # chân taluy
+        # Nền đắp đầu cầu (đất đắp sau mố)
+        _poly(fig, [xm, x_far, toe_x, xm], [z_road, z_road, z_g, z_g],
+              "rgba(196,164,107,0.32)", "#8a6d3b",
+              "Nền đắp đầu cầu" if od < 0 else "", showlegend=(od < 0))
+        # Mái taluy (đường dốc) + mặt đường (lớp phủ)
+        fig.add_trace(go.Scatter(
+            x=[x_far, toe_x], y=[z_road, z_g], mode="lines",
+            line=dict(color="#8a6d3b", width=1.4, dash="dot"),
+            showlegend=False, hoverinfo="skip"))
+        fig.add_trace(go.Scatter(
+            x=[xm, x_far], y=[z_road, z_road], mode="lines",
+            line=dict(color="#2c3e50", width=3),
+            name="Mặt đường đầu cầu" if od < 0 else "", showlegend=(od < 0),
+            hoverinfo="skip"))
+        fig.add_annotation(
+            x=(xm + x_far) / 2, y=z_road + 0.45, text="ĐƯỜNG ĐẦU CẦU",
+            showarrow=False, font=dict(size=8, color="#2c3e50"),
+            bgcolor="rgba(255,255,255,0.75)")
+
     # ── Khung tĩnh không ─────────────────────────────────────────────────
     y_tk_bot = MNCN
     fig.add_shape(type="rect",
