@@ -48,12 +48,17 @@ footer                            { display: none !important; }
 }
 [data-testid="stMetricValue"] { font-size: 16px !important; color: #4fc3f7 !important; }
 
-/* ── Sidebar — kích thước do JS điều khiển qua CSS var ── */
-[data-testid="stSidebar"] {
+/* ── Sidebar — kích thước do JS điều khiển qua CSS var ──
+   Chỉ khóa width khi sidebar ĐANG MỞ. Khi người dùng bấm nút thu gọn (collapse)
+   của Streamlit, JS gắn class .cau-sb-collapsed lên <html> → bỏ khóa để Streamlit
+   tự thu sidebar về 0 và nội dung/topbar dồn sát mép trái. */
+html:not(.cau-sb-collapsed) [data-testid="stSidebar"] {
     min-width: var(--sidebar-width, 300px) !important;
     max-width: var(--sidebar-width, 300px) !important;
-    transition: min-width 0.05s, max-width 0.05s;
-    will-change: min-width, max-width;
+}
+[data-testid="stSidebar"] {
+    transition: min-width 0.05s, max-width 0.05s, transform 0.15s;
+    will-change: min-width, max-width, transform;
 }
 [data-testid="stSidebar"] > div:first-child { padding: 56px 14px 32px !important; }
 
@@ -73,7 +78,8 @@ section[data-testid="stMain"] {
 /* ── Topbar cố định (vị trí điều khiển qua CSS var để responsive) ── */
 .uth-topbar {
     position: fixed; top: 0; right: 0;
-    left: var(--sidebar-width, 300px);
+    left: var(--sidebar-edge, var(--sidebar-width, 300px));
+    transition: left 0.15s;
     z-index: 500; height: 44px;
     background: #0d0d1a; border-bottom: 2px solid #007acc;
     display: flex; align-items: center; overflow: hidden;
@@ -139,7 +145,7 @@ section[data-testid="stMain"] .block-container {
 div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) {
     position: fixed !important;
     top: 0 !important;
-    left: var(--sidebar-width, 300px) !important;
+    left: var(--sidebar-edge, var(--sidebar-width, 300px)) !important;
     right: 0 !important;
     z-index: 501 !important;
     height: 44px !important;
@@ -147,6 +153,7 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) {
     padding: 0 !important;
     gap: 0 !important;
     background: transparent !important;
+    transition: left 0.15s !important;
 }
 div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) > div {
     padding: 0 !important;
@@ -965,18 +972,40 @@ body.cau-resizing, body.cau-resizing * {
   function sb(){ return D.querySelector('[data-testid="stSidebar"]'); }
   function handle(){ return D.getElementById('cau-sb-drag'); }
   var curW = parseInt(W.localStorage.getItem(KEY) || '') || 0;
+  var _lastEdge = -1, _lastCollapsed = null;  // tránh ghi lại DOM gây vòng lặp observer
 
-  function placeHandle(){
+  // Đồng bộ MÉP PHẢI THỰC của sidebar → biến --sidebar-edge để topbar/ribbon bám
+  // theo, đồng thời nhận biết trạng thái THU GỌN (collapse) để gắn class lên <html>.
+  // Chỉ ghi DOM khi giá trị THỰC SỰ đổi — nếu không MutationObserver sẽ tự kích lại.
+  function sync(){
     var s = sb(), h = handle();
-    if (s && h) { var r = s.getBoundingClientRect(); h.style.left = (r.right - 3) + 'px'; }
+    if (!s) return;
+    var r = s.getBoundingClientRect();
+    // Nhận biết THU GỌN: ưu tiên cờ aria-expanded của Streamlit (đáng tin nhất,
+    // không bị CSS khóa width che mất), kèm fallback theo kích thước thực tế.
+    var aria = s.getAttribute('aria-expanded');
+    var cc = D.querySelector('[data-testid="stSidebarCollapsedControl"]');
+    var hasCollapsedCtrl = !!(cc && cc.getBoundingClientRect().width > 0);  // chỉ tính khi HIỆN
+    var collapsed = (aria === 'false') || hasCollapsedCtrl
+                    || (r.width < 60) || (r.right < 60);
+    var edge = collapsed ? 0 : Math.max(0, r.right);
+    if (collapsed !== _lastCollapsed){
+      _lastCollapsed = collapsed;
+      D.documentElement.classList.toggle('cau-sb-collapsed', collapsed);
+      if (h) h.style.display = collapsed ? 'none' : 'block';
+    }
+    if (Math.abs(edge - _lastEdge) > 0.5){
+      _lastEdge = edge;
+      D.documentElement.style.setProperty('--sidebar-edge', edge + 'px');
+      if (h && !collapsed) h.style.left = (edge - 3) + 'px';
+    }
   }
   function applyW(w){
-    // Đổi biến CSS --sidebar-width: sidebar + topbar + thanh ribbon đều bám
-    // theo (xem global CSS). KHÔNG đụng margin-left của nội dung chính.
+    // Khóa width khi sidebar đang mở (xem global CSS), rồi đồng bộ lại edge.
     D.documentElement.style.setProperty('--sidebar-width', w + 'px');
-    placeHandle();
+    sync();
   }
-  function refresh(){ if (curW >= MINW) applyW(curW); else placeHandle(); }
+  function refresh(){ if (curW >= MINW) applyW(curW); else sync(); }
 
   function setup(){
     var h = handle(), s = sb();
@@ -1004,7 +1033,7 @@ body.cau-resizing, body.cau-resizing * {
     h.addEventListener('dblclick', function(){
       curW = 0; W.localStorage.removeItem(KEY);
       D.documentElement.style.removeProperty('--sidebar-width');  // về 300px mặc định
-      placeHandle();
+      sync();
     });
     return true;
   }
@@ -1012,9 +1041,19 @@ body.cau-resizing, body.cau-resizing * {
   var tries = 0;
   (function tryInit(){
     if (setup()){
-      var mo = new W.MutationObserver(function(){ refresh(); });
-      mo.observe(D.body, {childList: true, subtree: true});
-      W.addEventListener('resize', placeHandle);
+      // Theo dõi cả thay đổi cấu trúc (childList) lẫn style/aria của sidebar
+      // (Streamlit đổi transform/width khi thu gọn) để dồn layout kịp thời.
+      // Gom nhiều mutation vào 1 nhịp rAF để tránh đo layout liên tục.
+      var _raf = 0;
+      var mo = new W.MutationObserver(function(){
+        if (_raf) return;
+        _raf = W.requestAnimationFrame(function(){ _raf = 0; refresh(); });
+      });
+      mo.observe(D.body, {childList: true, subtree: true, attributes: true,
+                          attributeFilter: ['style', 'class', 'aria-expanded']});
+      W.addEventListener('resize', sync);
+      // Đồng bộ thêm vài nhịp để bắt kịp animation thu gọn/mở của Streamlit.
+      [120, 250, 450].forEach(function(t){ setTimeout(sync, t); });
     } else if (tries < 40){ tries++; setTimeout(tryInit, 200); }
   })();
 })();
@@ -5507,7 +5546,8 @@ with _col_main:
                 _c2d, _c3d = st.columns(2)
                 with _c2d:
                     fig_mcn_2d = PLOT.ve_mat_cat_ngang(res_mcn, bridge_mode=False)
-                    PLOT.aspect_control(fig_mcn_2d, "mcn_oto_2d")
+                    # Sơ đồ MCN đường: cao độ mang tính biểu trưng → giữ tỷ lệ thiết kế
+                    PLOT.aspect_control(fig_mcn_2d, "mcn_oto_2d", default="keep")
                     st.plotly_chart(fig_mcn_2d, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True},
                                     key="mcn_oto_2d")
@@ -5522,7 +5562,8 @@ with _col_main:
                     _c2d_cau, _c3d_cau = st.columns(2)
                     with _c2d_cau:
                         fig_cau_2d = PLOT.ve_mat_cat_ngang(res_mcn, bridge_mode=True)
-                        PLOT.aspect_control(fig_cau_2d, "mcn_cau_2d")
+                        # Sơ đồ MCN tại cầu: cao độ biểu trưng → giữ tỷ lệ thiết kế
+                        PLOT.aspect_control(fig_cau_2d, "mcn_cau_2d", default="keep")
                         st.plotly_chart(fig_cau_2d, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True},
                                         key="mcn_cau_2d")

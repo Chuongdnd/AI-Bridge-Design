@@ -3,6 +3,76 @@ import plotly.graph_objects as go
 import streamlit as st
 
 
+# =============================================================================
+# QUY TẮC THỂ HIỆN BẢN VẼ (CAD standard) — nguồn dùng chung cho mọi bản vẽ 2D
+# Bảng LAYER / TEXT / KÍCH THƯỚC theo bộ quy tắc thể hiện bản vẽ của dự án.
+# Màu được CHUYỂN ĐỔI cho nền TRẮNG của webapp (CAD gốc nền đen) để vẫn đọc rõ.
+# =============================================================================
+# Màu theo LAYER (xấp xỉ màu AutoCAD, đã chỉnh cho nền sáng):
+LAYER_COLORS = {
+    "0":       "#2b2b2b",  # Trắng/đen 0.35 — đường bao cấu kiện KHÔNG cốt thép
+    "1":       "#e74c3c",  # Đỏ 0.35     — nét thép chủ
+    "2":       "#e1a100",  # Vàng 0.30   — nét thép đai
+    "3":       "#1e8449",  # Xanh lá 0.25— đường bao cấu kiện CÓ cốt thép (BTCT)
+    "4":       "#1f9ed1",  # Xanh nhạt   — kích thước, nét cấu kiện mảnh
+    "4-dim":   "#1f9ed1",  # Xanh nhạt   — nét DIM
+    "4-hidden":"#1f9ed1",  # Xanh nhạt   — nét khuất (dash)
+    "5":       "#2e5cb8",  # Xanh dương  — nét mảnh (taluy, break line)
+    "5-hatch": "#5b86d6",  # Xanh dương  — hatch
+    "6-center":"#2e5cb8",  # Xanh dương  — nét center (chấm gạch)
+    "6-text":  "#7d3c98",  # Tím         — text
+    "8":       "#7f8c8d",  # Xám 0.09    — nét mảnh
+}
+
+# Chiều cao chữ (mm) → quy đổi xấp xỉ sang cỡ font Plotly (px) khi hiển thị:
+TEXT_MM = {"note": 1.8, "title": 3.0, "drawing": 4.0}
+def mm_to_px(mm):  # 1.8mm ≈ 11px là cỡ đọc tốt trên màn hình
+    return max(7, round(float(mm) * 6.1))
+
+# ── DIM STYLE (theo bảng KÍCH THƯỚC) ─────────────────────────────────────────
+DIM_COLOR   = LAYER_COLORS["4-dim"]   # nét DIM = layer 4 (xanh nhạt)
+DIM_LW      = 1.0                       # nét mảnh 0.15mm
+DIM_TEXT    = mm_to_px(TEXT_MM["note"])# chữ kích thước 1.8mm
+DIM_ARROW   = 1.4                       # mũi tên closed filled ~1.5mm
+
+
+def add_dim_h(fig, x0, x1, y, text, color=None, fs=None, ext_from=None):
+    """Đường KÍCH THƯỚC NGANG theo chuẩn: nét DIM xanh nhạt + 2 mũi tên closed
+    filled (TCVN dim style). Nếu ext_from cho trước (y gốc của đối tượng) sẽ vẽ
+    thêm nét gióng (extension line) từ đối tượng tới đường dim."""
+    color = color or DIM_COLOR
+    fs = fs or DIM_TEXT
+    if ext_from is not None:
+        for xi in (x0, x1):
+            fig.add_shape(type="line", x0=xi, y0=ext_from, x1=xi, y1=y,
+                          line=dict(color=color, width=0.8))
+    # 2 annotation = đường dim vẽ 2 lần + mũi tên closed ở 2 đầu
+    for xh, xt in ((x0, x1), (x1, x0)):
+        fig.add_annotation(x=xh, y=y, ax=xt, ay=y, xref="x", yref="y",
+                           axref="x", ayref="y", showarrow=True, arrowhead=3,
+                           arrowsize=DIM_ARROW, arrowwidth=DIM_LW, arrowcolor=color)
+    fig.add_annotation(x=(x0 + x1) / 2, y=y, text=text, showarrow=False,
+                       font=dict(size=fs, color=color), yanchor="bottom",
+                       bgcolor="rgba(255,255,255,0.85)")
+
+
+def add_dim_v(fig, x, y0, y1, text, color=None, fs=None, ext_from=None):
+    """Đường KÍCH THƯỚC ĐỨNG theo chuẩn (xem add_dim_h)."""
+    color = color or DIM_COLOR
+    fs = fs or DIM_TEXT
+    if ext_from is not None:
+        for yi in (y0, y1):
+            fig.add_shape(type="line", x0=ext_from, y0=yi, x1=x, y1=yi,
+                          line=dict(color=color, width=0.8))
+    for yh, yt in ((y0, y1), (y1, y0)):
+        fig.add_annotation(x=x, y=yh, ax=x, ay=yt, xref="x", yref="y",
+                           axref="x", ayref="y", showarrow=True, arrowhead=3,
+                           arrowsize=DIM_ARROW, arrowwidth=DIM_LW, arrowcolor=color)
+    fig.add_annotation(x=x, y=(y0 + y1) / 2, text=text, showarrow=False,
+                       font=dict(size=fs, color=color), xanchor="left",
+                       textangle=-90, bgcolor="rgba(255,255,255,0.85)")
+
+
 # ── Tùy chỉnh TỶ LỆ cho mặt cắt 2D (mặc định khóa 1:1) ──────────────────────
 def apply_aspect(fig, mode="keep", ratio=1.0):
     """Đặt tỷ lệ trục cho 1 hình 2D.
@@ -28,15 +98,19 @@ _ASPECT_MODE = {"Mặc định": "keep", "Đúng tỷ lệ 1:1": "equal",
                 "Giãn theo khung": "free", "Tùy chỉnh…": "custom"}
 
 
-def aspect_control(fig, key, label="⚖️ Tỷ lệ", st_obj=None):
+def aspect_control(fig, key, label="⚖️ Tỷ lệ", st_obj=None, default="equal"):
     """Hiện điều khiển chọn tỷ lệ cho 1 hình 2D rồi áp vào fig.
-    Mặc định 'Mặc định' = giữ nguyên thiết kế gốc (mặt cắt vẫn 1:1, mặt bằng/
-    trắc dọc vẫn theo khung). Trả về fig (đã chỉnh).
+    Theo quy tắc thể hiện bản vẽ, MẶC ĐỊNH = 'Đúng tỷ lệ 1:1' (default='equal').
+    Người dùng vẫn có thể đổi sang 'Giãn theo khung' / 'Tùy chỉnh' khi cần xem
+    trắc dọc/mặt bằng cho dễ. Trả về fig (đã chỉnh).
 
     Dùng radio ngang (KHÔNG tạo cột) để an toàn khi gọi bên trong st.columns —
     tránh lỗi lồng cột quá 1 cấp của Streamlit."""
     _st = st_obj or st
-    sel = _st.radio(label, _ASPECT_OPTS, horizontal=True, key=f"asp_{key}")
+    # Vị trí mặc định trên thanh radio theo tham số default (keep/equal/free/custom)
+    _default_label = {v: k for k, v in _ASPECT_MODE.items()}.get(default, "Đúng tỷ lệ 1:1")
+    _idx = _ASPECT_OPTS.index(_default_label) if _default_label in _ASPECT_OPTS else 1
+    sel = _st.radio(label, _ASPECT_OPTS, horizontal=True, index=_idx, key=f"asp_{key}")
     mode = _ASPECT_MODE.get(sel, "keep")
     ratio = 1.0
     if mode == "custom":
@@ -226,10 +300,13 @@ def ve_mat_cat_ngang(res_mcn, bridge_mode=False):
             mode="lines", name=name, showlegend=sl, hoverinfo="skip"
         ))
 
-    def _dim(x0, x1, y, txt, color="#34495e", fs=9):
-        fig.add_shape(type="line", x0=x0, y0=y, x1=x1, y1=y, line=dict(color=color, width=1))
-        for xi in (x0, x1):
-            fig.add_shape(type="line", x0=xi, y0=y-0.05, x1=xi, y1=y+0.05, line=dict(color=color, width=1))
+    def _dim(x0, x1, y, txt, color=None, fs=9):
+        # Nét DIM theo chuẩn: mũi tên closed filled 2 đầu (giữ màu phân nhóm nếu có)
+        color = color or DIM_COLOR
+        for xh, xt in ((x0, x1), (x1, x0)):
+            fig.add_annotation(x=xh, y=y, ax=xt, ay=y, xref="x", yref="y",
+                               axref="x", ayref="y", showarrow=True, arrowhead=3,
+                               arrowsize=1.2, arrowwidth=1, arrowcolor=color)
         fig.add_annotation(x=(x0+x1)/2, y=y+0.07, text=txt, showarrow=False,
                            font=dict(size=fs, color=color), yanchor="bottom",
                            bgcolor="rgba(255,255,255,0.85)")
