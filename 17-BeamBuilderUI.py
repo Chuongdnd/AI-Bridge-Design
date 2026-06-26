@@ -2448,6 +2448,27 @@ def get_plan_beam_traces(d: dict, pfx: str = "spt") -> list:
     return result
 
 
+def _beam_edge_trace(vx, vy, vz, M, Np, name="", color="#3a3a3a", width=1.4):
+    """Đường BAO/cạnh khối dầm (Scatter3d): viền mặt cắt tại từng vòng quét +
+    cạnh dọc nối các vòng → nhìn rõ NÉT trên mô hình 3D (kiểu Shaded có cạnh).
+    vx/vy/vz là lưới M vòng × Np điểm (ring-major) đã dựng cho Mesh3d."""
+    ex, ey, ez = [], [], []
+    for r in range(M):                       # viền mặt cắt (đóng vòng) tại mỗi vòng
+        b = r * Np
+        for i in range(Np):
+            ex.append(vx[b + i]); ey.append(vy[b + i]); ez.append(vz[b + i])
+        ex.append(vx[b]); ey.append(vy[b]); ez.append(vz[b])
+        ex.append(None); ey.append(None); ez.append(None)
+    for i in range(Np):                      # cạnh dọc thân nối các vòng
+        for r in range(M):
+            k = r * Np + i
+            ex.append(vx[k]); ey.append(vy[k]); ez.append(vz[k])
+        ex.append(None); ey.append(None); ez.append(None)
+    return go.Scatter3d(x=ex, y=ey, z=ez, mode="lines",
+                        line=dict(color=color, width=width),
+                        name=name, showlegend=bool(name), hoverinfo="skip")
+
+
 def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     """go.Mesh3d (solid) dầm cho 3D toàn cầu — QUÉT mặt cắt biến thiên dọc nhịp
     (thể hiện 2 đầu/haunch khác nhau), theo VAI TRÒ từng cây (biên/giữa × nhịp biên/giữa)."""
@@ -2516,6 +2537,7 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
                 lightposition=dict(x=500, y=300, z=1500),
                 hovertemplate="<b>Dầm DXF</b><extra></extra>" if _legend else None,
             ))
+            result.append(_beam_edge_trace(vx, vy, vz, M, Np))  # đường bao/cạnh dầm
             _legend = False
     return result
 
@@ -2853,5 +2875,6 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
                 lightposition=dict(x=500, y=300, z=1500),
                 hovertemplate="<b>Dầm DXF</b><extra></extra>" if _legend else None,
             ))
+            result.append(_beam_edge_trace(vX, vY, vZ, M, Np))  # đường bao/cạnh dầm
             _legend = False
     return result
