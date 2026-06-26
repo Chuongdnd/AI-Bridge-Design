@@ -102,8 +102,8 @@ def _draw_plan_map(hk_list):
         margin=dict(l=60, r=20, t=50, b=60),
         plot_bgcolor="rgba(0,0,0,0)",
     )
-    fig.update_xaxes(showgrid=True, gridcolor="#E0E0E0")
-    fig.update_yaxes(showgrid=True, gridcolor="#E0E0E0", scaleanchor="x")
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(128,128,128,0.35)")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(128,128,128,0.35)", scaleanchor="x")
     return fig
 
 
@@ -256,8 +256,8 @@ def _draw_spt_profiles(hk_list):
         legend=dict(x=0.85, y=0.02),
         margin=dict(l=60, r=40, t=50, b=60),
     )
-    fig.update_xaxes(showgrid=True, gridcolor="#E0E0E0")
-    fig.update_yaxes(showgrid=True, gridcolor="#E0E0E0")
+    fig.update_xaxes(showgrid=True, gridcolor="rgba(128,128,128,0.35)")
+    fig.update_yaxes(showgrid=True, gridcolor="rgba(128,128,128,0.35)")
     return fig
 
 

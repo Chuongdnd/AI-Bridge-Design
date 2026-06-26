@@ -194,7 +194,8 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
     /* Các hộp/option/panel phải/thanh pipeline đáy — nền tối inline → nền sáng */
     [style*="#141420"], [style*="#0a1f35"], [style*="#1e1e2e"], [style*="#0a0a14"],
     [style*="#1a1a2a"], [style*="#12121c"], [style*="#0d0d1a"], [style*="#12202e"],
-    [style*="#1a2330"], [style*="#0f0f1a"], [style*="#0e1117"]
+    [style*="#1a2330"], [style*="#0f0f1a"], [style*="#0e1117"], [style*="#0d1a10"],
+    [style*="#141a20"], [style*="#0a2818"], [style*="#12121e"]
     { background: #eef2f8 !important; border-color: #cdd5e0 !important; }
     /* Chữ trắng/xám nhạt trên các hộp đó → đậm để đọc trên nền sáng (giữ màu nhấn) */
     [style*="color:#fff"], [style*="color:#f0f0f0"], [style*="color:#dde3ea"],
@@ -5218,8 +5219,8 @@ def _pile_section_fig(shape, b_mm, h_mm, n_sides, height=260, title=""):
         title=dict(text=title or f"{PS.describe(shape, b_mm, h_mm, n_sides)} · "
                                  f"Ø_tđ={_Deq:.2f}m", x=0.5, font=dict(size=12)),
         xaxis=dict(title="x (mm)", scaleanchor="y", scaleratio=1,
-                   showgrid=True, gridcolor="#eef2f3", zeroline=False),
-        yaxis=dict(title="z (mm)", showgrid=True, gridcolor="#eef2f3", zeroline=False),
+                   showgrid=True, gridcolor="rgba(128,128,128,0.35)", zeroline=False),
+        yaxis=dict(title="z (mm)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", zeroline=False),
         height=height, template="plotly_white",
         margin=dict(l=50, r=20, t=44, b=40),
     )

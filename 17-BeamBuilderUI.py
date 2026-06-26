@@ -744,12 +744,12 @@ def _render_3d_view():
         title=dict(text="Wireframe dầm — nét CAD", x=0.5,
                    font=dict(size=13, color="#dde3ea")),
         scene=dict(
-            xaxis=dict(title="X (mm)", backgroundcolor=_DARK,
-                       gridcolor="#2a3a4a", showbackground=True),
-            yaxis=dict(title="Y dọc (mm)", backgroundcolor=_DARK,
-                       gridcolor="#2a3a4a", showbackground=True),
-            zaxis=dict(title="Z (mm)", backgroundcolor=_DARK,
-                       gridcolor="#2a3a4a", showbackground=True),
+            xaxis=dict(title="X (mm)", backgroundcolor="rgba(0,0,0,0)",
+                       gridcolor="rgba(128,128,128,0.35)", showbackground=True),
+            yaxis=dict(title="Y dọc (mm)", backgroundcolor="rgba(0,0,0,0)",
+                       gridcolor="rgba(128,128,128,0.35)", showbackground=True),
+            zaxis=dict(title="Z (mm)", backgroundcolor="rgba(0,0,0,0)",
+                       gridcolor="rgba(128,128,128,0.35)", showbackground=True),
             bgcolor="rgba(0,0,0,0)", aspectmode="data",
         ),
     )
@@ -965,11 +965,11 @@ def _section_fig(sec, height: int = 220, title: str = "") -> "go.Figure":
         template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         height=height, margin=dict(l=30, r=10, t=28 if title else 12, b=28),
         title=dict(text=title, font=dict(size=12, color="#9ac8e8"), x=0.5) if title else {},
-        xaxis=dict(range=xr, showgrid=True, gridcolor="#233040", dtick=200,
-                   zeroline=True, zerolinecolor="#3a5a7a", zerolinewidth=1,
+        xaxis=dict(range=xr, showgrid=True, gridcolor="rgba(128,128,128,0.35)", dtick=200,
+                   zeroline=True, zerolinecolor="rgba(128,128,128,0.35)", zerolinewidth=1,
                    scaleanchor="y", scaleratio=1, showticklabels=False),
-        yaxis=dict(range=zr, showgrid=True, gridcolor="#233040", dtick=200,
-                   zeroline=True, zerolinecolor="#3a5a7a", zerolinewidth=1,
+        yaxis=dict(range=zr, showgrid=True, gridcolor="rgba(128,128,128,0.35)", dtick=200,
+                   zeroline=True, zerolinecolor="rgba(128,128,128,0.35)", zerolinewidth=1,
                    showticklabels=False),
         showlegend=False,
     )
@@ -1004,12 +1004,12 @@ def _side_3d_fig(m) -> "go.Figure":
             margin=dict(l=0, r=0, t=25, b=0),
             title=dict(text="3D Wireframe", font=dict(size=11)),
             scene=dict(
-                xaxis=dict(title="X", backgroundcolor="#1a2330",
-                           gridcolor="#2a3a4a", showbackground=True, showticklabels=False),
-                yaxis=dict(title="Y", backgroundcolor="#1a2330",
-                           gridcolor="#2a3a4a", showbackground=True, showticklabels=False),
-                zaxis=dict(title="Z", backgroundcolor="#1a2330",
-                           gridcolor="#2a3a4a", showbackground=True, showticklabels=False),
+                xaxis=dict(title="X", backgroundcolor="rgba(0,0,0,0)",
+                           gridcolor="rgba(128,128,128,0.35)", showbackground=True, showticklabels=False),
+                yaxis=dict(title="Y", backgroundcolor="rgba(0,0,0,0)",
+                           gridcolor="rgba(128,128,128,0.35)", showbackground=True, showticklabels=False),
+                zaxis=dict(title="Z", backgroundcolor="rgba(0,0,0,0)",
+                           gridcolor="rgba(128,128,128,0.35)", showbackground=True, showticklabels=False),
                 bgcolor="#1a2330", aspectmode="data",
             ),
         )
@@ -1719,12 +1719,12 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt", show_type: bool = True):
                     font=dict(size=14, color="#9ac8e8"), x=0.5,
                 ),
                 scene=dict(
-                    xaxis=dict(title="X (mm)", backgroundcolor="#12202e",
-                               gridcolor="#2a3a4a", showbackground=True),
-                    yaxis=dict(title="Y — dọc dầm (mm)", backgroundcolor="#12202e",
-                               gridcolor="#2a3a4a", showbackground=True),
-                    zaxis=dict(title="Z (mm)", backgroundcolor="#12202e",
-                               gridcolor="#2a3a4a", showbackground=True),
+                    xaxis=dict(title="X (mm)", backgroundcolor="rgba(0,0,0,0)",
+                               gridcolor="rgba(128,128,128,0.35)", showbackground=True),
+                    yaxis=dict(title="Y — dọc dầm (mm)", backgroundcolor="rgba(0,0,0,0)",
+                               gridcolor="rgba(128,128,128,0.35)", showbackground=True),
+                    zaxis=dict(title="Z (mm)", backgroundcolor="rgba(0,0,0,0)",
+                               gridcolor="rgba(128,128,128,0.35)", showbackground=True),
                     bgcolor="#12202e", aspectmode="data",
                     camera=dict(eye=dict(x=1.4, y=-1.6, z=0.9)),
                 ),
@@ -2734,7 +2734,7 @@ def beam_record_mcn_fig(rec: dict):
         title=dict(text="① Mặt cắt ngang các vị trí (mm)", x=0.5, font=dict(size=12)),
         xaxis=dict(tickvals=ticks, ticktext=tickt, showgrid=False, zeroline=False),
         yaxis=dict(title="Cao (mm)", scaleanchor="x", scaleratio=1,
-                   showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5, zeroline=False),
+                   showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5, zeroline=False),
         margin=dict(l=70, r=20, t=50, b=50), showlegend=True,
         legend=dict(orientation="h", y=-0.14, font=dict(size=9)))
     return fig
@@ -2770,8 +2770,8 @@ def beam_record_elev_fig(rec: dict):
     fig.update_layout(
         template="plotly_white", height=300,
         title=dict(text=f"② Mặt cắt dọc tim dầm · L={L:.1f}m", x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
-        yaxis=dict(title="Cao (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
+        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
+        yaxis=dict(title="Cao (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
         margin=dict(l=55, r=20, t=50, b=45))
     return fig
 
@@ -2790,8 +2790,8 @@ def beam_record_plan_fig(rec: dict):
         template="plotly_white", height=280,
         title=dict(text=f"③ Mặt bằng dầm (nhìn từ trên) · L={L:.1f}m",
                    x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
-        yaxis=dict(title="Ngang (m)", showgrid=True, gridcolor="rgba(128,128,128,0.28)", gridwidth=0.5),
+        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
+        yaxis=dict(title="Ngang (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
         margin=dict(l=55, r=20, t=50, b=45))
     return fig
 

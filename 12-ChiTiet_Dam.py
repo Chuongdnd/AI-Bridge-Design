@@ -470,14 +470,14 @@ def ve_spt_aa_detail(d=None):
         ),
         xaxis=dict(
             range=[-1.75, 1.75], title="X (m)",
-            showgrid=True, gridcolor="#2a3a4a", dtick=0.1,
-            zeroline=True, zerolinecolor="#5dade2", zerolinewidth=1.5,
+            showgrid=True, gridcolor="rgba(128,128,128,0.35)", dtick=0.1,
+            zeroline=True, zerolinecolor="rgba(128,128,128,0.35)", zerolinewidth=1.5,
             scaleanchor="y", scaleratio=1,
         ),
         yaxis=dict(
             range=[-2.05, 0.42], title="Z (m)",
-            showgrid=True, gridcolor="#2a3a4a", dtick=0.1,
-            zeroline=True, zerolinecolor="#5dade2", zerolinewidth=1.5,
+            showgrid=True, gridcolor="rgba(128,128,128,0.35)", dtick=0.1,
+            zeroline=True, zerolinecolor="rgba(128,128,128,0.35)", zerolinewidth=1.5,
         ),
         margin=dict(l=70, r=50, t=70, b=80),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -626,13 +626,13 @@ def ve_chi_tiet_mcn(d):
         margin = H * 0.40
         for ci in [1, 2]:
             fig.update_xaxes(range=[-spt_hw-0.25, spt_hw+0.55], showgrid=True,
-                             gridcolor="#ecf0f1", row=1, col=ci)
+                             gridcolor="rgba(128,128,128,0.35)", row=1, col=ci)
             fig.update_yaxes(range=[-H-margin, 0.35], showgrid=True,
-                             gridcolor="#ecf0f1", row=1, col=ci)
+                             gridcolor="rgba(128,128,128,0.35)", row=1, col=ci)
         fig.update_xaxes(range=[-cc_hw-0.25, cc_hw+0.55], showgrid=True,
-                         gridcolor="#ecf0f1", row=1, col=3)
+                         gridcolor="rgba(128,128,128,0.35)", row=1, col=3)
         fig.update_yaxes(range=[-H-margin, 0.35], showgrid=True,
-                         gridcolor="#ecf0f1", row=1, col=3)
+                         gridcolor="rgba(128,128,128,0.35)", row=1, col=3)
 
     else:
         # Non-SPT: 2-panel layout (đầu dầm + giữa nhịp)
@@ -648,8 +648,8 @@ def ve_chi_tiet_mcn(d):
                 _dim_h(fig, -H-0.45, -fw, fw, f"{fw*2000:.0f}mm (cánh)",
                        color="#27ae60", row=1, col=col_idx)
         margin = H * 0.35
-        fig.update_xaxes(range=[-hw-0.30, hw+0.55], showgrid=True, gridcolor="#ecf0f1")
-        fig.update_yaxes(range=[-H-margin, t_ban+0.35], showgrid=True, gridcolor="#ecf0f1")
+        fig.update_xaxes(range=[-hw-0.30, hw+0.55], showgrid=True, gridcolor="rgba(128,128,128,0.35)")
+        fig.update_yaxes(range=[-H-margin, t_ban+0.35], showgrid=True, gridcolor="rgba(128,128,128,0.35)")
 
     fig.update_layout(
         height=610, template="plotly_white",
@@ -786,9 +786,9 @@ def ve_chi_tiet_mat_cat_doc(d):
             text=(f"MẶT CẮT DỌC DẦM — {loai.upper()} | L={L:.1f}m | TỶ LỆ 1:110"),
             x=0.5, font=dict(size=12)
         ),
-        xaxis=dict(title="Chiều dài dầm (m)", showgrid=True, gridcolor="#ecf0f1",
+        xaxis=dict(title="Chiều dài dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)",
                    range=[-0.8, L + 1.0]),
-        yaxis=dict(title="Chiều cao (m)", showgrid=True, gridcolor="#ecf0f1",
+        yaxis=dict(title="Chiều cao (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)",
                    range=[-H - 0.4, t_ban + 0.6], scaleanchor="x", scaleratio=1),
         height=360, template="plotly_white",
         legend=dict(orientation="h", y=-0.22, font=dict(size=9)),
@@ -877,9 +877,9 @@ def ve_chi_tiet_mat_bang(d):
             text=f"MẶT BẰNG DẦM — {loai.upper()} | L={L:.1f}m | TỶ LỆ 1:110",
             x=0.5, font=dict(size=12)
         ),
-        xaxis=dict(title="Chiều dài dầm (m)", showgrid=True, gridcolor="#ecf0f1",
+        xaxis=dict(title="Chiều dài dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)",
                    range=[-0.5, L + 1.2]),
-        yaxis=dict(title="Bề rộng (m)", showgrid=True, gridcolor="#ecf0f1",
+        yaxis=dict(title="Bề rộng (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)",
                    scaleanchor="x", scaleratio=1),
         height=280, template="plotly_white",
         legend=dict(orientation="h", y=-0.30, font=dict(size=9)),
@@ -1081,12 +1081,12 @@ def ve_chi_tiet_3d(d):
             x=0.5, font=dict(size=12),
         ),
         scene=dict(
-            xaxis=dict(title="Chiều dài (m)", backgroundcolor="#f0f3f4",
-                       gridcolor="#d0d3d4", showbackground=True),
-            yaxis=dict(title="Bề rộng (m)", backgroundcolor="#eaf2f8",
-                       gridcolor="#d0d8e0", showbackground=True),
-            zaxis=dict(title="Chiều cao (m)", backgroundcolor="#eafaf1",
-                       gridcolor="#c8dfd4", showbackground=True),
+            xaxis=dict(title="Chiều dài (m)", backgroundcolor="rgba(0,0,0,0)",
+                       gridcolor="rgba(128,128,128,0.35)", showbackground=True),
+            yaxis=dict(title="Bề rộng (m)", backgroundcolor="rgba(0,0,0,0)",
+                       gridcolor="rgba(128,128,128,0.35)", showbackground=True),
+            zaxis=dict(title="Chiều cao (m)", backgroundcolor="rgba(0,0,0,0)",
+                       gridcolor="rgba(128,128,128,0.35)", showbackground=True),
             aspectmode="data",
             camera=dict(eye=dict(x=-2.2, y=-1.8, z=1.1)),
             bgcolor="white",
