@@ -3753,9 +3753,10 @@ def _asm_cfg(kind: str) -> dict:
             "default": PB.default_abutment, "migrate": PB.migrate_abutment,
             "preview": PB.build_abutment_preview_fig, "total_h": PB.abutment_total_height,
             "parts": [
-                {"role": "than", "label": "Thân + mũ mố",
-                 "hint": "Mặt cắt = MẶT CẮT DỌC cầu (hình bên: tường thân + vai kê "
-                         "gối) — đùn NGANG cầu theo bề rộng.",
+                {"role": "than", "label": "Tường thân",
+                 "hint": "Vẽ NHIỀU mặt cắt DỌC cầu (hình bên: tường thân + vai "
+                         "kê gối); hệ thống xếp nối tiếp theo NGANG cầu và LOFT "
+                         "(vuốt) giữa các mặt cắt kề nhau.",
                  "param": "B", "plabel": "Bề rộng ngang cầu B (m)",
                  "pmin": 1.0, "pmax": 40.0, "pdef": 8.0, "flex": True},
                 {"role": "be", "label": "Bệ mố",
@@ -3803,6 +3804,10 @@ def _clear_asm_widgets(kind: str) -> None:
     for i in range(3):      # tầng xà mũ
         _keys += [f"{kind}_dxf_xamu_L{i}", f"_{kind}_sig_xamu_L{i}",
                   f"pp_{kind}_xamu_D_L{i}"]
+    for i in range(16):     # đoạn tường thân mố (mặt cắt dọc + loft ngang)
+        _keys += [f"{kind}_dxf_than_L{i}", f"_{kind}_sig_than_L{i}",
+                  f"pp_{kind}_than_B_L{i}", f"pp_{kind}_than_loft_L{i}"]
+    _keys.append(f"_than_secs_{kind}")    # store mặt cắt theo đoạn tường thân
     for _k in _keys:
         st.session_state.pop(_k, None)
 
@@ -3942,12 +3947,96 @@ def _render_xamu_layers(kind, part) -> dict:
     return {"layers": [l for l in new_layers if l is not None]}
 
 
+def _render_than_layers(kind, part) -> dict:
+    """Editor TƯỜNG THÂN MỐ dạng LƯỚI: mỗi đoạn = 1 MẶT CẮT DỌC cầu, xếp nối
+    tiếp theo NGANG cầu; đoạn loft vuốt mượt sang mặt cắt đoạn sau. Mirror
+    _render_xamu_layers nhưng đùn/loft theo trục y (ngang cầu) + có 'flex'."""
+    _init = PB.abut_body_layers(part)
+    _store = f"_than_secs_{kind}"
+    if _store not in st.session_state:
+        st.session_state[_store] = [dict(l.get("section") or {}) for l in _init] or [{}]
+    secs = st.session_state[_store]
+    _n = len(secs)
+    st.caption("Mỗi đoạn là 1 MẶT CẮT DỌC cầu, xếp nối tiếp theo NGANG cầu "
+               "(tổng bề rộng căn giữa tim cầu). Bật **Loft** để vuốt mượt sang "
+               "mặt cắt đoạn kế. Bấm **➕ Thêm đoạn** để khai nhiều mặt cắt.")
+
+    new_layers = []
+    for i in range(_n):
+        cur = _init[i] if i < len(_init) else {}
+        sec = dict(secs[i] or {})
+        st.markdown(f"**Đoạn {i+1}**" + (" → loft" if cur.get("loft") else ""))
+        _pv, _ct = st.columns([3, 2])
+        with _ct:
+            _up = st.file_uploader(
+                "Upload mặt cắt dọc (DXF/DWG)", type=["dxf", "dwg"],
+                key=f"{kind}_dxf_than_L{i}")
+            if _up is not None:
+                _sig = f"{_up.name}:{_up.size}"
+                if st.session_state.get(f"_{kind}_sig_than_L{i}") != _sig:
+                    try:
+                        _res = _BB_ENGINE.parse_dxf_bytes(_up.read())
+                        if _res.get("error"):
+                            st.error(f"DXF: {_res['error']}")
+                        elif len(_res.get("outer", [])) >= 3:
+                            sec = {"outer": _res["outer"],
+                                   "holes": _res.get("holes", []),
+                                   "solids": _res.get("solids")}
+                            secs[i] = sec
+                            st.session_state[f"_{kind}_sig_than_L{i}"] = _sig
+                            st.success(f"✅ {len(sec['outer'])} đỉnh")
+                        else:
+                            st.warning("Không có biên kín.")
+                    except Exception as _e:
+                        st.error(f"Lỗi DXF: {_e}")
+            _B = st.number_input(
+                "Bề rộng ngang cầu (m)", 0.3, 40.0,
+                float(cur.get("B", 8.0) or 8.0), 0.1,
+                key=f"pp_{kind}_than_B_L{i}")
+            _loft = False
+            if i < _n - 1:
+                _loft = st.checkbox(
+                    "Loft (vuốt sang đoạn sau)",
+                    value=bool(cur.get("loft", False)),
+                    key=f"pp_{kind}_than_loft_L{i}",
+                    help="Vuốt mượt sang mặt cắt đoạn kế.")
+        with _pv:
+            _f = _asm_section_fig(sec)
+            if _f is not None:
+                PLOT.aspect_control(_f, f"{kind}_secfig_than_L{i}")
+                st.plotly_chart(_f, use_container_width=True,
+                                key=f"{kind}_secfig_than_L{i}")
+            else:
+                st.info("Chưa có mặt cắt — upload DXF cho đoạn này.")
+        new_layers.append({"section": sec, "B": float(_B), "loft": bool(_loft)})
+
+    _a1, _a2, _ = st.columns([1, 1, 3])
+    if _a1.button("➕ Thêm đoạn", key=f"addseg_{kind}_than",
+                  use_container_width=True):
+        secs.append({})
+        st.rerun()
+    if _n > 1 and _a2.button("🗑 Bớt đoạn cuối", key=f"rmseg_{kind}_than",
+                             use_container_width=True):
+        secs.pop()
+        _j = _n - 1
+        for _k in (f"{kind}_dxf_than_L{_j}", f"_{kind}_sig_than_L{_j}",
+                   f"pp_{kind}_than_B_L{_j}", f"pp_{kind}_than_loft_L{_j}"):
+            st.session_state.pop(_k, None)
+        st.rerun()
+    _flex = st.checkbox("Co theo chiều cao (khi gắn cầu)",
+                        value=bool(part.get("flex", True)),
+                        key=f"pp_{kind}_than_flex")
+    return {"layers": [l for l in new_layers if l is not None], "flex": bool(_flex)}
+
+
 def _render_asm_part_editor(kind, spec, part) -> dict:
     """Khối UI 1 bộ phận: upload DXF + xem trước 2D + tham số đùn. Trả part mới."""
     role = spec["role"]; label = spec["label"]
     st.caption(spec["hint"])
     if role == "xa_mu":
         return _render_xamu_layers(kind, part)
+    if kind == "mo" and role == "than":
+        return _render_than_layers(kind, part)
     part = dict(part or {})
     sec = dict(part.get("section") or {})
 
