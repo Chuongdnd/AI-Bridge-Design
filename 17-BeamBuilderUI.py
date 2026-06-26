@@ -1841,11 +1841,29 @@ def _span_pfx(d: dict, base_pfx: str, i_span: int, main_idx: int) -> str:
     return base_pfx
 
 
+def _pa_kcn_for_pfx(pfx: str):
+    """(loại dầm, chiều cao mm) của phương án ứng với pfx — đọc từ design_data.
+    pfx 'spt_pa1/2/3…' ↔ kcn_3_pa; fallback kcn_result. Dùng để sinh mặt cắt
+    tham số ĐÚNG loại + chiều cao khi người dùng chưa dựng dầm."""
+    dd = st.session_state.get("design_data") or {}
+    _3 = dd.get("kcn_3_pa") or {}
+    p = pfx or ""
+    key = ("pa1_chi_phi" if "pa1" in p else
+           "pa2_my_quan" if "pa2" in p else
+           "pa3_ai"      if "pa3" in p else None)
+    kcn = (_3.get(key) if key else None) or dd.get("kcn_result") or dd.get("ai_result") or {}
+    loai = str(kcn.get("loai_dam", "") or "")
+    H = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao") or 1.2)
+    return loai, H * 1000.0
+
+
 def _resolve_beam_sections(pfx: str = "spt"):
     """Bộ mặt cắt dầm + tên mặt cắt giữa nhịp (fill_sec), theo thứ tự ưu tiên:
     1) mặt cắt người dùng đang khai báo trong session,
     2) dầm mặc định đã lưu (spt_sections_saved.json),
-    3) preset built-in (Super-T A-A/B-B/C-C).
+    3) THEO NHỊP/LOẠI của phương án: Super-T → preset máng; loại khác → SINH mặt
+       cắt tham số đúng loại + chiều cao (để mọi view có dầm phù hợp dù chưa khai
+       báo, không còn luôn hiển thị Super-T).
     Đảm bảo mọi view luôn có dầm để vẽ kể cả khi chưa mở tab Chi tiết dầm."""
     bb = _get_bb()
     pfx = _resolve_storage_pfx(pfx)   # dò pfx thực (kèm hậu tố loại dầm)
@@ -1859,8 +1877,13 @@ def _resolve_beam_sections(pfx: str = "spt"):
             secs     = saved["secs"]
             fill_sec = fill_sec or saved.get("fill_sec")
         else:
-            secs     = {sn: getattr(bb, fn)() for sn, (fn, _) in _SEC_PRESETS.items()}
-            fill_sec = fill_sec or "B-B"
+            _loai, _Hmm = _pa_kcn_for_pfx(pfx)
+            if (not _loai) or ("super" in _loai.lower()):
+                secs     = {sn: getattr(bb, fn)() for sn, (fn, _) in _SEC_PRESETS.items()}
+                fill_sec = fill_sec or "B-B"
+            else:
+                secs     = {"MC": bb.make_parametric_section(_loai, _Hmm)}
+                fill_sec = "MC"
     return secs, (fill_sec or "B-B")
 
 
@@ -2459,27 +2482,24 @@ def get_plan_beam_traces(d: dict, pfx: str = "spt") -> list:
 
 
 def _beam_edge_trace(vx, vy, vz, M, Np, name="", color="#3a3a3a", width=1.4):
-    """Chỉ vẽ ĐƯỜNG BAO TỐI GIẢN khối dầm (Scatter3d): 4 cạnh dọc theo BAO
-    (mép trên-trái/phải, mép dưới-trái/phải của từng vòng) + viền mặt cắt 2 ĐẦU.
-    Tính cực trị TỪNG vòng nên bám đúng bao, không rối, không 'xòe' tại chuyển
-    tiếp. vx/vy/vz là lưới M vòng × Np điểm (ring-major)."""
+    """Chỉ vẽ ĐƯỜNG BAO TỐI GIẢN khối dầm (Scatter3d): 4 cạnh dọc theo BAO nối
+    THẲNG từ đầu này sang đầu kia (mép trên/dưới × trái/phải) + viền mặt cắt 2
+    ĐẦU. KHÔNG bám từng vòng → KHÔNG có nét 'vuốt nách' ở đoạn loft (A‑A↔B‑B chỉ
+    đổi cách chia điểm, bao ngoài KHÔNG đổi). vx/vy/vz: lưới M vòng × Np điểm."""
     ex, ey, ez = [], [], []
-    paths = {"tl": [], "tr": [], "bl": [], "br": []}
-    for r in range(M):                        # 4 mép bao tại từng vòng
+
+    def _bbox(r):
         b = r * Np
-        zs = [vz[b + i] for i in range(Np)]
-        zmax, zmin = max(zs), min(zs)
-        band = max(1e-6, 0.06 * (zmax - zmin))
-        top = [i for i in range(Np) if vz[b + i] >= zmax - band]
-        bot = [i for i in range(Np) if vz[b + i] <= zmin + band]
-        paths["tl"].append(b + min(top, key=lambda i: vx[b + i]))
-        paths["tr"].append(b + max(top, key=lambda i: vx[b + i]))
-        paths["bl"].append(b + min(bot, key=lambda i: vx[b + i]))
-        paths["br"].append(b + max(bot, key=lambda i: vx[b + i]))
-    for ks in paths.values():                 # 4 cạnh dọc theo bao
-        for k in ks:
-            ex.append(vx[k]); ey.append(vy[k]); ez.append(vz[k])
-        ex.append(None); ey.append(None); ez.append(None)
+        xs = [vx[b + i] for i in range(Np)]; zs = [vz[b + i] for i in range(Np)]
+        return min(xs), max(xs), min(zs), max(zs), vy[b]
+
+    x0n, x0x, z0n, z0x, y0 = _bbox(0)
+    x1n, x1x, z1n, z1x, y1 = _bbox(M - 1)
+    for (xa, za), (xb, zb) in (((x0n, z0x), (x1n, z1x)),    # trên‑trái
+                               ((x0x, z0x), (x1x, z1x)),    # trên‑phải
+                               ((x0n, z0n), (x1n, z1n)),    # dưới‑trái
+                               ((x0x, z0n), (x1x, z1n))):   # dưới‑phải
+        ex += [xa, xb, None]; ey += [y0, y1, None]; ez += [za, zb, None]
     for r in (0, M - 1):                       # viền mặt cắt CHỈ ở 2 đầu dầm
         b = r * Np
         for i in range(Np):

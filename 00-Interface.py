@@ -3546,6 +3546,37 @@ def _apply_beam_to_pa(d: dict, pa_key: str, beam: dict, tier: str = "dan") -> No
     st.rerun()
 
 
+def _beam_has_sections(b: dict) -> bool:
+    """Dầm thư viện có hình học mặt cắt (DXF) để vẽ được hay không."""
+    secs = (b or {}).get("sections") or {}
+    return any((s or {}).get("outer") for s in secs.values())
+
+
+def _auto_apply_lib_beam_for_pa(d: dict, ribbon: str, pfx: str) -> None:
+    """Khi PA CHƯA khai báo/áp dầm nhưng thư viện NGƯỜI DÙNG có dầm DXF khớp nhịp
+    → tự nạp dầm gần nhất (theo loại + chiều dài) để các mặt cắt hiển thị dầm
+    THỰC. Không ghi vào lib_dam_applied (chỉ gợi ý hiển thị; người dùng vẫn áp
+    dầm khác tùy ý). Không có dầm DXF → để fallback sinh mặt cắt tham số lo."""
+    if (d.get("lib_dam_applied") or {}).get(ribbon):
+        return                                   # đã áp thủ công
+    if st.session_state.get(f"_loaded_beam_{pfx}"):
+        return                                   # đã nạp dầm nào đó
+    kcn = d.get("kcn_result") or {}
+    beams = [b for b in (st.session_state.get("dam_beams") or CLIB.load_beams())
+             if _beam_has_sections(b)]
+    if not beams:
+        return                                   # không có dầm DXF → tham số
+    try:
+        lb, _ = KCN.select_library_beam(kcn.get("loai_dam", ""),
+                                        kcn.get("chieu_dai", 0), beams)
+    except Exception:
+        lb = None
+    if lb and _beam_has_sections(lb):
+        st.session_state[f"{pfx}_beam_type"] = lb.get("loai_dam", "Super-T")
+        BBUI.import_beam_state(BBUI.effective_pfx(pfx, lb.get("loai_dam")), lb)
+        st.session_state[f"_loaded_beam_{pfx}"] = lb.get("id") or "auto"
+
+
 def _render_dam_edit_panel(d: dict) -> None:
     """Panel tạo/sửa dầm (bung ra khi bấm + / Sửa, thu gọn sau khi Lưu)."""
     base       = _DAM_EDIT_PFX
@@ -6285,6 +6316,14 @@ with _col_main:
             # Nạp bố trí nhịp (2 tầng) của PA vào d → mọi bản vẽ đồng bộ
             d = {**d, "span_layout": _pa_span_layout(selected_ribbon),
                  "railings": _resolve_railings_for_pa(selected_ribbon)}
+
+            # Chưa khai báo dầm → tự lấy dầm phù hợp theo nhịp từ THƯ VIỆN người
+            # dùng (nếu có DXF); không có thì các mặt cắt sinh hình tham số đúng
+            # loại (xử lý ở 17-BeamBuilderUI._resolve_beam_sections).
+            try:
+                _auto_apply_lib_beam_for_pa(d, selected_ribbon, _spt_pfx)
+            except Exception:
+                pass
 
             # Thông tin brief
             _geo_d = d.get("geo_logic", {})

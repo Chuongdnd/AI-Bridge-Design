@@ -706,6 +706,71 @@ def preset_supert_model() -> BeamModel:
     return m
 
 
+def make_parametric_section(loai_dam: str, H_mm: float,
+                            width_mm: float = None) -> "CrossSection":
+    """Sinh MỘT mặt cắt THAM SỐ theo loại dầm + chiều cao (mm), dùng để hiển thị
+    khi người dùng CHƯA dựng dầm (chưa có DXF). Hệ trục: x=0 tim dầm, z=0 đỉnh
+    dầm (đáy bản), z=-H đáy dầm. Hình minh hoạ đúng loại + tỉ lệ, KHÔNG thay cho
+    dầm dựng chi tiết.
+
+    Trả về CrossSection (outer mm, có thể kèm holes cho dầm bản rỗng).
+    """
+    import math
+    H = max(300.0, float(H_mm or 1000.0))
+    loai = (loai_dam or "").strip().lower()
+
+    def _rect(hw, h):
+        return [[-hw, 0.0], [hw, 0.0], [hw, -h], [-hw, -h]]
+
+    # ── Bản rỗng / dầm bản: hộp đặc + khoang rỗng tròn ──────────────────────
+    if "rỗng" in loai or "rong" in loai or "bản" in loai or "ban" in loai:
+        w  = float(width_mm or 990.0)
+        hw = w / 2.0
+        outer = _rect(hw, H)
+        r = min(0.32 * H, 0.30 * w)
+        holes = []
+        if r > 60:
+            cxs = [-w * 0.22, w * 0.22] if w >= 760 else [0.0]
+            for cx in cxs:
+                holes.append([[cx + r * math.cos(t), -H / 2.0 + r * math.sin(t)]
+                              for t in (i * 2 * math.pi / 24 for i in range(24))])
+        return CrossSection(name="MC", outer=outer, holes=holes, open=False)
+
+    # ── T ngược: sườn hẹp trên + bầu cánh rộng dưới ─────────────────────────
+    if "ngược" in loai or "nguoc" in loai:
+        wf = float(width_mm or 980.0)
+        ww = max(180.0, min(300.0, 0.22 * wf))
+        tfb = 0.42 * H
+        hwf, hww = wf / 2.0, ww / 2.0
+        z_b = -(H - tfb)
+        outer = [
+            [-hww, 0.0], [hww, 0.0], [hww, z_b], [hwf, z_b],
+            [hwf, -H], [-hwf, -H], [-hwf, z_b], [-hww, z_b],
+        ]
+        return CrossSection(name="MC", outer=outer, holes=[], open=False)
+
+    # ── Dầm I: cánh trên/dưới + sườn giữa ───────────────────────────────────
+    if loai.startswith("dầm i") or loai.startswith("dam i") or loai in ("i", "dầm i", "dam i"):
+        wtop = max(500.0, min(900.0, 0.5 * H))
+        wbot = max(550.0, min(1000.0, 0.6 * H))
+        ww   = max(150.0, min(260.0, 0.18 * wbot))
+        tft  = 0.18 * H        # dày cánh trên
+        tfb  = 0.22 * H        # dày cánh dưới
+        ht, hb, hw_ = wtop / 2.0, wbot / 2.0, ww / 2.0
+        z_top = -tft
+        z_bot = -(H - tfb)
+        outer = [
+            [-ht, 0.0], [ht, 0.0], [ht, z_top], [hw_, z_top],
+            [hw_, z_bot], [hb, z_bot], [hb, -H], [-hb, -H],
+            [-hb, z_bot], [-hw_, z_bot], [-hw_, z_top], [-ht, z_top],
+        ]
+        return CrossSection(name="MC", outer=outer, holes=[], open=False)
+
+    # ── Mặc định / Khác: hộp đặc ────────────────────────────────────────────
+    w  = float(width_mm or 0.6 * H)
+    return CrossSection(name="MC", outer=_rect(w / 2.0, H), holes=[], open=False)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # 10. CAD COMMAND INTERPRETER
 # ═══════════════════════════════════════════════════════════════════════════════
