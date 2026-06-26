@@ -2337,6 +2337,94 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             fig.add_trace(_abox(xm, xm + sign*mo_L, -bc/2-0.5, bc/2+0.5,
                                 z_beb, z_deck, "#c0a06b", 0.85, nm, sl=sl))
 
+        # ── ĐƯỜNG ĐẦU CẦU: nền đắp + mặt đường vươn 50m mỗi bên ──────────────
+        # Extrapolate tim tuyến beyond survey range (np.interp would clamp).
+        def _vn_ext(s, off=0.0):
+            if s < lt_v[0]:
+                xc, yc = _vn(float(lt_v[0]), off); g = float(goc_v[0]); dd = s - lt_v[0]
+                return (xc + dd*np.cos(g), yc + dd*np.sin(g))
+            if s > lt_v[-1]:
+                xc, yc = _vn(float(lt_v[-1]), off); g = float(goc_v[-1]); dd = s - lt_v[-1]
+                return (xc + dd*np.cos(g), yc + dd*np.sin(g))
+            return _vn(s, off)
+
+        def _approach_emb(s0, s1, taluy=1.5, name="", sl=True, step=5.0):
+            """Nền đắp đầu cầu QUÉT dọc tim tuyến: mặt cắt hình thang (đỉnh = mặt
+            đường rộng bc tại đường đỏ, đáy mở theo mái taluy tới mặt đất TN)."""
+            m  = max(2, int(abs(s1 - s0) / step))
+            ss = np.linspace(s0, s1, m + 1)
+            vx, vy, vz = [], [], []
+            for s in ss:
+                z_road = _rdz(s)
+                z_g    = float(np.interp(s, lt_v, vz_v)) * hz
+                h_real = max(0.0, (z_road - z_g) / max(hz, 1e-6))
+                sft    = h_real * taluy
+                xtL, ytL = _vn_ext(s, -bc/2)
+                xtR, ytR = _vn_ext(s,  bc/2)
+                xbL, ybL = _vn_ext(s, -(bc/2 + sft))
+                xbR, ybR = _vn_ext(s,  (bc/2 + sft))
+                vx += [xtL, xtR, xbR, xbL]
+                vy += [ytL, ytR, ybR, ybL]
+                vz += [z_road, z_road, z_g, z_g]   # 0=đỉnhL 1=đỉnhR 2=đáyR 3=đáyL
+            ii, jj, kk = [], [], []
+            def _q(a, b, c, dd):
+                ii.append(a); jj.append(b); kk.append(c)
+                ii.append(a); jj.append(c); kk.append(dd)
+            for i in range(m):
+                b0, b1 = 4*i, 4*(i+1)
+                _q(b0+0, b0+1, b1+1, b1+0)   # mặt đỉnh (mặt đường)
+                _q(b0+3, b0+2, b1+2, b1+3)   # mặt đáy
+                _q(b0+1, b0+2, b1+2, b1+1)   # mái taluy phải
+                _q(b0+0, b1+0, b1+3, b0+3)   # mái taluy trái
+            _q(0, 1, 2, 3)                    # bịt đầu (lưng mố)
+            _last = 4*m
+            _q(_last, _last+3, _last+2, _last+1)  # bịt cuối
+            return go.Mesh3d(
+                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
+                color="#c9a86b", opacity=0.55, flatshading=True,
+                name=name, showlegend=sl and bool(name),
+                lighting=dict(ambient=0.65, diffuse=0.85, specular=0.15),
+                hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
+            )
+
+        def _approach_road(s0, s1, name="", sl=True, step=5.0):
+            """Mặt đường đầu cầu (tấm mỏng) bám đường đỏ thiết kế dọc tim tuyến."""
+            m  = max(2, int(abs(s1 - s0) / step))
+            ss = np.linspace(s0, s1, m + 1)
+            vx, vy, vz = [], [], []
+            for s in ss:
+                zt = _rdz(s); zb = zt - 0.25 * hz
+                xL, yL = _vn_ext(s, -bc/2)
+                xR, yR = _vn_ext(s,  bc/2)
+                vx += [xL, xR, xL, xR]
+                vy += [yL, yR, yL, yR]
+                vz += [zb, zb, zt, zt]            # 0=Lđáy 1=Rđáy 2=Lđỉnh 3=Rđỉnh
+            ii, jj, kk = [], [], []
+            def _q(a, b, c, dd):
+                ii.append(a); jj.append(b); kk.append(c)
+                ii.append(a); jj.append(c); kk.append(dd)
+            for i in range(m):
+                b0, b1 = 4*i, 4*(i+1)
+                _q(b0+2, b0+3, b1+3, b1+2)        # mặt trên
+                _q(b0+0, b1+0, b1+1, b0+1)        # mặt dưới
+            return go.Mesh3d(
+                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
+                color="#34495e", opacity=0.95, flatshading=True,
+                name=name, showlegend=sl and bool(name),
+                lighting=dict(ambient=0.65, diffuse=0.85, specular=0.2),
+                hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
+            )
+
+        _L_app_t = 50.0
+        for _xm, _od in [(x0, -1.0), (x_end, 1.0)]:
+            _s1 = _xm + _od * _L_app_t
+            fig.add_trace(_approach_emb(
+                _xm, _s1, taluy=1.5,
+                name="Nền đắp đầu cầu" if _od < 0 else "", sl=(_od < 0)))
+            fig.add_trace(_approach_road(
+                _xm, _s1,
+                name="Mặt đường đầu cầu" if _od < 0 else "", sl=(_od < 0)))
+
         # ── Title ─────────────────────────────────────────────────────────
         fig.update_layout(
             title=dict(
