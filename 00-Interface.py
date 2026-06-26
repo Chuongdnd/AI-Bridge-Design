@@ -3880,6 +3880,7 @@ def _render_xamu_layers(kind, part) -> dict:
         with _pv:
             _f = _asm_section_fig(sec)
             if _f is not None:
+                PLOT.aspect_control(_f, f"{kind}_secfig_xamu_L{i}")
                 st.plotly_chart(_f, use_container_width=True,
                                 key=f"{kind}_secfig_xamu_L{i}")
             else:
@@ -3936,6 +3937,7 @@ def _render_asm_part_editor(kind, spec, part) -> dict:
     with _pv:
         _f = _asm_section_fig(sec)
         if _f is not None:
+            PLOT.aspect_control(_f, f"{kind}_secfig_{role}")
             st.plotly_chart(_f, use_container_width=True, key=f"{kind}_secfig_{role}")
         else:
             st.info("Chưa có mặt cắt — upload DXF để bắt đầu.")
@@ -4411,6 +4413,7 @@ def _render_stem_layers(kind: str, draft: dict) -> list:
         with _pv:
             _f = _asm_section_fig(sec)
             if _f is not None:
+                PLOT.aspect_control(_f, f"{kind}_secfig_stem_L{i}")
                 st.plotly_chart(_f, use_container_width=True,
                                 key=f"{kind}_secfig_stem_L{i}")
             else:
@@ -4535,6 +4538,7 @@ def _render_simple_part_panel(kind: str, cfg: dict):
     with _c1:
         _f = _asm_section_fig(sec)
         if _f is not None:
+            PLOT.aspect_control(_f, f"{kind}_secfig_part")
             st.plotly_chart(_f, use_container_width=True, key=f"{kind}_secfig_part")
         else:
             st.info("Chưa có mặt cắt — upload DXF.")
@@ -4914,6 +4918,7 @@ def render_railing_library() -> None:
     with _pv:
         _f = _asm_section_fig(_draft) if _draft.get("outer") else None
         if _f is not None:
+            PLOT.aspect_control(_f, "rail_secfig")
             st.plotly_chart(_f, use_container_width=True, key="rail_secfig")
         else:
             st.info("Chưa có mặt cắt — upload DXF để bắt đầu.")
@@ -5517,6 +5522,7 @@ with _col_main:
                     _c2d_cau, _c3d_cau = st.columns(2)
                     with _c2d_cau:
                         fig_cau_2d = PLOT.ve_mat_cat_ngang(res_mcn, bridge_mode=True)
+                        PLOT.aspect_control(fig_cau_2d, "mcn_cau_2d")
                         st.plotly_chart(fig_cau_2d, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True},
                                         key="mcn_cau_2d")
@@ -6075,6 +6081,7 @@ with _col_main:
                             fig_td_btc.add_trace(_td_tr)
                     except Exception:
                         pass
+                    PLOT.aspect_control(fig_td_btc, "td_btc")
                     st.plotly_chart(fig_td_btc, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
 
@@ -6086,6 +6093,7 @@ with _col_main:
                             fig_bd.add_trace(_bd_tr)
                     except Exception:
                         pass
+                    PLOT.aspect_control(fig_bd, "binh_do_btc")
                     st.plotly_chart(fig_bd, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
 
@@ -6213,9 +6221,11 @@ with _col_main:
                 _colL, _colR = st.columns([2, 1], gap="medium")
                 with _colL:
                     try:
-                        st.plotly_chart(BVK.ve_mat_bang_mo_tru(
-                                            d, vi_tri=_selected_vt,
-                                            pier_assembly=_pa_tru, x_half=_xh),
+                        _f_mbmt = BVK.ve_mat_bang_mo_tru(
+                            d, vi_tri=_selected_vt,
+                            pier_assembly=_pa_tru, x_half=_xh)
+                        PLOT.aspect_control(_f_mbmt, "mb_motru")
+                        st.plotly_chart(_f_mbmt,
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
@@ -6232,15 +6242,18 @@ with _col_main:
                         st.error(f"Lỗi vẽ mặt cắt ngang: {_e}")
                 with _colR:
                     try:
-                        st.plotly_chart(BVK.ve_mat_bang_coc(d, vi_tri=_selected_vt),
+                        _f_mbc = BVK.ve_mat_bang_coc(d, vi_tri=_selected_vt)
+                        PLOT.aspect_control(_f_mbc, "mb_coc")
+                        st.plotly_chart(_f_mbc,
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt bằng cọc: {_e}")
                     try:
-                        st.plotly_chart(BVK.ve_mat_cat_doc_vi_tri(
-                                            d, vi_tri=_selected_vt,
-                                            pier_assembly=_pa_tru),
+                        _f_mcd = BVK.ve_mat_cat_doc_vi_tri(
+                            d, vi_tri=_selected_vt, pier_assembly=_pa_tru)
+                        PLOT.aspect_control(_f_mcd, "mc_doc_vitri")
+                        st.plotly_chart(_f_mcd,
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
@@ -6284,6 +6297,7 @@ with _col_main:
                                 _fig_plan.add_trace(_ptr)
                         except Exception:
                             pass
+                        PLOT.aspect_control(_fig_plan, f"ctd_plan_{selected_ribbon}")
                         st.plotly_chart(_fig_plan, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True},
                                         key=f"ctd_plan_{selected_ribbon}")

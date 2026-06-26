@@ -1282,6 +1282,7 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None
     try:
         fig_doc = (beam_figs["elev"] if beam_figs.get("elev") is not None
                    else ve_chi_tiet_mat_cat_doc(d_loai))
+        _aspect(fig_doc, st, f"{key_prefix}_doc")
         st.plotly_chart(fig_doc, use_container_width=True,
                         config={"scrollZoom": True, "displayModeBar": True},
                         key=f"{key_prefix}_doc")
@@ -1293,6 +1294,7 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None
     try:
         fig_mb = (beam_figs["plan"] if beam_figs.get("plan") is not None
                   else ve_chi_tiet_mat_bang(d_loai))
+        _aspect(fig_mb, st, f"{key_prefix}_mb")
         st.plotly_chart(fig_mb, use_container_width=True,
                         config={"scrollZoom": True, "displayModeBar": True},
                         key=f"{key_prefix}_mb")
