@@ -17,8 +17,52 @@ import copy
 # ── Đường dẫn lưu trữ ────────────────────────────────────────────────────────
 _THIS_DIR    = os.path.dirname(os.path.abspath(__file__))
 _ROOT        = os.path.dirname(_THIS_DIR)                       # gốc dự án
-LIBRARY_DIR  = os.path.join(_ROOT, "Data", "Library")
+LIBRARY_DIR  = os.path.join(_ROOT, "Data", "Library")          # bộ MẶC ĐỊNH (gốc)
 LIBRARY_PATH = os.path.join(LIBRARY_DIR, "components.json")
+
+# ── Đa người dùng: thư viện theo TỪNG tài khoản ──────────────────────────────
+# Để an toàn với nhiều phiên Streamlit chạy chung 1 tiến trình, KHÔNG dùng biến
+# toàn cục giữ "thư mục hiện tại". Thay vào đó Interface đăng ký 1 hàm resolver
+# đọc st.session_state (thread-local theo phiên) → mỗi phiên trả về đúng thư mục
+# thư viện của user đang đăng nhập. Khi chưa đăng ký → rơi về bộ mặc định.
+_LIB_DIR_RESOLVER = None
+
+
+def set_lib_dir_resolver(fn) -> None:
+    """fn() -> đường dẫn tuyệt đối thư mục thư viện của user đang hoạt động (hoặc None)."""
+    global _LIB_DIR_RESOLVER
+    _LIB_DIR_RESOLVER = fn
+
+
+def active_lib_dir() -> str:
+    """Thư mục thư viện ĐANG hoạt động (theo phiên/user) — fallback bộ mặc định."""
+    if _LIB_DIR_RESOLVER is not None:
+        try:
+            p = _LIB_DIR_RESOLVER()
+            if p:
+                return p
+        except Exception:
+            pass
+    return LIBRARY_DIR
+
+
+def _p(name: str) -> str:
+    return os.path.join(active_lib_dir(), name)
+
+
+# Đường dẫn động cho từng kho (gọi tại thời điểm dùng, không cache)
+def library_path():  return _p("components.json")
+def beams_path():    return _p("beams.json")
+def piers_path():    return _p("piers.json")
+def mos_path():      return _p("mos.json")
+def railings_path(): return _p("railings.json")
+def caps_path():     return _p("caps.json")
+def stems_path():    return _p("stems.json")
+def footings_path(): return _p("footings.json")
+
+# Tên tất cả file kho (dùng cho seed user mới + đóng gói .zip dự án)
+STORE_FILES = ("components.json", "beams.json", "piers.json", "mos.json",
+               "railings.json", "caps.json", "stems.json", "footings.json")
 
 VERSION = 1
 COMPONENT_TYPES = ("dam", "tru", "mo", "mong")
@@ -167,14 +211,14 @@ def normalize(lib: dict) -> dict:
 
 # ── I/O ──────────────────────────────────────────────────────────────────────
 def _ensure_dir() -> None:
-    os.makedirs(LIBRARY_DIR, exist_ok=True)
+    os.makedirs(active_lib_dir(), exist_ok=True)
 
 
 def load_library() -> dict:
     """Đọc thư viện từ JSON; nếu chưa có file → seed mặc định & ghi ra đĩa."""
-    if os.path.exists(LIBRARY_PATH):
+    if os.path.exists(library_path()):
         try:
-            with open(LIBRARY_PATH, "r", encoding="utf-8") as f:
+            with open(library_path(), "r", encoding="utf-8") as f:
                 return normalize(json.load(f))
         except (OSError, json.JSONDecodeError):
             pass  # file hỏng → rơi xuống seed mặc định
@@ -191,7 +235,7 @@ def save_library(lib: dict) -> None:
     _ensure_dir()
     data = normalize(lib)
     _txt = json.dumps(data, ensure_ascii=False, indent=2)
-    with open(LIBRARY_PATH, "w", encoding="utf-8") as f:
+    with open(library_path(), "w", encoding="utf-8") as f:
         f.write(_txt)
 
 
@@ -207,14 +251,11 @@ def records_for(lib: dict, ctype: str) -> list:
 #   { id, ten, loai_dam, sections:{name:{outer,holes}}, segs:[...],
 #     fill_sec, nguon, created_by, updated_at }
 # ══════════════════════════════════════════════════════════════════════════
-BEAMS_PATH = os.path.join(LIBRARY_DIR, "beams.json")
-
-
 def load_beams() -> list:
     """Đọc danh sách dầm trong thư viện (list). Thiếu file → [] (chưa có dầm)."""
-    if os.path.exists(BEAMS_PATH):
+    if os.path.exists(beams_path()):
         try:
-            with open(BEAMS_PATH, "r", encoding="utf-8") as f:
+            with open(beams_path(), "r", encoding="utf-8") as f:
                 data = json.load(f)
             beams = data.get("beams", []) if isinstance(data, dict) else data
             return [b for b in beams if isinstance(b, dict)]
@@ -224,11 +265,11 @@ def load_beams() -> list:
 
 
 def save_beams(beams: list) -> None:
-    """Ghi danh sách dầm ra JSON (UTF-8, giữ dấu) + tự đồng bộ GitHub."""
+    """Ghi danh sách dầm ra JSON (UTF-8, giữ dấu) — theo thư viện user."""
     _ensure_dir()
     _txt = json.dumps({"version": VERSION, "beams": list(beams or [])},
                       ensure_ascii=False, indent=2)
-    with open(BEAMS_PATH, "w", encoding="utf-8") as f:
+    with open(beams_path(), "w", encoding="utf-8") as f:
         f.write(_txt)
 
 
@@ -266,14 +307,11 @@ def get_beam(beams: list, beam_id: str):
 #     created_by, updated_at }
 # Lưu riêng (piers.json) vì cấu trúc khác bảng tham số components.json.
 # ══════════════════════════════════════════════════════════════════════════
-PIERS_PATH = os.path.join(LIBRARY_DIR, "piers.json")
-
-
 def load_piers() -> list:
     """Đọc danh sách trụ lắp ghép. Thiếu file → []."""
-    if os.path.exists(PIERS_PATH):
+    if os.path.exists(piers_path()):
         try:
-            with open(PIERS_PATH, "r", encoding="utf-8") as f:
+            with open(piers_path(), "r", encoding="utf-8") as f:
                 data = json.load(f)
             piers = data.get("piers", []) if isinstance(data, dict) else data
             return [p for p in piers if isinstance(p, dict)]
@@ -283,11 +321,11 @@ def load_piers() -> list:
 
 
 def save_piers(piers: list) -> None:
-    """Ghi danh sách trụ ra JSON + tự đồng bộ GitHub (nếu bật)."""
+    """Ghi danh sách trụ ra JSON — theo thư viện user."""
     _ensure_dir()
     _txt = json.dumps({"version": VERSION, "piers": list(piers or [])},
                       ensure_ascii=False, indent=2)
-    with open(PIERS_PATH, "w", encoding="utf-8") as f:
+    with open(piers_path(), "w", encoding="utf-8") as f:
         f.write(_txt)
 
 
@@ -320,13 +358,10 @@ def get_pier(piers: list, pier_id: str):
 # KHO MỐ LẮP GHÉP (ABUTMENTS) — cùng mô hình assembly như trụ (parts:
 # mũ mố / tường thân / bệ mố), lưu riêng mos.json.
 # ══════════════════════════════════════════════════════════════════════════
-MOS_PATH = os.path.join(LIBRARY_DIR, "mos.json")
-
-
 def load_mos() -> list:
-    if os.path.exists(MOS_PATH):
+    if os.path.exists(mos_path()):
         try:
-            with open(MOS_PATH, "r", encoding="utf-8") as f:
+            with open(mos_path(), "r", encoding="utf-8") as f:
                 data = json.load(f)
             mos = data.get("mos", []) if isinstance(data, dict) else data
             return [m for m in mos if isinstance(m, dict)]
@@ -339,7 +374,7 @@ def save_mos(mos: list) -> None:
     _ensure_dir()
     _txt = json.dumps({"version": VERSION, "mos": list(mos or [])},
                       ensure_ascii=False, indent=2)
-    with open(MOS_PATH, "w", encoding="utf-8") as f:
+    with open(mos_path(), "w", encoding="utf-8") as f:
         f.write(_txt)
 
 
@@ -377,17 +412,15 @@ def get_mo(mos: list, mo_id: str):
 # Hệ toạ độ mặt cắt: trục y = ngang cầu (mm), trục z = cao độ từ mặt cầu (mm).
 # Lưu riêng railings.json.
 # ══════════════════════════════════════════════════════════════════════════
-RAILINGS_PATH = os.path.join(LIBRARY_DIR, "railings.json")
-
 RAILING_TYPES = ("lan_can", "giai_phan_cach")
 RAILING_LABEL = {"lan_can": "Lan can", "giai_phan_cach": "Giải phân cách"}
 
 
 def load_railings() -> list:
     """Đọc danh sách lan can/giải phân cách. Thiếu file → []."""
-    if os.path.exists(RAILINGS_PATH):
+    if os.path.exists(railings_path()):
         try:
-            with open(RAILINGS_PATH, "r", encoding="utf-8") as f:
+            with open(railings_path(), "r", encoding="utf-8") as f:
                 data = json.load(f)
             rows = data.get("railings", []) if isinstance(data, dict) else data
             return [r for r in rows if isinstance(r, dict)]
@@ -397,11 +430,11 @@ def load_railings() -> list:
 
 
 def save_railings(railings: list) -> None:
-    """Ghi danh sách lan can/giải phân cách ra JSON (chỉ lưu cục bộ)."""
+    """Ghi danh sách lan can/giải phân cách ra JSON (theo thư viện user)."""
     _ensure_dir()
     _txt = json.dumps({"version": VERSION, "railings": list(railings or [])},
                       ensure_ascii=False, indent=2)
-    with open(RAILINGS_PATH, "w", encoding="utf-8") as f:
+    with open(railings_path(), "w", encoding="utf-8") as f:
         f.write(_txt)
 
 
@@ -438,10 +471,11 @@ def get_railing(railings: list, rail_id: str):
 # Lưu riêng caps.json / stems.json / footings.json. CRUD chung qua factory.
 # ══════════════════════════════════════════════════════════════════════════
 def _make_part_store(filename: str, json_key: str):
-    """Tạo bộ hàm (load, save, mkid, upsert, delete, get) cho 1 kho list[dict]."""
-    path = os.path.join(LIBRARY_DIR, filename)
+    """Tạo bộ hàm (load, save, mkid, upsert, delete, get) cho 1 kho list[dict].
+    Đường dẫn resolve ĐỘNG theo thư viện user đang hoạt động (mỗi lần gọi)."""
 
     def _load() -> list:
+        path = _p(filename)
         if os.path.exists(path):
             try:
                 with open(path, "r", encoding="utf-8") as f:
@@ -456,7 +490,7 @@ def _make_part_store(filename: str, json_key: str):
         _ensure_dir()
         _txt = json.dumps({"version": VERSION, json_key: list(rows or [])},
                           ensure_ascii=False, indent=2)
-        with open(path, "w", encoding="utf-8") as f:
+        with open(_p(filename), "w", encoding="utf-8") as f:
             f.write(_txt)
 
     def _mkid(ten: str, existing: list = None) -> str:
@@ -480,14 +514,14 @@ def _make_part_store(filename: str, json_key: str):
     def _get(rows: list, rid: str):
         return next((r for r in (rows or []) if r.get("id") == rid), None)
 
-    return path, _load, _save, _mkid, _upsert, _delete, _get
+    return _load, _save, _mkid, _upsert, _delete, _get
 
 
-(CAPS_PATH, load_caps, save_caps, make_cap_id, upsert_cap, delete_cap, get_cap
+(load_caps, save_caps, make_cap_id, upsert_cap, delete_cap, get_cap
  ) = _make_part_store("caps.json", "caps")
-(STEMS_PATH, load_stems, save_stems, make_stem_id, upsert_stem, delete_stem, get_stem
+(load_stems, save_stems, make_stem_id, upsert_stem, delete_stem, get_stem
  ) = _make_part_store("stems.json", "stems")
-(FOOTINGS_PATH, load_footings, save_footings, make_footing_id, upsert_footing,
+(load_footings, save_footings, make_footing_id, upsert_footing,
  delete_footing, get_footing) = _make_part_store("footings.json", "footings")
 
 
