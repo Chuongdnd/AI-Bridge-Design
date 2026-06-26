@@ -6262,22 +6262,24 @@ with _col_main:
                         _pct_ok = 100*(min(_lt_max2,_xmo_p)-max(_lt_min2,_xmo_t))/max(1,_xmo_p-_xmo_t)
                         st.success(f"✅ Cầu khớp địa hình ({_pct_ok:.0f}% chiều dài cầu nằm trong phạm vi địa hình)")
     
+                    _COMP_GROUPS3D = ["Địa hình", "Mặt cầu", "Dầm", "Lan can",
+                                      "Trụ", "Mố", "Bệ cọc", "Cọc",
+                                      "Đường đầu cầu", "Mặt nước", "Tĩnh không"]
                     with st.expander("⚙️ Tùy chỉnh hiển thị 3D", expanded=False):
-                        _o1, _o2 = st.columns(2)
-                        with _o1:
-                            che_do_view = st.selectbox("🎨 Địa hình:",
-                                ["Bề mặt mịn", "Đường đồng mức", "Lưới tam giác"], key="cd3d")
-                            do_min_view = st.select_slider("✨ Mịn hoá:",
-                                options=[1, 3, 5, 7], value=3, key="dm3d")
-                        with _o2:
-                            he_so_z = st.slider("↕️ Phóng đại Z:", 0.05, 3.00, 0.50, 0.05,
-                                                key="hsz3d")
-                            render_mode_3d = st.selectbox(
-                                "🖥️ Chế độ hiển thị:",
-                                ["Shaded", "Realistic", "X-Ray", "Wireframe"],
-                                key="rm3d",
-                                help="Shaded: mặc định • Realistic: đổ bóng cao • "
-                                     "X-Ray: xuyên thấu • Wireframe: khung lưới")
+                        render_mode_3d = st.selectbox(
+                            "🖥️ Chế độ hiển thị:",
+                            ["Shaded", "Realistic", "X-Ray", "Wireframe"],
+                            key="rm3d",
+                            help="Shaded: mặc định • Realistic: đổ bóng cao • "
+                                 "X-Ray: xuyên thấu • Wireframe: khung lưới")
+                        _show_comps3d = st.multiselect(
+                            "🧩 Ẩn/hiện cấu kiện:", _COMP_GROUPS3D,
+                            default=_COMP_GROUPS3D, key="show_comp3d",
+                            help="Bỏ chọn cấu kiện để ẩn khỏi mô hình 3D toàn cầu.")
+                    # Đã BỎ tùy chọn Địa hình/Mịn hóa/Phóng đại → dùng mặc định
+                    che_do_view = "Bề mặt mịn"
+                    do_min_view = 3
+                    he_so_z     = 0.5
                     # Compute VN-2000 origin from min-lý-trình centre-line point
                     _x_origin_vn2000 = 0.0
                     _y_origin_vn2000 = 0.0
@@ -6316,6 +6318,15 @@ with _col_main:
                                 except Exception:
                                     pass
                                 BVK.apply_render_mode(_fig_t, render_mode_3d)
+                                # Ẩn cấu kiện theo lựa chọn "Tùy chỉnh hiển thị"
+                                _hide3d = [g for g in _COMP_GROUPS3D
+                                           if g not in _show_comps3d]
+                                if _hide3d:
+                                    for _tr in _fig_t.data:
+                                        _kk = str(getattr(_tr, "legendgroup", "")
+                                                  or getattr(_tr, "name", "") or "").lower()
+                                        if any(_h.lower() in _kk for _h in _hide3d):
+                                            _tr.visible = False
                             except Exception as _oe:
                                 _err_overlay = str(_oe)
                             _n_after = len(_fig_t.data)
