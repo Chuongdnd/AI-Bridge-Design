@@ -260,6 +260,14 @@ try:
     CLIB = _iutil.module_from_spec(_cl_spec)
     _cl_spec.loader.exec_module(CLIB)
 
+    # ── Không gian làm việc đa người dùng (thư viện + dự án theo tài khoản) ──
+    _ws_spec = _iutil.spec_from_file_location(
+        "workspace", os.path.join(_bb_dir, "utils", "workspace.py"))
+    WS = _iutil.module_from_spec(_ws_spec)
+    _ws_spec.loader.exec_module(WS)
+    # Resolver đọc st.session_state (thread-local theo phiên) → mỗi user 1 thư viện
+    CLIB.set_lib_dir_resolver(lambda: st.session_state.get("user_lib_dir"))
+
     # ── Sơ đồ cọc: đọc DXF mặt bằng + schema bố trí cọc ─────────────────────
     _pp_spec = _iutil.spec_from_file_location(
         "pile_plan", os.path.join(_bb_dir, "utils", "pile_plan.py"))
@@ -282,6 +290,21 @@ except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
     st.stop()
 
+# ── Bối cảnh người dùng: thư viện + dự án theo tài khoản ────────────────────
+# Chạy mỗi lần rerun; khởi tạo (seed thư viện, chọn dự án) khi user vừa đổi.
+_cur_uname = (AUTH.current_user() or {}).get("username", "")
+if _cur_uname and st.session_state.get("_ws_user") != _cur_uname:
+    WS.ensure_user(_cur_uname)                      # tạo cây thư mục + seed thư viện
+    st.session_state["user_lib_dir"] = WS.user_library_dir(_cur_uname)
+    # Đổi user trong cùng trình duyệt → xoá state của user cũ để nạp lại
+    for _k in ("design_data", "dam_beams", "dam_piers", "dam_mos", "lib_railings",
+               "lib_caps", "lib_stems", "lib_footings", "bridge_library_comp"):
+        st.session_state.pop(_k, None)
+    _projs = WS.list_projects(_cur_uname)
+    st.session_state["current_pid"] = (
+        _projs[0]["id"] if _projs else WS.create_project(_cur_uname, "Dự án 1"))
+    st.session_state["_ws_user"] = _cur_uname
+
 # ── Persistence: lưu / tải thông số khai báo vào JSON ──────────────────────
 _DESIGN_SAVE_FILE = pathlib.Path(__file__).parent / "design_data_saved.json"
 _DESIGN_SAVE_KEYS = [
@@ -293,16 +316,39 @@ _DESIGN_SAVE_KEYS = [
     'lib_dam_applied', 'pile_layouts', 'railing_by_pa', 'span_layout_by_pa',
 ]
 
+def _cur_user_pid():
+    """(username, project_id) của phiên hiện tại — None nếu chưa sẵn sàng."""
+    _u = (AUTH.current_user() or {}).get("username")
+    _pid = st.session_state.get("current_pid")
+    return (_u, _pid) if (_u and _pid and 'WS' in globals()) else (None, None)
+
 def _save_design_inputs(d: dict) -> None:
     data = {k: d[k] for k in _DESIGN_SAVE_KEYS if k in d}
+    # Sạch hoá về JSON-safe (numpy/np.float… → str/số) trước khi ghi
     try:
-        _DESIGN_SAVE_FILE.write_text(
-            json.dumps(data, ensure_ascii=False, indent=2, default=str), encoding='utf-8'
-        )
+        data = json.loads(json.dumps(data, ensure_ascii=False, default=str))
+    except Exception:
+        pass
+    _u, _pid = _cur_user_pid()
+    try:
+        if _u and _pid:
+            WS.save_project_design(_u, _pid, data)        # → dự án của user
+        else:
+            _DESIGN_SAVE_FILE.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2, default=str),
+                encoding='utf-8')
     except Exception:
         pass
 
 def _load_design_inputs() -> dict | None:
+    _u, _pid = _cur_user_pid()
+    if _u and _pid:
+        try:
+            data = WS.load_project_design(_u, _pid)
+            return data or None
+        except Exception:
+            return None
+    # Fallback: file toàn cục cũ (khi chưa có bối cảnh user)
     if not _DESIGN_SAVE_FILE.exists():
         return None
     try:
@@ -2704,11 +2750,11 @@ def _data_file_registry() -> dict:
         "auth_users.json":              _root / "auth_users.json",
         "design_data_saved.json":       _DESIGN_SAVE_FILE,
         "spt_sections_saved.json":      _root / "spt_sections_saved.json",
-        "Data/Library/beams.json":      pathlib.Path(CLIB.BEAMS_PATH),
-        "Data/Library/piers.json":      pathlib.Path(CLIB.PIERS_PATH),
-        "Data/Library/mos.json":        pathlib.Path(CLIB.MOS_PATH),
-        "Data/Library/railings.json":   pathlib.Path(CLIB.RAILINGS_PATH),
-        "Data/Library/components.json": pathlib.Path(CLIB.LIBRARY_PATH),
+        "Data/Library/beams.json":      pathlib.Path(CLIB.beams_path()),
+        "Data/Library/piers.json":      pathlib.Path(CLIB.piers_path()),
+        "Data/Library/mos.json":        pathlib.Path(CLIB.mos_path()),
+        "Data/Library/railings.json":   pathlib.Path(CLIB.railings_path()),
+        "Data/Library/components.json": pathlib.Path(CLIB.library_path()),
         "terrain_saved/terrain.ntd":        _root / "terrain_saved" / "terrain.ntd",
         "terrain_saved/terrain_coord.xlsx": _root / "terrain_saved" / "terrain_coord.xlsx",
     }
