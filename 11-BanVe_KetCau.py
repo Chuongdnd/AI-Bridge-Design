@@ -2348,14 +2348,14 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 return (xc + dd*np.cos(g), yc + dd*np.sin(g))
             return _vn(s, off)
 
-        def _approach_emb(s0, s1, taluy=1.5, name="", sl=True, step=5.0):
+        def _approach_emb(s0, s1, z_top_fn, taluy=1.5, name="", sl=True, step=5.0):
             """Nền đắp đầu cầu QUÉT dọc tim tuyến: mặt cắt hình thang (đỉnh = mặt
-            đường rộng bc tại đường đỏ, đáy mở theo mái taluy tới mặt đất TN)."""
+            đường KHỚP cao độ mặt cầu, đáy mở theo mái taluy tới mặt đất TN)."""
             m  = max(2, int(abs(s1 - s0) / step))
             ss = np.linspace(s0, s1, m + 1)
             vx, vy, vz = [], [], []
             for s in ss:
-                z_road = _rdz(s)
+                z_road = z_top_fn(s)
                 z_g    = float(np.interp(s, lt_v, vz_v)) * hz
                 h_real = max(0.0, (z_road - z_g) / max(hz, 1e-6))
                 sft    = h_real * taluy
@@ -2387,13 +2387,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
             )
 
-        def _approach_road(s0, s1, name="", sl=True, step=5.0):
-            """Mặt đường đầu cầu (tấm mỏng) bám đường đỏ thiết kế dọc tim tuyến."""
+        def _approach_road(s0, s1, z_top_fn, name="", sl=True, step=5.0):
+            """Mặt đường đầu cầu (tấm mỏng) KHỚP cao độ mặt cầu, hạ dần theo dốc dọc."""
             m  = max(2, int(abs(s1 - s0) / step))
             ss = np.linspace(s0, s1, m + 1)
             vx, vy, vz = [], [], []
             for s in ss:
-                zt = _rdz(s); zb = zt - 0.25 * hz
+                zt = z_top_fn(s); zb = zt - 0.25 * hz
                 xL, yL = _vn_ext(s, -bc/2)
                 xR, yR = _vn_ext(s,  bc/2)
                 vx += [xL, xR, xL, xR]
@@ -2415,14 +2415,18 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
             )
 
+        # Cao độ mặt đường đầu cầu KHỚP mặt cầu (z_phu) tại lưng mố, hạ dần ra
+        # ngoài theo dốc dọc i_geo → liền mạch, không bị chênh bậc tại khe nối.
         _L_app_t = 50.0
         for _xm, _od in [(x0, -1.0), (x_end, 1.0)]:
             _s1 = _xm + _od * _L_app_t
+            def _z_app(s, _xm=_xm):
+                return z_phu - i_geo * abs(s - _xm) * hz
             fig.add_trace(_approach_emb(
-                _xm, _s1, taluy=1.5,
+                _xm, _s1, _z_app, taluy=1.5,
                 name="Nền đắp đầu cầu" if _od < 0 else "", sl=(_od < 0)))
             fig.add_trace(_approach_road(
-                _xm, _s1,
+                _xm, _s1, _z_app,
                 name="Mặt đường đầu cầu" if _od < 0 else "", sl=(_od < 0)))
 
         # ── Title ─────────────────────────────────────────────────────────
