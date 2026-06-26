@@ -1,0 +1,130 @@
+NGHỊ ĐỊNH 175/2024/NĐ-CP — QUẢN LÝ CHẤT LƯỢNG VÀ BẢO TRÌ CÔNG TRÌNH XÂY DỰNG
+(Tóm tắt các quy định liên quan đến thiết kế cơ sở — hệ thống AI-Bridge-Design)
+Ban hành: 30/12/2024 | Hiệu lực: 01/01/2025
+
+═══════════════════════════════════════════════════════
+PHẦN 1 — THIẾT KẾ XÂY DỰNG CÔNG TRÌNH
+═══════════════════════════════════════════════════════
+
+Điều 19 — Các bước thiết kế xây dựng công trình
+
+Thiết kế xây dựng công trình thực hiện theo các bước:
+a) Thiết kế cơ sở (TKCS): Trong giai đoạn lập Báo cáo nghiên cứu khả thi
+b) Thiết kế kỹ thuật (TKKT): Sau khi phê duyệt chủ trương đầu tư
+c) Thiết kế bản vẽ thi công (BVTC): Giai đoạn chuẩn bị xây dựng
+
+Điều 20 — Nội dung thiết kế cơ sở (TKCS)
+
+20.1 TKCS phải bao gồm:
+a) Phương án kiến trúc (nếu có)
+b) Sơ đồ kết cấu chịu lực và phương án nền móng
+c) Phương án mặt bằng và mặt cắt công trình
+d) Phương án kỹ thuật, công nghệ (nếu có)
+e) Danh mục tiêu chuẩn áp dụng
+f) Ước tính tổng mức đầu tư (dự toán sơ bộ)
+
+20.2 Đối với công trình cầu, TKCS phải thể hiện:
+- Phương án kết cấu nhịp (loại dầm, nhịp, số nhịp)
+- Phương án mố và trụ cầu
+- Phương án nền móng (loại móng, chiều sâu, kích thước)
+- Giải pháp kỹ thuật cho gối cầu, khe co giãn
+- Phương án thi công sơ bộ
+- Sơ bộ khối lượng vật liệu chính
+- Dự toán sơ bộ theo suất đầu tư tham chiếu
+
+20.3 Hồ sơ TKCS nộp thẩm tra gồm:
+- Thuyết minh thiết kế (tập văn bản)
+- Các bản vẽ kỹ thuật (tỉ lệ phù hợp, thường 1:100 đến 1:500)
+- Bảng tổng hợp khối lượng (sơ bộ)
+- Bảng dự toán sơ bộ (chi phí từng hạng mục)
+
+Điều 21 — Thẩm định và phê duyệt thiết kế cơ sở
+
+21.1 Thẩm quyền thẩm định TKCS:
+- Dự án nhóm A: Bộ Giao thông Vận tải
+- Dự án nhóm B, C: UBND cấp tỉnh hoặc cơ quan được ủy quyền
+- Dự án do địa phương đầu tư: Sở Giao thông Vận tải địa phương
+
+21.2 Nội dung thẩm định TKCS cầu:
+- Sự phù hợp với quy hoạch mạng lưới đường
+- Tuân thủ các tiêu chuẩn kỹ thuật (TCVN 11823, TCVN 4054, v.v.)
+- Tính đúng đắn của phương án kết cấu được chọn
+- Sự hợp lý của dự toán sơ bộ so với suất đầu tư tham chiếu
+
+═══════════════════════════════════════════════════════
+PHẦN 2 — PHÂN LOẠI CÔNG TRÌNH CẦU
+═══════════════════════════════════════════════════════
+
+Điều 6 — Phân loại theo cấp công trình (Phụ lục I)
+
+Cầu trên đường ô tô:
+- Cấp đặc biệt: Tổng chiều dài L > 1000m, hoặc nhịp chính > 200m
+- Cấp I: Tổng chiều dài L = 500–1000m, hoặc nhịp chính 50–200m
+- Cấp II: Tổng chiều dài L = 100–500m, hoặc nhịp chính 25–50m
+- Cấp III: Tổng chiều dài L = 25–100m, nhịp chính ≤ 25m
+- Cấp IV: Tổng chiều dài L < 25m, nhịp < 15m
+
+Cầu thành phố:
+- Cấp đặc biệt: Nhịp chính > 150m
+- Cấp I: Nhịp chính 50–150m
+- Cấp II: Nhịp chính 25–50m
+- Cấp III: Nhịp chính ≤ 25m
+
+═══════════════════════════════════════════════════════
+PHẦN 3 — YÊU CẦU VỀ THUYẾT MINH THIẾT KẾ CƠ SỞ
+═══════════════════════════════════════════════════════
+
+Phụ lục VIII — Nội dung thuyết minh TKCS công trình cầu đường
+
+Chương 1: Giới thiệu dự án
+1.1 Tên dự án, địa điểm xây dựng
+1.2 Cấp công trình, tiêu chuẩn kỹ thuật áp dụng
+1.3 Quy mô công trình (chiều dài cầu, bề rộng, số làn xe)
+
+Chương 2: Cơ sở thiết kế
+2.1 Các văn bản pháp lý, tiêu chuẩn áp dụng
+2.2 Điều kiện địa hình, địa chất, thủy văn
+2.3 Tải trọng thiết kế
+2.4 Yêu cầu tĩnh không
+
+Chương 3: Phương án kết cấu
+3.1 Mô tả phương án kết cấu được chọn
+3.2 Phân tích lý do lựa chọn phương án
+3.3 So sánh các phương án thay thế (ít nhất 2 phương án)
+3.4 Kết cấu nhịp: Loại dầm, nhịp, số nhịp, bề rộng
+3.5 Mố và trụ cầu: Loại, kích thước sơ bộ
+3.6 Nền móng: Loại móng, chiều sâu, kích thước sơ bộ
+
+Chương 4: Giải pháp thi công sơ bộ
+Chương 5: Khối lượng và dự toán sơ bộ
+Chương 6: Phân tích rủi ro và biện pháp giảm thiểu
+
+═══════════════════════════════════════════════════════
+PHẦN 4 — DỰ TOÁN SƠ BỘ TRONG TKCS
+═══════════════════════════════════════════════════════
+
+Điều 36 — Ước tính tổng mức đầu tư trong TKCS
+
+36.1 Phương pháp ước tính theo suất đầu tư (điều 36.2a):
+Tổng_ĐT = Suất_đầu_tư × Quy_mô_công_trình
+Quy mô = Diện tích mặt cầu (m²) = Chiều dài × Bề rộng
+
+36.2 Suất đầu tư tham chiếu cầu đường bộ (QĐ 409/2025/QĐ-BXD):
+- Cầu cấp đặc biệt: 22–35 triệu VND/m² mặt cầu
+- Cầu cấp I: 18–25 triệu VND/m²
+- Cầu cấp II: 14–20 triệu VND/m²
+- Cầu cấp III: 8–13 triệu VND/m²
+- Cầu cấp IV: 5–8 triệu VND/m²
+(Giá tham chiếu năm 2025, chưa bao gồm điều chỉnh địa phương)
+
+36.3 Cơ cấu chi phí điển hình cầu dầm BTCT:
+- Kết cấu nhịp (KCN): 35–45%
+- Mố trụ (MTM): 5–15%
+- Móng cọc (MON): 20–35%
+- Bản mặt cầu và lớp phủ (BMC): 8–15%
+- Phụ trợ (gối, khe, lan can, thoát nước): 5–10%
+- Chi phí gián tiếp (thiết kế, quản lý, dự phòng): 18–25%
+- Thuế VAT 10%
+
+Lưu ý: Tỉ lệ móng cao (30–35%) là bình thường ở vùng đất yếu đồng bằng Nam Bộ
+vì phải sử dụng cọc khoan nhồi dài.

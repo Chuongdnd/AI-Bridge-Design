@@ -22,6 +22,166 @@ def style_grid_2d(fig):
     return fig
 
 
+# =============================================================================
+# QUY TẮC THỂ HIỆN BẢN VẼ (CAD standard) — nguồn dùng chung cho mọi bản vẽ 2D
+# Bảng LAYER / TEXT / KÍCH THƯỚC theo bộ quy tắc thể hiện bản vẽ của dự án.
+# Màu được CHUYỂN ĐỔI cho nền TRẮNG của webapp (CAD gốc nền đen) để vẫn đọc rõ.
+# =============================================================================
+# Màu theo LAYER (xấp xỉ màu AutoCAD, đã chỉnh cho nền sáng):
+LAYER_COLORS = {
+    "0":       "#2b2b2b",  # Trắng/đen 0.35 — đường bao cấu kiện KHÔNG cốt thép
+    "1":       "#e74c3c",  # Đỏ 0.35     — nét thép chủ
+    "2":       "#e1a100",  # Vàng 0.30   — nét thép đai
+    "3":       "#1e8449",  # Xanh lá 0.25— đường bao cấu kiện CÓ cốt thép (BTCT)
+    "4":       "#1f9ed1",  # Xanh nhạt   — kích thước, nét cấu kiện mảnh
+    "4-dim":   "#1f9ed1",  # Xanh nhạt   — nét DIM
+    "4-hidden":"#1f9ed1",  # Xanh nhạt   — nét khuất (dash)
+    "5":       "#2e5cb8",  # Xanh dương  — nét mảnh (taluy, break line)
+    "5-hatch": "#5b86d6",  # Xanh dương  — hatch
+    "6-center":"#2e5cb8",  # Xanh dương  — nét center (chấm gạch)
+    "6-text":  "#7d3c98",  # Tím         — text
+    "8":       "#7f8c8d",  # Xám 0.09    — nét mảnh
+}
+
+# Chiều cao chữ (mm) → quy đổi xấp xỉ sang cỡ font Plotly (px) khi hiển thị:
+TEXT_MM = {"note": 1.8, "title": 3.0, "drawing": 4.0}
+def mm_to_px(mm):  # 1.8mm ≈ 11px là cỡ đọc tốt trên màn hình
+    return max(7, round(float(mm) * 6.1))
+
+# ── DIM STYLE (theo bảng KÍCH THƯỚC) ─────────────────────────────────────────
+DIM_COLOR   = LAYER_COLORS["4-dim"]   # nét DIM = layer 4 (xanh nhạt)
+DIM_LW      = 1.0                       # nét mảnh 0.15mm
+DIM_TEXT    = mm_to_px(TEXT_MM["note"])# chữ kích thước 1.8mm
+DIM_ARROW   = 1.4                       # mũi tên closed filled ~1.5mm
+
+
+def add_dim_h(fig, x0, x1, y, text, color=None, fs=None, ext_from=None):
+    """Đường KÍCH THƯỚC NGANG theo chuẩn: nét DIM xanh nhạt + 2 mũi tên closed
+    filled (TCVN dim style). Nếu ext_from cho trước (y gốc của đối tượng) sẽ vẽ
+    thêm nét gióng (extension line) từ đối tượng tới đường dim."""
+    color = color or DIM_COLOR
+    fs = fs or DIM_TEXT
+    if ext_from is not None:
+        for xi in (x0, x1):
+            fig.add_shape(type="line", x0=xi, y0=ext_from, x1=xi, y1=y,
+                          line=dict(color=color, width=0.8))
+    # 2 annotation = đường dim vẽ 2 lần + mũi tên closed ở 2 đầu
+    for xh, xt in ((x0, x1), (x1, x0)):
+        fig.add_annotation(x=xh, y=y, ax=xt, ay=y, xref="x", yref="y",
+                           axref="x", ayref="y", showarrow=True, arrowhead=3,
+                           arrowsize=DIM_ARROW, arrowwidth=DIM_LW, arrowcolor=color)
+    fig.add_annotation(x=(x0 + x1) / 2, y=y, text=text, showarrow=False,
+                       font=dict(size=fs, color=color), yanchor="bottom",
+                       bgcolor="rgba(255,255,255,0.85)")
+
+
+def add_dim_v(fig, x, y0, y1, text, color=None, fs=None, ext_from=None):
+    """Đường KÍCH THƯỚC ĐỨNG theo chuẩn (xem add_dim_h)."""
+    color = color or DIM_COLOR
+    fs = fs or DIM_TEXT
+    if ext_from is not None:
+        for yi in (y0, y1):
+            fig.add_shape(type="line", x0=ext_from, y0=yi, x1=x, y1=yi,
+                          line=dict(color=color, width=0.8))
+    for yh, yt in ((y0, y1), (y1, y0)):
+        fig.add_annotation(x=x, y=yh, ax=x, ay=yt, xref="x", yref="y",
+                           axref="x", ayref="y", showarrow=True, arrowhead=3,
+                           arrowsize=DIM_ARROW, arrowwidth=DIM_LW, arrowcolor=color)
+    fig.add_annotation(x=x, y=(y0 + y1) / 2, text=text, showarrow=False,
+                       font=dict(size=fs, color=color), xanchor="left",
+                       textangle=-90, bgcolor="rgba(255,255,255,0.85)")
+
+
+# ── HỆ THỐNG MÃ MÀU CÁC HẠNG MỤC (theo bảng quy định) — dùng cho mọi 3D ───────
+COLOR_BTXM     = "#d6d6d6"   # Các cấu kiện BTXM           RGB(214,214,214)
+COLOR_ASPHALT  = "#4a484b"   # Bê tông nhựa / cấp phối ĐD  RGB(74,72,75)
+COLOR_GRASS    = "#008000"   # Bề mặt vỉa hè trồng cỏ      RGB(0,128,0)
+COLOR_SIDEWALK = "#ff8000"   # Bề mặt vỉa hè BTXM          RGB(255,128,0)
+COLOR_OTHER    = "#ffffff"   # Các loại cấu kiện khác      RGB(255,255,255)
+CONCRETE_3D = COLOR_BTXM     # giữ tên cũ — cấu kiện BTXM là mặc định
+
+# Màu NGUỒN (đang dùng trong code) → quy về hạng mục chuẩn:
+_ASPHALT_SRC_3D = {"#2c3e50", "#34495e", "#7f8c8d", "#aeb6bf", "#aeb6bd"}
+                   # lớp phủ BTN / mặt đường / lề gia cố
+_GRASS_SRC_3D   = {"#85c88a", "#95c88a"}   # lề/vỉa hè trồng cỏ
+_SIDEWALK_SRC_3D = {"#f5cba7"}             # hè đường đô thị (BTXM)
+# Màu GIỮ nguyên (không thuộc bảng hạng mục): nền đắp/địa hình, lề đất, khối mờ
+_NON_CONCRETE_3D = {"#c9a86b", "#d2b48c", "#e8eaf0"}
+_TRANSLUCENT_KEYS_3D = ("nước", "Mặt nước", "MNCN", "MNTT", "MNTN", "MNTC",
+                        "Tĩnh không", "chưa gắn", "tạm", "địa hình", "Địa hình")
+
+
+def _muc_color_3d(col):
+    """Trả về màu chuẩn theo hạng mục cho 1 màu nguồn (mặc định = BTXM)."""
+    if col in _ASPHALT_SRC_3D:
+        return COLOR_ASPHALT
+    if col in _GRASS_SRC_3D:
+        return COLOR_GRASS
+    if col in _SIDEWALK_SRC_3D:
+        return COLOR_SIDEWALK
+    return COLOR_BTXM
+
+
+def to_concrete_3d(fig, keep_colors=None):
+    """Áp HỆ THỐNG MÃ MÀU HẠNG MỤC cho mọi khối (go.Mesh3d) trong figure 3D và
+    ép ĐẶC (opacity=1.0, không nhìn xuyên). Cấu kiện BTXM→xám, bê tông nhựa→
+    xám đậm, vỉa hè cỏ→xanh lá, vỉa hè BTXM→cam. Giữ nguyên: nền đắp/địa hình,
+    khối cố tình trong suốt (opacity<0.5 hoặc tên thuộc nhóm trong suốt)."""
+    keep = set(_NON_CONCRETE_3D)
+    if keep_colors:
+        keep |= {str(c).strip().lower() for c in keep_colors}
+    for tr in getattr(fig, "data", []):
+        if not isinstance(tr, go.Mesh3d):
+            continue
+        nm = str(getattr(tr, "name", "") or "")
+        if any(k in nm for k in _TRANSLUCENT_KEYS_3D):
+            continue
+        try:
+            if tr.opacity is not None and float(tr.opacity) < 0.5:
+                continue   # khối cố tình trong suốt (khối bao, vùng mờ) → giữ
+        except Exception:
+            pass
+        col = str(getattr(tr, "color", "") or "").strip().lower()
+        if col in keep:
+            continue
+        tr.color = _muc_color_3d(col)
+        tr.opacity = 1.0          # ĐẶC — không nhìn xuyên
+        tr.flatshading = True
+    return fig
+
+
+# ── Áp LAYER cho bản vẽ 2D (đường bao cấu kiện BTCT = layer 3 xanh lá) ────────
+# Bỏ qua các polygon TÔ là nước/đất/địa chất/nền trong suốt (nhận theo fillcolor).
+_SKIP_FILL_2D = (
+    "rgba(52,152,219", "rgba(41,128,185",     # nước
+    "rgba(169,120,74", "rgba(120,90,50", "rgba(192,160,107",  # đất / nền đắp
+    "rgba(231,76,60",                          # tĩnh không
+    "rgba(0,0,0", "rgba(255,255,255",          # trong suốt / trắng
+)
+
+
+def apply_layers_2d(fig, skip_fills=()):
+    """Quét figure 2D: đổi ĐƯỜNG BAO của polygon CÓ TÔ (cấu kiện BTCT) sang
+    layer 3 (xanh lá). Không đụng nét nước/đất/địa chất, nét rời (không tô) hay
+    nét DIM (đã xanh nhạt). Dùng cho các module bản vẽ ngoài 11-BanVe."""
+    skip = tuple(_SKIP_FILL_2D) + tuple(str(s).lower() for s in skip_fills)
+    green = LAYER_COLORS["3"]
+    for tr in getattr(fig, "data", []):
+        if not isinstance(tr, go.Scatter):
+            continue
+        if "toself" not in str(getattr(tr, "fill", "") or ""):
+            continue
+        fc = str(getattr(tr, "fillcolor", "") or "").strip().lower()
+        if fc and fc.startswith(skip):
+            continue
+        try:
+            if tr.line is not None:
+                tr.line.color = green
+        except Exception:
+            pass
+    return fig
+
+
 # ── Tùy chỉnh TỶ LỆ cho mặt cắt 2D (mặc định khóa 1:1) ──────────────────────
 def apply_aspect(fig, mode="keep", ratio=1.0):
     """Đặt tỷ lệ trục cho 1 hình 2D.
@@ -42,25 +202,15 @@ def apply_aspect(fig, mode="keep", ratio=1.0):
     return fig
 
 
-_ASPECT_OPTS = ["Mặc định", "Đúng tỷ lệ 1:1", "Giãn theo khung", "Tùy chỉnh…"]
-_ASPECT_MODE = {"Mặc định": "keep", "Đúng tỷ lệ 1:1": "equal",
-                "Giãn theo khung": "free", "Tùy chỉnh…": "custom"}
+def aspect_control(fig, key=None, label=None, st_obj=None, default="equal"):
+    """ĐÃ BỎ tùy chọn tỷ lệ trên giao diện. Theo quy tắc thể hiện bản vẽ, mọi
+    bản vẽ 2D được khóa CỐ ĐỊNH theo `default` (mặc định 'equal' = đúng tỷ lệ
+    1:1). Không còn vẽ radio/slider. Giữ nguyên chữ ký cũ (key/label/st_obj) để
+    không vỡ các nơi đang gọi. Áp tỷ lệ + lưới mờ xám (layer 8) rồi trả về fig.
 
-
-def aspect_control(fig, key, label="⚖️ Tỷ lệ", st_obj=None):
-    """Hiện điều khiển chọn tỷ lệ cho 1 hình 2D rồi áp vào fig.
-    Mặc định 'Mặc định' = giữ nguyên thiết kế gốc (mặt cắt vẫn 1:1, mặt bằng/
-    trắc dọc vẫn theo khung). Trả về fig (đã chỉnh).
-
-    Dùng radio ngang (KHÔNG tạo cột) để an toàn khi gọi bên trong st.columns —
-    tránh lỗi lồng cột quá 1 cấp của Streamlit."""
-    _st = st_obj or st
-    sel = _st.radio(label, _ASPECT_OPTS, horizontal=True, key=f"asp_{key}")
-    mode = _ASPECT_MODE.get(sel, "keep")
-    ratio = 1.0
-    if mode == "custom":
-        ratio = _st.slider("cao : ngang", 0.2, 5.0, 1.0, 0.1, key=f"aspr_{key}")
-    apply_aspect(fig, mode, ratio)
+    Riêng các sơ đồ KHÔNG đúng tỷ lệ thực (vd MCN đường — cao độ biểu trưng) sẽ
+    truyền default='keep' tại chỗ gọi để giữ tỷ lệ thiết kế, khỏi bị dẹt."""
+    apply_aspect(fig, default)
     return style_grid_2d(fig)        # lưới mờ xám mảnh (layer 8) cho mọi bản vẽ 2D
 
 
@@ -246,10 +396,13 @@ def ve_mat_cat_ngang(res_mcn, bridge_mode=False):
             mode="lines", name=name, showlegend=sl, hoverinfo="skip"
         ))
 
-    def _dim(x0, x1, y, txt, color="#34495e", fs=9):
-        fig.add_shape(type="line", x0=x0, y0=y, x1=x1, y1=y, line=dict(color=color, width=1))
-        for xi in (x0, x1):
-            fig.add_shape(type="line", x0=xi, y0=y-0.05, x1=xi, y1=y+0.05, line=dict(color=color, width=1))
+    def _dim(x0, x1, y, txt, color=None, fs=9):
+        # Nét DIM theo chuẩn: mũi tên closed filled 2 đầu (giữ màu phân nhóm nếu có)
+        color = color or DIM_COLOR
+        for xh, xt in ((x0, x1), (x1, x0)):
+            fig.add_annotation(x=xh, y=y, ax=xt, ay=y, xref="x", yref="y",
+                               axref="x", ayref="y", showarrow=True, arrowhead=3,
+                               arrowsize=1.2, arrowwidth=1, arrowcolor=color)
         fig.add_annotation(x=(x0+x1)/2, y=y+0.07, text=txt, showarrow=False,
                            font=dict(size=fs, color=color), yanchor="bottom",
                            bgcolor="rgba(255,255,255,0.85)")

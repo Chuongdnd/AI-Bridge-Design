@@ -798,15 +798,22 @@ def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# MỐ CHỮ U BTCT (abutment) — KẾT CẤU KHÁC TRỤ.
-#   • Bệ mố (be)        : mặt cắt MẶT BẰNG (ngang × dọc) → đùn ĐỨNG (cao H).
-#   • Thân + mũ mố(than): mặt cắt DỌC cầu (hình L: tường thân + vai kê gối)
-#                         → đùn NGANG cầu theo bề rộng B.
+# MỐ BTCT (abutment) — 2 BỘ PHẬN, KẾT CẤU KHÁC TRỤ.
+#   • Bệ mố    (be)  : mặt cắt MẶT BẰNG (ngang × dọc) → đùn ĐỨNG (cao H).
+#   • Tường thân(than): mặt cắt DỌC cầu (hình bên: tường thân + vai kê gối)
+#                       → đùn/LOFT theo NGANG cầu.
+# Người dùng VẼ NHIỀU MẶT CẮT DỌC cầu, hệ thống LINK chúng theo phương NGANG
+# cầu và LOFT (vuốt) giữa các mặt cắt kề nhau — cho phép tường thân thay đổi
+# hình dạng dọc theo bề rộng (vd thân giữa cao, vuốt mỏng ra mép, tường cánh).
+# Mỗi đoạn: {section, B, loft}; các đoạn xếp nối tiếp theo ngang cầu, đoạn có
+# loft=True vuốt mượt sang mặt cắt đoạn kế (giống loft xà mũ nhưng theo trục y).
+# Tương thích ngược: than định dạng cũ {section, B} = 1 đoạn không loft.
+#
 # Mố đặt ở đầu cầu: mặt trước (đỡ gối) quay vào nhịp, thân vươn ra phía đất
 # đắp (out_dir). Mặt cắt dọc lưu [u, w] mm: u = dọc cầu (0 ở mặt trước, +u ra
 # sau lưng), w = cao (0 ở mặt trên/đáy dầm, âm xuống).
 # ══════════════════════════════════════════════════════════════════════════
-_MO_LABEL = {"be": "Bệ mố", "than": "Thân + mũ mố"}
+_MO_LABEL = {"be": "Bệ mố", "than": "Tường thân"}
 
 
 def _abut_long_mm(Wbody=1500.0, Lseat=900.0, Hbody=5000.0, Hseat=900.0) -> dict:
@@ -826,8 +833,61 @@ def default_abutment(ten: str = "Mố mẫu") -> dict:
     }
 
 
+# ── Đoạn tường thân (xếp theo NGANG cầu) ─────────────────────────────────────
+def abut_body_layers(than: dict) -> list:
+    """Danh sách ĐOẠN tường thân [{section, B, loft}] xếp theo NGANG cầu —
+    hỗ trợ cả định dạng cũ {section, B}=1 đoạn lẫn mới {layers:[...]}.
+    loft=True → vuốt sang mặt cắt đoạn kế."""
+    than = than or {}
+    if than.get("layers"):
+        out = []
+        for lay in than["layers"]:
+            if lay and (lay.get("section") or {}).get("outer"):
+                out.append({"section": lay["section"],
+                            "B": float(lay.get("B", 8.0) or 8.0),
+                            "loft": bool(lay.get("loft"))})
+        if out:
+            return out
+    if (than.get("section") or {}).get("outer"):
+        return [{"section": than["section"],
+                 "B": float(than.get("B", 8.0) or 8.0), "loft": False}]
+    return []
+
+
+def abut_body_total_B(than_or_layers) -> float:
+    """Tổng bề rộng ngang cầu của tường thân = Σ bề rộng các đoạn."""
+    lays = (than_or_layers if isinstance(than_or_layers, list)
+            else abut_body_layers(than_or_layers))
+    b = sum(float(l.get("B", 0) or 0) for l in lays)
+    return b if b > 1e-6 else 8.0
+
+
+def _abut_body_raw_h(layers: list) -> float:
+    """Chiều cao tự nhiên (m) tường thân = w-extent của mặt cắt CAO NHẤT."""
+    hs = []
+    for lay in (layers or []):
+        _, _, wmin, wmax = _bbox_ab(lay["section"].get("outer", [[0, 0]]))
+        hs.append((wmax - wmin) * MM)
+    return max(hs) if hs else 5.0
+
+
+def _abut_body_u_range(layers: list):
+    """Khoảng u (dọc cầu, mm) gộp mọi đoạn — để căn tâm bệ dưới thân."""
+    us = []
+    for lay in (layers or []):
+        for s in _section_solids(lay["section"]):
+            for (u, _w) in s["outer"]:
+                us.append(u)
+    if not us:
+        return 0.0, 0.0
+    return min(us), max(us)
+
+
 def migrate_abutment(mo: dict) -> dict:
-    """Đảm bảo bản ghi mố đúng schema (be plan + than longitudinal có B)."""
+    """Đảm bảo bản ghi mố đúng schema (be plan + than longitudinal có loft).
+
+    Giữ nguyên `than.layers` nếu đã có; nếu thiếu cả layers lẫn section đơn →
+    seed mặt cắt mặc định."""
     if not isinstance(mo, dict):
         return default_abutment()
     out = dict(mo)
@@ -838,9 +898,12 @@ def migrate_abutment(mo: dict) -> dict:
         be["section"] = base["be"]["section"]
     be.setdefault("H", 1.5)
     than = dict(parts.get("than") or {})
-    if len(than.get("section", {}).get("outer", [])) < 3:
+    has_layers = bool(than.get("layers")) and any(
+        (l.get("section") or {}).get("outer") for l in than["layers"])
+    has_single = len(than.get("section", {}).get("outer", [])) >= 3
+    if not has_layers and not has_single:
         than["section"] = base["than"]["section"]
-    than.setdefault("B", 8.0)
+        than.setdefault("B", 8.0)
     than.setdefault("flex", True)
     out["parts"] = {"be": be, "than": than}
     out["loai"] = "mo"
@@ -848,9 +911,8 @@ def migrate_abutment(mo: dict) -> dict:
 
 
 def _abut_body_height_m(than: dict, H_tru: float = None, H_be: float = 1.5) -> float:
-    sec = than.get("section") or _abut_long_mm()
-    _, _, wmin, wmax = _bbox_ab(sec["outer"])
-    raw = (wmax - wmin) * MM
+    layers = abut_body_layers(than)
+    raw = _abut_body_raw_h(layers) if layers else 5.0
     if H_tru is not None:
         return max(0.5, float(H_tru) - H_be)
     return raw
@@ -864,6 +926,92 @@ def abutment_total_height(mo: dict, H_tru: float = None) -> float:
     return round(H_be + _abut_body_height_m(p["parts"]["than"], None, H_be), 3)
 
 
+# ── Dựng khối tường thân: đùn thẳng hoặc loft theo NGANG cầu (y) ─────────────
+def _abut_body_straight_mesh(sec, y0, B, x_face, out_dir, z_body0, vsc,
+                             color, name):
+    """Đùn THẲNG 1 mặt cắt dọc (u,w) theo ngang cầu y0..y0+B (hằng dạng).
+    Hỗ trợ nhiều khối rời + lỗ rỗng. (u,w) → (x = x_face+out_dir*u, z = đáy thân)."""
+    solids = _section_solids(sec)
+    if not solids:
+        return None
+    _, _, wmin, _ = _solids_bbox(solids)
+
+    def _conv(pts):
+        return [(x_face + out_dir * u * MM, z_body0 + (w - wmin) * MM * vsc)
+                for (u, w) in pts]
+
+    _mp = []
+    for s in solids:
+        outer = _conv(s["outer"])
+        holes = [_conv(h) for h in s.get("holes", [])]
+        _mp.append(_extrude(outer, holes, "xz", y0, B))
+    return _mesh(_merge_parts(_mp), color, name)
+
+
+def _abut_body_loft_mesh(secA, secB, y0, B, x_face, out_dir, z_body0, vsc,
+                         color, name, N=48, M=12):
+    """Vuốt nối mặt cắt dọc A→B theo NGANG cầu y0..y0+B. Mỗi mặt cắt (u,w) →
+    vòng (x,z); nội suy tuyến tính ring A→B dọc trục y, kèm nắp 2 đầu."""
+    oA = (secA or {}).get("outer"); oB = (secB or {}).get("outer")
+    if not oA or not oB or len(oA) < 3 or len(oB) < 3:
+        return _abut_body_straight_mesh(secA, y0, B, x_face, out_dir,
+                                        z_body0, vsc, color, name)
+    _, _, wAmin, _ = _bbox_ab(oA); _, _, wBmin, _ = _bbox_ab(oB)
+    A = [[x_face + out_dir * u * MM, z_body0 + (w - wAmin) * MM * vsc] for (u, w) in oA]
+    Bp = [[x_face + out_dir * u * MM, z_body0 + (w - wBmin) * MM * vsc] for (u, w) in oB]
+    ra = _resample_ring(A, N)
+    rb = _best_roll(ra, _resample_ring(Bp, N))
+    vx, vy, vz = [], [], []
+    for i in range(M + 1):
+        t = i / M
+        y = y0 + B * t
+        ring = ra * (1 - t) + rb * t
+        for (x, z) in ring:
+            vx.append(x); vy.append(y); vz.append(z)
+    I, J, K = [], [], []
+    for i in range(M):                                   # thành bên
+        for j in range(N):
+            a = i * N + j;            b = i * N + (j + 1) % N
+            c = (i + 1) * N + (j + 1) % N; e = (i + 1) * N + j
+            I += [a, a]; J += [b, c]; K += [c, e]
+    _, t0 = _triangulate([list(p) for p in ra], [])      # nắp đầu (y0, đảo chiều)
+    for (p, q, r) in t0:
+        I.append(p); J.append(r); K.append(q)
+    base = M * N
+    _, t1 = _triangulate([list(p) for p in rb], [])      # nắp cuối (y0+B)
+    for (p, q, r) in t1:
+        I.append(base + p); J.append(base + q); K.append(base + r)
+    return go.Mesh3d(x=vx, y=vy, z=vz, i=I, j=J, k=K, color=color, opacity=0.96,
+                     name=name, showlegend=bool(name), flatshading=True,
+                     hovertemplate=f"{name}<extra></extra>")
+
+
+def abut_body_traces(layers, z_body0, x_face, out_dir, vsc, color,
+                     name="Tường thân"):
+    """Render tường thân: list đoạn [{section,B,loft}] xếp NGANG cầu (căn giữa
+    tim cầu y=0), đoạn loft vuốt sang đoạn sau; còn lại đùn thẳng."""
+    layers = [l for l in (layers or []) if (l.get("section") or {}).get("outer")]
+    if not layers:
+        return []
+    total_B = abut_body_total_B(layers)
+    y = -total_B / 2.0
+    multi = len(layers) > 1
+    out = []
+    for i, lay in enumerate(layers):
+        _B = float(lay.get("B", 8.0) or 8.0)
+        secA = lay["section"]
+        nm = f"{name} #{i + 1}" if multi else name
+        if lay.get("loft") and i + 1 < len(layers):
+            secB = layers[i + 1]["section"]
+            out.append(_abut_body_loft_mesh(secA, secB, y, _B, x_face, out_dir,
+                                            z_body0, vsc, color, nm))
+        else:
+            out.append(_abut_body_straight_mesh(secA, y, _B, x_face, out_dir,
+                                                z_body0, vsc, color, nm))
+        y += _B
+    return [t for t in out if t is not None]
+
+
 def build_abutment_mesh_traces(mo: dict, H_tru: float = None, x_face: float = 0.0,
                                out_dir: float = 1.0, z_base: float = 0.0,
                                labels: dict = None) -> list:
@@ -873,32 +1021,22 @@ def build_abutment_mesh_traces(mo: dict, H_tru: float = None, x_face: float = 0.
     p = migrate_abutment(mo)
     be, than = p["parts"]["be"], p["parts"]["than"]
     H_be = float(be.get("H", 1.5))
-    B = float(than.get("B", 8.0))
-    sec = than.get("section") or _abut_long_mm()
-    umin, umax, wmin, wmax = _bbox_ab(sec["outer"])
-    raw_h = (wmax - wmin) * MM
+    layers = abut_body_layers(than)
+    raw_h = _abut_body_raw_h(layers) if layers else 5.0
     body_h = _abut_body_height_m(than, H_tru, H_be)
     vsc = body_h / raw_h if raw_h > 1e-6 else 1.0
     z_body0 = z_base + H_be
 
     traces = []
-    # BỆ: mặt bằng đùn đứng, căn tâm dưới thân
+    # BỆ: mặt bằng đùn đứng, căn tâm dưới thân (theo khoảng u gộp mọi đoạn)
+    umin, umax = _abut_body_u_range(layers)
     u_ctr = (umin + umax) / 2.0
     x_be = x_face + out_dir * u_ctr * MM
     traces.append(_plan_mesh(be.get("section"), z_base, H_be, x_be, _COL["be"], L["be"]))
 
-    # THÂN+MŨ: mặt cắt dọc (u,w) → (x = x_face+out_dir*u, z = z_body0+(w-wmin)*vsc),
-    # đùn theo ngang cầu y trong [-B/2, B/2].
-    def _conv(pts):
-        return [(x_face + out_dir * u * MM, z_body0 + (w - wmin) * MM * vsc)
-                for (u, w) in pts]
-
-    _mp = []
-    for s in _sec_solids:
-        outer = _conv(s["outer"])
-        holes = [_conv(h) for h in s.get("holes", [])]
-        _mp.append(_extrude(outer, holes, "xz", -B / 2.0, B))
-    traces.append(_mesh(_merge_parts(_mp), _COL["than"], L["than"]))
+    # TƯỜNG THÂN: các đoạn mặt cắt dọc xếp theo NGANG cầu, đoạn loft vuốt mượt.
+    traces += abut_body_traces(layers, z_body0, x_face, out_dir, vsc,
+                               _COL["than"], L["than"])
     return [t for t in traces if t is not None]
 
 
@@ -906,30 +1044,34 @@ def abutment_elevation_polys(mo: dict, H_tru: float = None, x_face: float = 0.0,
                              out_dir: float = 1.0, z_base: float = 0.0,
                              labels: dict = None) -> list:
     """Bóng MẶT ĐỨNG DỌC cầu (x-z) của mố → list {name,color,xs,zs}.
-    Thân+mũ là ĐÚNG mặt cắt dọc (vì mặt phẳng trắc dọc trùng mặt cắt dọc mố)."""
+    Tường thân là ĐÚNG mặt cắt dọc (mặt phẳng trắc dọc trùng mặt cắt dọc mố);
+    nhiều đoạn → vẽ chồng các đa giác (bao hình tổng theo dọc cầu)."""
     L = labels or _MO_LABEL
     p = migrate_abutment(mo)
     be, than = p["parts"]["be"], p["parts"]["than"]
     H_be = float(be.get("H", 1.5))
-    sec = than.get("section") or _abut_long_mm()
-    umin, umax, wmin, wmax = _bbox_ab(sec["outer"])
-    raw_h = (wmax - wmin) * MM
+    layers = abut_body_layers(than)
+    raw_h = _abut_body_raw_h(layers) if layers else 5.0
     body_h = _abut_body_height_m(than, H_tru, H_be)
     vsc = body_h / raw_h if raw_h > 1e-6 else 1.0
     z_body0 = z_base + H_be
 
     polys = []
     # Bệ: chữ nhật rộng theo dọc cầu (v-extent mặt bằng), căn tâm dưới thân
+    umin, umax = _abut_body_u_range(layers)
     u_ctr = (umin + umax) / 2.0
     x_be = x_face + out_dir * u_ctr * MM
     w_be = _plan_doc_width_m(be.get("section"))
     polys.append({"name": L["be"], "color": _COL["be"],
                   "xs": [x_be - w_be/2, x_be + w_be/2, x_be + w_be/2, x_be - w_be/2],
                   "zs": [z_base, z_base, z_base + H_be, z_base + H_be]})
-    # Thân+mũ: đúng đa giác mặt cắt dọc
-    polys.append({"name": L["than"], "color": _COL["than"],
-                  "xs": [x_face + out_dir * u * MM for (u, w) in sec["outer"]],
-                  "zs": [z_body0 + (w - wmin) * MM * vsc for (u, w) in sec["outer"]]})
+    # Tường thân: mỗi đoạn = đúng đa giác mặt cắt dọc (chồng lên nhau)
+    for lay in layers:
+        sec = lay["section"]
+        _, _, wmin, _ = _bbox_ab(sec["outer"])
+        polys.append({"name": L["than"], "color": _COL["than"],
+                      "xs": [x_face + out_dir * u * MM for (u, w) in sec["outer"]],
+                      "zs": [z_body0 + (w - wmin) * MM * vsc for (u, w) in sec["outer"]]})
     return polys
 
 

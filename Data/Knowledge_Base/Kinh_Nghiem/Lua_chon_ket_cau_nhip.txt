@@ -1,0 +1,124 @@
+HƯỚNG DẪN LỰA CHỌN KẾT CẤU NHỊP CẦU BTCT — KINH NGHIỆM THỰC TIỄN
+(Tài liệu tổng hợp kinh nghiệm thiết kế cầu tại Việt Nam)
+Biên soạn: Bộ môn Công trình Giao thông, trường ĐH Giao thông Vận tải
+
+═══════════════════════════════════════════════════════
+PHẦN 1 — TIÊU CHÍ LỰA CHỌN KẾT CẤU NHỊP
+═══════════════════════════════════════════════════════
+
+1.1 Các yếu tố quyết định chọn kết cấu nhịp
+
+Nhịp thiết kế (L):
+- Nhịp nhỏ (L < 15m): Dầm bản đặc, dầm bản rỗng, dầm T ngắn
+- Nhịp vừa (L = 15–25m): Dầm T, dầm I AASHTO, dầm T ngược
+- Nhịp trung bình (L = 25–40m): Dầm Super-T, dầm I (AASHTO type IV–VI)
+- Nhịp lớn (L = 40–60m): Dầm Super-T đặc biệt, dầm hộp đúc sẵn
+- Nhịp rất lớn (L > 60m): Dầm hộp thi công đổ tại chỗ, cầu treo, cầu dây văng
+
+Bề rộng cầu (B):
+- B < 7m (đường cấp V–VI): 2–3 dầm bản hoặc dầm T nhỏ
+- B = 7–12m (đường cấp III–IV): 4–7 dầm Super-T hoặc dầm I
+- B > 12m (đường cao tốc, cấp I–II): 7–12 dầm Super-T hoặc dầm hộp
+
+Địa hình thi công:
+- Nơi có điều kiện tốt: Ưu tiên đúc sẵn tại xưởng (Super-T, Dầm I)
+- Vùng xa xôi, giao thông hạn chế: Đúc tại chỗ có thể hợp lý hơn
+- Qua sông sâu: Cần cẩu lắp lớn cho Super-T → chi phí tăng
+
+Yêu cầu thẩm mỹ:
+- Đô thị, khu dân cư: Super-T hoặc dầm hộp (mặt đáy phẳng, đẹp hơn)
+- Nông thôn: Dầm I hoặc T ngược chấp nhận được
+
+1.2 So sánh các loại kết cấu nhịp phổ biến
+
+Dầm Super-T:
+  Ưu điểm: Thi công nhanh (đúc sẵn), ít dầm ngang, thẩm mỹ tốt, chống thấm tốt
+  Nhược điểm: Chi phí khuôn đúc ban đầu cao, vận chuyển khó (dài và nặng)
+  Phù hợp: Cầu cấp II–III, nhịp 30–45m, vùng có nhà máy đúc gần
+  Kinh tế nhất ở: L = 33–40m
+
+Dầm I (AASHTO):
+  Ưu điểm: Kỹ thuật đơn giản hơn Super-T, nhiều nhà máy có thể đúc, chi phí thấp hơn cho L < 30m
+  Nhược điểm: Cần nhiều dầm ngang, mặt đáy không phẳng
+  Phù hợp: Cầu cấp III–V, nhịp 15–35m
+  Kinh tế nhất ở: L = 20–30m
+
+Dầm T ngược (Inverted T):
+  Ưu điểm: Rất kinh tế cho nhịp ngắn, bản mặt cầu đơn giản
+  Nhược điểm: Nhịp ngắn, cần nhiều trụ trung gian nếu cầu dài
+  Phù hợp: Cầu cấp IV–VI, nhịp 10–20m, bờ thấp
+  Kinh tế nhất ở: L = 12–18m
+
+Dầm hộp bê tông (Box Beam):
+  Ưu điểm: Nhịp lớn, mô men kháng uốn cao, thi công đổ tại chỗ
+  Nhược điểm: Chi phí ván khuôn cao, thời gian thi công lâu
+  Phù hợp: Cầu cấp I–II, nhịp 40–100m, cầu thành phố cao cấp
+
+═══════════════════════════════════════════════════════
+PHẦN 2 — LỰA CHỌN SỐ NHỊP VÀ BỐ TRÍ NHỊP
+═══════════════════════════════════════════════════════
+
+2.1 Nguyên tắc bố trí nhịp
+
+Đối với cầu vượt sông hoặc kênh:
+- Nhịp chính phải đảm bảo tĩnh không thông thuyền
+- Nhịp biên thường = 0.7–0.8 × nhịp chính (để cân bằng phản lực gối)
+- Ưu tiên đơn giản hóa: Dùng ít loại nhịp khác nhau
+
+Đối với cầu cạn (viaduct):
+- Nhịp đều nhau (equal spans) tiết kiệm chi phí khuôn đúc
+- Nhịp L = 25–40m là tối ưu về kinh tế cho cầu cạn BTCT
+
+2.2 Cầu một nhịp vs nhiều nhịp
+Một nhịp: Đơn giản, không cần trụ giữa, phù hợp kênh/sông nhỏ
+  Chi phí trụ = 0, nhưng dầm dài hơn (tốn hơn)
+  Phù hợp: L ≤ 45m
+
+Nhiều nhịp liên tục: Giảm moment dương, tiết kiệm chiều cao dầm, ít gối cầu
+  Nhưng thi công phức tạp hơn, nhạy cảm với lún lệch
+  Phù hợp: L_tổng > 100m, địa chất tốt
+
+═══════════════════════════════════════════════════════
+PHẦN 3 — TỐI ƯU HÓA THIẾT KẾ ĐỂ GIẢM CHI PHÍ
+═══════════════════════════════════════════════════════
+
+3.1 Các biện pháp giảm chi phí kết cấu nhịp
+- Sử dụng cấp bê tông cao (B50) → giảm chiều cao dầm → giảm khối lượng
+- Tối ưu khoảng cách dầm: S ≈ 2.2–2.4m thường kinh tế nhất cho Super-T
+- Giảm số dầm bằng cách tăng khoảng cách → ít đầu neo, ít công lắp đặt
+- Sử dụng công nghệ DUL căng sau cho nhịp > 35m (linh hoạt bố trí cáp)
+
+3.2 Các biện pháp giảm chi phí móng
+- Khảo sát địa chất kỹ: Xác định chính xác chiều dài cọc → tránh cọc quá dài
+- Tăng đường kính cọc (D1000 thay D800): Ít cọc hơn nhưng mỗi cọc đắt hơn
+  → Kinh tế khi chi phí huy động máy khoan chiếm > 40% chi phí cọc
+- Sử dụng cọc ép thay cọc khoan nhồi khi địa chất thích hợp (L ≤ 25m, tải nhỏ)
+  → Tiết kiệm 30–40% chi phí móng
+
+3.3 So sánh kinh tế theo suất đầu tư (tham khảo)
+Cầu cấp III, L ≈ 38m, B = 12m, vùng đồng bằng:
+  Phương án Super-T: Suất ĐT ≈ 9–12 triệu/m²
+  Phương án Dầm I: Suất ĐT ≈ 8–11 triệu/m²
+  Phương án T ngược (2 nhịp): Suất ĐT ≈ 10–13 triệu/m² (nhiều trụ hơn)
+
+═══════════════════════════════════════════════════════
+PHẦN 4 — CÁC LỖI THƯỜNG GẶP TRONG THIẾT KẾ TKCS
+═══════════════════════════════════════════════════════
+
+4.1 Sai sót về kết cấu nhịp
+- Chọn nhịp quá dài so với địa hình (thừa chiều cao đất đắp 2 đầu cầu)
+- Không kiểm tra chiều dài cẩu lắp khả dụng tại công trường
+- Quên tính đến nhịp liên kết (approach span) kết nối với đường đầu cầu
+
+4.2 Sai sót về móng cọc
+- Chiều dài cọc quá ngắn: Cọc không cắm đủ sâu vào đất tốt → nguy cơ lún
+- Quên xét ảnh hưởng của xói lở: Đặt móng không đủ sâu dưới cao độ xói
+- Không kiểm tra ổn định tổng thể mố + bờ sông
+
+4.3 Sai sót về gối cầu và khe co giãn
+- Không tính đến biến dạng nhiệt: Cầu dài cần gối trượt tại một đầu
+- Thiếu khe co giãn tại mố → nứt bê tông lan can và mặt đường đầu cầu
+- Gối cầu không đủ áp lực tối thiểu → bong gối khi tải nhẹ (âm)
+
+Lưu ý quan trọng: Tài liệu này mang tính tham khảo hỗ trợ thiết kế sơ bộ.
+Mọi thiết kế chính thức phải do kỹ sư có chứng chỉ hành nghề ký duyệt.

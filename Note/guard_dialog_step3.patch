@@ -1,0 +1,28 @@
+diff --git a/00-Interface.py b/00-Interface.py
+index 4e988d1..2ee3b04 100644
+--- a/00-Interface.py
++++ b/00-Interface.py
+@@ -1598,6 +1598,23 @@ def dialog_step3():
+ 
+     if submitted:
+         d = st.session_state.wizard_draft
++        # Bảo vệ: nếu mở thẳng "Xem lại & Chạy" mà chưa khai Bước 1/Bước 2
++        # thì wizard_draft thiếu key → báo rõ thay vì crash KeyError.
++        _required = ['mien', 'cap_s', 'loai_h', 'goc_giao', 'h1', 'h5', 'h10',
++                     'h98', 't_ban_mm', 'x_tim_clearance', 'l_hinhhoc']
++        _missing = [k for k in _required if k not in d]
++        if _missing:
++            st.error(
++                "⚠️ **Chưa đủ số liệu để chạy tính toán.** Hãy mở và lưu "
++                "**🌊 Thông số thủy văn & vị trí cầu** (Bước 1) và "
++                "**🛣️ Tiêu chuẩn hình học tuyến đường** (Bước 2) trước đã."
++            )
++            st.caption(f"Thiếu: {', '.join(_missing)}")
++            if st.button("🌊 Mở Bước 1 ngay", key="d3_goto_step1",
++                         use_container_width=True):
++                st.session_state.open_dialog = "step1"
++                st.rerun()
++            st.stop()
+         mien             = d['mien']
+         cap_s            = d['cap_s']
+         loai_h           = d['loai_h']

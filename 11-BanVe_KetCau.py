@@ -37,13 +37,20 @@ def _get_PB():
     return _PB_ENGINE
 
 # ── Bảng màu ─────────────────────────────────────────────────────────────────
+# Quy tắc thể hiện bản vẽ — LAYER áp cho bản vẽ 2D:
+#   layer 3 (xanh lá)  = đường bao cấu kiện CÓ cốt thép (BTCT)
+#   layer 4 (xanh nhạt)= kích thước (DIM) + nét cấu kiện mảnh
+#   layer 5 (xanh dương)= nét mảnh (taluy, break line)
+_LAYER3 = "#1e8449"   # xanh lá — đường bao BTCT
+_LAYER5 = "#2e5cb8"   # xanh dương — nét mảnh / taluy / break line
 _C = {
     "btong":    "#c8d6c0",
-    "btong_dk": "#7f8c8d",
+    "btong_dk": _LAYER3,   # đường bao BTCT = layer 3 (xanh lá)
+    "bao":      _LAYER3,   # alias đường bao cấu kiện BTCT
     "be":       "#aab7b8",
     "be_dk":    "#566573",
     "dam":      "#85929e",
-    "dam_dk":   "#2c3e50",
+    "dam_dk":   _LAYER3,   # đường bao xà mũ/dầm BTCT = layer 3
     "ban":      "#d5d8dc",
     "phu":      "#2c3e50",
     "lan_can":  "#7f8c8d",
@@ -52,9 +59,13 @@ _C = {
     "tk":       "rgba(231,76,60,0.12)",
     "tk_line":  "#e74c3c",
     "moc":      "#c0a06b",
-    "dim":      "#5d6d7e",
+    "dim":      "#1f9ed1",   # nét DIM = layer 4 "xanh nhạt" (quy tắc thể hiện bản vẽ)
     "dia_hinh": "#27ae60",
 }
+
+# Cỡ chữ kích thước theo chuẩn (1.8mm) — quy đổi xấp xỉ sang px màn hình
+_DIM_TXT = 9
+_DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None, lw=1.5):
@@ -76,28 +87,51 @@ def _hline(fig, y, x0, x1, label, color, dash="dot", lw=1.5):
                            font=dict(size=8, color=color), yanchor="bottom", xanchor="left")
 
 def _dim_h(fig, y, x0, x1, text, color=None, dy=0):
+    """Đường kích thước NGANG — nét DIM xanh nhạt + 2 mũi tên closed filled
+    (theo bảng KÍCH THƯỚC trong quy tắc thể hiện bản vẽ)."""
     color = color or _C["dim"]
     ya = y + dy
-    for xi in [x0, x1]:
-        fig.add_shape(type="line", x0=xi, y0=ya-0.12, x1=xi, y1=ya+0.12,
-                      line=dict(color=color, width=1))
-    fig.add_shape(type="line", x0=x0, y0=ya, x1=x1, y1=ya,
-                  line=dict(color=color, width=1))
+    # đường dim + mũi tên 2 đầu (head ở x0 và x1, hướng ra ngoài)
+    for xh, xt in ((x0, x1), (x1, x0)):
+        fig.add_annotation(x=xh, y=ya, ax=xt, ay=ya, xref="x", yref="y",
+                           axref="x", ayref="y", showarrow=True, arrowhead=3,
+                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color)
     fig.add_annotation(x=(x0+x1)/2, y=ya+0.05, text=text, showarrow=False,
-                       font=dict(size=8, color=color), yanchor="bottom",
+                       font=dict(size=_DIM_TXT, color=color), yanchor="bottom",
                        bgcolor="rgba(255,255,255,0.85)")
 
 def _dim_v(fig, x, y0, y1, text, color=None, dx=0.4):
+    """Đường kích thước ĐỨNG — nét DIM xanh nhạt + 2 mũi tên closed filled."""
     color = color or _C["dim"]
     xa = x + dx
-    for yi in [y0, y1]:
-        fig.add_shape(type="line", x0=xa-0.2, y0=yi, x1=xa+0.2, y1=yi,
-                      line=dict(color=color, width=1))
-    fig.add_shape(type="line", x0=xa, y0=y0, x1=xa, y1=y1,
-                  line=dict(color=color, width=1))
+    for yh, yt in ((y0, y1), (y1, y0)):
+        fig.add_annotation(x=xa, y=yh, ax=xa, ay=yt, xref="x", yref="y",
+                           axref="x", ayref="y", showarrow=True, arrowhead=3,
+                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color)
     fig.add_annotation(x=xa+0.08, y=(y0+y1)/2, text=text, showarrow=False,
-                       font=dict(size=8, color=color), xanchor="left",
-                       bgcolor="rgba(255,255,255,0.85)")
+                       font=dict(size=_DIM_TXT, color=color), xanchor="left",
+                       textangle=-90, bgcolor="rgba(255,255,255,0.85)")
+
+# ── Áp LAYER cho bản vẽ 2D (quy tắc thể hiện bản vẽ) ─────────────────────────
+def _apply_layers_2d(fig):
+    """Đường bao cấu kiện BTCT → layer 3 (xanh lá).
+    Phần kết cấu trên (thân trụ/bản/xà mũ/dầm) đã xanh lá sẵn nhờ btong_dk/dam_dk.
+    Hàm này quét thêm các polygon CÓ TÔ mà đường bao đang là màu bê tông sậm
+    (be_dk: bệ cọc, mố, cọc tròn) → đổi sang xanh lá. KHÔNG đụng nét nước/đất/
+    địa chất (màu khác) hay cọc vẽ dạng line (không tô) hay nét DIM (đã xanh nhạt)."""
+    _be_dk = str(_C["be_dk"]).lower()
+    for tr in fig.data:
+        if not isinstance(tr, go.Scatter):
+            continue
+        if "toself" not in str(getattr(tr, "fill", "") or ""):
+            continue
+        try:
+            if tr.line is not None and str(tr.line.color).lower() == _be_dk:
+                tr.line.color = _LAYER3
+        except Exception:
+            pass
+    return fig
+
 
 # ── Box mesh 3D ───────────────────────────────────────────────────────────────
 def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=True):
@@ -954,10 +988,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     z_deck   = cao_dd + H_dam + t_ban
     z_cap_t  = cao_dd
     z_cap_b  = cao_dd - 0.80
-    z_sh_b   = z_cap_b - H_tru       # đáy thân trụ (= đỉnh bệ cọc)
+    z_sh_b   = z_cap_b - H_tru       # đáy thân trụ đại diện (mố/ghi chú dùng)
     z_be_t   = z_sh_b
-    z_be_b   = z_sh_b - 1.50         # đáy bệ cọc
-    z_min    = min(z_be_b - L_coc - 2.0, MNTN - 0.5)
+    z_be_b   = z_sh_b - 1.50         # đáy bệ cọc đại diện
+    # Đỉnh bệ MỖI trụ bám ĐƯỜNG TỰ NHIÊN (đỉnh bệ = ĐTN − 0.5m) → bệ sâu nhất nằm
+    # tại trụ có đáy sông thấp nhất; lấy mốc đáy hình theo trụ sâu nhất đó.
+    _z_terr_piers = [_tz(p) for p in piers] if piers else [h_tn]
+    _z_be_b_min   = min((zt - 0.5 - 1.50) for zt in _z_terr_piers)
+    z_min    = min(_z_be_b_min - L_coc - 2.0, z_be_b - L_coc - 2.0, MNTN - 0.5)
 
     W_cap = max(2.0, L_cau / n_nhip * 0.05 + 1.0)
     W_tru = 1.2
@@ -1096,14 +1134,21 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     # ── Trụ giữa (đặt NGOÀI tĩnh không + 2m an toàn) ─────────────────────
     for i, xt in enumerate(piers):
         sl = (i == 0)
-        z_terr_tru = _tz(xt)   # cao độ địa hình tại vị trí trụ (thực tế)
+        z_terr_tru = _tz(xt)   # cao độ địa hình (đường tự nhiên) tại vị trí trụ
+
+        # Đỉnh bệ trụ CHÔN 0.5m DƯỚI ĐƯỜNG TỰ NHIÊN tại lý trình trụ (KHÔNG theo
+        # MNTN). Thân trụ kéo từ đỉnh bệ lên đáy xà mũ (z_cap_b); xà mũ luôn ở đáy
+        # dầm (z_cap_t = cao_dd) nên DẦM LUÔN GỐI LÊN XÀ MŨ — trụ không "lơ lửng".
+        z_be_t_i = min(z_terr_tru - 0.5, z_cap_b - 0.5)  # chừa tối thiểu 0.5m thân trụ
+        z_sh_b_i = z_be_t_i                              # đáy thân trụ = đỉnh bệ
+        z_be_b_i = z_be_t_i - 1.50                       # đáy bệ cọc
 
         # Trụ LẮP GHÉP từ thư viện: vẽ bóng mặt đứng dọc theo mặt cắt thật
         if pier_assembly:
             _PB = _get_PB()
             for _rc in _PB.pier_elevation_rects(
-                    pier_assembly, H_tru=(z_cap_t - z_be_b),
-                    x_ctr=xt, z_base=z_be_b):
+                    pier_assembly, H_tru=(z_cap_t - z_be_b_i),
+                    x_ctr=xt, z_base=z_be_b_i):
                 _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["dam_dk"],
                       (_rc["name"] if sl else ""), showlegend=sl)
             fig.add_annotation(
@@ -1114,50 +1159,56 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             _piles_tru = _layout_piles(d, f"tru_{i+1}")
             if _piles_tru:
                 _draw_piles_elevation(
-                    fig, _piles_tru, x_center=xt, z_top=z_be_b, color=_C["be_dk"],
+                    fig, _piles_tru, x_center=xt, z_top=z_be_b_i, color=_C["be_dk"],
                     legend_name=(f"Cọc trụ ({len(_piles_tru)} cọc)" if sl else None))
             else:
                 n_show = max(2, min(n_coc_row, 4))
                 coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
                 for j, xc in enumerate(coc_xs_tru):
                     fig.add_trace(go.Scatter(
-                        x=[xc, xc], y=[z_be_b, z_be_b - L_coc], mode="lines",
+                        x=[xc, xc], y=[z_be_b_i, z_be_b_i - L_coc], mode="lines",
                         line=dict(color=_C["be_dk"], width=max(2, int(D_coc_m * 12))),
                         name=(f"Cọc trụ Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
                               if (sl and j == 0) else ""),
                         showlegend=(sl and j == 0)))
                 fig.add_trace(go.Scatter(
-                    x=list(coc_xs_tru), y=[z_be_b - L_coc] * n_show, mode="markers",
+                    x=list(coc_xs_tru), y=[z_be_b_i - L_coc] * n_show, mode="markers",
                     marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
                     showlegend=False, hoverinfo="skip"))
             continue
 
         # Phần NGẦM: bệ cọc + thân trụ dưới mặt đất → nét đứt mờ
-        z_underground_top = min(z_sh_b, z_terr_tru)  # thân trụ ngập đến terrain
-        if z_be_b < z_terr_tru:
+        if z_be_b_i < z_terr_tru:
             # Bệ cọc ngầm
             _poly(fig,
                 [xt-W_be, xt+W_be, xt+W_be, xt-W_be],
-                [z_be_b, z_be_b, min(z_be_t, z_terr_tru), min(z_be_t, z_terr_tru)],
+                [z_be_b_i, z_be_b_i, min(z_be_t_i, z_terr_tru), min(z_be_t_i, z_terr_tru)],
                 "rgba(170,183,184,0.3)", _C["be_dk"],
                 "Bệ cọc (ngầm)" if sl else "", showlegend=sl, lw=1)
             # Thân trụ ngầm (nếu có)
-            if z_sh_b < z_terr_tru:
+            if z_sh_b_i < z_terr_tru:
                 _poly(fig,
                     [xt-W_tru/2, xt+W_tru/2, xt+W_tru/2, xt-W_tru/2],
-                    [z_sh_b, z_sh_b, z_terr_tru, z_terr_tru],
+                    [z_sh_b_i, z_sh_b_i, z_terr_tru, z_terr_tru],
                     "rgba(200,214,192,0.3)", _C["btong_dk"],
                     "", showlegend=False, lw=1)
+        else:
+            # Đáy sông thấp hơn đáy bệ → bệ + thân nổi trên đáy sông: vẽ bệ ĐẶC
+            _poly(fig,
+                [xt-W_be, xt+W_be, xt+W_be, xt-W_be],
+                [z_be_b_i, z_be_b_i, z_be_t_i, z_be_t_i],
+                _C["btong"], _C["be_dk"],
+                "Bệ cọc" if sl else "", showlegend=sl)
 
-        # Phần NỔI: thân trụ từ terrain → đáy xà mũ
-        z_shaft_visible_bot = max(z_sh_b, z_terr_tru)
+        # Phần NỔI: thân trụ nhìn thấy từ mặt đất (hoặc đỉnh bệ nếu bệ nổi) → đáy xà mũ
+        z_shaft_visible_bot = max(z_sh_b_i, z_terr_tru)
         if z_shaft_visible_bot < z_cap_b:
             _poly(fig,
                 [xt-W_tru/2, xt+W_tru/2, xt+W_tru/2, xt-W_tru/2],
                 [z_shaft_visible_bot, z_shaft_visible_bot, z_cap_b, z_cap_b],
                 _C["btong"], _C["btong_dk"], f"Thân trụ T{i+1}", showlegend=sl)
 
-        # Xà mũ (luôn nổi)
+        # Xà mũ (luôn nổi, đỉnh = đáy dầm → dầm gối trực tiếp lên xà mũ)
         _poly(fig,
             [xt-W_cap, xt+W_cap, xt+W_cap, xt-W_cap],
             [z_cap_b, z_cap_b, z_cap_t, z_cap_t],
@@ -1177,14 +1228,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         _piles_tru = _layout_piles(d, f"tru_{i+1}")
         if _piles_tru:
             _draw_piles_elevation(
-                fig, _piles_tru, x_center=xt, z_top=z_be_b, color=_C["be_dk"],
+                fig, _piles_tru, x_center=xt, z_top=z_be_b_i, color=_C["be_dk"],
                 legend_name=(f"Cọc trụ ({len(_piles_tru)} cọc)" if sl else None))
         else:
             n_show = max(2, min(n_coc_row, 4))
             coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
             for j, xc in enumerate(coc_xs_tru):
                 fig.add_trace(go.Scatter(
-                    x=[xc, xc], y=[z_be_b, z_be_b - L_coc],
+                    x=[xc, xc], y=[z_be_b_i, z_be_b_i - L_coc],
                     mode="lines",
                     line=dict(color=_C["be_dk"], width=max(2, int(D_coc_m * 12))),
                     name=f"Cọc trụ Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
@@ -1192,7 +1243,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                     showlegend=(sl and j == 0),
                 ))
             fig.add_trace(go.Scatter(
-                x=list(coc_xs_tru), y=[z_be_b - L_coc] * n_show,
+                x=list(coc_xs_tru), y=[z_be_b_i - L_coc] * n_show,
                 mode="markers",
                 marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
                 showlegend=False, hoverinfo="skip",
@@ -1252,10 +1303,11 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         showarrow=False, font=dict(size=9, color=_C["tk_line"]),
         bgcolor="rgba(255,255,255,0.8)")
 
-    # Gióng thẳng vị trí biên tĩnh không → trụ
+    # Gióng thẳng vị trí biên tĩnh không → trụ (từ đáy bệ thực của trụ → mặt cầu)
     for xp in piers:
+        _y0_gp = min(_tz(xp) - 0.5 - 1.50, z_be_b)
         fig.add_shape(type="line",
-            x0=xp, y0=z_be_b, x1=xp, y1=z_deck,
+            x0=xp, y0=_y0_gp, x1=xp, y1=z_deck,
             line=dict(color="#aab7b8", width=0.8, dash="dashdot"))
 
     # ── Dimension tổng ────────────────────────────────────────────────────
@@ -1274,10 +1326,11 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     _dim_v(fig, x_end+W_mo+0.3, z_sh_b, z_cap_b, f"H_trụ={H_tru:.1f}m", dx=0.2)
     _dim_v(fig, x0-W_mo-0.3, cao_dd, cao_dd+H_dam, f"H_dầm={H_dam:.2f}m", dx=0.2)
     if piers:
-        _dim_v(fig, piers[0] + W_be + 0.6, z_be_b - L_coc, z_be_b,
+        _z_be_b0 = min(_tz(piers[0]) - 0.5 - 1.50, z_be_b)  # đáy bệ thực của trụ đầu
+        _dim_v(fig, piers[0] + W_be + 0.6, _z_be_b0 - L_coc, _z_be_b0,
                f"L_cọc≈{L_coc:.0f}m", color="#8e44ad", dx=0.2)
         fig.add_annotation(
-            x=piers[0] + W_be + 1.6, y=z_be_b - L_coc * 0.5,
+            x=piers[0] + W_be + 1.6, y=_z_be_b0 - L_coc * 0.5,
             text=f"Cọc Ø{int(D_coc_m*1000)}mm<br>L≈{L_coc:.0f}m",
             showarrow=True, arrowhead=2, arrowcolor=_C["be_dk"],
             ax=30, ay=0,
@@ -1300,6 +1353,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         hovermode="closest",
     )
     _add_elevation_table(fig, d, loc="tl")
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -1586,6 +1640,7 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None):
         margin=dict(l=70, r=80, t=90, b=100),
     )
     _add_material_notes(fig, loc="bl")
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -2658,6 +2713,7 @@ def ve_binh_do_2d(d, df_tim_line=None):
         margin=dict(l=60, r=40, t=60, b=90),
         hovermode="closest",
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -2911,6 +2967,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         margin=dict(l=60, r=40, t=60, b=100),
     )
     _add_elevation_table(fig, d, loc="tr")
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3090,6 +3147,7 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=55, r=30, t=60, b=80),
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3174,6 +3232,7 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=60, r=40, t=60, b=80),
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3255,6 +3314,7 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=55, r=30, t=60, b=100),
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3265,10 +3325,38 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
 _TRANSLUCENT_KEYS = ("nước", "Mặt nước", "MNCN", "MNTT", "MNTN", "MNTC",
                      "Tĩnh không", "chưa gắn", "tạm")
 
+# ── HỆ THỐNG MÃ MÀU CÁC HẠNG MỤC cho mô hình 3D (theo bảng quy định) ──────────
+# Cấu kiện BTXM = xám #d6d6d6; bê tông nhựa/lớp phủ = xám đậm #4a484b.
+# EXCLUSION: đổi MỌI khối đặc sang màu hạng mục tương ứng, TRỪ nền đắp/địa hình
+# và khối trong suốt → bắt được cả dầm thư viện / trụ chèn từ module khác.
+CONCRETE_3D = "#d6d6d6"        # Các cấu kiện BTXM (214,214,214)
+ASPHALT_3D  = "#4a484b"        # Bê tông nhựa (74,72,75)
+_ASPHALT_SRC_3D = {"#2c3e50", "#34495e"}   # lớp phủ BTN / mặt đường đầu cầu
+_NON_CONCRETE_3D = {
+    "#c9a86b",              # nền đắp / địa hình → giữ
+    "#e8eaf0",              # khối bao dầm (mờ) → giữ
+}
+
 
 def _is_translucent(trace) -> bool:
     nm = str(getattr(trace, "name", "") or "")
     return any(k in nm for k in _TRANSLUCENT_KEYS)
+
+
+def _to_concrete(trace) -> None:
+    """Quy 1 khối về màu hạng mục chuẩn (BTXM xám / bê tông nhựa xám đậm);
+    giữ nền đắp/địa hình/khối trong suốt."""
+    if _is_translucent(trace):
+        return
+    try:
+        if trace.opacity is not None and float(trace.opacity) < 0.5:
+            return
+    except Exception:
+        pass
+    col = str(getattr(trace, "color", "") or "").strip().lower()
+    if col in _NON_CONCRETE_3D:
+        return
+    trace.color = ASPHALT_3D if col in _ASPHALT_SRC_3D else CONCRETE_3D
 
 
 def apply_render_mode(fig, mode="Shaded"):
@@ -3281,6 +3369,8 @@ def apply_render_mode(fig, mode="Shaded"):
     """
     for trace in fig.data:
         if isinstance(trace, go.Mesh3d):
+            # Quy mọi khối BTCT về 1 màu bê tông đặc trước khi áp chế độ hiển thị
+            _to_concrete(trace)
             if mode == "Wireframe":
                 trace.opacity = 0.0
                 # Bật hiển thị wireframe overlay qua intensity

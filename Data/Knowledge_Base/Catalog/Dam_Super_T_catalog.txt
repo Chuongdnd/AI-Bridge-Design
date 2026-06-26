@@ -1,0 +1,117 @@
+CATALOG DẦM SUPER-T BTCT DỰ ỨNG LỰC ĐỊNH HÌNH
+(Dầm Super-T theo tiêu chuẩn thiết kế điển hình của Việt Nam)
+Nguồn: Các nhà máy đúc dầm phổ biến tại Việt Nam, cập nhật 2024
+
+═══════════════════════════════════════════════════════
+PHẦN 1 — GIỚI THIỆU DẦM SUPER-T
+═══════════════════════════════════════════════════════
+
+Dầm Super-T (hay còn gọi là Super Tee Beam, T-top beam) là loại dầm BTCT dự ứng lực
+được phát triển tại Australia và phổ biến tại Việt Nam từ những năm 2000.
+Ưu điểm nổi bật so với dầm I truyền thống:
+- Cánh trên rộng (1.8–2.5m) giảm số dầm cần thiết cho cùng bề rộng cầu
+- Không cần dầm ngang giữa nhịp (chỉ cần tại đầu dầm)
+- Thẩm mỹ cao hơn nhờ mặt đáy phẳng
+- Thi công nhanh, không cần ván khuôn bản mặt cầu phức tạp
+- Phù hợp với phương pháp thi công đúc sẵn tại xưởng (precast factory)
+
+═══════════════════════════════════════════════════════
+PHẦN 2 — TIẾT DIỆN TIÊU CHUẨN DẦM SUPER-T VIỆT NAM
+═══════════════════════════════════════════════════════
+
+Có 3 loại tiết diện chuẩn theo chiều cao:
+1. Super-T H=1000mm  — Nhịp 18–24m
+2. Super-T H=1500mm  — Nhịp 25–33m
+3. Super-T H=1750mm  — Nhịp 33–42m
+4. Super-T H=2000mm  — Nhịp 40–50m
+
+Thông số tiết diện Super-T H=1750mm (phổ biến nhất):
+  Chiều cao toàn phần H: 1750mm
+  Chiều rộng cánh trên (Top flange): 2440mm
+  Chiều dày cánh trên: 200mm (tại tim), giảm dần ra biên (vát nghiêng)
+  Chiều rộng bụng (Web width): 200mm
+  Chiều rộng đáy (Bottom flange): 660–750mm
+  Chiều dày đáy: 200mm
+  Diện tích tiết diện ngang (thuần): 0.85–0.95 m²
+  Tĩnh mô men quán tính Ix: ~0.35 m⁴
+  Mô đun tiết diện đáy Sb: ~0.42 m³
+  Mô đun tiết diện đỉnh St: ~0.65 m³
+
+Thông số tiết diện Super-T H=1500mm:
+  H: 1500mm, Bcánh trên: 2000mm, B_đáy: 600mm
+  Diện tích: 0.68–0.78 m²
+
+═══════════════════════════════════════════════════════
+PHẦN 3 — CÁP DỰ ỨNG LỰC TIÊU CHUẨN
+═══════════════════════════════════════════════════════
+
+Sợi cáp tiêu chuẩn: Tao cáp 7 sợi Ø12.7mm (0.5 inch)
+  Cường độ kéo đứt: fpu = 1860 MPa
+  Độ chùng thấp (low relaxation): < 2.5% sau 1000 giờ
+  Mô đun đàn hồi: Ep = 195,000 MPa
+  Khối lượng: 0.775 kg/m
+
+Cáp DUL căng sau (post-tensioning) — Hệ thống ống chứa cáp:
+  Ống chứa cáp PVC/PE: Ø100mm–Ø110mm (chứa 12–19 tao)
+  Nối bơm vữa xi măng (grouting) sau căng
+
+Cáp DUL căng trước (pre-tensioning — phổ biến với Super-T đúc sẵn):
+  Cáp thẳng hoặc uốn (harped/draped strands)
+  Lực kéo ban đầu: 70–75% fpu = 1302–1395 MPa
+
+Bố trí cáp tiêu chuẩn Super-T H=1750mm, L=38m:
+  5 ống Ø100mm × 12 tao/ống = 60 tao (DUL căng sau)
+  Hoặc 40–50 cáp đơn (DUL căng trước) bố trí 4–5 hàng theo chiều cao
+  Lực căng thiết kế: 185 kN/tao (sau mất mát)
+
+═══════════════════════════════════════════════════════
+PHẦN 4 — PHẠM VI SỬ DỤNG VÀ LỰA CHỌN NHỊP
+═══════════════════════════════════════════════════════
+
+Hướng dẫn lựa chọn Super-T theo nhịp:
+  L = 24–30m:  Super-T H=1000mm hoặc H=1500mm
+  L = 30–36m:  Super-T H=1500mm hoặc H=1750mm
+  L = 36–42m:  Super-T H=1750mm (phổ biến)
+  L = 40–50m:  Super-T H=2000mm
+
+Tỉ lệ L/H khuyến nghị: 20–25 là tối ưu về kinh tế và thẩm mỹ
+  L/H < 18: Dầm quá "nặng", lãng phí vật liệu
+  L/H > 25: Dầm mảnh, nguy cơ mất ổn định ngang, độ võng lớn
+
+Số dầm tiêu biểu cho bề rộng cầu B_c = 12m:
+  Khoảng cách tim dầm S = 2.0m → n_dam = ceil(12/2.0) + 1 = 7 dầm
+  Khoảng cách tim dầm S = 2.2m → n_dam = ceil(12/2.2) + 1 = 6–7 dầm
+  Khoảng cách tim dầm S = 2.4m → n_dam = ceil(12/2.4) + 1 = 6 dầm
+
+═══════════════════════════════════════════════════════
+PHẦN 5 — VẬT LIỆU VÀ CHỈ TIÊU KỸ THUẬT
+═══════════════════════════════════════════════════════
+
+Bê tông dầm Super-T:
+  Mác bê tông: B50 (f'c = 50 MPa, tương đương C45 Eurocode)
+  Yêu cầu tối thiểu: f'ci ≥ 35 MPa khi căng cáp (tuổi 3–5 ngày)
+  Cường độ thiết kế: f'c ≥ 45 MPa ở tuổi 28 ngày
+
+Cốt thép thường (đai và cốt dọc phụ):
+  CB400-V (TCVN 1651-2:2018): fy = 400 MPa, fu = 570 MPa
+  Hàm lượng cốt thép đai: 0.25%–0.60% diện tích tiết diện bụng dầm
+
+Tấm kê (bearing pads):
+  Tấm đệm HDPE hoặc kê cố định bằng cốt thép tại đầu dầm
+  Gối đỡ tạm trong quá trình vận chuyển và lắp đặt
+
+═══════════════════════════════════════════════════════
+PHẦN 6 — ĐƠN GIÁ THAM KHẢO
+═══════════════════════════════════════════════════════
+
+Đơn giá bê tông B50 đúc sẵn tại xưởng: 2,000–2,400 nghìn đồng/m³
+Đơn giá vận chuyển và lắp đặt (cẩu lắp): 650–900 nghìn đồng/m³
+Đơn giá cáp DUL căng sau (trọn gói bao gồm cáp, neo, vữa): 36,000–42,000 nghìn đồng/tấn
+Đơn giá cốt thép CB400: 18,000–21,000 nghìn đồng/tấn
+
+Tổng chi phí tham chiếu Super-T H=1750mm, L=38m:
+  Khối lượng BT: ~32 m³/dầm
+  Chi phí BT: ~32 × 2,200 = 70,400 nghìn đồng/dầm
+  Chi phí thép + DUL: ~5 tấn thép thường × 19,000 + ~0.4 tấn DUL × 38,000 = 110,000 nghìn/dầm
+  Chi phí cốp pha + nhân công: ~45,000 nghìn/dầm
+  Tổng xấp xỉ: 220,000–280,000 nghìn đồng/dầm (220–280 triệu đồng)
