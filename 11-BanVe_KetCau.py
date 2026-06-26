@@ -37,13 +37,20 @@ def _get_PB():
     return _PB_ENGINE
 
 # ── Bảng màu ─────────────────────────────────────────────────────────────────
+# Quy tắc thể hiện bản vẽ — LAYER áp cho bản vẽ 2D:
+#   layer 3 (xanh lá)  = đường bao cấu kiện CÓ cốt thép (BTCT)
+#   layer 4 (xanh nhạt)= kích thước (DIM) + nét cấu kiện mảnh
+#   layer 5 (xanh dương)= nét mảnh (taluy, break line)
+_LAYER3 = "#1e8449"   # xanh lá — đường bao BTCT
+_LAYER5 = "#2e5cb8"   # xanh dương — nét mảnh / taluy / break line
 _C = {
     "btong":    "#c8d6c0",
-    "btong_dk": "#7f8c8d",
+    "btong_dk": _LAYER3,   # đường bao BTCT = layer 3 (xanh lá)
+    "bao":      _LAYER3,   # alias đường bao cấu kiện BTCT
     "be":       "#aab7b8",
     "be_dk":    "#566573",
     "dam":      "#85929e",
-    "dam_dk":   "#2c3e50",
+    "dam_dk":   _LAYER3,   # đường bao xà mũ/dầm BTCT = layer 3
     "ban":      "#d5d8dc",
     "phu":      "#2c3e50",
     "lan_can":  "#7f8c8d",
@@ -104,6 +111,27 @@ def _dim_v(fig, x, y0, y1, text, color=None, dx=0.4):
     fig.add_annotation(x=xa+0.08, y=(y0+y1)/2, text=text, showarrow=False,
                        font=dict(size=_DIM_TXT, color=color), xanchor="left",
                        textangle=-90, bgcolor="rgba(255,255,255,0.85)")
+
+# ── Áp LAYER cho bản vẽ 2D (quy tắc thể hiện bản vẽ) ─────────────────────────
+def _apply_layers_2d(fig):
+    """Đường bao cấu kiện BTCT → layer 3 (xanh lá).
+    Phần kết cấu trên (thân trụ/bản/xà mũ/dầm) đã xanh lá sẵn nhờ btong_dk/dam_dk.
+    Hàm này quét thêm các polygon CÓ TÔ mà đường bao đang là màu bê tông sậm
+    (be_dk: bệ cọc, mố, cọc tròn) → đổi sang xanh lá. KHÔNG đụng nét nước/đất/
+    địa chất (màu khác) hay cọc vẽ dạng line (không tô) hay nét DIM (đã xanh nhạt)."""
+    _be_dk = str(_C["be_dk"]).lower()
+    for tr in fig.data:
+        if not isinstance(tr, go.Scatter):
+            continue
+        if "toself" not in str(getattr(tr, "fill", "") or ""):
+            continue
+        try:
+            if tr.line is not None and str(tr.line.color).lower() == _be_dk:
+                tr.line.color = _LAYER3
+        except Exception:
+            pass
+    return fig
+
 
 # ── Box mesh 3D ───────────────────────────────────────────────────────────────
 def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=True):
@@ -1306,6 +1334,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         hovermode="closest",
     )
     _add_elevation_table(fig, d, loc="tl")
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -1592,6 +1621,7 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None):
         margin=dict(l=70, r=80, t=90, b=100),
     )
     _add_material_notes(fig, loc="bl")
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -2664,6 +2694,7 @@ def ve_binh_do_2d(d, df_tim_line=None):
         margin=dict(l=60, r=40, t=60, b=90),
         hovermode="closest",
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -2917,6 +2948,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         margin=dict(l=60, r=40, t=60, b=100),
     )
     _add_elevation_table(fig, d, loc="tr")
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3096,6 +3128,7 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=55, r=30, t=60, b=80),
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3180,6 +3213,7 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=60, r=40, t=60, b=80),
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3261,6 +3295,7 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=55, r=30, t=60, b=100),
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3273,19 +3308,14 @@ _TRANSLUCENT_KEYS = ("nước", "Mặt nước", "MNCN", "MNTT", "MNTN", "MNTC",
 
 # ── MÀU BÊ TÔNG thống nhất cho mọi cấu kiện BTCT trong mô hình 3D ──────────────
 # Quy tắc thể hiện bản vẽ: kết cấu là BTCT → mô hình 3D hiển thị KHỐI ĐẶC một
-# màu bê tông duy nhất (dầm, bản, mố, trụ, xà mũ, bệ cọc, lan can…). Địa hình,
-# mặt nước, lớp phủ BTN (asphalt) và các khối trong suốt giữ nguyên màu riêng.
+# màu bê tông duy nhất (dầm, bản, mố, trụ, xà mũ, bệ cọc, lan can, dầm thư viện…).
+# Cách EXCLUSION: đổi MỌI khối đặc sang bê tông, TRỪ môi trường (asphalt/địa hình)
+# và các khối trong suốt → bắt được cả dầm thư viện / trụ chèn từ module khác.
 CONCRETE_3D = "#b9b5a8"
-_CONCRETE_SRC = {
-    "#c8d6c0",  # btong / thân trụ
-    "#aab7b8",  # be / bệ cọc
-    "#85929e",  # dam
-    "#d5d8dc",  # bản mặt cầu
-    "#c0a06b",  # moc / mố
-    "#bdc3c7",  # _box3d mặc định
-    "#bfc4c9", "#aeb6bd",  # lan can / giải phân cách
-    "#c8d0d8",  # bề mặt bản mặt cầu
-    "#d5dbdb",  # xà mũ
+_NON_CONCRETE_3D = {
+    "#2c3e50", "#34495e",   # lớp phủ BTN / mặt đường (asphalt)
+    "#c9a86b",              # nền đắp / địa hình
+    "#e8eaf0",              # khối bao dầm (mờ)
 }
 
 
@@ -3295,10 +3325,18 @@ def _is_translucent(trace) -> bool:
 
 
 def _to_concrete(trace) -> None:
-    """Quy 1 khối BTCT về màu bê tông thống nhất (giữ địa hình/nước/asphalt)."""
+    """Quy 1 khối kết cấu về màu bê tông thống nhất (giữ địa hình/nước/asphalt)."""
+    if _is_translucent(trace):
+        return
+    try:
+        if trace.opacity is not None and float(trace.opacity) < 0.5:
+            return
+    except Exception:
+        pass
     col = str(getattr(trace, "color", "") or "").strip().lower()
-    if col in _CONCRETE_SRC and not _is_translucent(trace):
-        trace.color = CONCRETE_3D
+    if col in _NON_CONCRETE_3D:
+        return
+    trace.color = CONCRETE_3D
 
 
 def apply_render_mode(fig, mode="Shaded"):

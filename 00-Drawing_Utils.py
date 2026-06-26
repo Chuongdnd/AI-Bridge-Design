@@ -73,6 +73,77 @@ def add_dim_v(fig, x, y0, y1, text, color=None, fs=None, ext_from=None):
                        textangle=-90, bgcolor="rgba(255,255,255,0.85)")
 
 
+# ── MÀU BÊ TÔNG cho mô hình 3D (dùng chung TOÀN HỆ THỐNG) ────────────────────
+# Quy tắc: kết cấu BTCT → mọi mô hình 3D hiển thị KHỐI ĐẶC một màu bê tông.
+# Giữ nguyên: địa hình/nền đắp, lớp phủ asphalt, và các khối trong suốt
+# (mặt nước, tĩnh không, khối bao mờ…).
+CONCRETE_3D = "#b9b5a8"
+_NON_CONCRETE_3D = {
+    "#2c3e50", "#34495e",   # lớp phủ BTN / mặt đường (asphalt)
+    "#c9a86b", "#c9a86b",   # nền đắp / địa hình
+    "#e8eaf0",              # khối bao dầm (mờ)
+}
+_TRANSLUCENT_KEYS_3D = ("nước", "Mặt nước", "MNCN", "MNTT", "MNTN", "MNTC",
+                        "Tĩnh không", "chưa gắn", "tạm", "địa hình", "Địa hình")
+
+
+def to_concrete_3d(fig, keep_colors=None):
+    """Quy MỌI khối kết cấu (go.Mesh3d) trong figure 3D về một màu bê tông đặc.
+    Bỏ qua: khối môi trường (asphalt/địa hình), khối trong suốt (opacity<0.5),
+    và khối có tên thuộc nhóm trong suốt. keep_colors: thêm màu cần giữ nguyên."""
+    keep = set(_NON_CONCRETE_3D)
+    if keep_colors:
+        keep |= {str(c).strip().lower() for c in keep_colors}
+    for tr in getattr(fig, "data", []):
+        if not isinstance(tr, go.Mesh3d):
+            continue
+        nm = str(getattr(tr, "name", "") or "")
+        if any(k in nm for k in _TRANSLUCENT_KEYS_3D):
+            continue
+        try:
+            if tr.opacity is not None and float(tr.opacity) < 0.5:
+                continue
+        except Exception:
+            pass
+        col = str(getattr(tr, "color", "") or "").strip().lower()
+        if col in keep:
+            continue
+        tr.color = CONCRETE_3D
+    return fig
+
+
+# ── Áp LAYER cho bản vẽ 2D (đường bao cấu kiện BTCT = layer 3 xanh lá) ────────
+# Bỏ qua các polygon TÔ là nước/đất/địa chất/nền trong suốt (nhận theo fillcolor).
+_SKIP_FILL_2D = (
+    "rgba(52,152,219", "rgba(41,128,185",     # nước
+    "rgba(169,120,74", "rgba(120,90,50", "rgba(192,160,107",  # đất / nền đắp
+    "rgba(231,76,60",                          # tĩnh không
+    "rgba(0,0,0", "rgba(255,255,255",          # trong suốt / trắng
+)
+
+
+def apply_layers_2d(fig, skip_fills=()):
+    """Quét figure 2D: đổi ĐƯỜNG BAO của polygon CÓ TÔ (cấu kiện BTCT) sang
+    layer 3 (xanh lá). Không đụng nét nước/đất/địa chất, nét rời (không tô) hay
+    nét DIM (đã xanh nhạt). Dùng cho các module bản vẽ ngoài 11-BanVe."""
+    skip = tuple(_SKIP_FILL_2D) + tuple(str(s).lower() for s in skip_fills)
+    green = LAYER_COLORS["3"]
+    for tr in getattr(fig, "data", []):
+        if not isinstance(tr, go.Scatter):
+            continue
+        if "toself" not in str(getattr(tr, "fill", "") or ""):
+            continue
+        fc = str(getattr(tr, "fillcolor", "") or "").strip().lower()
+        if fc and fc.startswith(skip):
+            continue
+        try:
+            if tr.line is not None:
+                tr.line.color = green
+        except Exception:
+            pass
+    return fig
+
+
 # ── Tùy chỉnh TỶ LỆ cho mặt cắt 2D (mặc định khóa 1:1) ──────────────────────
 def apply_aspect(fig, mode="keep", ratio=1.0):
     """Đặt tỷ lệ trục cho 1 hình 2D.

@@ -28,8 +28,13 @@ except Exception:
 
 
 def _aspect(fig, st, key):
-    """Hiện chọn tỷ lệ + áp vào fig (an toàn nếu thiếu module helper)."""
+    """Hiện chọn tỷ lệ + áp LAYER (đường bao BTCT xanh lá) + áp vào fig
+    (an toàn nếu thiếu module helper)."""
     if _PLOT is not None:
+        try:
+            _PLOT.apply_layers_2d(fig)   # đường bao cấu kiện BTCT → layer 3
+        except Exception:
+            pass
         try:
             return _PLOT.aspect_control(fig, key, st_obj=st)
         except Exception:
@@ -42,7 +47,8 @@ _C = {
     "dam_dk":   "#2c3e50",
     "ban":      "#d5d8dc",
     "btong_dk": "#566573",
-    "dim":      "#5d6d7e",
+    "dim":      "#1f9ed1",   # nét DIM = layer 4 (xanh nhạt) — quy tắc thể hiện
+
     "phu":      "#2c3e50",
     "axis":     "#aab7b8",
     "steel":    "#c0392b",
@@ -1306,6 +1312,8 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None
     try:
         fig_3d = (beam_figs["solid"] if beam_figs.get("solid") is not None
                   else ve_chi_tiet_3d(d_loai))
+        if _PLOT is not None:
+            _PLOT.to_concrete_3d(fig_3d)   # khối đặc màu bê tông (quy tắc thể hiện)
         st.plotly_chart(fig_3d, use_container_width=True,
                         config={"scrollZoom": True, "displayModeBar": True},
                         key=f"{key_prefix}_3d")

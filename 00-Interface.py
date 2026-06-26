@@ -4025,7 +4025,7 @@ def _render_asm_edit_panel(cfg: dict) -> None:
     st.markdown("---")
     st.markdown(f"**🧊 Xem trước 3D** — kéo xoay · cao ≈ {rec['H_ref']} m")
     try:
-        st.plotly_chart(cfg["preview"](rec, labels=labels),
+        st.plotly_chart(PLOT.to_concrete_3d(cfg["preview"](rec, labels=labels)),
                         use_container_width=True, key=f"{kind}_prev3d")
     except Exception as _e:
         st.error(f"Lỗi xem trước 3D: {_e}")
@@ -4302,8 +4302,8 @@ def _render_cap_edit_panel():
     st.markdown("---")
     st.markdown("**🧊 Xem trước 3D xà mũ** (độc lập · kéo xoay)")
     try:
-        st.plotly_chart(PB.build_cap_part_fig(_layers), use_container_width=True,
-                        key="cap_prev3d")
+        st.plotly_chart(PLOT.to_concrete_3d(PB.build_cap_part_fig(_layers)),
+                        use_container_width=True, key="cap_prev3d")
     except Exception as _e:
         st.error(f"Lỗi xem trước 3D: {_e}")
 
@@ -4500,7 +4500,8 @@ def _render_stem_panel(kind: str, cfg: dict):
                 f"{_Htot:.2f} m)")
     try:
         st.plotly_chart(
-            PB.build_stem_part_fig(layers, color=cfg["color"], name=cfg["label"]),
+            PLOT.to_concrete_3d(
+                PB.build_stem_part_fig(layers, color=cfg["color"], name=cfg["label"])),
             use_container_width=True, key=f"{kind}_prev3d")
     except Exception as _e:
         st.error(f"Lỗi 3D: {_e}")
@@ -4589,8 +4590,9 @@ def _render_simple_part_panel(kind: str, cfg: dict):
     st.markdown("---")
     st.markdown(f"**🧊 Xem trước 3D {cfg['label'].lower()}** (độc lập)")
     try:
-        st.plotly_chart(PB.build_plan_part_fig(sec, _H, cfg["color"], cfg["label"]),
-                        use_container_width=True, key=f"{kind}_prev3d")
+        st.plotly_chart(
+            PLOT.to_concrete_3d(PB.build_plan_part_fig(sec, _H, cfg["color"], cfg["label"])),
+            use_container_width=True, key=f"{kind}_prev3d")
     except Exception as _e:
         st.error(f"Lỗi 3D: {_e}")
 
