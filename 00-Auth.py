@@ -86,6 +86,47 @@ def logout():
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Dang ky tai khoan (tu phuc vu)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def user_exists(username: str) -> bool:
+    return username.strip() in _load().get("users", {})
+
+
+def register_user(username: str, name: str, email: str, password: str,
+                  role: str = "user") -> tuple:
+    """Tao tai khoan moi (tu dang ky). Tra ve (ok: bool, msg: str)."""
+    username = (username or "").strip()
+    email    = (email or "").strip()
+    if not username:
+        return False, "Tên đăng nhập không được để trống."
+    if not username.replace("_", "").replace("-", "").replace(".", "").isalnum():
+        return False, "Tên đăng nhập chỉ gồm chữ, số, '_', '-', '.'."
+    if "@" not in email or "." not in email.split("@")[-1]:
+        return False, "Email không hợp lệ."
+    if len(password) < 6:
+        return False, "Mật khẩu phải có ít nhất 6 ký tự."
+    db = _load()
+    users = db.setdefault("users", {})
+    if username in users:
+        return False, f"Tên đăng nhập '{username}' đã tồn tại."
+    # Email duy nhat (neu da co user khac dung)
+    for un, ud in users.items():
+        if email and ud.get("email", "").lower() == email.lower():
+            return False, f"Email này đã được dùng cho tài khoản '{un}'."
+    salt = secrets.token_hex(16)
+    users[username] = {
+        "name":          name.strip() or username,
+        "email":         email,
+        "role":          role,
+        "salt":          salt,
+        "password_hash": _hash(password, salt),
+    }
+    _save(db)
+    return True, f"Đã tạo tài khoản '{username}'. Mời đăng nhập."
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Trang dang nhap
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -126,28 +167,52 @@ footer                           { display: none !important; }
         st.markdown(
             "<h2 style='text-align:center;color:#f0f0f0;margin-bottom:4px'>🏗️ Hệ thống Thiết kế Cầu AI</h2>"
             "<p style='text-align:center;color:#888;font-size:13px;margin-bottom:24px'>"
-            "UTH — Vui lòng đăng nhập để tiếp tục</p>",
+            "UTH — Đăng nhập hoặc đăng ký để tiếp tục</p>",
             unsafe_allow_html=True,
         )
 
-        with st.form("login_form", clear_on_submit=False):
-            username = st.text_input("Tên đăng nhập", placeholder="username", key="lf_user")
-            password = st.text_input("Mật khẩu", type="password", placeholder="••••••••", key="lf_pass")
-            submitted = st.form_submit_button("🔐 Đăng nhập", use_container_width=True, type="primary")
+        tab_login, tab_reg = st.tabs(["🔐 Đăng nhập", "📝 Đăng ký"])
 
-        if submitted:
-            db    = _load()
-            udata = db["users"].get(username.strip())
-            if udata and _verify(password, udata["password_hash"], udata["salt"]):
-                st.session_state["auth_ok"]   = True
-                st.session_state["auth_user"] = {
-                    "username": username.strip(),
-                    "name":     udata.get("name", username),
-                    "role":     udata.get("role", "user"),
-                }
-                st.rerun()
-            else:
-                st.error("❌ Tên đăng nhập hoặc mật khẩu không đúng.", icon=None)
+        # ── Đăng nhập ──────────────────────────────────────────────────────
+        with tab_login:
+            with st.form("login_form", clear_on_submit=False):
+                username = st.text_input("Tên đăng nhập", placeholder="username", key="lf_user")
+                password = st.text_input("Mật khẩu", type="password", placeholder="••••••••", key="lf_pass")
+                submitted = st.form_submit_button("🔐 Đăng nhập", use_container_width=True, type="primary")
+
+            if submitted:
+                db    = _load()
+                udata = db["users"].get(username.strip())
+                if udata and _verify(password, udata["password_hash"], udata["salt"]):
+                    st.session_state["auth_ok"]   = True
+                    st.session_state["auth_user"] = {
+                        "username": username.strip(),
+                        "name":     udata.get("name", username),
+                        "role":     udata.get("role", "user"),
+                    }
+                    st.rerun()
+                else:
+                    st.error("❌ Tên đăng nhập hoặc mật khẩu không đúng.", icon=None)
+
+        # ── Đăng ký ────────────────────────────────────────────────────────
+        with tab_reg:
+            with st.form("register_form", clear_on_submit=False):
+                r_user = st.text_input("Tên đăng nhập", placeholder="username", key="rf_user")
+                r_name = st.text_input("Họ và tên", placeholder="Nguyễn Văn A", key="rf_name")
+                r_mail = st.text_input("Email", placeholder="ban@example.com", key="rf_mail")
+                r_p1   = st.text_input("Mật khẩu", type="password", placeholder="≥ 6 ký tự", key="rf_p1")
+                r_p2   = st.text_input("Xác nhận mật khẩu", type="password", key="rf_p2")
+                reg_submit = st.form_submit_button("📝 Tạo tài khoản", use_container_width=True, type="primary")
+
+            if reg_submit:
+                if r_p1 != r_p2:
+                    st.error("Mật khẩu xác nhận không khớp.")
+                else:
+                    ok, msg = register_user(r_user, r_name, r_mail, r_p1)
+                    if ok:
+                        st.success("✅ " + msg + " Chuyển sang tab Đăng nhập.")
+                    else:
+                        st.error("❌ " + msg)
 
     return is_authenticated()
 
