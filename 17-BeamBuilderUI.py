@@ -2458,21 +2458,42 @@ def get_plan_beam_traces(d: dict, pfx: str = "spt") -> list:
     return result
 
 
+def _beam_corner_idx(vx, vy, vz, Np, ang_deg=18.0):
+    """Chỉ số điểm là GÓC THẬT trên mặt cắt (vòng 0): nơi tiết diện ĐỔI HƯỚNG
+    > ang_deg. Bỏ qua điểm trên đoạn thẳng/đường cong mịn (do resample N điểm)."""
+    import math
+    out = []
+    for i in range(Np):
+        a = (vx[(i - 1) % Np], vy[(i - 1) % Np], vz[(i - 1) % Np])
+        b = (vx[i], vy[i], vz[i])
+        c = (vx[(i + 1) % Np], vy[(i + 1) % Np], vz[(i + 1) % Np])
+        v1 = (b[0]-a[0], b[1]-a[1], b[2]-a[2])
+        v2 = (c[0]-b[0], c[1]-b[1], c[2]-b[2])
+        n1 = math.sqrt(sum(t*t for t in v1)); n2 = math.sqrt(sum(t*t for t in v2))
+        if n1 < 1e-9 or n2 < 1e-9:
+            out.append(i); continue
+        cs = max(-1.0, min(1.0, sum(v1[k]*v2[k] for k in range(3)) / (n1*n2)))
+        if math.degrees(math.acos(cs)) > ang_deg:   # đổi hướng > ngưỡng → góc
+            out.append(i)
+    return out or list(range(Np))
+
+
 def _beam_edge_trace(vx, vy, vz, M, Np, name="", color="#3a3a3a", width=1.4):
-    """Đường BAO/cạnh khối dầm (Scatter3d): viền mặt cắt tại từng vòng quét +
-    cạnh dọc nối các vòng → nhìn rõ NÉT trên mô hình 3D (kiểu Shaded có cạnh).
-    vx/vy/vz là lưới M vòng × Np điểm (ring-major) đã dựng cho Mesh3d."""
+    """Chỉ vẽ NÉT ĐƯỜNG BAO khối dầm (Scatter3d): cạnh DỌC tại các GÓC THẬT của
+    tiết diện (nét kết nối giữa 2 mặt phẳng) + viền mặt cắt 2 ĐẦU. KHÔNG vẽ cạnh
+    dọc tại mọi điểm resample, KHÔNG viền từng vòng → đường bao gọn.
+    vx/vy/vz là lưới M vòng × Np điểm (ring-major)."""
     ex, ey, ez = [], [], []
-    for r in range(M):                       # viền mặt cắt (đóng vòng) tại mỗi vòng
+    for i in _beam_corner_idx(vx, vy, vz, Np):   # cạnh DỌC chỉ tại GÓC tiết diện
+        for r in range(M):
+            k = r * Np + i
+            ex.append(vx[k]); ey.append(vy[k]); ez.append(vz[k])
+        ex.append(None); ey.append(None); ez.append(None)
+    for r in (0, M - 1):                      # viền mặt cắt CHỈ ở 2 đầu dầm
         b = r * Np
         for i in range(Np):
             ex.append(vx[b + i]); ey.append(vy[b + i]); ez.append(vz[b + i])
         ex.append(vx[b]); ey.append(vy[b]); ez.append(vz[b])
-        ex.append(None); ey.append(None); ez.append(None)
-    for i in range(Np):                      # cạnh dọc thân nối các vòng
-        for r in range(M):
-            k = r * Np + i
-            ex.append(vx[k]); ey.append(vy[k]); ez.append(vz[k])
         ex.append(None); ey.append(None); ez.append(None)
     return go.Scatter3d(x=ex, y=ey, z=ez, mode="lines",
                         line=dict(color=color, width=width),
