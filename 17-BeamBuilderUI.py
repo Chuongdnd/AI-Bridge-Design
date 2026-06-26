@@ -2764,22 +2764,87 @@ def beam_record_elev_fig(rec: dict):
     return fig
 
 
+def _pt_in_poly(x, z, poly):
+    """Điểm (x,z) có nằm TRONG đa giác poly[(x,z)…] không (ray casting)."""
+    n = len(poly); inside = False
+    j = n - 1
+    for i in range(n):
+        xi, zi = poly[i]; xj, zj = poly[j]
+        if ((zi > z) != (zj > z)) and \
+           (x < (xj - xi) * (z - zi) / ((zj - zi) or 1e-12) + xi):
+            inside = not inside
+        j = i
+    return inside
+
+
 def beam_record_plan_fig(rec: dict):
-    """MẶT BẰNG dầm (nhìn từ trên) — bao hình bề rộng theo chiều dài."""
-    e = _beam_envelopes(rec)
-    if not e:
+    """MẶT BẰNG dầm — NHÌN TỪ TRÊN XUỐNG: vẽ MỌI cạnh dọc của tiết diện (vách
+    khoang, sườn, mép cánh…). Nét THẤY = liền; nét KHUẤT (bị vật liệu phía trên
+    che) = ĐỨT theo layer 4-hidden. Trục: x = dọc dầm (m), y = ngang dầm (m)."""
+    m, L_mm, _ = _model_from_record(rec)
+    if m is None:
         return None
-    xs, zt, zb, yl, yr, L = e
-    fig = go.Figure(go.Scatter(
-        x=xs + xs[::-1], y=yr + yl[::-1], fill="toself",
-        fillcolor="rgba(120,170,140,0.35)", line=dict(color="#3a6a4a", width=1.7),
-        mode="lines", name="Mặt bằng", hoverinfo="skip"))
+    L = L_mm / 1000.0
+    # Mặt cắt đại diện = SÂU NHẤT (giữa nhịp — đủ khoang/sườn nhất)
+    secs = [s for s in m.sections.values() if getattr(s, "outer", None)]
+    if not secs:
+        return None
+    def _depth(s):
+        zs = [p[1] for p in s.outer]; return max(zs) - min(zs)
+    sec = max(secs, key=_depth)
+
+    _LC = (getattr(_PLOT, "LAYER_COLORS", None) or {}) if _PLOT else {}
+    C_SOLID = _LC.get("0", "#2b2b2b")          # nét thấy (đường bao)
+    C_HID   = _LC.get("4-hidden", "#1f9ed1")    # nét khuất (đứt)
+    eps = 2.0                                    # 2mm — kiểm tra vật liệu phía trên
+
+    fig = go.Figure()
+    rings = [sec.outer] + list(sec.holes or [])
+    span_y = (max(p[0] for p in sec.outer) - min(p[0] for p in sec.outer)) or 1.0
+
+    def _add_long(yt, hidden):
+        fig.add_trace(go.Scatter(
+            x=[0, L], y=[yt, yt], mode="lines",
+            line=dict(color=(C_HID if hidden else C_SOLID),
+                      width=1.0 if hidden else 1.4,
+                      dash="dash" if hidden else "solid"),
+            showlegend=False, hoverinfo="skip"))
+
+    seen = set()
+    for ri, ring in enumerate(rings):
+        npr = len(ring)
+        for i in range(npr):
+            a = ring[i]; b = ring[(i + 1) % npr]
+            if abs(a[0] - b[0]) > 0.04 * span_y:    # chỉ cạnh ĐỨNG (vách)
+                continue
+            xt = (a[0] + b[0]) / 2.0
+            ztop = max(a[1], b[1])
+            key = round(xt, 1)
+            if key in seen:
+                continue
+            seen.add(key)
+            # khuất nếu CÓ vật liệu ngay phía trên (điểm (xt, ztop+eps) ∈ biên),
+            # và KHÔNG nằm trong lỗ; cạnh của LỖ luôn là nét khuất (nằm trong khối).
+            hidden = (ri > 0) or (_pt_in_poly(xt, ztop + eps, sec.outer)
+                                  and not any(_pt_in_poly(xt, ztop + eps, h)
+                                              for h in (sec.holes or [])))
+            _add_long(xt / 1000.0, hidden)
+
+    # Bao NGOÀI (mép trái/phải) + 2 đầu dầm — nét THẤY liền
+    ymin = min(p[0] for p in sec.outer) / 1000.0
+    ymax = max(p[0] for p in sec.outer) / 1000.0
+    fig.add_trace(go.Scatter(
+        x=[0, L, L, 0, 0], y=[ymin, ymin, ymax, ymax, ymin], mode="lines",
+        line=dict(color=C_SOLID, width=1.6), showlegend=False, hoverinfo="skip"))
+
     fig.update_layout(
-        template="plotly_white", height=280,
-        title=dict(text=f"③ Mặt bằng dầm (nhìn từ trên) · L={L:.1f}m",
-                   x=0.5, font=dict(size=12)),
-        xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
-        yaxis=dict(title="Ngang (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
+        template="plotly_white", height=300,
+        title=dict(text=f"③ Mặt bằng dầm (nhìn từ trên) · L={L:.1f}m — "
+                        f"nét đứt = khuất", x=0.5, font=dict(size=12)),
+        xaxis=dict(title="Dọc dầm (m)", showgrid=True,
+                   gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
+        yaxis=dict(title="Ngang (m)", showgrid=True,
+                   gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
         margin=dict(l=55, r=20, t=50, b=45))
     return fig
 
