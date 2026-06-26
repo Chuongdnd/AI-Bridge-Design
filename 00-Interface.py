@@ -182,31 +182,44 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
     pointer-events: auto !important;
 }
 
-/* ── THEME HỆ THỐNG SÁNG: lật các thành phần chrome còn cố định TỐI → SÁNG ──
-   Bám theo OS qua prefers-color-scheme (đồng bộ với .stApp ở DesignSystem). */
-@media (prefers-color-scheme: light) {
-    /* Hộp metric (Σ Bê tông / Ván khuôn / Cốt thép…) */
-    [data-testid="stMetric"] { background: #eef2f8 !important; border-color: #cdd5e0 !important; }
-    [data-testid="stMetricValue"] { color: #1769aa !important; }
-    /* Topbar + thẻ ds-card */
-    .uth-topbar { background: #e8edf4 !important; border-bottom-color: #bcd0e8 !important; }
-    .ds-card { background: #f4f6f9 !important; border-color: #cdd5e0 !important; }
-    /* Các hộp/option/panel phải/thanh pipeline đáy — nền tối inline → nền sáng */
-    [style*="#141420"], [style*="#0a1f35"], [style*="#1e1e2e"], [style*="#0a0a14"],
-    [style*="#1a1a2a"], [style*="#12121c"], [style*="#0d0d1a"], [style*="#12202e"],
-    [style*="#1a2330"], [style*="#0f0f1a"], [style*="#0e1117"], [style*="#0d1a10"],
-    [style*="#141a20"], [style*="#0a2818"], [style*="#12121e"]
-    { background: #eef2f8 !important; border-color: #cdd5e0 !important; }
-    /* Chữ trắng/xám nhạt trên các hộp đó → đậm để đọc trên nền sáng (giữ màu nhấn) */
-    [style*="color:#fff"], [style*="color:#f0f0f0"], [style*="color:#dde3ea"],
-    [style*="color:#ddd"], [style*="color:#e0e0e0"], [style*="color:#eee"]
-    { color: #1a1f2b !important; }
-    [style*="color:#aaa"], [style*="color:#999"], [style*="color:#888"],
-    [style*="color:#777"], [style*="color:#666"], [style*="color:#555"]
-    { color: #5a6270 !important; }
-}
 </style>
 """, unsafe_allow_html=True)
+
+# ── THEME SÁNG/TỐI bám theo Streamlit (OS hệ thống HOẶC toggle trong app) ─────
+# prefers-color-scheme chỉ theo OS; nếu người dùng đổi theme bằng nút của
+# Streamlit thì phải đọc st.context.theme. Áp cả 2 để chắc chắn lật được chrome
+# còn cố định tối (metric, panel phải, pipeline đáy, card thư viện/IFC, dialog…).
+_LIGHT_RULES = """
+.stApp { background:#f4f6f9 !important; color:#1a1f2b !important; }
+[data-testid="stMetric"] { background:#eef2f8 !important; border-color:#cdd5e0 !important; }
+[data-testid="stMetricValue"] { color:#1769aa !important; }
+.uth-topbar { background:#e8edf4 !important; border-bottom-color:#bcd0e8 !important; }
+.ds-card { background:#f4f6f9 !important; border-color:#cdd5e0 !important; }
+[style*="#141420"],[style*="#0a1f35"],[style*="#1e1e2e"],[style*="#0a0a14"],
+[style*="#1a1a2a"],[style*="#12121c"],[style*="#0d0d1a"],[style*="#12202e"],
+[style*="#1a2330"],[style*="#0f0f1a"],[style*="#0e1117"],[style*="#0d1a10"],
+[style*="#141a20"],[style*="#0a2818"],[style*="#12121e"]
+{ background:#eef2f8 !important; border-color:#cdd5e0 !important; }
+[style*="#1a2000"]{ background:#eafaf1 !important; }
+[style*="#1f1600"]{ background:#fff8e1 !important; }
+[style*="#2d0a0a"]{ background:#fdecea !important; }
+[style*="color:#fff"],[style*="color:#f0f0f0"],[style*="color:#dde3ea"],
+[style*="color:#ddd"],[style*="color:#e0e0e0"],[style*="color:#eee"]
+{ color:#1a1f2b !important; }
+[style*="color:#aaa"],[style*="color:#999"],[style*="color:#888"],
+[style*="color:#777"],[style*="color:#666"],[style*="color:#555"]
+{ color:#5a6270 !important; }
+"""
+try:
+    _APP_THEME = str(st.context.theme.type or "").lower()
+except Exception:
+    _APP_THEME = ""
+# OS sáng (fallback khi không đọc được st.context)
+st.markdown(f"<style>@media (prefers-color-scheme: light){{{_LIGHT_RULES}}}</style>",
+            unsafe_allow_html=True)
+# Theme Streamlit đang SÁNG (toggle hoặc OS) → áp trực tiếp (chuẩn xác hơn)
+if _APP_THEME == "light":
+    st.markdown(f"<style>{_LIGHT_RULES}</style>", unsafe_allow_html=True)
 
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil

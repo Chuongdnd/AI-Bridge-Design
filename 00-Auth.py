@@ -162,6 +162,21 @@ footer                           { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
+    # Theme SÁNG (OS hoặc toggle Streamlit) → lật nền login + form cho đồng bộ
+    try:
+        _lt = str(st.context.theme.type or "").lower()
+    except Exception:
+        _lt = ""
+    _login_light = """
+.stApp { background:#f4f6f9 !important; }
+[data-testid="stForm"] { background:#ffffff !important; border-color:#cdd5e0 !important;
+    box-shadow:0 8px 40px rgba(0,0,0,0.12) !important; }
+"""
+    st.markdown(f"<style>@media (prefers-color-scheme: light){{{_login_light}}}</style>",
+                unsafe_allow_html=True)
+    if _lt == "light":
+        st.markdown(f"<style>{_login_light}</style>", unsafe_allow_html=True)
+
     # Khoang trong phia tren de can chinh doc
     st.markdown("<br><br><br>", unsafe_allow_html=True)
 
