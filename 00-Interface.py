@@ -4250,9 +4250,29 @@ def _sync_beam_height(d, ribbon):
             or [b for b in beams if b.get("sections")]
         _rec = (min(_cs, key=lambda b: abs(float(b.get("chieu_dai", 0) or 0) - _L))
                 if _cs else None)
-    if not _rec or not _rec.get("chieu_cao"):
+    if not _rec:
         return
-    H_actual = float(_rec["chieu_cao"])
+    # Chiều cao tại ĐẦU DẦM = khoảng cách từ đáy bản (z=0) tới đáy dầm của MẶT
+    # CẮT ĐOẠN ĐẦU (đúng chỗ dầm kê lên xà mũ). Field "chieu_cao" thường None nên
+    # tính trực tiếp từ sections (z=0 ở mặt bản, âm xuống dưới → H = -min(z)).
+    _secs = _rec.get("sections") or {}
+    _segs = _rec.get("segs") or []
+    _en = (_segs[0].get("sec") or _segs[0].get("from_sec")) if _segs else None
+    if not _en or _en not in _secs:
+        _en = next((k for k in _secs if (_secs.get(k) or {}).get("outer")), None)
+    _outer = (_secs.get(_en) or {}).get("outer") if _en else None
+    if not _outer:
+        if _rec.get("chieu_cao"):
+            _outer = None
+        else:
+            return
+    if _outer:
+        _zs = [p[1] for p in _outer]
+        H_actual = max(0.1, -min(_zs) / 1000.0) if _zs else None
+    else:
+        H_actual = float(_rec["chieu_cao"])
+    if not H_actual:
+        return
     H_old = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75) or 1.75)
     if abs(H_actual - H_old) < 1e-3:
         return
