@@ -171,6 +171,29 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
     border: none !important;
     pointer-events: auto !important;
 }
+
+/* ── THEME HỆ THỐNG SÁNG: lật các thành phần chrome còn cố định TỐI → SÁNG ──
+   Bám theo OS qua prefers-color-scheme (đồng bộ với .stApp ở DesignSystem). */
+@media (prefers-color-scheme: light) {
+    /* Hộp metric (Σ Bê tông / Ván khuôn / Cốt thép…) */
+    [data-testid="stMetric"] { background: #eef2f8 !important; border-color: #cdd5e0 !important; }
+    [data-testid="stMetricValue"] { color: #1769aa !important; }
+    /* Topbar + thẻ ds-card */
+    .uth-topbar { background: #e8edf4 !important; border-bottom-color: #bcd0e8 !important; }
+    .ds-card { background: #f4f6f9 !important; border-color: #cdd5e0 !important; }
+    /* Các hộp/option/panel phải/thanh pipeline đáy — nền tối inline → nền sáng */
+    [style*="#141420"], [style*="#0a1f35"], [style*="#1e1e2e"], [style*="#0a0a14"],
+    [style*="#1a1a2a"], [style*="#12121c"], [style*="#0d0d1a"], [style*="#12202e"],
+    [style*="#1a2330"], [style*="#0f0f1a"], [style*="#0e1117"]
+    { background: #eef2f8 !important; border-color: #cdd5e0 !important; }
+    /* Chữ trắng/xám nhạt trên các hộp đó → đậm để đọc trên nền sáng (giữ màu nhấn) */
+    [style*="color:#fff"], [style*="color:#f0f0f0"], [style*="color:#dde3ea"],
+    [style*="color:#ddd"], [style*="color:#e0e0e0"], [style*="color:#eee"]
+    { color: #1a1f2b !important; }
+    [style*="color:#aaa"], [style*="color:#999"], [style*="color:#888"],
+    [style*="color:#777"], [style*="color:#666"], [style*="color:#555"]
+    { color: #5a6270 !important; }
+}
 </style>
 """, unsafe_allow_html=True)
 
