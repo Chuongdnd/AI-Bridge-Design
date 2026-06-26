@@ -5593,28 +5593,13 @@ with _col_main:
                             _err_overlay = None
                             try:
                                 BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
-                                # Thay thế dầm cũ bằng wireframe DXF TRƯỚC apply_render_mode
+                                # Chèn dầm thực tế từ thư viện (hệ VN-2000 trừ origin,
+                                # khớp địa hình). add_all_to_terrain_fig KHÔNG vẽ dầm.
                                 try:
-                                    # Dầm trong HỆ VN-2000 trừ origin (khớp địa hình), KHÔNG dùng
-                                    # bản chainage (sẽ lệch hệ → không zoom được).
                                     _spt_t_traces = BBUI.get_beam_model_mesh_traces_vn2000(
                                         d, _df_geo, he_so_z, pfx=_spt_pfx)
-                                    if _spt_t_traces:
-                                        _fig_t.data = tuple(
-                                            t for t in _fig_t.data
-                                            if not (
-                                                isinstance(t, go.Mesh3d)
-                                                and '#85929e' in str(getattr(t, 'color', ''))
-                                            )
-                                            and not (
-                                                isinstance(t, go.Scatter3d)
-                                                and '#1a252f' in str(getattr(
-                                                    getattr(t, 'line', None), 'color', ''))
-                                                and not getattr(t, 'showlegend', True)
-                                            )
-                                        )
-                                        for _spt_t in _spt_t_traces:
-                                            _fig_t.add_trace(_spt_t)
+                                    for _spt_t in (_spt_t_traces or []):
+                                        _fig_t.add_trace(_spt_t)
                                 except Exception:
                                     pass
                                 BVK.apply_render_mode(_fig_t, render_mode_3d)
@@ -5669,27 +5654,13 @@ with _col_main:
                             d, df_tim_line=None,
                             pier_assembly=_resolve_assembly(d, "tru"),
                             abutment_assembly=_resolve_assembly(d, "mo"))
-                        # Thay thế dầm cũ TRƯỚC apply_render_mode (tránh màu bị đổi)
+                        # Chèn dầm thực tế từ thư viện (ve_cau_3d KHÔNG vẽ dầm)
                         try:
                             _spt_tr = BBUI.get_beam_model_mesh_traces(d, pfx=_spt_pfx)
                             if _spt_tr:
-                                # Xóa dầm cũ: Mesh3d (#85929e) + Scatter3d edges (#1a252f)
-                                fig_3d.data = tuple(
-                                    t for t in fig_3d.data
-                                    if not (
-                                        isinstance(t, go.Mesh3d)
-                                        and '#85929e' in str(getattr(t, 'color', ''))
-                                    )
-                                    and not (
-                                        isinstance(t, go.Scatter3d)
-                                        and '#1a252f' in str(getattr(
-                                            getattr(t, 'line', None), 'color', ''))
-                                        and not getattr(t, 'showlegend', True)
-                                    )
-                                )
                                 for _tr in _spt_tr:
                                     fig_3d.add_trace(_tr)
-                                st.caption("🔩 Dầm thực tế từ DXF (đã thay thế dầm sơ bộ)")
+                                st.caption("🔩 Dầm thực tế từ mô hình thư viện")
                         except Exception:
                             pass
                         BVK.apply_render_mode(fig_3d, _rm_no_terr)
@@ -5895,18 +5866,9 @@ with _col_main:
                                                        pier_assembly=_pa_obj,
                                                        abutment_assembly=_ab_obj)
                     try:
-                        _elev_traces = BBUI.get_elevation_profile_traces(d, pfx=_spt_pfx)
-                        if _elev_traces:
-                            # Xóa dầm parametric cũ màu #85929e trong trắc dọc
-                            fig_td_btc.data = tuple(
-                                t for t in fig_td_btc.data
-                                if not (
-                                    getattr(t, 'fill', None) == 'toself'
-                                    and '#85929e' in str(getattr(t, 'fillcolor', ''))
-                                )
-                            )
-                            for _td_tr in _elev_traces:
-                                fig_td_btc.add_trace(_td_tr)
+                        # ve_so_do_nhip_2d KHÔNG vẽ dầm tham số → chỉ chèn dầm thư viện
+                        for _td_tr in (BBUI.get_elevation_profile_traces(d, pfx=_spt_pfx) or []):
+                            fig_td_btc.add_trace(_td_tr)
                     except Exception:
                         pass
                     st.plotly_chart(fig_td_btc, use_container_width=True,
@@ -5939,19 +5901,10 @@ with _col_main:
                     def _build_mcn_fig(_which):
                         _fig = BVK.ve_mat_cat_ngang_2d(d, pier_assembly=_pa_tru_mcn)
                         try:
+                            # ve_mat_cat_ngang_2d KHÔNG vẽ dầm tham số (chỉ có nhãn).
+                            # Chèn dầm thư viện + bỏ NHÃN "BTCT DƯL" trùng.
                             _trs = BBUI.get_mcn_overlay_traces(d, pfx=_spt_pfx, which=_which)
                             if _trs:
-                                _fig.data = tuple(
-                                    t for t in _fig.data
-                                    if not (
-                                        getattr(t, 'fill', None) == 'toself'
-                                        and '#85929e' in str(getattr(t, 'fillcolor', ''))
-                                    )
-                                    and not (
-                                        'BTCT DƯL' in str(getattr(t, 'name', ''))
-                                        and getattr(t, 'mode', '') == 'markers'
-                                    )
-                                )
                                 _fig.layout.annotations = tuple(
                                     a for a in (_fig.layout.annotations or [])
                                     if 'BTCT DƯL' not in str(getattr(a, 'text', ''))
