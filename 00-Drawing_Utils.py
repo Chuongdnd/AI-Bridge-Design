@@ -167,29 +167,15 @@ def apply_aspect(fig, mode="keep", ratio=1.0):
     return fig
 
 
-_ASPECT_OPTS = ["Mặc định", "Đúng tỷ lệ 1:1", "Giãn theo khung", "Tùy chỉnh…"]
-_ASPECT_MODE = {"Mặc định": "keep", "Đúng tỷ lệ 1:1": "equal",
-                "Giãn theo khung": "free", "Tùy chỉnh…": "custom"}
+def aspect_control(fig, key=None, label=None, st_obj=None, default="equal"):
+    """ĐÃ BỎ tùy chọn tỷ lệ trên giao diện. Theo quy tắc thể hiện bản vẽ, mọi
+    bản vẽ 2D được khóa CỐ ĐỊNH theo `default` (mặc định 'equal' = đúng tỷ lệ
+    1:1). Không còn vẽ radio/slider. Giữ nguyên chữ ký cũ (key/label/st_obj) để
+    không vỡ các nơi đang gọi. Áp tỷ lệ trực tiếp lên fig và trả về fig.
 
-
-def aspect_control(fig, key, label="⚖️ Tỷ lệ", st_obj=None, default="equal"):
-    """Hiện điều khiển chọn tỷ lệ cho 1 hình 2D rồi áp vào fig.
-    Theo quy tắc thể hiện bản vẽ, MẶC ĐỊNH = 'Đúng tỷ lệ 1:1' (default='equal').
-    Người dùng vẫn có thể đổi sang 'Giãn theo khung' / 'Tùy chỉnh' khi cần xem
-    trắc dọc/mặt bằng cho dễ. Trả về fig (đã chỉnh).
-
-    Dùng radio ngang (KHÔNG tạo cột) để an toàn khi gọi bên trong st.columns —
-    tránh lỗi lồng cột quá 1 cấp của Streamlit."""
-    _st = st_obj or st
-    # Vị trí mặc định trên thanh radio theo tham số default (keep/equal/free/custom)
-    _default_label = {v: k for k, v in _ASPECT_MODE.items()}.get(default, "Đúng tỷ lệ 1:1")
-    _idx = _ASPECT_OPTS.index(_default_label) if _default_label in _ASPECT_OPTS else 1
-    sel = _st.radio(label, _ASPECT_OPTS, horizontal=True, index=_idx, key=f"asp_{key}")
-    mode = _ASPECT_MODE.get(sel, "keep")
-    ratio = 1.0
-    if mode == "custom":
-        ratio = _st.slider("cao : ngang", 0.2, 5.0, 1.0, 0.1, key=f"aspr_{key}")
-    return apply_aspect(fig, mode, ratio)
+    Riêng các sơ đồ KHÔNG đúng tỷ lệ thực (vd MCN đường — cao độ biểu trưng) sẽ
+    truyền default='keep' tại chỗ gọi để giữ tỷ lệ thiết kế, khỏi bị dẹt."""
+    return apply_aspect(fig, default)
 
 
 def ve_ky_hieu_muc_nuoc_plotly(fig, x_pos, y_val, label, color):
