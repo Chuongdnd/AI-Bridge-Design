@@ -326,7 +326,7 @@ _DESIGN_SAVE_KEYS = [
     'is_urban','geo_logic','ai_result','kcn_result','tru_result',
     'mong_result','lop_phu_result', 'cao_day_dam', 'H_tru_est',
     'lib_dam_applied', 'pile_layouts', 'railing_by_pa', 'span_layout_by_pa',
-    'h_goi_m',
+    'h_goi_m', '_auto_pier_cap',
 ]
 
 def _cur_user_pid():
@@ -4237,11 +4237,49 @@ def _current_pier_parts():
     return None
 
 
+def _cap_match_beam(loai_dam, caps):
+    """Chọn id XÀ MŨ phù hợp LOẠI DẦM theo tên xà mũ trong thư viện.
+    Super‑T/SPT → xà mũ 'SPT'; Dầm I hoặc T ngược → xà mũ 'cung dam I'."""
+    s = str(loai_dam or "").lower()
+    if "super" in s or "spt" in s:
+        kw = ("spt",)
+    elif ("dầm i" in s or "dam i" in s or s.strip() == "i" or "ngược" in s
+          or "nguoc" in s or "tng" in s):
+        kw = ("cung",)                # XM_cung dam I (dùng cho dầm I hoặc T ngược)
+    else:
+        return None                   # loại khác (bản rỗng…) → không ép
+    for c in (caps or []):
+        if any(k in str(c.get("ten", "")).lower() for k in kw):
+            return c.get("id")
+    return None
+
+
+def _auto_cap_by_beam(d, pp):
+    """Cầu tổng: tự thay XÀ MŨ của trụ cho khớp loại dầm (giữ thân/bệ đang chọn).
+    Tắt bằng d['_auto_pier_cap'] = False."""
+    if not d.get("_auto_pier_cap", True):
+        return pp
+    kcn = d.get("kcn_result") or d.get("ai_result") or {}
+    caps, _stems, _foots = _pier_part_libs()
+    cid = _cap_match_beam(kcn.get("loai_dam", ""), caps)
+    if not cid:
+        return pp
+    pp = dict(pp or {})
+    if pp.get("pier_id"):             # trụ tổng đã lưu → rã thành parts rồi đổi xà mũ
+        rec = CLIB.get_pier(_saved_piers(), pp["pier_id"]) or {}
+        src = rec.get("source") or {}
+        pp = {"ten": rec.get("ten", "Trụ"), "cap_id": cid,
+              "stem_id": src.get("stem_id"), "footing_id": src.get("footing_id")}
+    else:
+        pp["cap_id"] = cid
+    return pp
+
+
 def _resolve_assembly(d, kind: str) -> dict:
     """Bản ghi trụ/mố lắp ghép đang gán cho cầu (None nếu dùng mặc định)."""
     cfg = _asm_cfg(kind)
     if kind == "tru":
-        pp = _current_pier_parts()
+        pp = _auto_cap_by_beam(d, _current_pier_parts())
         if pp and pp.get("pier_id"):              # TRỤ TỔNG đã lưu
             rec = CLIB.get_pier(_saved_piers(), pp["pier_id"])
             if rec:
@@ -6515,6 +6553,14 @@ with _col_main:
                         _pck1, _pck2, _pck3 = st.columns([2, 2, 1.4])
                         with _pck1:
                             _assembly_picker(d, "tru")
+                            _auto_cap = st.checkbox(
+                                "🔗 Tự chọn xà mũ theo loại dầm", value=bool(
+                                    st.session_state.design_data.get("_auto_pier_cap", True)),
+                                key="chk_auto_pier_cap",
+                                help="Cầu tổng tự đổi xà mũ trụ cho khớp loại dầm "
+                                     "(SPT / dầm I / T ngược), giữ thân & bệ đang chọn.")
+                            st.session_state.design_data["_auto_pier_cap"] = bool(_auto_cap)
+                            d["_auto_pier_cap"] = bool(_auto_cap)
                         with _pck2:
                             _assembly_picker(d, "mo")
                         with _pck3:
