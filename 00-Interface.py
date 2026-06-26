@@ -5644,6 +5644,7 @@ with _col_main:
                                     key="mcn_oto_2d")
                 with _c3d:
                     fig_mcn_3d = PLOT.ve_mat_cat_ngang_3d(res_mcn, chieu_dai=20.0, bridge_mode=False)
+                    PLOT.to_concrete_3d(fig_mcn_3d)   # mã màu hạng mục: asphalt/cỏ/BTXM
                     st.plotly_chart(fig_mcn_3d, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True},
                                     key="mcn_oto_3d")
@@ -5660,6 +5661,7 @@ with _col_main:
                                         key="mcn_cau_2d")
                     with _c3d_cau:
                         fig_cau_3d = PLOT.ve_mat_cat_ngang_3d(res_mcn, chieu_dai=20.0, bridge_mode=True)
+                        PLOT.to_concrete_3d(fig_cau_3d)   # mã màu hạng mục: asphalt/cỏ/BTXM
                         st.plotly_chart(fig_cau_3d, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True},
                                         key="mcn_cau_3d")

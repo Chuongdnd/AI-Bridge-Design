@@ -3306,16 +3306,16 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
 _TRANSLUCENT_KEYS = ("nước", "Mặt nước", "MNCN", "MNTT", "MNTN", "MNTC",
                      "Tĩnh không", "chưa gắn", "tạm")
 
-# ── MÀU BÊ TÔNG thống nhất cho mọi cấu kiện BTCT trong mô hình 3D ──────────────
-# Quy tắc thể hiện bản vẽ: kết cấu là BTCT → mô hình 3D hiển thị KHỐI ĐẶC một
-# màu bê tông duy nhất (dầm, bản, mố, trụ, xà mũ, bệ cọc, lan can, dầm thư viện…).
-# Cách EXCLUSION: đổi MỌI khối đặc sang bê tông, TRỪ môi trường (asphalt/địa hình)
-# và các khối trong suốt → bắt được cả dầm thư viện / trụ chèn từ module khác.
-CONCRETE_3D = "#b9b5a8"
+# ── HỆ THỐNG MÃ MÀU CÁC HẠNG MỤC cho mô hình 3D (theo bảng quy định) ──────────
+# Cấu kiện BTXM = xám #d6d6d6; bê tông nhựa/lớp phủ = xám đậm #4a484b.
+# EXCLUSION: đổi MỌI khối đặc sang màu hạng mục tương ứng, TRỪ nền đắp/địa hình
+# và khối trong suốt → bắt được cả dầm thư viện / trụ chèn từ module khác.
+CONCRETE_3D = "#d6d6d6"        # Các cấu kiện BTXM (214,214,214)
+ASPHALT_3D  = "#4a484b"        # Bê tông nhựa (74,72,75)
+_ASPHALT_SRC_3D = {"#2c3e50", "#34495e"}   # lớp phủ BTN / mặt đường đầu cầu
 _NON_CONCRETE_3D = {
-    "#2c3e50", "#34495e",   # lớp phủ BTN / mặt đường (asphalt)
-    "#c9a86b",              # nền đắp / địa hình
-    "#e8eaf0",              # khối bao dầm (mờ)
+    "#c9a86b",              # nền đắp / địa hình → giữ
+    "#e8eaf0",              # khối bao dầm (mờ) → giữ
 }
 
 
@@ -3325,7 +3325,8 @@ def _is_translucent(trace) -> bool:
 
 
 def _to_concrete(trace) -> None:
-    """Quy 1 khối kết cấu về màu bê tông thống nhất (giữ địa hình/nước/asphalt)."""
+    """Quy 1 khối về màu hạng mục chuẩn (BTXM xám / bê tông nhựa xám đậm);
+    giữ nền đắp/địa hình/khối trong suốt."""
     if _is_translucent(trace):
         return
     try:
@@ -3336,7 +3337,7 @@ def _to_concrete(trace) -> None:
     col = str(getattr(trace, "color", "") or "").strip().lower()
     if col in _NON_CONCRETE_3D:
         return
-    trace.color = CONCRETE_3D
+    trace.color = ASPHALT_3D if col in _ASPHALT_SRC_3D else CONCRETE_3D
 
 
 def apply_render_mode(fig, mode="Shaded"):
