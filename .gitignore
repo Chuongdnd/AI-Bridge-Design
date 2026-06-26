@@ -32,6 +32,13 @@ bridge_extractor-Tools/
 Matcat_DXF/
 Data/Output/
 
+# Dữ liệu người dùng (multi-user) — lưu trên ổ cố định của server, KHÔNG commit.
+# Mỗi lần deploy không được ghi đè tài khoản / thư viện / dự án người dùng đã tạo.
+users/
+auth_users.json
+design_data_saved.json
+spt_sections_saved.json
+
 # Local agent config & file tạm
 .claude/
 Data/.claude/
