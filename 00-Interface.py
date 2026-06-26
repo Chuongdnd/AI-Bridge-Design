@@ -1905,6 +1905,10 @@ def dialog_step3():
                     models=kcn_models,
                 )
                 if isinstance(_kcn_raw, dict) and "pa1_chi_phi" in _kcn_raw:
+                    # 'Cầu tổng' mặc định = PA1 (nhịp NGẮN nhất, NHIỀU trụ — bám
+                    # tĩnh không; đổi tĩnh không → nhịp đổi theo). PA2 (nhịp dài, ít
+                    # trụ) và PA3 (AI) xem ở ribbon Phương án 2 / 3. Người dùng gán
+                    # dầm thư viện để đổi chiều dài nhịp (ghi đè qua span_layout).
                     _pa = dict(_kcn_raw["pa1_chi_phi"])
                     _pa["do_tin_cay"] = 85 if kcn_models else 60
                     res['kcn_result'] = _pa
@@ -2169,14 +2173,14 @@ _TAB_META = [
         'key':      'Phương án 1',
         'icon':     '🖼️',
         'state':    tab_states['tab1'],
-        'tip':      'Bản vẽ 2D/3D — Phương án 1 (tối ưu chi phí)',
+        'tip':      'Bản vẽ 2D/3D — Phương án 1 (nhịp ngắn, nhiều trụ)',
         'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
     },
     {
         'key':      'Phương án 2',
         'icon':     '🖼️',
         'state':    tab_states['tab1'],
-        'tip':      'Bản vẽ 2D/3D — Phương án 2 (tối ưu mỹ quan)',
+        'tip':      'Bản vẽ 2D/3D — Phương án 2 (nhịp dài, ít trụ)',
         'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
     },
     {
@@ -6138,13 +6142,21 @@ with _col_main:
                         _names_btc = [b.get("ten", "(không tên)") for b in _beams_btc]
                         _Ls_btc    = [float(x) for x in BVK.STD_LENGTHS]
 
+                        # Chiều dài nhịp định hình mặc định = BÁM TĨNH KHÔNG (nhỏ nhất
+                        # thỏa B_tk + 2×an_toàn). Khi chưa gán dầm thư viện / chưa khai
+                        # báo thì các ô chiều dài lấy giá trị này thay vì kẹt ở 38.2m.
+                        _Lclr_btc = float(BVK._snap_up_std(
+                            float(d.get("B", 20.0)) + 2.0 * BVK._PIER_SAFETY))
+
                         def _beam_idx(_bid):
                             for _k, _b in enumerate(_beams_btc):
                                 if _b.get("id") == _bid:
                                     return _k + 1
                             return 0
 
-                        def _L_idx(_v, _dflt=33.0):
+                        def _L_idx(_v, _dflt=None):
+                            if _dflt is None:
+                                _dflt = _Lclr_btc
                             if _v in _Ls_btc:
                                 return _Ls_btc.index(_v)
                             return _Ls_btc.index(_dflt) if _dflt in _Ls_btc else 0
@@ -6221,7 +6233,7 @@ with _col_main:
                             with _cm2:
                                 _Lm = st.selectbox(
                                     "Chiều dài nhịp chính (m):", _Ls_btc,
-                                    index=_L_idx(_sl_cur.get("L_main"), 38.2),
+                                    index=_L_idx(_sl_cur.get("L_main")),
                                     disabled=_auto_m, key=f"btc_Lm_{selected_ribbon}")
                             _cs, _cap = st.columns(2)
                             if _cs.button("💾 Lưu bố trí 2 tầng", use_container_width=True,
@@ -6367,13 +6379,13 @@ with _col_main:
                             "(mặt bằng kết cấu · mặt bằng cọc · mặt cắt ngang · mặt cắt dọc)")
                 _kcn_vt = d.get("kcn_result") or d.get("ai_result", {})
                 _geo_vt = d.get("geo_logic", {})
-                # Bố trí nhịp ĐỀU theo catalog (đồng bộ với bản vẽ) → suy ra số trụ thực tế
+                # Bố trí nhịp theo span_layout (dầm thư viện/chỉnh tay) hoặc bám tĩnh
+                # không — ĐỒNG BỘ với bản vẽ bố trí chung (resolve_supports).
                 _x0_vt   = float(_geo_vt.get("x_mo_trai", -60))
                 _xe_vt   = float(_geo_vt.get("x_mo_phai",  60))
                 _xtim_vt = float(_geo_vt.get("x_tim_clearance", (_x0_vt + _xe_vt) / 2))
-                _Lnhip_vt = float(_kcn_vt.get("chieu_dai", 33) or 33)
-                _supports_vt, _ = BVK.calc_span_layout(
-                    _x0_vt, _xe_vt, _xtim_vt, float(d.get("B", 20)), _Lnhip_vt
+                _supports_vt, _ = BVK.resolve_supports(
+                    d, _x0_vt, _xe_vt, _xtim_vt, float(d.get("B", 20))
                 )
                 _x0_vt, _xe_vt = _supports_vt[0], _supports_vt[-1]
                 _piers_vt  = _supports_vt[1:-1]

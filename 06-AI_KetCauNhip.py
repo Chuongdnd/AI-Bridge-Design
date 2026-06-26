@@ -563,9 +563,9 @@ def _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong):
         "overhang":        max(0.10, oh),
         "ti_le_L_H":       round(L / H, 1) if H > 0 else 0,
         "cong_nghe":       cong_nghe,
-        "phuong_phap":     "Rule-Based (Chi phí)",
-        "ghi_chu":         (f"Tối ưu ít trụ: {loai} L={L}m, "
-                            f"{best_n_nhip} nhịp, S={S}m."),
+        "phuong_phap":     "Rule-Based (Nhịp dài — ít trụ)",
+        "ghi_chu":         (f"Nhịp DÀI, ÍT TRỤ (tiết kiệm phần dưới): {loai} "
+                            f"L={L}m, {best_n_nhip} nhịp, S={S}m."),
     }
 
 
@@ -752,10 +752,76 @@ def predict_kcn(B_tk, H_tk, goc, B_cau, moi_truong,
     Chi tiết hình học dầm do người dùng dựng ở tab BeamBuilder (module 17).
     """
     return {
-        "pa1_chi_phi": _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong),
-        "pa2_my_quan": _predict_rb_my_quan(B_tk, goc, B_cau, L_cau_tong),
+        # PA1 = nhịp NGẮN nhất, NHIỀU trụ (bám tĩnh không) — mặc định 'cầu tổng'
+        "pa1_chi_phi": _predict_rb_nhip_ngan(B_tk, goc, B_cau, L_cau_tong),
+        # PA2 = nhịp DÀI, ÍT trụ (tối ưu chi phí phần dưới)
+        "pa2_my_quan": _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong),
         "pa3_ai":      _predict_ai(B_tk, H_tk, goc, B_cau, moi_truong,
                                    L_cau_tong, models),
+    }
+
+
+def _predict_rb_nhip_ngan(B_tk, goc, B_cau, L_cau_tong=None):
+    """
+    PA1 — Nhịp NGẮN nhất, NHIỀU trụ.
+
+    Chọn chiều dài định hình catalog nhỏ nhất thỏa điều kiện tĩnh không
+    (_L_nhip_min) → bám tĩnh không, đổi tĩnh không thì nhịp đổi theo. Đây cũng là
+    phương án mặc định của 'cầu tổng'. Dùng chung lõi với predict_kcn_default,
+    chỉ khác nhãn hiển thị.
+    """
+    pa = predict_kcn_default(B_tk, goc, B_cau, L_cau_tong)
+    pa["phuong_phap"] = "Rule-Based (Nhịp ngắn — nhiều trụ)"
+    pa["ghi_chu"] = (f"Nhịp NGẮN nhất thỏa tĩnh không (nhiều trụ): "
+                     f"{pa['loai_dam']} L={pa['chieu_dai']:g}m, "
+                     f"{pa['tong_so_nhip']} nhịp.")
+    return pa
+
+
+def predict_kcn_default(B_tk, goc, B_cau, L_cau_tong=None):
+    """
+    Phương án MẶC ĐỊNH cho 'cầu tổng' — nhịp **bám tĩnh không**.
+
+    Khác với predict_kcn (luôn trả PA1 tối ưu chi phí → chọn dầm DÀI NHẤT, vì
+    vậy chiều dài nhịp luôn kẹt ở 38.2m bất kể tĩnh không), hàm này chọn chiều
+    dài định hình catalog NHỎ NHẤT thỏa điều kiện tĩnh không (_L_nhip_min). Đổi
+    tĩnh không (B_tk / góc) → chiều dài nhịp đổi theo ngay. Người dùng có thể
+    tăng nhịp bằng cách gán dầm dài hơn từ thư viện (ghi đè qua span_layout).
+
+    Trả về dict cùng cấu trúc với một phương án của predict_kcn.
+    """
+    L_min   = _L_nhip_min(B_tk, goc)
+    elig    = [l for l in STD_LENGTHS if l >= L_min - 1e-6]
+    L_def   = float(min(elig)) if elig else float(max(STD_LENGTHS))
+
+    # Dầm catalog gần chiều dài định hình nhất (lấy H/B/S/công nghệ thực tế)
+    loai, L_cat, B_cat, H_cat, S_cat, cong_nghe = get_beam_from_catalog(L_def)
+
+    n_nhip = _n_nhip_from(L_cau_tong, L_def) if (L_cau_tong and L_cau_tong > 0) else 1
+
+    n_dam = max(2, int(B_cau / S_cat) + 1)
+    oh = round((B_cau - (n_dam - 1) * S_cat) / 2, 2)
+    if oh < 0.15:
+        n_dam = max(2, n_dam - 1)
+        oh = round((B_cau - (n_dam - 1) * S_cat) / 2, 2)
+    if oh > max(1.2, 0.8 * S_cat):
+        n_dam += 1
+        oh = round((B_cau - (n_dam - 1) * S_cat) / 2, 2)
+
+    return {
+        "loai_dam":        loai,
+        "chieu_dai":       L_def,
+        "chieu_cao_dam":   H_cat,
+        "be_rong_dam":     B_cat,
+        "khoang_cach_dam": S_cat,
+        "tong_so_nhip":    n_nhip,
+        "so_luong_dam":    n_dam,
+        "overhang":        max(0.10, oh),
+        "ti_le_L_H":       round(L_def / H_cat, 1) if H_cat > 0 else 0,
+        "cong_nghe":       cong_nghe,
+        "phuong_phap":     "Mặc định (bám tĩnh không)",
+        "ghi_chu":         (f"Nhịp định hình nhỏ nhất thỏa tĩnh không: {loai} "
+                            f"L={L_def:g}m, {n_nhip} nhịp."),
     }
 
 
