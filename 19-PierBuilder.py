@@ -659,10 +659,19 @@ def pier_elevation_rects(pier: dict, H_tru: float = None,
     be_layers, than_layers = stem_layers_of(be), stem_layers_of(than)
     H_be = stem_total_height(be_layers) if be_layers else float(be.get("H", 1.5))
     H_cap = _part_height_m(cap, "xa_mu")
+    # Chiều cao từng ĐOẠN xà mũ (dọc cầu) + chiều cao VAI KÊ = đoạn đầu/cuối
+    # (chỗ dầm GỐI lên). Đoạn giữa (ụ chắn giữa 2 nhịp) thường cao hơn → nhô lên.
+    _caps = _cap_layers(cap)
+    _cap_h = []
+    for _lay in _caps:
+        _, _, _vmin, _vmax = _bbox_ab(_lay["section"].get("outer", [[0, 0]]))
+        _cap_h.append((_vmax - _vmin) * MM)
+    seat_h = min(_cap_h[0], _cap_h[-1]) if _cap_h else H_cap   # cao độ vai kê
     H_than = (stem_total_height(than_layers) if than_layers
               else float(than.get("H", 5.0)))
     if H_tru is not None:
-        H_than = max(0.3, float(H_tru) - H_be - H_cap)
+        # Thân kéo lên tới VAI KÊ = đáy dầm; ụ giữa cao hơn sẽ nhô trên đáy dầm.
+        H_than = max(0.3, float(H_tru) - H_be - seat_h)
 
     def _sec0(part, layers):
         """Mặt cắt đại diện (tầng đáy) để lấy bề rộng dọc cầu."""
@@ -682,13 +691,11 @@ def pier_elevation_rects(pier: dict, H_tru: float = None,
     rects.append(_rect(L["than"], _COL["than"],
                        _plan_doc_width_m(_sec0(than, than_layers)), z, H_than))
     z += H_than
-    # Xà mũ: các đoạn xếp DỌC CẦU (cạnh nhau), cùng đáy z; mỗi đoạn cao riêng.
-    _caps = _cap_layers(cap)
+    # Xà mũ: các đoạn xếp DỌC CẦU (cạnh nhau), CÙNG ĐÁY z. Vai kê (đầu/cuối) cao
+    # bằng seat_h → đỉnh vai = đáy dầm; ụ giữa cao hơn → nhô lên giữa 2 đầu dầm.
     _total_D = sum(l["D"] for l in _caps) or 1.8
     _x = x_ctr - _total_D / 2.0
-    for _lay in _caps:
-        _, _, _vmin, _vmax = _bbox_ab(_lay["section"].get("outer", [[0, 0]]))
-        _h_lay = (_vmax - _vmin) * MM
+    for _lay, _h_lay in zip(_caps, _cap_h):
         rects.append({"name": L["xa_mu"], "color": _COL["xa_mu"],
                       "xs": [_x, _x + _lay["D"], _x + _lay["D"], _x],
                       "zs": [z, z, z + _h_lay, z + _h_lay]})

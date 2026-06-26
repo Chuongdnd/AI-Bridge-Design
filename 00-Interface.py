@@ -237,9 +237,14 @@ try:
     BVK  = importlib.import_module("11-BanVe_KetCau")   # Bản vẽ kết cấu 2D/3D
     SSP  = importlib.import_module("09-So_Sanh_PA")     # So sánh 3 phương án
     CTD  = importlib.import_module("12-ChiTiet_Dam")    # Chi tiết dầm
-    importlib.reload(PLOT)
-    importlib.reload(BVK)
-    importlib.reload(CTD)
+    # reload() chỉ để bắt sửa code lúc dev; ở môi trường deploy (multipage/
+    # CWD khác) find_spec có thể không tìm lại được module tên có số → bỏ qua
+    # lỗi reload, dùng bản đã import (vẫn chạy đúng).
+    for _m in (PLOT, BVK, CTD):
+        try:
+            importlib.reload(_m)
+        except Exception:
+            pass
 
     # ── Section Sketcher + Beam Builder (module nạp bằng spec vì tên có số) ──
     _bb_dir  = os.path.dirname(os.path.abspath(__file__))
@@ -321,6 +326,7 @@ _DESIGN_SAVE_KEYS = [
     'is_urban','geo_logic','ai_result','kcn_result','tru_result',
     'mong_result','lop_phu_result', 'cao_day_dam', 'H_tru_est',
     'lib_dam_applied', 'pile_layouts', 'railing_by_pa', 'span_layout_by_pa',
+    'h_goi_m', '_auto_pier_cap',
 ]
 
 def _cur_user_pid():
@@ -2030,8 +2036,11 @@ def dialog_step3():
         # ── BVK ─────────────────────────────────────────────────────────
         tracker.start("BVK")
         try:
-            importlib.reload(BVK)
-            importlib.reload(CTD)
+            for _m in (BVK, CTD):
+                try:
+                    importlib.reload(_m)
+                except Exception:
+                    pass
             tracker.done("BVK", "Bản vẽ 2D/3D đã sẵn sàng")
         except Exception as _e:
             tracker.error("BVK", str(_e))
@@ -3611,15 +3620,18 @@ def _render_tru_io() -> None:
     foots = st.session_state.get("lib_footings")
     if foots is None:
         foots = st.session_state.lib_footings = CLIB.load_footings()
-    with st.expander("💾 Sao lưu / khôi phục thư viện trụ (xà mũ · thân · bệ)",
+    piers = st.session_state.get("dam_piers")
+    if piers is None:
+        piers = st.session_state.dam_piers = CLIB.load_piers()
+    with st.expander("💾 Sao lưu / khôi phục thư viện trụ (xà mũ · thân · bệ · trụ tổng)",
                      expanded=False):
-        st.caption("Tải về / nạp lại **CHUNG** cho cả 3 bộ phận trụ trong 1 file. "
-                   "Có thể **gộp** thêm hoặc **thay thế toàn bộ**.")
+        st.caption("Tải về / nạp lại **CHUNG** cho cả 3 bộ phận trụ + **trụ tổng** "
+                   "trong 1 file. Có thể **gộp** thêm hoặc **thay thế toàn bộ**.")
         _c1, _c2 = st.columns(2)
         with _c1:
             _payload = json.dumps(
                 {"kind": "ai-bridge-pier", "version": 1,
-                 "caps": caps, "stems": stems, "footings": foots},
+                 "caps": caps, "stems": stems, "footings": foots, "piers": piers},
                 ensure_ascii=False, indent=2)
             st.download_button(
                 "⬇️ Tải thư viện trụ", data=_payload.encode("utf-8"),
@@ -3636,6 +3648,7 @@ def _render_tru_io() -> None:
                 _ic = [r for r in (_doc.get("caps") or []) if isinstance(r, dict)]
                 _is = [r for r in (_doc.get("stems") or []) if isinstance(r, dict)]
                 _if = [r for r in (_doc.get("footings") or []) if isinstance(r, dict)]
+                _ip = [r for r in (_doc.get("piers") or []) if isinstance(r, dict)]
             except Exception as _e:
                 st.error(f"File không hợp lệ: {_e}")
             else:
@@ -3657,13 +3670,16 @@ def _render_tru_io() -> None:
 
                 if st.button(
                         f"✅ Xác nhận nạp {len(_ic)} xà mũ · {len(_is)} thân · "
-                        f"{len(_if)} bệ", type="primary", key="partio_apply_tru"):
+                        f"{len(_if)} bệ · {len(_ip)} trụ tổng", type="primary",
+                        key="partio_apply_tru"):
                     _nc, _ns, _nf = (_merge(caps, _ic), _merge(stems, _is),
                                      _merge(foots, _if))
+                    _np = _merge(piers, _ip)
                     st.session_state.lib_caps = _nc;     CLIB.save_caps(_nc)
                     st.session_state.lib_stems = _ns;    CLIB.save_stems(_ns)
                     st.session_state.lib_footings = _nf; CLIB.save_footings(_nf)
-                    st.success("Đã nạp thư viện trụ (xà mũ · thân · bệ).")
+                    st.session_state.dam_piers = _np;    CLIB.save_piers(_np)
+                    st.success("Đã nạp thư viện trụ (xà mũ · thân · bệ · trụ tổng).")
                     st.rerun()
 
 
@@ -4175,22 +4191,41 @@ def _pier_part_libs():
             st.session_state["lib_footings"])
 
 
+_PIER_CUSTOM_OPT = "🔧 Tùy chỉnh bộ phận…"
+
+
+def _pier_options():
+    """Danh sách lựa chọn trụ cho phương án: TRỤ TỔNG đã lưu (ưu tiên) → preset
+    → tùy chỉnh. Trả (opts:list[str], meta:dict{opt → (kind, ref)})."""
+    piers = _saved_piers()
+    pairs = [(f"🏗️ {p.get('ten','(trụ)')}", ("saved", p.get("id"))) for p in piers]
+    pairs += [(p["ten"], ("preset", i)) for i, p in enumerate(_PIER_PRESETS)]
+    pairs += [(_PIER_CUSTOM_OPT, ("custom", None))]
+    return [o for o, _ in pairs], dict(pairs)
+
+
 def _current_pier_parts():
     """Lựa chọn trụ HIỆN TẠI — đọc TRỰC TIẾP từ session_state của widget picker.
 
-    Nhờ vậy mọi bản vẽ (kể cả vẽ TRƯỚC picker trong cùng 1 lần chạy) đều thấy
-    lựa chọn mới ngay → KHÔNG cần st.rerun() (tránh vòng lặp cập nhật / lag)."""
+    Trả: {"pier_id": id} nếu chọn TRỤ TỔNG đã lưu; ngược lại
+    {"ten","cap_id","stem_id","footing_id"} (preset/tùy chỉnh). None nếu trống.
+    Đọc widget state để mọi bản vẽ (kể cả vẽ TRƯỚC picker) thấy ngay → KHÔNG rerun."""
     caps, stems, foots = _pier_part_libs()
-    if not (caps or stems or foots):
+    piers = _saved_piers()
+    if not (caps or stems or foots or piers):
         return None
-    _custom = "🔧 Tùy chỉnh bộ phận…"
+    opts, meta = _pier_options()
     sel = st.session_state.get("tru_preset_sel")
-    if sel and sel != _custom:
-        for p in _PIER_PRESETS:
-            if p["ten"] == sel:
-                return {"ten": p["ten"], "cap_id": p["cap_id"],
-                        "stem_id": p["stem_id"], "footing_id": p["footing_id"]}
-    if sel == _custom:
+    kind_sel, ref = meta.get(sel, (None, None))
+    if kind_sel is None and opts:                 # chưa chọn → mục đầu tiên
+        kind_sel, ref = meta[opts[0]]
+    if kind_sel == "saved":
+        return {"pier_id": ref}
+    if kind_sel == "preset":
+        p = _PIER_PRESETS[ref]
+        return {"ten": p["ten"], "cap_id": p["cap_id"],
+                "stem_id": p["stem_id"], "footing_id": p["footing_id"]}
+    if kind_sel == "custom":
         def _id(key, items):
             v = st.session_state.get(key)
             if not v or v == "(không)":
@@ -4199,16 +4234,56 @@ def _current_pier_parts():
         return {"ten": "Trụ tùy chỉnh", "cap_id": _id("tru_cap_sel", caps),
                 "stem_id": _id("tru_stem_sel", stems),
                 "footing_id": _id("tru_footing_sel", foots)}
-    p = _PIER_PRESETS[0]                       # chưa render picker → preset đầu
-    return {"ten": p["ten"], "cap_id": p["cap_id"],
-            "stem_id": p["stem_id"], "footing_id": p["footing_id"]}
+    return None
+
+
+def _cap_match_beam(loai_dam, caps):
+    """Chọn id XÀ MŨ phù hợp LOẠI DẦM theo tên xà mũ trong thư viện.
+    Super‑T/SPT → xà mũ 'SPT'; Dầm I hoặc T ngược → xà mũ 'cung dam I'."""
+    s = str(loai_dam or "").lower()
+    if "super" in s or "spt" in s:
+        kw = ("spt",)
+    elif ("dầm i" in s or "dam i" in s or s.strip() == "i" or "ngược" in s
+          or "nguoc" in s or "tng" in s):
+        kw = ("cung",)                # XM_cung dam I (dùng cho dầm I hoặc T ngược)
+    else:
+        return None                   # loại khác (bản rỗng…) → không ép
+    for c in (caps or []):
+        if any(k in str(c.get("ten", "")).lower() for k in kw):
+            return c.get("id")
+    return None
+
+
+def _auto_cap_by_beam(d, pp):
+    """Cầu tổng: tự thay XÀ MŨ của trụ cho khớp loại dầm (giữ thân/bệ đang chọn).
+    Tắt bằng d['_auto_pier_cap'] = False."""
+    if not d.get("_auto_pier_cap", True):
+        return pp
+    kcn = d.get("kcn_result") or d.get("ai_result") or {}
+    caps, _stems, _foots = _pier_part_libs()
+    cid = _cap_match_beam(kcn.get("loai_dam", ""), caps)
+    if not cid:
+        return pp
+    pp = dict(pp or {})
+    if pp.get("pier_id"):             # trụ tổng đã lưu → rã thành parts rồi đổi xà mũ
+        rec = CLIB.get_pier(_saved_piers(), pp["pier_id"]) or {}
+        src = rec.get("source") or {}
+        pp = {"ten": rec.get("ten", "Trụ"), "cap_id": cid,
+              "stem_id": src.get("stem_id"), "footing_id": src.get("footing_id")}
+    else:
+        pp["cap_id"] = cid
+    return pp
 
 
 def _resolve_assembly(d, kind: str) -> dict:
     """Bản ghi trụ/mố lắp ghép đang gán cho cầu (None nếu dùng mặc định)."""
     cfg = _asm_cfg(kind)
     if kind == "tru":
-        pp = _current_pier_parts()
+        pp = _auto_cap_by_beam(d, _current_pier_parts())
+        if pp and pp.get("pier_id"):              # TRỤ TỔNG đã lưu
+            rec = CLIB.get_pier(_saved_piers(), pp["pier_id"])
+            if rec:
+                return _pier_total_assembly(rec)
         if pp and (pp.get("cap_id") or pp.get("stem_id") or pp.get("footing_id")):
             caps, stems, foots = _pier_part_libs()
             cap  = CLIB.get_cap(caps, pp.get("cap_id"))
@@ -4250,9 +4325,29 @@ def _sync_beam_height(d, ribbon):
             or [b for b in beams if b.get("sections")]
         _rec = (min(_cs, key=lambda b: abs(float(b.get("chieu_dai", 0) or 0) - _L))
                 if _cs else None)
-    if not _rec or not _rec.get("chieu_cao"):
+    if not _rec:
         return
-    H_actual = float(_rec["chieu_cao"])
+    # Chiều cao tại ĐẦU DẦM = khoảng cách từ đáy bản (z=0) tới đáy dầm của MẶT
+    # CẮT ĐOẠN ĐẦU (đúng chỗ dầm kê lên xà mũ). Field "chieu_cao" thường None nên
+    # tính trực tiếp từ sections (z=0 ở mặt bản, âm xuống dưới → H = -min(z)).
+    _secs = _rec.get("sections") or {}
+    _segs = _rec.get("segs") or []
+    _en = (_segs[0].get("sec") or _segs[0].get("from_sec")) if _segs else None
+    if not _en or _en not in _secs:
+        _en = next((k for k in _secs if (_secs.get(k) or {}).get("outer")), None)
+    _outer = (_secs.get(_en) or {}).get("outer") if _en else None
+    if not _outer:
+        if _rec.get("chieu_cao"):
+            _outer = None
+        else:
+            return
+    if _outer:
+        _zs = [p[1] for p in _outer]
+        H_actual = max(0.1, -min(_zs) / 1000.0) if _zs else None
+    else:
+        H_actual = float(_rec["chieu_cao"])
+    if not H_actual:
+        return
     H_old = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75) or 1.75)
     if abs(H_actual - H_old) < 1e-3:
         return
@@ -4281,27 +4376,41 @@ def _pier_assembler(d) -> None:
     """Chọn 1 TRỤ điển hình có sẵn, hoặc tự ghép từ 3 bộ phận (xà mũ/thân/bệ).
     Khi gắn vào cầu: xà mũ tự co bề rộng theo cầu, thân tự co chiều cao tĩnh không."""
     caps, stems, foots = _pier_part_libs()
-    if not (caps or stems or foots):
-        st.caption("🏗️ Chưa có bộ phận trụ — dựng **Xà mũ / Thân / Bệ** ở "
-                   "**THƯ VIỆN → Trụ** rồi quay lại đây để lắp vào cầu.")
+    piers = _saved_piers()
+    if not (caps or stems or foots or piers):
+        st.caption("🏗️ Chưa có trụ — dựng **Xà mũ / Thân / Bệ** và ghép **Trụ "
+                   "tổng** ở **THƯ VIỆN → Trụ** rồi quay lại đây để lắp vào cầu.")
         d["pier_parts"] = None
         return
-    _opts = [p["ten"] for p in _PIER_PRESETS] + ["🔧 Tùy chỉnh bộ phận…"]
+    _opts, _meta = _pier_options()
     cur = d.get("pier_parts") or {}
+    # Khôi phục index theo lựa chọn đang lưu trong d
     _idx = 0
-    for i, p in enumerate(_PIER_PRESETS):
-        if (cur.get("cap_id") == p["cap_id"] and cur.get("stem_id") == p["stem_id"]
-                and cur.get("footing_id") == p["footing_id"]):
-            _idx = i
-            break
-    else:
-        _idx = len(_PIER_PRESETS) if cur else 0
+    if cur.get("pier_id"):
+        for i, o in enumerate(_opts):
+            if _meta[o] == ("saved", cur["pier_id"]):
+                _idx = i; break
+    elif cur.get("cap_id") or cur.get("stem_id") or cur.get("footing_id"):
+        for i, p in enumerate(_PIER_PRESETS):
+            if (cur.get("cap_id") == p["cap_id"] and cur.get("stem_id") == p["stem_id"]
+                    and cur.get("footing_id") == p["footing_id"]):
+                _idx = _opts.index(p["ten"]); break
+        else:
+            _idx = _opts.index(_PIER_CUSTOM_OPT)
     _sel = st.selectbox(
         "🏗️ Trụ áp dụng cho cầu", _opts, index=_idx, key="tru_preset_sel",
-        help="Chọn 1 trụ điển hình có sẵn, hoặc 'Tùy chỉnh' để ghép từng bộ phận. "
-             "Khi gắn vào cầu, xà mũ tự co bề rộng theo cầu, thân tự co chiều cao.")
-    if _sel != _opts[-1]:
-        p = _PIER_PRESETS[_opts.index(_sel)]
+        help="Chọn 1 TRỤ TỔNG đã ghép (THƯ VIỆN → Trụ → Trụ tổng), 1 trụ điển "
+             "hình, hoặc 'Tùy chỉnh' để ghép nhanh. Khi gắn vào cầu, xà mũ tự co "
+             "bề rộng theo cầu, thân tự co chiều cao theo tĩnh không.")
+    _kind, _ref = _meta.get(_sel, ("custom", None))
+    if _kind == "saved":
+        rec = CLIB.get_pier(piers, _ref) or {}
+        _src = rec.get("source") or {}
+        st.caption("💾 Trụ tổng · " + _pier_parts_label(
+            {"cap_id": _src.get("cap_id"), "stem_id": _src.get("stem_id"),
+             "footing_id": _src.get("footing_id")}, caps, stems, foots))
+    elif _kind == "preset":
+        p = _PIER_PRESETS[_ref]
         st.caption(_pier_parts_label(
             {"cap_id": p["cap_id"], "stem_id": p["stem_id"],
              "footing_id": p["footing_id"]}, caps, stems, foots))
@@ -4759,6 +4868,176 @@ def _render_simple_part_panel(kind: str, cfg: dict):
         for _k in (f"_{kind}_panel", f"_{kind}_edit_id", f"_{kind}_draft"):
             st.session_state.pop(_k, None)
         st.rerun()
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# TRỤ TỔNG — ghép 3 bộ phận đã lưu (Xà mũ + Thân + Bệ) thành 1 TRỤ HOÀN CHỈNH.
+# Lưu vào kho piers (component_library). Phương án chọn trụ tổng → engine tự co
+# CHIỀU CAO thân theo tĩnh không & BỀ RỘNG xà mũ theo cầu khi dựng.
+# ══════════════════════════════════════════════════════════════════════════
+def _saved_piers() -> list:
+    """Nạp & cache kho TRỤ TỔNG (piers)."""
+    if st.session_state.get("dam_piers") is None:
+        st.session_state["dam_piers"] = CLIB.load_piers()
+    return st.session_state["dam_piers"]
+
+
+def _pier_total_assembly(rec: dict) -> dict:
+    """Bản ghi trụ tổng → pier dict (parts) để dựng 3D. Ưu tiên RE-RESOLVE từ 3
+    bộ phận nguồn (luôn khớp khi bộ phận được sửa); thiếu → dùng snapshot parts."""
+    src = (rec or {}).get("source") or {}
+    caps, stems, foots = _pier_part_libs()
+    cap  = CLIB.get_cap(caps, src.get("cap_id"))
+    stem = CLIB.get_stem(stems, src.get("stem_id"))
+    foot = CLIB.get_footing(foots, src.get("footing_id"))
+    if cap or stem or foot:
+        return PB.build_pier_from_parts(cap, stem, foot, ten=rec.get("ten", "Trụ"))
+    return PB.migrate_pier(rec)
+
+
+def _render_pier_total_edit_panel() -> None:
+    """Panel tạo/sửa 1 TRỤ TỔNG: chọn 3 bộ phận → xem 3D → lưu."""
+    caps, stems, foots = _pier_part_libs()
+    editing_id = st.session_state.get("_lib_pier_total_editing_id")
+    draft = st.session_state.get("_lib_pier_total_draft") or {}
+    src = draft.get("source") or {}
+    st.markdown(
+        f"<div style='background:#0a1f35;border:1px solid #007acc;border-radius:8px;"
+        f"padding:8px 12px;margin:6px 0'><b style='color:#4fc3f7'>"
+        f"{'✏️ Sửa trụ tổng' if editing_id else '➕ Tạo trụ tổng mới'}</b> — "
+        f"chọn 3 bộ phận đã lưu để ghép, xem 3D rồi 💾 Lưu.</div>",
+        unsafe_allow_html=True)
+    _nm = st.text_input("Tên trụ tổng", value=draft.get("ten", ""),
+                        placeholder="VD: Trụ T1 thân đặc tròn", key="_lib_pier_total_name")
+
+    def _sel(label, items, cur_id, key):
+        _o = ["(không)"] + [it.get("ten", "(?)") for it in items]
+        _i = next((k + 1 for k, it in enumerate(items) if it.get("id") == cur_id), 0)
+        _v = st.selectbox(label, _o, index=_i, key=key)
+        if _v == "(không)":
+            return None
+        return next((it.get("id") for it in items if it.get("ten") == _v), None)
+
+    _c1, _c2, _c3 = st.columns(3)
+    with _c1:
+        cap_id = _sel("🧢 Xà mũ", caps, src.get("cap_id"), "pt_cap_sel")
+    with _c2:
+        stem_id = _sel("🏛️ Thân trụ", stems, src.get("stem_id"), "pt_stem_sel")
+    with _c3:
+        foot_id = _sel("🟫 Bệ trụ", foots, src.get("footing_id"), "pt_foot_sel")
+
+    cap  = CLIB.get_cap(caps, cap_id)
+    stem = CLIB.get_stem(stems, stem_id)
+    foot = CLIB.get_footing(foots, foot_id)
+    rec_src = {"cap_id": cap_id, "stem_id": stem_id, "footing_id": foot_id}
+    labels = _asm_labels(_asm_cfg("tru"))
+
+    st.markdown("---")
+    if not (cap or stem or foot):
+        st.warning("⚠️ Chọn ít nhất 1 bộ phận để xem trước & lưu.")
+    else:
+        pier = PB.build_pier_from_parts(cap, stem, foot, ten=_nm or "Trụ tổng")
+        _hn = PB.pier_total_height(pier)
+        st.markdown(f"**🧊 Xem trước 3D** — cao tự nhiên ≈ {_hn} m "
+                    f"(gắn cầu sẽ tự co thân theo tĩnh không & xà mũ theo bề rộng).")
+        _Hp = st.slider("Chiều cao thân xem trước (m)", 3.0, 40.0,
+                        float(min(25.0, max(4.0, _hn))), 0.5, key="pt_Hprev")
+        try:
+            st.plotly_chart(
+                PLOT.to_concrete_3d(PB.build_pier_preview_fig(
+                    pier, H_tru=_Hp, labels=labels)),
+                use_container_width=True, key="pier_total_prev3d")
+        except Exception as _e:
+            st.error(f"Lỗi xem trước 3D: {_e}")
+
+    st.markdown("---")
+    _b1, _b2, _ = st.columns([1, 1, 3])
+    if _b1.button("💾 Lưu trụ tổng", type="primary", use_container_width=True,
+                  key="pt_save"):
+        if not _nm.strip():
+            st.warning("⚠️ Nhập **tên trụ tổng** trước khi lưu.")
+        elif not (cap or stem or foot):
+            st.warning("⚠️ Chọn ít nhất 1 bộ phận.")
+        else:
+            piers = _saved_piers()
+            rid = editing_id or CLIB.make_pier_id(_nm, piers)
+            pier = PB.build_pier_from_parts(cap, stem, foot, ten=_nm)
+            rec = {"id": rid, "ten": _nm, "loai": "tru", "source": rec_src,
+                   "parts": pier.get("parts", {}),
+                   "created_by": (AUTH.current_user() or {}).get("name", ""),
+                   "updated_at": time.strftime("%Y-%m-%d %H:%M")}
+            st.session_state["dam_piers"] = CLIB.upsert_pier(piers, rec)
+            CLIB.save_piers(st.session_state["dam_piers"])
+            for _s in ("panel", "editing_id", "draft"):
+                st.session_state.pop(f"_lib_pier_total_{_s}", None)
+            st.toast(f"Đã lưu trụ tổng “{_nm}”.", icon="✅")
+            st.rerun()
+    if _b2.button("Hủy", use_container_width=True, key="pt_cancel"):
+        for _s in ("panel", "editing_id", "draft"):
+            st.session_state.pop(f"_lib_pier_total_{_s}", None)
+        st.rerun()
+
+
+def render_pier_total_library() -> None:
+    """Tab TRỤ TỔNG: danh sách trụ đã ghép + nút tạo mới. Ghép từ 3 bộ phận."""
+    piers = _saved_piers()
+    if st.session_state.get("_lib_pier_total_panel"):
+        _render_pier_total_edit_panel()
+        return
+    caps, stems, foots = _pier_part_libs()
+    _has_parts = bool(caps or stems or foots)
+    _h1, _h2 = st.columns([3, 1])
+    with _h1:
+        st.markdown("##### 🏗️ Trụ tổng (ghép bệ + thân + xà mũ)")
+        st.caption("Chọn 3 bộ phận đã lưu để ghép thành 1 TRỤ HOÀN CHỈNH, xem 3D "
+                   "rồi lưu. Bên **Phương án → Bố trí chung** chọn trụ tổng này → "
+                   "tự co **chiều cao** theo tĩnh không & **bề rộng** xà mũ theo cầu.")
+    with _h2:
+        if st.button("➕ Tạo trụ tổng", type="primary", use_container_width=True,
+                     key="lib_pier_total_new", disabled=not _has_parts):
+            st.session_state["_lib_pier_total_draft"] = {}
+            st.session_state.pop("_lib_pier_total_editing_id", None)
+            st.session_state["_lib_pier_total_panel"] = "new"
+            st.rerun()
+
+    if not _has_parts:
+        st.info("Chưa có bộ phận trụ. Hãy tạo **Xà mũ / Thân trụ / Bệ trụ** ở các "
+                "tab bên trái trước, rồi quay lại đây ghép **trụ tổng**.")
+        return
+    if not piers:
+        st.info("Chưa có trụ tổng nào. Bấm **➕ Tạo trụ tổng** để ghép từ 3 bộ phận.")
+        return
+
+    for p in sorted(piers, key=lambda x: str(x.get("ten", "")).strip().lower()):
+        _info, _e, _del = st.columns([8, 1, 1])
+        _src = p.get("source") or {}
+        _lbl = _pier_parts_label(
+            {"cap_id": _src.get("cap_id"), "stem_id": _src.get("stem_id"),
+             "footing_id": _src.get("footing_id")}, caps, stems, foots)
+        try:
+            _h = PB.pier_total_height(_pier_total_assembly(p))
+        except Exception:
+            _h = "?"
+        with _info:
+            st.markdown(
+                f"<div style='background:#141420;border:1px solid #2a2a3a;"
+                f"border-left:4px solid #6d9dc5;border-radius:8px;padding:8px 12px'>"
+                f"<span style='font-size:14px;font-weight:600;color:#f0f0f0'>"
+                f"🏗️ {p.get('ten','(không tên)')}</span>"
+                f"<span style='font-size:11px;color:#888;margin-left:10px'>"
+                f"{_lbl} · cao tự nhiên ≈ {_h}m · {p.get('created_by','') or '—'}"
+                f"</span></div>", unsafe_allow_html=True)
+        if _e.button("✏️", key=f"pier_total_edit_{p['id']}",
+                     use_container_width=True, help="Sửa trụ tổng"):
+            st.session_state["_lib_pier_total_draft"] = dict(p)
+            st.session_state["_lib_pier_total_editing_id"] = p["id"]
+            st.session_state["_lib_pier_total_panel"] = p["id"]
+            st.rerun()
+        if _del.button("🗑️", key=f"pier_total_del_{p['id']}",
+                       use_container_width=True, help="Xóa trụ tổng"):
+            st.session_state["dam_piers"] = CLIB.delete_pier(piers, p["id"])
+            CLIB.save_piers(st.session_state["dam_piers"])
+            st.rerun()
 
 
 def render_assembly_library(kind: str) -> None:
@@ -5228,15 +5507,17 @@ def render_thu_vien() -> None:
         # Sao lưu/khôi phục đặt ở CẤP TỔNG — chung cho cả 3 bộ phận con.
         _render_tru_io()
         _tru_sub = st.radio(
-            "Bộ phận trụ", ["🧢 Xà mũ", "🏛️ Thân trụ", "🟫 Bệ trụ"],
+            "Bộ phận trụ", ["🧢 Xà mũ", "🏛️ Thân trụ", "🟫 Bệ trụ", "🏗️ Trụ tổng"],
             horizontal=True, key="_tru_part_sub", label_visibility="collapsed")
         st.markdown("")
         if _tru_sub.startswith("🧢"):
             render_cap_library()
         elif _tru_sub.startswith("🏛️"):
             render_simple_part_library("stem")
-        else:
+        elif _tru_sub.startswith("🟫"):
             render_simple_part_library("footing")
+        else:
+            render_pier_total_library()
     elif _sel == "mo":
         render_assembly_library("mo")
     elif _sel == "mong":
@@ -6269,11 +6550,32 @@ with _col_main:
                     # ── 1. Trắc dọc cầu ──────────────────────────────────────
                     st.markdown("**Trắc dọc cầu**")
                     if not _pa3:        # PA3: cấu kiện do AI dự báo, không cho chọn
-                        _pck1, _pck2 = st.columns(2)
+                        _pck1, _pck2, _pck3 = st.columns([2, 2, 1.4])
                         with _pck1:
                             _assembly_picker(d, "tru")
+                            _auto_cap = st.checkbox(
+                                "🔗 Tự chọn xà mũ theo loại dầm", value=bool(
+                                    st.session_state.design_data.get("_auto_pier_cap", True)),
+                                key="chk_auto_pier_cap",
+                                help="Cầu tổng tự đổi xà mũ trụ cho khớp loại dầm "
+                                     "(SPT / dầm I / T ngược), giữ thân & bệ đang chọn.")
+                            st.session_state.design_data["_auto_pier_cap"] = bool(_auto_cap)
+                            d["_auto_pier_cap"] = bool(_auto_cap)
                         with _pck2:
                             _assembly_picker(d, "mo")
+                        with _pck3:
+                            _hg = st.number_input(
+                                "Chiều cao gối (m)", min_value=0.0, max_value=1.0,
+                                value=float(st.session_state.design_data.get("h_goi_m", 0.15)),
+                                step=0.01, key="inp_h_goi",
+                                help="Khoảng hở đáy dầm ↔ đỉnh xà mũ. Dầm SPT kê "
+                                     "trên gối nên đỉnh xà mũ thấp hơn đáy dầm.")
+                            if abs(_hg - float(st.session_state.design_data.get("h_goi_m", 0.15))) > 1e-9:
+                                st.session_state.design_data["h_goi_m"] = float(_hg)
+                                d["h_goi_m"] = float(_hg)
+                                _save_design_inputs(st.session_state.design_data)
+                            else:
+                                d["h_goi_m"] = float(_hg)
                     _pa_obj = _resolve_assembly(d, "tru")
                     _ab_obj = _resolve_assembly(d, "mo")
                     _dc_data = st.session_state.get("dia_chat_data")
@@ -6325,7 +6627,7 @@ with _col_main:
 
                     # Từ khoá nhận diện trace/dim của KẾT CẤU DƯỚI (trụ/bệ/cọc)
                     _SUB_KW = ("Xà mũ", "xà mũ", "Thân trụ", "Bệ cọc", "Bệ ",
-                               "B_bệ", "Cọc", "cọc", "a_cọc", "H_trụ")
+                               "B_bệ", "Cọc", "cọc", "a_cọc", "H_trụ", "Gối", "gối")
 
                     def _build_mcn_fig(_which):
                         # Lấy mặt cắt dầm THỰC trước → biết đáy dầm (đầu/giữa)
