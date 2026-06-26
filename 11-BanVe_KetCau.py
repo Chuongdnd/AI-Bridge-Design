@@ -1458,36 +1458,52 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None)
                   "rgba(200,210,200,0.45)", "rgba(127,140,141,0.3)",
                   "BT đổ tại chỗ" if i == 0 else "", showlegend=(i == 0), lw=0.5)
 
+    # ── Độ dốc ngang mặt cầu (crown tại tim) — CHỈ bản/lớp phủ dốc, dầm phẳng ──
+    # Bề mặt hạ dần ra 2 mép theo i_doc_ngang; ĐÁY bản giữ phẳng (haunch thay đổi)
+    # nên dầm vẫn nằm ngang.
+    _i_ng = float(d.get("i_doc_ngang", 2.0)) / 100.0
+    _xe   = bc / 2
+    def _off(x):          # độ hạ cao độ mặt theo dốc ngang (đỉnh tại tim x=0)
+        return -abs(x) * _i_ng
+
     # ── Lớp phủ mặt cầu ──────────────────────────────────────────────────
-    # Lớp BTN (bê tông nhựa chặt)
+    # Lớp BTN (bê tông nhựa chặt) — dày đều, mặt dốc ngang
     t_btn = min(t_phu * 0.7, 0.07)
-    _poly(fig, [-bc/2, bc/2, bc/2, -bc/2],
-          [t_phu, t_phu, t_phu - t_btn, t_phu - t_btn],
+    _poly(fig, [-_xe, 0, _xe, _xe, 0, -_xe],
+          [t_phu + _off(-_xe), t_phu, t_phu + _off(_xe),
+           t_phu - t_btn + _off(_xe), t_phu - t_btn, t_phu - t_btn + _off(-_xe)],
           "#2c3e50", "#1a252f", "BTN mặt đường", lw=1)
-    # Lớp dính bám + phòng nước
-    _poly(fig, [-bc/2, bc/2, bc/2, -bc/2],
-          [t_phu - t_btn, t_phu - t_btn, 0, 0],
+    # Lớp dính bám + phòng nước (đáy = mặt bản, cũng dốc ngang)
+    _poly(fig, [-_xe, 0, _xe, _xe, 0, -_xe],
+          [t_phu - t_btn + _off(-_xe), t_phu - t_btn, t_phu - t_btn + _off(_xe),
+           _off(_xe), 0.0, _off(-_xe)],
           "#7f8c8d", "#566573", "Lớp dính bám + phòng nước", lw=0.8, opacity=0.7)
 
-    # ── Bản mặt cầu BTCT ─────────────────────────────────────────────────
-    _poly(fig, [-bc/2, bc/2, bc/2, -bc/2], [0, 0, -t_ban, -t_ban],
+    # ── Bản mặt cầu BTCT ── mặt TRÊN dốc ngang, đáy PHẲNG (dầm nằm ngang) ──
+    _poly(fig, [-_xe, 0, _xe, _xe, -_xe],
+          [_off(-_xe), 0.0, _off(_xe), -t_ban, -t_ban],
           _C["ban"], _C["btong_dk"], "Bản mặt cầu BTCT")
+    # Ghi chú độ dốc ngang
+    fig.add_annotation(x=_xe * 0.5, y=t_phu + _off(_xe * 0.5) + 0.12,
+                       text=f"i = {_i_ng*100:.1f}%", showarrow=False,
+                       font=dict(size=8, color="#c0392b"))
 
     # ── Dầm chính: biên dạng do người dùng dựng (tab Chi tiết dầm) được chèn
     #    ở 00-Interface qua get_mcn_overlay_traces — KHÔNG vẽ dầm AI tại đây nữa.
 
     # ── Lan can ───────────────────────────────────────────────────────────
     for side in [-1, 1]:
-        xb = side * bc / 2
+        xb = side * _xe
         xi = xb - side * W_lc
+        _e = _off(xb)                    # hạ theo dốc ngang tại mép cầu
         _poly(fig, [xi, xb, xb, xi],
-              [t_phu, t_phu, t_phu + H_lc, t_phu + H_lc],
+              [t_phu + _e, t_phu + _e, t_phu + _e + H_lc, t_phu + _e + H_lc],
               _C["lan_can"], "#2c3e50",
               "Lan can / dải an toàn" if side == -1 else "",
               showlegend=(side == -1))
         # Chân lan can
         _poly(fig, [xi, xb, xb, xi],
-              [0, 0, t_phu, t_phu],
+              [0 + _e, 0 + _e, t_phu + _e, t_phu + _e],
               "#95a5a6", "#7f8c8d", "", showlegend=False, lw=0.5)
 
     # ── Đường tim cầu ────────────────────────────────────────────────────
