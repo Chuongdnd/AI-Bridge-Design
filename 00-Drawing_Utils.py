@@ -73,25 +73,41 @@ def add_dim_v(fig, x, y0, y1, text, color=None, fs=None, ext_from=None):
                        textangle=-90, bgcolor="rgba(255,255,255,0.85)")
 
 
-# ── MÀU BÊ TÔNG cho mô hình 3D (dùng chung TOÀN HỆ THỐNG) ────────────────────
-# Quy tắc: kết cấu BTCT → mọi mô hình 3D hiển thị KHỐI ĐẶC một màu bê tông.
-# Giữ nguyên: địa hình/nền đắp, lớp phủ asphalt, và các khối trong suốt
-# (mặt nước, tĩnh không, khối bao mờ…).
-CONCRETE_3D = "#b9b5a8"
-_NON_CONCRETE_3D = {
-    "#2c3e50", "#34495e",   # lớp phủ BTN / mặt đường (asphalt)
-    "#c9a86b", "#c9a86b",   # nền đắp / địa hình
-    "#e8eaf0",              # khối bao dầm (mờ)
-}
+# ── HỆ THỐNG MÃ MÀU CÁC HẠNG MỤC (theo bảng quy định) — dùng cho mọi 3D ───────
+COLOR_BTXM     = "#d6d6d6"   # Các cấu kiện BTXM           RGB(214,214,214)
+COLOR_ASPHALT  = "#4a484b"   # Bê tông nhựa / cấp phối ĐD  RGB(74,72,75)
+COLOR_GRASS    = "#008000"   # Bề mặt vỉa hè trồng cỏ      RGB(0,128,0)
+COLOR_SIDEWALK = "#ff8000"   # Bề mặt vỉa hè BTXM          RGB(255,128,0)
+COLOR_OTHER    = "#ffffff"   # Các loại cấu kiện khác      RGB(255,255,255)
+CONCRETE_3D = COLOR_BTXM     # giữ tên cũ — cấu kiện BTXM là mặc định
+
+# Màu NGUỒN (đang dùng trong code) → quy về hạng mục chuẩn:
+_ASPHALT_SRC_3D = {"#2c3e50", "#34495e", "#7f8c8d", "#aeb6bf", "#aeb6bd"}
+                   # lớp phủ BTN / mặt đường / lề gia cố
+_GRASS_SRC_3D   = {"#85c88a", "#95c88a"}   # lề/vỉa hè trồng cỏ
+_SIDEWALK_SRC_3D = {"#f5cba7"}             # hè đường đô thị (BTXM)
+# Màu GIỮ nguyên (không thuộc bảng hạng mục): nền đắp/địa hình, lề đất, khối mờ
+_NON_CONCRETE_3D = {"#c9a86b", "#d2b48c", "#e8eaf0"}
 _TRANSLUCENT_KEYS_3D = ("nước", "Mặt nước", "MNCN", "MNTT", "MNTN", "MNTC",
                         "Tĩnh không", "chưa gắn", "tạm", "địa hình", "Địa hình")
 
 
+def _muc_color_3d(col):
+    """Trả về màu chuẩn theo hạng mục cho 1 màu nguồn (mặc định = BTXM)."""
+    if col in _ASPHALT_SRC_3D:
+        return COLOR_ASPHALT
+    if col in _GRASS_SRC_3D:
+        return COLOR_GRASS
+    if col in _SIDEWALK_SRC_3D:
+        return COLOR_SIDEWALK
+    return COLOR_BTXM
+
+
 def to_concrete_3d(fig, keep_colors=None):
-    """Quy MỌI khối kết cấu (go.Mesh3d) trong figure 3D về một màu bê tông ĐẶC,
-    KHÔNG nhìn xuyên (opacity=1.0, flatshading). Bỏ qua: khối môi trường
-    (asphalt/địa hình), khối cố tình trong suốt (opacity<0.5 hoặc tên thuộc nhóm
-    trong suốt: mặt nước, tĩnh không…). keep_colors: thêm màu cần giữ nguyên."""
+    """Áp HỆ THỐNG MÃ MÀU HẠNG MỤC cho mọi khối (go.Mesh3d) trong figure 3D và
+    ép ĐẶC (opacity=1.0, không nhìn xuyên). Cấu kiện BTXM→xám, bê tông nhựa→
+    xám đậm, vỉa hè cỏ→xanh lá, vỉa hè BTXM→cam. Giữ nguyên: nền đắp/địa hình,
+    khối cố tình trong suốt (opacity<0.5 hoặc tên thuộc nhóm trong suốt)."""
     keep = set(_NON_CONCRETE_3D)
     if keep_colors:
         keep |= {str(c).strip().lower() for c in keep_colors}
@@ -109,7 +125,7 @@ def to_concrete_3d(fig, keep_colors=None):
         col = str(getattr(tr, "color", "") or "").strip().lower()
         if col in keep:
             continue
-        tr.color = CONCRETE_3D
+        tr.color = _muc_color_3d(col)
         tr.opacity = 1.0          # ĐẶC — không nhìn xuyên
         tr.flatshading = True
     return fig
