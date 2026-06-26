@@ -237,9 +237,14 @@ try:
     BVK  = importlib.import_module("11-BanVe_KetCau")   # Bản vẽ kết cấu 2D/3D
     SSP  = importlib.import_module("09-So_Sanh_PA")     # So sánh 3 phương án
     CTD  = importlib.import_module("12-ChiTiet_Dam")    # Chi tiết dầm
-    importlib.reload(PLOT)
-    importlib.reload(BVK)
-    importlib.reload(CTD)
+    # reload() chỉ để bắt sửa code lúc dev; ở môi trường deploy (multipage/
+    # CWD khác) find_spec có thể không tìm lại được module tên có số → bỏ qua
+    # lỗi reload, dùng bản đã import (vẫn chạy đúng).
+    for _m in (PLOT, BVK, CTD):
+        try:
+            importlib.reload(_m)
+        except Exception:
+            pass
 
     # ── Section Sketcher + Beam Builder (module nạp bằng spec vì tên có số) ──
     _bb_dir  = os.path.dirname(os.path.abspath(__file__))
@@ -2031,8 +2036,11 @@ def dialog_step3():
         # ── BVK ─────────────────────────────────────────────────────────
         tracker.start("BVK")
         try:
-            importlib.reload(BVK)
-            importlib.reload(CTD)
+            for _m in (BVK, CTD):
+                try:
+                    importlib.reload(_m)
+                except Exception:
+                    pass
             tracker.done("BVK", "Bản vẽ 2D/3D đã sẵn sàng")
         except Exception as _e:
             tracker.error("BVK", str(_e))
