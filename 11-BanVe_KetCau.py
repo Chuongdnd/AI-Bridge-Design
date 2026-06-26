@@ -928,12 +928,14 @@ def _draw_dia_chat_trac_doc(fig, dia_chat_data, x0, x_end, h_tn, z_min, mg=20):
 # 1. SƠ ĐỒ BỐ TRÍ NHỊP (2D) — Trụ đặt NGOÀI tĩnh không
 # ===========================================================================
 def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
-                     pier_assembly=None, abutment_assembly=None):
+                     pier_assembly=None, abutment_assembly=None, beam_params=None):
     """
     Sơ đồ nhịp 2D từ design_data.
     - Trụ được đặt tại biên tĩnh không, KHÔNG vi phạm vùng thông thuyền.
     - Nếu có df_tim_line (Lý trình, Z): overlay đường địa hình thực đo.
     - Tọa độ X theo Lý trình thực địa (cùng hệ với df_tim_line).
+    - beam_params: thông tin dầm THỰC đang áp dụng (vd loai_dam) để tiêu đề/ghi
+      chú hiển thị đúng loại dầm thư viện thay vì loại dầm AI mặc định.
     """
     kcn = d.get("kcn_result") or d.get("ai_result", {})
     geo = d.get("geo_logic", {})
@@ -941,7 +943,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     n_nhip  = int(kcn.get("tong_so_nhip", 3))
     L_nhip  = float(kcn.get("chieu_dai", 40))
     H_dam   = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
-    loai    = str(kcn.get("loai_dam", "Dầm I"))
+    # Loại dầm: ưu tiên dầm THỰC đang áp dụng (thư viện) → sau đó mới tới AI
+    loai    = str((beam_params or {}).get("loai_dam") or kcn.get("loai_dam", "Dầm I"))
     L_cau   = float(geo.get("L_cau", n_nhip * L_nhip))
     t_ban   = float(d.get("t_ban_mm", 200)) / 1000.0
     H_tru   = float(d.get("H_tru_est", 5.0))
@@ -1297,6 +1300,11 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             x=(xm + x_far) / 2, y=z_road + 0.45, text="ĐƯỜNG ĐẦU CẦU",
             showarrow=False, font=dict(size=8, color="#2c3e50"),
             bgcolor="rgba(255,255,255,0.75)")
+        # Chiều cao đắp sau mố (từ mặt đất TN tới mặt đường)
+        _h_dap = z_road - z_g
+        if _h_dap > 0.3:
+            _dim_v(fig, xm + od * (L_app * 0.5), z_g, z_road,
+                   f"H_đắp={_h_dap:.2f}m", color="#8a6d3b", dx=od * 0.4)
 
     # ── Khung tĩnh không ─────────────────────────────────────────────────
     y_tk_bot = MNCN

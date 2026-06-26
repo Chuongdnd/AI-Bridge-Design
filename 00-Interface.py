@@ -6174,23 +6174,18 @@ with _col_main:
                         _two = _mode_lbl.startswith("2 tầng")
 
                         if not _two:
-                            _cu1, _cu2 = st.columns([2, 1])
-                            with _cu1:
-                                _seld = st.selectbox(
-                                    "Dầm áp dụng (cả cầu):", _opts_btc,
-                                    index=_beam_idx(_sl_cur.get("beam_dan")),
-                                    key=f"btc_beamu_{selected_ribbon}")
-                            with _cu2:
-                                _Ldu = st.selectbox(
-                                    "Chiều dài nhịp (m):", _Ls_btc,
-                                    index=_L_idx(_sl_cur.get("L_dan")),
-                                    key=f"btc_Lu_{selected_ribbon}")
+                            _seld = st.selectbox(
+                                "Dầm áp dụng (cả cầu):", _opts_btc,
+                                index=_beam_idx(_sl_cur.get("beam_dan")),
+                                key=f"btc_beamu_{selected_ribbon}")
+                            # Đã BỎ ô "Chiều dài nhịp" — nhịp bám theo dầm áp dụng / tĩnh không
                             _ca, _cb = st.columns(2)
                             if _ca.button("💾 Lưu bố trí đều", use_container_width=True,
                                           key=f"btc_saveu_{selected_ribbon}"):
                                 _new = dict(_sl_cur)
-                                _new.update({"mode": "uniform", "L_dan": float(_Ldu),
-                                             "L_main": float(_Ldu)})
+                                _Lu = float(_sl_cur.get("L_dan") or _Lclr_btc)
+                                _new.update({"mode": "uniform", "L_dan": _Lu,
+                                             "L_main": _Lu})
                                 _save_pa_span_layout(selected_ribbon, _new)
                                 st.rerun()
                             if _cb.button("✅ Áp dụng dầm", use_container_width=True,
@@ -6282,10 +6277,17 @@ with _col_main:
                     _pa_obj = _resolve_assembly(d, "tru")
                     _ab_obj = _resolve_assembly(d, "mo")
                     _dc_data = st.session_state.get("dia_chat_data")
+                    # Loại dầm THỰC đang áp dụng (thư viện) → tiêu đề sơ đồ đúng loại
+                    _bid_td = (d.get("lib_dam_applied") or {}).get(selected_ribbon)
+                    _brec_td = (CLIB.get_beam(st.session_state.get("dam_beams")
+                                              or CLIB.load_beams(), _bid_td)
+                                if _bid_td else None)
+                    _bp_td = {"loai_dam": _brec_td.get("loai_dam")} if _brec_td else None
                     fig_td_btc = BVK.ve_so_do_nhip_2d(d, df_tim_line=_df_tim,
                                                        dia_chat_data=_dc_data,
                                                        pier_assembly=_pa_obj,
-                                                       abutment_assembly=_ab_obj)
+                                                       abutment_assembly=_ab_obj,
+                                                       beam_params=_bp_td)
                     try:
                         # ve_so_do_nhip_2d KHÔNG vẽ dầm tham số → chỉ chèn dầm thư viện
                         for _td_tr in (BBUI.get_elevation_profile_traces(d, pfx=_spt_pfx) or []):
