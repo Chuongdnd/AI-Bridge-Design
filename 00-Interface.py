@@ -6277,25 +6277,25 @@ with _col_main:
                             pass
                         _fig.update_layout(
                             yaxis=dict(range=[_y_bot_btc, _y_top_btc], autorange=False),
-                            height=420,
+                            height=340,   # full-width + 1:1 (rộng–thấp) → khung thấp vừa
                         )
                         return _fig
 
-                    _mc1, _mc2 = st.columns(2)
-                    with _mc1:
-                        st.caption("📍 MCN tại **đầu dầm** (trên gối)")
-                        _fe = _build_mcn_fig("end")
-                        PLOT.aspect_control(_fe, "mcn_btc_end")
-                        st.plotly_chart(_fe, use_container_width=True,
-                                        config={"scrollZoom": True, "displayModeBar": True},
-                                        key="mcn_btc_end")
-                    with _mc2:
-                        st.caption("📍 MCN tại **giữa dầm** (giữa nhịp)")
-                        _fm = _build_mcn_fig("mid")
-                        PLOT.aspect_control(_fm, "mcn_btc_mid")
-                        st.plotly_chart(_fm, use_container_width=True,
-                                        config={"scrollZoom": True, "displayModeBar": True},
-                                        key="mcn_btc_mid")
+                    # MCN cầu rất RỘNG–THẤP (≈6:1); khóa 1:1 trong cột nửa trang
+                    # khiến 2 hình co giãn lệch nhau, khó xem → XẾP DỌC full-width
+                    # để cả hai cùng to, cân nhau và giữ đúng tỷ lệ 1:1.
+                    st.caption("📍 MCN tại **đầu dầm** (trên gối)")
+                    _fe = _build_mcn_fig("end")
+                    PLOT.aspect_control(_fe, "mcn_btc_end")
+                    st.plotly_chart(_fe, use_container_width=True,
+                                    config={"scrollZoom": True, "displayModeBar": True},
+                                    key="mcn_btc_end")
+                    st.caption("📍 MCN tại **giữa dầm** (giữa nhịp)")
+                    _fm = _build_mcn_fig("mid")
+                    PLOT.aspect_control(_fm, "mcn_btc_mid")
+                    st.plotly_chart(_fm, use_container_width=True,
+                                    config={"scrollZoom": True, "displayModeBar": True},
+                                    key="mcn_btc_mid")
 
                     # ── 4. Bảng KHỐI LƯỢNG cấu kiện TOÀN CẦU ─────────────────
                     st.markdown("---")
