@@ -116,6 +116,90 @@ def get_beam_from_catalog(L_target, loai_dam=None):
 
 
 # ---------------------------------------------------------------------------
+# THƯ VIỆN DẦM MẶC ĐỊNH + CHỌN DẦM TỪ THƯ VIỆN
+# ---------------------------------------------------------------------------
+# Ánh xạ tên loại dầm trong catalog → loại dầm theo SCHEMA thư viện
+# (Super-T, Dầm I, T ngược, Bản rỗng, Khác). "Dầm bản" / "Dầm T" KHÔNG có trong
+# thư viện nên quy về loại gần nhất để không bao giờ đề xuất loại thư viện thiếu.
+_CATALOG_TO_LIB_TYPE = {
+    "Dầm bản rỗng": "Bản rỗng",
+    "Dầm bản":      "Bản rỗng",
+    "T ngược":      "T ngược",
+    "Dầm I":        "Dầm I",
+    "Dầm T":        "Dầm I",
+    "Super-T":      "Super-T",
+}
+
+
+def _build_default_library_beams():
+    """Thư viện dầm MẶC ĐỊNH (dùng khi thư viện người dùng còn rỗng).
+
+    Suy từ BEAM_CATALOG nhưng CHỈ giữ các loại biểu diễn được trong thư viện
+    (Super-T, Dầm I, T ngược, Bản rỗng) — bỏ 'Dầm bản'/'Dầm T'. Nhờ đó hệ thống
+    luôn chọn được dầm THỰC từ thư viện, không đề xuất loại thư viện chưa có.
+    """
+    seen = set()
+    out = []
+    for loai, L, B, H, S, cong_nghe in BEAM_CATALOG:
+        if loai in ("Dầm bản", "Dầm T"):
+            continue
+        lib_type = _CATALOG_TO_LIB_TYPE.get(loai, "Khác")
+        key = (lib_type, round(float(L), 1))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append({
+            "id":              f"default::{lib_type}::{L:g}",
+            "ten":             f"{lib_type} {L:g}m (mặc định)",
+            "loai_dam":        lib_type,
+            "chieu_dai":       float(L),
+            "chieu_cao":       float(H),
+            "khoang_cach_dam": float(S),
+            "cong_nghe":       cong_nghe,
+            "_default":        True,
+        })
+    return out
+
+
+DEFAULT_LIBRARY_BEAMS = _build_default_library_beams()
+
+
+def select_library_beam(loai_dam_pred, L_target, user_beams=None):
+    """
+    Chọn dầm phù hợp TỪ THƯ VIỆN theo loại dầm dự đoán + chiều dài mục tiêu.
+
+    Quy trình (theo yêu cầu): hệ thống tính sơ bộ chiều dài nhịp + dự đoán loại
+    dầm, rồi LỰA CHỌN trong thư viện (người dùng hoặc mặc định) ra dầm phù hợp;
+    sau đó người dùng tự rà soát/cập nhật.
+
+    Parameters
+    ----------
+    loai_dam_pred : str   — loại dầm dự đoán (tên catalog hoặc schema thư viện)
+    L_target      : float — chiều dài nhịp sơ bộ (m)
+    user_beams    : list  — thư viện dầm người dùng (CLIB.load_beams()); rỗng →
+                            dùng DEFAULT_LIBRARY_BEAMS.
+
+    Returns
+    -------
+    (beam_dict, nguon) với nguon ∈ {'user','default'}; hoặc (None, None) nếu
+    không có dầm nào (về lý thuyết không xảy ra vì luôn có thư viện mặc định).
+    """
+    beams = [b for b in (user_beams or []) if float(b.get("chieu_dai") or 0) > 0]
+    nguon = "user"
+    if not beams:
+        beams = DEFAULT_LIBRARY_BEAMS
+        nguon = "default"
+    if not beams:
+        return None, None
+
+    pred_lib = _CATALOG_TO_LIB_TYPE.get(loai_dam_pred, loai_dam_pred)
+    same = [b for b in beams if str(b.get("loai_dam", "")).strip() == pred_lib]
+    pool = same if same else beams
+    best = min(pool, key=lambda b: abs(float(b.get("chieu_dai") or 0) - float(L_target)))
+    return best, nguon
+
+
+# ---------------------------------------------------------------------------
 # 1. NẠP & CHUẨN BỊ DỮ LIỆU
 # ---------------------------------------------------------------------------
 def load_training_data_v3(v3_path=None):

@@ -1911,10 +1911,40 @@ def dialog_step3():
                     models=kcn_models,
                 )
                 if isinstance(_kcn_raw, dict) and "pa1_chi_phi" in _kcn_raw:
-                    # 'Cầu tổng' mặc định = PA1 (nhịp NGẮN nhất, NHIỀU trụ — bám
-                    # tĩnh không; đổi tĩnh không → nhịp đổi theo). PA2 (nhịp dài, ít
-                    # trụ) và PA3 (AI) xem ở ribbon Phương án 2 / 3. Người dùng gán
-                    # dầm thư viện để đổi chiều dài nhịp (ghi đè qua span_layout).
+                    # Tính sơ bộ nhịp + dự đoán loại dầm xong → LỰA CHỌN dầm THỰC từ
+                    # thư viện (người dùng; nếu rỗng thì thư viện MẶC ĐỊNH) cho từng
+                    # phương án. Nhờ đó không còn đề xuất loại dầm thư viện chưa có
+                    # (vd 'Dầm bản'). Người dùng rà soát/đổi dầm tùy ý sau (ribbon).
+                    _userbeams = st.session_state.get("dam_beams") or CLIB.load_beams()
+                    for _k_pa in ("pa1_chi_phi", "pa2_my_quan", "pa3_ai"):
+                        _papa = _kcn_raw.get(_k_pa)
+                        if not isinstance(_papa, dict):
+                            continue
+                        _lb, _src = KCN.select_library_beam(
+                            _papa.get("loai_dam", ""), _papa.get("chieu_dai", 0),
+                            _userbeams)
+                        if not _lb:
+                            continue
+                        _papa["loai_dam"] = _lb.get("loai_dam", _papa.get("loai_dam"))
+                        _Lb = float(_lb.get("chieu_dai") or 0)
+                        if _Lb > 0:
+                            _papa["chieu_dai"] = _Lb
+                            _papa["tong_so_nhip"] = (
+                                KCN._n_nhip_from(L_cau, _Lb) if L_cau
+                                else _papa.get("tong_so_nhip", 1))
+                        _Hb = float(_lb.get("chieu_cao") or 0)
+                        if _Hb > 0:
+                            _papa["chieu_cao_dam"] = _Hb
+                            _papa["ti_le_L_H"] = round(_papa["chieu_dai"] / _Hb, 1)
+                        _papa["dam_thu_vien"] = _lb.get("ten")
+                        _papa["dam_nguon"]    = _src           # 'user' | 'default'
+                        if _lb.get("id"):
+                            _papa["dam_id"] = _lb["id"]
+                        if _src == "default":
+                            _papa["ghi_chu"] = (_papa.get("ghi_chu", "") +
+                                " | Dầm thư viện MẶC ĐỊNH — hãy tạo/upload dầm riêng để chính xác hơn.")
+                    # 'Cầu tổng' mặc định = PA1 (nhịp NGẮN nhất, NHIỀU trụ — bám tĩnh
+                    # không). PA2 (nhịp dài, ít trụ) / PA3 (AI) xem ở ribbon 2 / 3.
                     _pa = dict(_kcn_raw["pa1_chi_phi"])
                     _pa["do_tin_cay"] = 85 if kcn_models else 60
                     res['kcn_result'] = _pa
