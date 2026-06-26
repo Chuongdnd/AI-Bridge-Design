@@ -480,8 +480,8 @@ def ve_spt_aa_detail(d=None):
             zeroline=True, zerolinecolor="#5dade2", zerolinewidth=1.5,
         ),
         margin=dict(l=70, r=50, t=70, b=80),
-        paper_bgcolor="#1a232d",
-        plot_bgcolor="#1a232d",
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
     )
     return fig
 
@@ -1095,7 +1095,7 @@ def ve_chi_tiet_3d(d):
         margin=dict(l=0, r=0, t=65, b=0),
         legend=dict(font=dict(size=9), x=0.01, y=0.98,
                     bgcolor="rgba(255,255,255,0.85)", borderwidth=0.5),
-        paper_bgcolor="white",
+        paper_bgcolor="rgba(0,0,0,0)",
     )
     return fig
 

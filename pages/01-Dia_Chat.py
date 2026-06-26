@@ -100,7 +100,7 @@ def _draw_plan_map(hk_list):
         yaxis_title="Y (VN2000)",
         height=400,
         margin=dict(l=60, r=20, t=50, b=60),
-        plot_bgcolor="#F8F9FA",
+        plot_bgcolor="rgba(0,0,0,0)",
     )
     fig.update_xaxes(showgrid=True, gridcolor="#E0E0E0")
     fig.update_yaxes(showgrid=True, gridcolor="#E0E0E0", scaleanchor="x")
@@ -195,7 +195,7 @@ def _draw_soil_columns(hk_list):
     fig.update_layout(
         height=max(500, int((y_max - y_min) * 7)),
         title="Hình trụ địa chất",
-        plot_bgcolor="#F8F9FA",
+        plot_bgcolor="rgba(0,0,0,0)",
         margin=dict(l=60, r=20, t=80, b=40),
         barmode="stack",
     )
@@ -252,7 +252,7 @@ def _draw_spt_profiles(hk_list):
         yaxis=dict(autorange="reversed", range=[0, max_depth + 2]),
         xaxis=dict(range=[0, max(60, max(n for hk in hk_list for _, n in hk.get("spt_data", [])) + 5)]),
         height=600,
-        plot_bgcolor="#F8F9FA",
+        plot_bgcolor="rgba(0,0,0,0)",
         legend=dict(x=0.85, y=0.02),
         margin=dict(l=60, r=40, t=50, b=60),
     )

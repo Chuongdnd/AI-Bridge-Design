@@ -309,7 +309,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3,
             ),
             template="plotly_dark",
             margin=dict(l=10, r=10, t=40, b=10),
-            paper_bgcolor='#0e1117'
+            paper_bgcolor='rgba(0,0,0,0)'
         )
         return fig, matrix_x, matrix_y, matrix_z
     except Exception as e:

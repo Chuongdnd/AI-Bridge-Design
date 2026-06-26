@@ -507,7 +507,7 @@ def make_section_fig(sec: CrossSection | None = None,
     fig = go.Figure()
     fig.update_layout(
         template="plotly_dark",
-        paper_bgcolor=_DARK, plot_bgcolor=_DARK,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         height=560,
         margin=dict(l=50, r=20, t=40, b=50),
         xaxis=dict(range=list(x_range), title="X (mm)", dtick=100,
@@ -592,7 +592,7 @@ def make_elevation_fig(m: BeamModel) -> go.Figure:
     fig = go.Figure()
     fig.update_layout(
         template="plotly_dark",
-        paper_bgcolor=_DARK, plot_bgcolor=_DARK,
+        paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         height=300, margin=dict(l=60, r=20, t=30, b=50),
         xaxis=dict(title="Dọc dầm Y (mm)", showgrid=True, gridcolor=_GRID,
                    zeroline=False),

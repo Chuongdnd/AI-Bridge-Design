@@ -611,7 +611,7 @@ def _part_scene_layout(fig):
         scene=dict(xaxis_title="Dọc cầu (m)", yaxis_title="Ngang cầu (m)",
                    zaxis_title="Cao độ (m)", aspectmode="data"),
         template="plotly_dark", height=660,
-        margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor="#0e1117",
+        margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor="rgba(0,0,0,0)",
         scene_camera=dict(eye=dict(x=1.6, y=-1.6, z=1.0)),
     )
     return fig
@@ -1090,7 +1090,7 @@ def build_abutment_preview_fig(mo: dict, H_tru: float = None,
         scene=dict(xaxis_title="Dọc cầu (m)", yaxis_title="Ngang cầu (m)",
                    zaxis_title="Cao độ (m)", aspectmode="data"),
         template="plotly_dark", height=660,
-        margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor="#0e1117",
+        margin=dict(l=0, r=0, t=10, b=0), paper_bgcolor="rgba(0,0,0,0)",
         scene_camera=dict(eye=dict(x=1.7, y=-1.5, z=0.9)),
     )
     return fig

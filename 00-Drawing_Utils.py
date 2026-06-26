@@ -695,6 +695,6 @@ def ve_mat_cat_ngang_3d(res_mcn, chieu_dai=20.0, bridge_mode=False):
         ),
         height=480, margin=dict(l=0, r=0, t=50, b=0),
         legend=dict(font=dict(size=9)),
-        paper_bgcolor="white",
+        paper_bgcolor="rgba(0,0,0,0)",
     )
     return fig

@@ -1959,7 +1959,7 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
                     groupclick="togglegroup",
                     title=dict(text="Bấm để ẩn/hiện cấu kiện ▾", font=dict(size=9))),
         margin=dict(l=0, r=0, t=60, b=50),
-        paper_bgcolor="white",
+        paper_bgcolor="rgba(0,0,0,0)",
     )
     return fig
 

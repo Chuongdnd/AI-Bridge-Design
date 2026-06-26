@@ -560,7 +560,7 @@ def _timeline_fig(m) -> go.Figure:
     if not segs:
         fig = go.Figure()
         fig.update_layout(height=160, template="plotly_dark",
-                          paper_bgcolor=_DARK, plot_bgcolor=_DARK)
+                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)")
         return fig
 
     half = m.length / (2.0 if m.mirror else 1.0)
@@ -596,7 +596,7 @@ def _timeline_fig(m) -> go.Figure:
               (" (fill)" if segs[i].length=="fill" else "")
               for i in range(len(segs))]
     fig.update_layout(
-        template="plotly_dark", paper_bgcolor=_DARK, plot_bgcolor=_DARK,
+        template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         height=max(200, 50 + len(segs)*50),
         margin=dict(l=200, r=20, t=30, b=40),
         xaxis=dict(title="Vị trí dọc (mm)", showgrid=True),
@@ -739,7 +739,7 @@ def _render_3d_view():
 
     fig3d = go.Figure(data=traces)
     fig3d.update_layout(
-        template="plotly_dark", paper_bgcolor=_DARK, height=560,
+        template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", height=560,
         margin=dict(l=0, r=0, t=40, b=0),
         title=dict(text="Wireframe dầm — nét CAD", x=0.5,
                    font=dict(size=13, color="#dde3ea")),
@@ -750,7 +750,7 @@ def _render_3d_view():
                        gridcolor="#2a3a4a", showbackground=True),
             zaxis=dict(title="Z (mm)", backgroundcolor=_DARK,
                        gridcolor="#2a3a4a", showbackground=True),
-            bgcolor=_DARK, aspectmode="data",
+            bgcolor="rgba(0,0,0,0)", aspectmode="data",
         ),
     )
 
@@ -962,7 +962,7 @@ def _section_fig(sec, height: int = 220, title: str = "") -> "go.Figure":
         xr, zr = [-1300, 1300], [-1900, 200]
 
     fig.update_layout(
-        template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
+        template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         height=height, margin=dict(l=30, r=10, t=28 if title else 12, b=28),
         title=dict(text=title, font=dict(size=12, color="#9ac8e8"), x=0.5) if title else {},
         xaxis=dict(range=xr, showgrid=True, gridcolor="#233040", dtick=200,
@@ -987,7 +987,7 @@ def _side_elevation_fig(m) -> "go.Figure":
     except Exception:
         fig = go.Figure()
         fig.update_layout(height=200, template="plotly_dark",
-                          paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
+                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                           title=dict(text="Mặt cắt dọc (chưa có dữ liệu)",
                                      font=dict(size=11)))
         return fig
@@ -1000,7 +1000,7 @@ def _side_3d_fig(m) -> "go.Figure":
         traces = bb.build_3d_wireframe(m)
         fig = go.Figure(data=traces)
         fig.update_layout(
-            template="plotly_dark", paper_bgcolor="#1a2330", height=270,
+            template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", height=270,
             margin=dict(l=0, r=0, t=25, b=0),
             title=dict(text="3D Wireframe", font=dict(size=11)),
             scene=dict(
@@ -1017,7 +1017,7 @@ def _side_3d_fig(m) -> "go.Figure":
     except Exception:
         fig = go.Figure()
         fig.update_layout(height=270, template="plotly_dark",
-                          paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
+                          paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
                           title=dict(text="3D (cần đủ đoạn)", font=dict(size=11)))
         return fig
 
@@ -1651,7 +1651,7 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt", show_type: bool = True):
                                 font=dict(size=8, color="#ffffff"), yref="paper")
 
     _fig_sch.update_layout(
-        template="plotly_dark", paper_bgcolor="#1a2330", plot_bgcolor="#1a2330",
+        template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", plot_bgcolor="rgba(0,0,0,0)",
         height=_h_sch, margin=dict(l=10, r=10, t=12, b=22),
         xaxis=dict(range=[0, _x_total], showgrid=False, tickformat=".0f",
                    tickfont=dict(size=8),
@@ -1712,7 +1712,7 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt", show_type: bool = True):
             st.session_state[f"{pfx}_h3d"] = _h3d
 
             _fig3d.update_layout(
-                template="plotly_dark", paper_bgcolor="#1a2330",
+                template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)",
                 height=_h3d, margin=dict(l=0, r=0, t=40, b=0),
                 title=dict(
                     text=f"3D Wireframe — {_bt_label}",
@@ -2612,7 +2612,7 @@ def beam_record_solid_fig(rec: dict, N: int = 40):
         return None
     fig = go.Figure(traces)
     fig.update_layout(
-        template="plotly_dark", paper_bgcolor="#0e1117", height=460,
+        template="plotly_dark", paper_bgcolor="rgba(0,0,0,0)", height=460,
         margin=dict(l=0, r=0, t=30, b=0),
         scene=dict(xaxis_title="Ngang dầm (m)", yaxis_title="Dọc dầm (m)",
                    zaxis_title="Cao (m)", aspectmode="data",
