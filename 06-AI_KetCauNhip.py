@@ -563,9 +563,9 @@ def _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong):
         "overhang":        max(0.10, oh),
         "ti_le_L_H":       round(L / H, 1) if H > 0 else 0,
         "cong_nghe":       cong_nghe,
-        "phuong_phap":     "Rule-Based (Chi phí)",
-        "ghi_chu":         (f"Tối ưu ít trụ: {loai} L={L}m, "
-                            f"{best_n_nhip} nhịp, S={S}m."),
+        "phuong_phap":     "Rule-Based (Nhịp dài — ít trụ)",
+        "ghi_chu":         (f"Nhịp DÀI, ÍT TRỤ (tiết kiệm phần dưới): {loai} "
+                            f"L={L}m, {best_n_nhip} nhịp, S={S}m."),
     }
 
 
@@ -752,11 +752,30 @@ def predict_kcn(B_tk, H_tk, goc, B_cau, moi_truong,
     Chi tiết hình học dầm do người dùng dựng ở tab BeamBuilder (module 17).
     """
     return {
-        "pa1_chi_phi": _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong),
-        "pa2_my_quan": _predict_rb_my_quan(B_tk, goc, B_cau, L_cau_tong),
+        # PA1 = nhịp NGẮN nhất, NHIỀU trụ (bám tĩnh không) — mặc định 'cầu tổng'
+        "pa1_chi_phi": _predict_rb_nhip_ngan(B_tk, goc, B_cau, L_cau_tong),
+        # PA2 = nhịp DÀI, ÍT trụ (tối ưu chi phí phần dưới)
+        "pa2_my_quan": _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong),
         "pa3_ai":      _predict_ai(B_tk, H_tk, goc, B_cau, moi_truong,
                                    L_cau_tong, models),
     }
+
+
+def _predict_rb_nhip_ngan(B_tk, goc, B_cau, L_cau_tong=None):
+    """
+    PA1 — Nhịp NGẮN nhất, NHIỀU trụ.
+
+    Chọn chiều dài định hình catalog nhỏ nhất thỏa điều kiện tĩnh không
+    (_L_nhip_min) → bám tĩnh không, đổi tĩnh không thì nhịp đổi theo. Đây cũng là
+    phương án mặc định của 'cầu tổng'. Dùng chung lõi với predict_kcn_default,
+    chỉ khác nhãn hiển thị.
+    """
+    pa = predict_kcn_default(B_tk, goc, B_cau, L_cau_tong)
+    pa["phuong_phap"] = "Rule-Based (Nhịp ngắn — nhiều trụ)"
+    pa["ghi_chu"] = (f"Nhịp NGẮN nhất thỏa tĩnh không (nhiều trụ): "
+                     f"{pa['loai_dam']} L={pa['chieu_dai']:g}m, "
+                     f"{pa['tong_so_nhip']} nhịp.")
+    return pa
 
 
 def predict_kcn_default(B_tk, goc, B_cau, L_cau_tong=None):

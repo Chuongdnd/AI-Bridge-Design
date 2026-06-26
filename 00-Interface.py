@@ -1905,12 +1905,12 @@ def dialog_step3():
                     models=kcn_models,
                 )
                 if isinstance(_kcn_raw, dict) and "pa1_chi_phi" in _kcn_raw:
-                    # 'Cầu tổng' dùng phương án MẶC ĐỊNH bám tĩnh không — chiều dài
-                    # nhịp = định hình nhỏ nhất thỏa tĩnh không, đổi theo tĩnh không.
-                    # (PA1 luôn chọn dầm dài nhất → kẹt 38.2m bất kể tĩnh không.)
-                    # Người dùng gán dầm thư viện để tăng nhịp (ghi đè qua span_layout).
-                    _pa = KCN.predict_kcn_default(res['B'], goc_giao, res['bc'], L_cau)
-                    _pa["do_tin_cay"] = 80
+                    # 'Cầu tổng' mặc định = PA1 (nhịp NGẮN nhất, NHIỀU trụ — bám
+                    # tĩnh không; đổi tĩnh không → nhịp đổi theo). PA2 (nhịp dài, ít
+                    # trụ) và PA3 (AI) xem ở ribbon Phương án 2 / 3. Người dùng gán
+                    # dầm thư viện để đổi chiều dài nhịp (ghi đè qua span_layout).
+                    _pa = dict(_kcn_raw["pa1_chi_phi"])
+                    _pa["do_tin_cay"] = 85 if kcn_models else 60
                     res['kcn_result'] = _pa
                     res['kcn_3_pa']   = _kcn_raw
                 else:
@@ -2173,14 +2173,14 @@ _TAB_META = [
         'key':      'Phương án 1',
         'icon':     '🖼️',
         'state':    tab_states['tab1'],
-        'tip':      'Bản vẽ 2D/3D — Phương án 1 (tối ưu chi phí)',
+        'tip':      'Bản vẽ 2D/3D — Phương án 1 (nhịp ngắn, nhiều trụ)',
         'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
     },
     {
         'key':      'Phương án 2',
         'icon':     '🖼️',
         'state':    tab_states['tab1'],
-        'tip':      'Bản vẽ 2D/3D — Phương án 2 (tối ưu mỹ quan)',
+        'tip':      'Bản vẽ 2D/3D — Phương án 2 (nhịp dài, ít trụ)',
         'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
     },
     {
