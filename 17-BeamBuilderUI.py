@@ -2466,6 +2466,39 @@ def _order_sec_names(names):
     return sorted(names, key=_key)
 
 
+def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b"):
+    """Đường kích thước (dim) bề rộng + chiều cao cho 1 mặt cắt, toạ độ dữ liệu mm."""
+    xL, xR = x_ctr - w / 2.0, x_ctr + w / 2.0
+    H = vmax - vmin
+    off = max(90.0, 0.06 * max(w, H))        # khoảng đẩy đường dim ra ngoài
+    tk  = max(45.0, off * 0.5)               # chiều dài nét nối/gờ
+    # ── Dim BỀ RỘNG (nằm dưới mặt cắt) ─────────────────────────────────────
+    y_d = vmin - off
+    fig.add_trace(go.Scatter(
+        x=[xL, xR], y=[y_d, y_d], mode="lines",
+        line=dict(color=color, width=1.1), showlegend=False, hoverinfo="skip"))
+    for xe in (xL, xR):                        # nét nối + gờ mũi tên
+        fig.add_trace(go.Scatter(
+            x=[xe, xe], y=[vmin, y_d - tk * 0.3], mode="lines",
+            line=dict(color=color, width=0.8), showlegend=False, hoverinfo="skip"))
+    fig.add_annotation(x=x_ctr, y=y_d, text=f"{w:.0f}", showarrow=False,
+                       yshift=-9, font=dict(size=9, color=color),
+                       bgcolor="rgba(255,255,255,0.85)")
+    # ── Dim CHIỀU CAO (bên trái mặt cắt) ──────────────────────────────────
+    x_d = xL - off
+    fig.add_trace(go.Scatter(
+        x=[x_d, x_d], y=[vmin, vmax], mode="lines",
+        line=dict(color=color, width=1.1), showlegend=False, hoverinfo="skip"))
+    for ye in (vmin, vmax):
+        fig.add_trace(go.Scatter(
+            x=[xL, x_d - tk * 0.3], y=[ye, ye], mode="lines",
+            line=dict(color=color, width=0.8), showlegend=False, hoverinfo="skip"))
+    fig.add_annotation(x=x_d, y=(vmin + vmax) / 2.0, text=f"{H:.0f}",
+                       showarrow=False, xshift=-10, textangle=-90,
+                       font=dict(size=9, color=color),
+                       bgcolor="rgba(255,255,255,0.85)")
+
+
 def beam_record_mcn_fig(rec: dict):
     """Các MẶT CẮT NGANG đã khai báo của dầm (A-A, B-B, …) xếp cạnh nhau."""
     m, _L, _bb = _model_from_record(rec)
@@ -2475,14 +2508,25 @@ def beam_record_mcn_fig(rec: dict):
              if m.sections[n].outer]
     if not names:
         return None
-    fig = go.Figure()
-    x_off, gap = 0.0, 350.0
-    ticks, tickt = [], []
+    # Pre-tính bề rộng từng mặt cắt để đặt cách nhau theo BAO (không đè nhau khi
+    # mặt cắt rộng đứng cạnh mặt cắt hẹp).
+    geo = {}
     for nm in names:
         sec = m.sections[nm]
-        us = [p[0] for p in sec.outer]
-        cx = (min(us) + max(us)) / 2.0
-        w = (max(us) - min(us)) or 600.0
+        us = [p[0] for p in sec.outer]; vs = [p[1] for p in sec.outer]
+        geo[nm] = dict(cx=(min(us) + max(us)) / 2.0,
+                       w=(max(us) - min(us)) or 600.0,
+                       vmin=min(vs), vmax=max(vs))
+    fig = go.Figure()
+    gap = 700.0                               # khe hở BAO giữa 2 mặt cắt (mm)
+    ticks, tickt = [], []
+    x_off = geo[names[0]]["w"] / 2.0
+    prev_w = None
+    for nm in names:
+        sec = m.sections[nm]
+        cx = geo[nm]["cx"]; w = geo[nm]["w"]
+        if prev_w is not None:                # tâm cách tâm = nửa+khe+nửa
+            x_off += prev_w / 2.0 + gap + w / 2.0
         xs = [(p[0] - cx) + x_off for p in sec.outer] + [(sec.outer[0][0] - cx) + x_off]
         ys = [p[1] for p in sec.outer] + [sec.outer[0][1]]
         fig.add_trace(go.Scatter(
@@ -2498,16 +2542,17 @@ def beam_record_mcn_fig(rec: dict):
                 x=hx, y=hy, fill="toself", fillcolor="white",
                 line=dict(color="#34607a", width=1), mode="lines",
                 showlegend=False, hoverinfo="skip"))
+        _add_mcn_dims(fig, x_off, w, geo[nm]["vmin"], geo[nm]["vmax"])
         ticks.append(x_off); tickt.append(nm)
-        x_off += w + gap
+        prev_w = w
     fig.update_layout(
-        template="plotly_white", height=380,
+        template="plotly_white", height=400,
         title=dict(text="① Mặt cắt ngang các vị trí (mm)", x=0.5, font=dict(size=12)),
         xaxis=dict(tickvals=ticks, ticktext=tickt, showgrid=False, zeroline=False),
         yaxis=dict(title="Cao (mm)", scaleanchor="x", scaleratio=1,
                    showgrid=True, gridcolor="#eef2f3", zeroline=False),
-        margin=dict(l=55, r=20, t=50, b=40), showlegend=True,
-        legend=dict(orientation="h", y=-0.12, font=dict(size=9)))
+        margin=dict(l=70, r=20, t=50, b=50), showlegend=True,
+        legend=dict(orientation="h", y=-0.14, font=dict(size=9)))
     return fig
 
 
