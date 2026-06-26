@@ -2611,11 +2611,30 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             if _allx:
                 be_W = max(be_W, abs(min(_allx)), abs(max(_allx)))
             _capx = [x for pl in _polys if pl["name"] == "Xà mũ" for x in pl["xs"]]
+            _capy = [y for pl in _polys if pl["name"] == "Xà mũ" for y in pl["ys"]]
+            _bex  = [x for pl in _polys if pl["name"] == "Bệ trụ" for x in pl["xs"]]
+            _bey  = [y for pl in _polys if pl["name"] == "Bệ trụ" for y in pl["ys"]]
+            _thy  = [y for pl in _polys if pl["name"] == "Thân trụ" for y in pl["ys"]]
             if _capx:
                 cap_W = max(abs(min(_capx)), abs(max(_capx)))
             _ally = [y for pl in _polys for y in pl["ys"]]
             if _ally:
                 z_beb = min(_ally)
+            # KÍCH THƯỚC trụ lắp ghép: bề rộng & chiều cao từng bộ phận
+            _xd = (max(_capx) if _capx else cap_W) + 0.9
+            if _capx and _capy:
+                _dim_h(fig, max(_capy) + 0.55, min(_capx), max(_capx),
+                       f"B_xà mũ={max(_capx)-min(_capx):.2f}m", color="#8e44ad")
+                _dim_v(fig, _xd, min(_capy), max(_capy),
+                       f"xà mũ {max(_capy)-min(_capy):.2f}m", dx=0.15)
+            if _thy:
+                _dim_v(fig, _xd, min(_thy), max(_thy),
+                       f"thân {max(_thy)-min(_thy):.2f}m", dx=0.15)
+            if _bex and _bey:
+                _dim_v(fig, _xd, min(_bey), max(_bey),
+                       f"bệ {max(_bey)-min(_bey):.2f}m", dx=0.15)
+                _dim_h(fig, min(_bey) - 0.55, min(_bex), max(_bex),
+                       f"B_bệ={max(_bex)-min(_bex):.2f}m")
         else:
             _poly(fig, [-be_W, be_W, be_W, -be_W],
                   [z_beb, z_beb, z_shb, z_shb],
@@ -2657,9 +2676,10 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                     showlegend=(i_coc == 0)
                 ))
 
-        # Dimensions trụ
-        _dim_v(fig, cap_W + 0.6, z_shb, z_capb, f"H_trụ={H_tru:.1f}m", dx=0.2)
-        _dim_h(fig, z_beb - 0.5, -be_W, be_W, f"B_bệ={be_W*2:.1f}m", dy=0)
+        # Dimensions trụ (parametric) — chỉ khi CHƯA gắn trụ lắp ghép
+        if not pier_assembly:
+            _dim_v(fig, cap_W + 0.6, z_shb, z_capb, f"H_trụ={H_tru:.1f}m", dx=0.2)
+            _dim_h(fig, z_beb - 0.5, -be_W, be_W, f"B_bệ={be_W*2:.1f}m", dy=0)
 
     # Bản mặt cầu
     _poly(fig, [-bc/2, bc/2, bc/2, -bc/2],
