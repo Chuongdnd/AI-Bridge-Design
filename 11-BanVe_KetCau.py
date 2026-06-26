@@ -117,6 +117,32 @@ def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=Tr
     )
 
 
+def _approach_road_traces(xa, xb, bc, z_road, z_g, taluy=1.5, sl=True):
+    """Đường đầu cầu 3D: nền đắp (lăng trụ hình thang, mái taluy) + mặt đường.
+    xa = tại lưng mố, xb = đầu xa (cách xb−xa theo phương dọc)."""
+    s = max(0.0, (z_road - z_g)) * taluy          # bề rộng mái taluy mỗi bên
+    cs = [(-bc / 2, z_road), (bc / 2, z_road),     # đỉnh nền (mặt đường)
+          (bc / 2 + s, z_g), (-bc / 2 - s, z_g)]   # chân taluy (mặt đất)
+    X, Y, Z = [], [], []
+    for x in (xa, xb):
+        for (y, z) in cs:
+            X.append(x); Y.append(y); Z.append(z)
+    quads = [(0, 1, 5, 4), (3, 2, 6, 7), (0, 3, 7, 4),
+             (1, 2, 6, 5), (0, 1, 2, 3), (4, 5, 6, 7)]
+    I, J, K = [], [], []
+    for a, b, c, e in quads:
+        I += [a, a]; J += [b, c]; K += [c, e]
+    embankment = go.Mesh3d(
+        x=X, y=Y, z=Z, i=I, j=J, k=K, color="#c9a86b", opacity=0.55,
+        flatshading=True, name="Nền đắp đầu cầu" if sl else "", showlegend=sl,
+        lighting=dict(ambient=0.65, diffuse=0.85, specular=0.15),
+        hovertemplate="Nền đắp đầu cầu<extra></extra>")
+    road = _box3d(min(xa, xb), -bc / 2, z_road - 0.25, max(xa, xb), bc / 2, z_road,
+                  color="#34495e", opacity=0.92,
+                  name="Mặt đường đầu cầu" if sl else "", sl=sl)
+    return [embankment, road]
+
+
 # ===========================================================================
 # LAN CAN / GIẢI PHÂN CÁCH — kéo (extrude) MCN khai báo CHẠY DỌC TOÀN CẦU
 # ===========================================================================
@@ -1695,6 +1721,14 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
             continue
         traces.append(_box3d(xm, -bc/2-0.5, z_be_b, xm+mo_W, bc/2+0.5, z_deck,
                              color="#c0a06b", name=nm))
+
+    # ── Đường đầu cầu: nền đắp + mặt đường vươn 50m mỗi bên ──────────────────
+    _L_app3d = 50.0
+    for _xm, _od in [(x0, -1.0), (x_end, 1.0)]:
+        for _at in _approach_road_traces(
+                _xm, _xm + _od * _L_app3d, bc, z_deck, h_tn, taluy=1.5,
+                sl=(_od < 0)):
+            traces.append(_at)
 
     # ── Trụ (đặt NGOÀI tĩnh không) ────────────────────────────────────────
     for i, xt in enumerate(piers):
