@@ -37,13 +37,20 @@ def _get_PB():
     return _PB_ENGINE
 
 # ── Bảng màu ─────────────────────────────────────────────────────────────────
+# Quy tắc thể hiện bản vẽ — LAYER áp cho bản vẽ 2D:
+#   layer 3 (xanh lá)  = đường bao cấu kiện CÓ cốt thép (BTCT)
+#   layer 4 (xanh nhạt)= kích thước (DIM) + nét cấu kiện mảnh
+#   layer 5 (xanh dương)= nét mảnh (taluy, break line)
+_LAYER3 = "#1e8449"   # xanh lá — đường bao BTCT
+_LAYER5 = "#2e5cb8"   # xanh dương — nét mảnh / taluy / break line
 _C = {
     "btong":    "#c8d6c0",
-    "btong_dk": "#7f8c8d",
+    "btong_dk": _LAYER3,   # đường bao BTCT = layer 3 (xanh lá)
+    "bao":      _LAYER3,   # alias đường bao cấu kiện BTCT
     "be":       "#aab7b8",
     "be_dk":    "#566573",
     "dam":      "#85929e",
-    "dam_dk":   "#2c3e50",
+    "dam_dk":   _LAYER3,   # đường bao xà mũ/dầm BTCT = layer 3
     "ban":      "#d5d8dc",
     "phu":      "#2c3e50",
     "lan_can":  "#7f8c8d",
@@ -52,9 +59,13 @@ _C = {
     "tk":       "rgba(231,76,60,0.12)",
     "tk_line":  "#e74c3c",
     "moc":      "#c0a06b",
-    "dim":      "#5d6d7e",
+    "dim":      "#1f9ed1",   # nét DIM = layer 4 "xanh nhạt" (quy tắc thể hiện bản vẽ)
     "dia_hinh": "#27ae60",
 }
+
+# Cỡ chữ kích thước theo chuẩn (1.8mm) — quy đổi xấp xỉ sang px màn hình
+_DIM_TXT = 9
+_DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None, lw=1.5):
@@ -76,28 +87,51 @@ def _hline(fig, y, x0, x1, label, color, dash="dot", lw=1.5):
                            font=dict(size=8, color=color), yanchor="bottom", xanchor="left")
 
 def _dim_h(fig, y, x0, x1, text, color=None, dy=0):
+    """Đường kích thước NGANG — nét DIM xanh nhạt + 2 mũi tên closed filled
+    (theo bảng KÍCH THƯỚC trong quy tắc thể hiện bản vẽ)."""
     color = color or _C["dim"]
     ya = y + dy
-    for xi in [x0, x1]:
-        fig.add_shape(type="line", x0=xi, y0=ya-0.12, x1=xi, y1=ya+0.12,
-                      line=dict(color=color, width=1))
-    fig.add_shape(type="line", x0=x0, y0=ya, x1=x1, y1=ya,
-                  line=dict(color=color, width=1))
+    # đường dim + mũi tên 2 đầu (head ở x0 và x1, hướng ra ngoài)
+    for xh, xt in ((x0, x1), (x1, x0)):
+        fig.add_annotation(x=xh, y=ya, ax=xt, ay=ya, xref="x", yref="y",
+                           axref="x", ayref="y", showarrow=True, arrowhead=3,
+                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color)
     fig.add_annotation(x=(x0+x1)/2, y=ya+0.05, text=text, showarrow=False,
-                       font=dict(size=8, color=color), yanchor="bottom",
+                       font=dict(size=_DIM_TXT, color=color), yanchor="bottom",
                        bgcolor="rgba(255,255,255,0.85)")
 
 def _dim_v(fig, x, y0, y1, text, color=None, dx=0.4):
+    """Đường kích thước ĐỨNG — nét DIM xanh nhạt + 2 mũi tên closed filled."""
     color = color or _C["dim"]
     xa = x + dx
-    for yi in [y0, y1]:
-        fig.add_shape(type="line", x0=xa-0.2, y0=yi, x1=xa+0.2, y1=yi,
-                      line=dict(color=color, width=1))
-    fig.add_shape(type="line", x0=xa, y0=y0, x1=xa, y1=y1,
-                  line=dict(color=color, width=1))
+    for yh, yt in ((y0, y1), (y1, y0)):
+        fig.add_annotation(x=xa, y=yh, ax=xa, ay=yt, xref="x", yref="y",
+                           axref="x", ayref="y", showarrow=True, arrowhead=3,
+                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color)
     fig.add_annotation(x=xa+0.08, y=(y0+y1)/2, text=text, showarrow=False,
-                       font=dict(size=8, color=color), xanchor="left",
-                       bgcolor="rgba(255,255,255,0.85)")
+                       font=dict(size=_DIM_TXT, color=color), xanchor="left",
+                       textangle=-90, bgcolor="rgba(255,255,255,0.85)")
+
+# ── Áp LAYER cho bản vẽ 2D (quy tắc thể hiện bản vẽ) ─────────────────────────
+def _apply_layers_2d(fig):
+    """Đường bao cấu kiện BTCT → layer 3 (xanh lá).
+    Phần kết cấu trên (thân trụ/bản/xà mũ/dầm) đã xanh lá sẵn nhờ btong_dk/dam_dk.
+    Hàm này quét thêm các polygon CÓ TÔ mà đường bao đang là màu bê tông sậm
+    (be_dk: bệ cọc, mố, cọc tròn) → đổi sang xanh lá. KHÔNG đụng nét nước/đất/
+    địa chất (màu khác) hay cọc vẽ dạng line (không tô) hay nét DIM (đã xanh nhạt)."""
+    _be_dk = str(_C["be_dk"]).lower()
+    for tr in fig.data:
+        if not isinstance(tr, go.Scatter):
+            continue
+        if "toself" not in str(getattr(tr, "fill", "") or ""):
+            continue
+        try:
+            if tr.line is not None and str(tr.line.color).lower() == _be_dk:
+                tr.line.color = _LAYER3
+        except Exception:
+            pass
+    return fig
+
 
 # ── Box mesh 3D ───────────────────────────────────────────────────────────────
 def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=True):
@@ -1300,6 +1334,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         hovermode="closest",
     )
     _add_elevation_table(fig, d, loc="tl")
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -1586,6 +1621,7 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None):
         margin=dict(l=70, r=80, t=90, b=100),
     )
     _add_material_notes(fig, loc="bl")
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -2658,6 +2694,7 @@ def ve_binh_do_2d(d, df_tim_line=None):
         margin=dict(l=60, r=40, t=60, b=90),
         hovermode="closest",
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -2911,6 +2948,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         margin=dict(l=60, r=40, t=60, b=100),
     )
     _add_elevation_table(fig, d, loc="tr")
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3090,6 +3128,7 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=55, r=30, t=60, b=80),
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3174,6 +3213,7 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=60, r=40, t=60, b=80),
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3255,6 +3295,7 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
         legend=dict(orientation="h", y=-0.18, font=dict(size=9)),
         margin=dict(l=55, r=30, t=60, b=100),
     )
+    _apply_layers_2d(fig)
     return fig
 
 
@@ -3265,10 +3306,37 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
 _TRANSLUCENT_KEYS = ("nước", "Mặt nước", "MNCN", "MNTT", "MNTN", "MNTC",
                      "Tĩnh không", "chưa gắn", "tạm")
 
+# ── MÀU BÊ TÔNG thống nhất cho mọi cấu kiện BTCT trong mô hình 3D ──────────────
+# Quy tắc thể hiện bản vẽ: kết cấu là BTCT → mô hình 3D hiển thị KHỐI ĐẶC một
+# màu bê tông duy nhất (dầm, bản, mố, trụ, xà mũ, bệ cọc, lan can, dầm thư viện…).
+# Cách EXCLUSION: đổi MỌI khối đặc sang bê tông, TRỪ môi trường (asphalt/địa hình)
+# và các khối trong suốt → bắt được cả dầm thư viện / trụ chèn từ module khác.
+CONCRETE_3D = "#b9b5a8"
+_NON_CONCRETE_3D = {
+    "#2c3e50", "#34495e",   # lớp phủ BTN / mặt đường (asphalt)
+    "#c9a86b",              # nền đắp / địa hình
+    "#e8eaf0",              # khối bao dầm (mờ)
+}
+
 
 def _is_translucent(trace) -> bool:
     nm = str(getattr(trace, "name", "") or "")
     return any(k in nm for k in _TRANSLUCENT_KEYS)
+
+
+def _to_concrete(trace) -> None:
+    """Quy 1 khối kết cấu về màu bê tông thống nhất (giữ địa hình/nước/asphalt)."""
+    if _is_translucent(trace):
+        return
+    try:
+        if trace.opacity is not None and float(trace.opacity) < 0.5:
+            return
+    except Exception:
+        pass
+    col = str(getattr(trace, "color", "") or "").strip().lower()
+    if col in _NON_CONCRETE_3D:
+        return
+    trace.color = CONCRETE_3D
 
 
 def apply_render_mode(fig, mode="Shaded"):
@@ -3281,6 +3349,8 @@ def apply_render_mode(fig, mode="Shaded"):
     """
     for trace in fig.data:
         if isinstance(trace, go.Mesh3d):
+            # Quy mọi khối BTCT về 1 màu bê tông đặc trước khi áp chế độ hiển thị
+            _to_concrete(trace)
             if mode == "Wireframe":
                 trace.opacity = 0.0
                 # Bật hiển thị wireframe overlay qua intensity

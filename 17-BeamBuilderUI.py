@@ -736,6 +736,8 @@ def _render_3d_view():
 
     c3d, celev = st.columns([2, 1])
     with c3d:
+        if _PLOT is not None:
+            _PLOT.to_concrete_3d(fig3d)   # khối đặc màu bê tông (quy tắc thể hiện)
         st.plotly_chart(fig3d, use_container_width=True, key="view3d")
     with celev:
         st.markdown("**Mặt cắt dọc**")
@@ -1707,6 +1709,8 @@ def render_cad_spt_tab(d: dict, pfx: str = "spt", show_type: bool = True):
                     camera=dict(eye=dict(x=1.4, y=-1.6, z=0.9)),
                 ),
             )
+            if _PLOT is not None:
+                _PLOT.to_concrete_3d(_fig3d)   # khối đặc màu bê tông (quy tắc thể hiện)
             st.plotly_chart(_fig3d, use_container_width=True,
                             key=f"{pfx}_3d_large",
                             config={"displayModeBar": True,
