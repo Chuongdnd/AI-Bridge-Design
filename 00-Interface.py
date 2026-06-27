@@ -4377,21 +4377,26 @@ def _current_beam_loai(d, ribbon):
 
 
 def _auto_pier_on_beam_change(d, ribbon):
-    """Cầu tổng: KHI loại dầm thật ĐỔI → tự chọn trụ có xà mũ khớp (giữ THÂN đang
-    chọn). Giữa các lần đổi → KHÔNG đụng → tôn trọng lựa chọn THỦ CÔNG của user.
-    Tắt bằng d['_auto_pier_cap'] = False."""
+    """ÉP XÀ MŨ KHỚP LOẠI DẦM: dầm SPT → trụ có xà mũ SPT; dầm I/T ngược → xà mũ
+    'cung dam I'. Mỗi lần render: nếu xà mũ của trụ ĐANG CHỌN không khớp loại dầm
+    → tự đổi sang trụ có xà mũ đúng loại (giữ THÂN trụ nếu có biến thể cùng thân).
+    Nếu xà mũ đã đúng loại → KHÔNG đụng (cho phép chọn tay giữa các trụ cùng loại
+    xà mũ). Tắt ép bằng d['_auto_pier_cap'] = False (chọn tay tự do)."""
     if not d.get("_auto_pier_cap", True):
         return
     caps, _s, _f = _pier_part_libs()
     want_cap = _cap_match_beam(_current_beam_loai(d, ribbon), caps)
-    if not want_cap or st.session_state.get("_auto_pier_last_cap") == want_cap:
-        return                                  # chưa đổi loại → không can thiệp
+    if not want_cap:
+        return                                  # loại dầm không ràng buộc (bản rỗng…)
     piers = _saved_piers()
     cur = _current_pier_parts() or {}
-    cur_stem = cur.get("stem_id")
+    cur_cap, cur_stem = cur.get("cap_id"), cur.get("stem_id")
     if cur.get("pier_id"):
-        rec = CLIB.get_pier(piers, cur["pier_id"]) or {}
-        cur_stem = (rec.get("source") or {}).get("stem_id", cur_stem)
+        src = (CLIB.get_pier(piers, cur["pier_id"]) or {}).get("source") or {}
+        cur_cap  = src.get("cap_id", cur_cap)
+        cur_stem = src.get("stem_id", cur_stem)
+    if cur_cap == want_cap:
+        return                                  # xà mũ đã đúng loại → giữ nguyên
     def _src(p): return p.get("source") or {}
     match = next((p for p in piers if _src(p).get("cap_id") == want_cap
                   and _src(p).get("stem_id") == cur_stem), None) \
@@ -4402,7 +4407,6 @@ def _auto_pier_on_beam_change(d, ribbon):
     for lbl, (kind_sel, ref) in meta.items():
         if kind_sel == "saved" and ref == match["id"]:
             st.session_state["tru_preset_sel"] = lbl
-            st.session_state["_auto_pier_last_cap"] = want_cap
             break
 
 
