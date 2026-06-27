@@ -47,10 +47,6 @@ footer                            { display: none !important; }
 /* Ẩn menu đa trang ở sidebar (Interface, Dia Chat, Du Toan…) — chỉ điều hướng
    bằng ribbon ở trên cùng */
 [data-testid="stSidebarNav"]      { display: none !important; }
-/* Bỏ khoảng trống phía trên logo (đệm đỉnh sidebar do nav để lại) → dồn lên,
-   GIỮ nút thu gọn sidebar (stSidebarHeader) */
-[data-testid="stSidebarHeader"]   { padding-top: 0.2rem !important; padding-bottom: 0 !important; }
-[data-testid="stSidebarUserContent"] { padding-top: 0.3rem !important; }
 
 /* ── Metrics ── */
 [data-testid="stMetric"] {
@@ -81,7 +77,7 @@ html:not(.cau-sb-collapsed) [data-testid="stSidebar"] {
     transition: min-width 0.05s, max-width 0.05s, transform 0.15s;
     will-change: min-width, max-width, transform;
 }
-[data-testid="stSidebar"] > div:first-child { padding: 8px 14px 32px !important; }
+[data-testid="stSidebar"] > div:first-child { padding: 56px 14px 32px !important; }
 
 /* Main content tự co giãn theo sidebar */
 section[data-testid="stMain"] {
@@ -155,27 +151,9 @@ section[data-testid="stMain"] {
     border-color: #f39c12 !important;
 }
 
-/* Thanh ribbon trang trí trùng lặp (.uth-topbar) → ẩn, để CỤM NÚT THẬT
-   (Dự án + khai báo + tab) làm thanh công cụ trên cùng, hết bị nhân đôi. */
-.uth-topbar { display: none !important; }
-
-/* ── Thu gọn HEADER trống của Streamlit (vùng đỏ khoanh) + giữ icon góc phải ── */
-[data-testid="stHeader"] { height: 0 !important; min-height: 0 !important;
-    background: transparent !important; }
-[data-testid="stToolbar"] { position: fixed !important; top: 2px !important;
-    right: 6px !important; z-index: 1002 !important; }
-
-/* ── TOOLBAR trên cùng GHIM CỐ ĐỊNH (sticky) khi cuộn ── */
-.st-key-cau_toolbar {
-    position: sticky !important; top: 0 !important; z-index: 500 !important;
-    background: #0d0d1a !important; border-bottom: 2px solid #007acc !important;
-    padding: 6px 10px 2px !important; margin: 0 0 8px !important;
-}
-.st-key-cau_toolbar [data-testid="stVerticalBlock"] { gap: 4px !important; }
-
-/* ── Nội dung bắt đầu sát trên (không còn header/topbar trang trí) ── */
+/* ── Topbar: đẩy main content xuống 52px ── */
 section[data-testid="stMain"] .block-container {
-    padding-top: 0 !important;
+    padding-top: 52px !important;
     padding-bottom: 32px !important;
     max-width: 100% !important;
 }
@@ -2512,219 +2490,65 @@ def _render_statusbar(d: dict) -> None:
     )
 
 
-# ── (Đã dời lên: các hàm Dự án để dùng được ở toolbar trên cùng) ──
-def _project_zip_bytes() -> bytes:
-    """Gói dự án hiện tại thành .zip: manifest + design.json + library/*.json."""
-    _u, _pid = _cur_user_pid()
-    design = {k: st.session_state.design_data[k]
-              for k in _DESIGN_SAVE_KEYS if k in st.session_state.design_data}
-    try:
-        design = json.loads(json.dumps(design, ensure_ascii=False, default=str))
-    except Exception:
-        pass
-    meta = WS.project_meta(_u, _pid) if _u else {}
-    buf = io.BytesIO()
-    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
-        z.writestr("manifest.json", json.dumps({
-            "kind": "ai-bridge-project", "version": 1, "app": "AI-Bridge-Design",
-            "user": _u, "project": meta,
-            "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"),
-        }, ensure_ascii=False, indent=2))
-        z.writestr("design.json", json.dumps(design, ensure_ascii=False, indent=2))
-        _libdir = st.session_state.get("user_lib_dir") or CLIB.active_lib_dir()
-        for _fn in CLIB.STORE_FILES:
-            _p = os.path.join(_libdir, _fn)
-            if os.path.exists(_p):
-                z.write(_p, arcname=f"library/{_fn}")
-    return buf.getvalue()
-
-
-def _import_project_zip(username: str, data: bytes, replace_lib: bool = True) -> str:
-    """Khôi phục từ .zip → TẠO dự án mới (không đè dự án hiện tại). Trả về pid mới.
-    replace_lib=True → ghi đè thư viện cá nhân (dùng chung mọi dự án) bằng file."""
-    z = zipfile.ZipFile(io.BytesIO(data))
-    names = set(z.namelist())
-    design = {}
-    if "design.json" in names:
-        design = json.loads(z.read("design.json").decode("utf-8"))
-    pname = "Dự án nhập"
-    if "manifest.json" in names:
-        try:
-            mani = json.loads(z.read("manifest.json").decode("utf-8"))
-            pname = (mani.get("project") or {}).get("name") or pname
-        except Exception:
-            pass
-    pid = WS.create_project(username, pname, design)
-    if replace_lib:
-        _libdir = WS.user_library_dir(username)
-        os.makedirs(_libdir, exist_ok=True)
-        for _fn in CLIB.STORE_FILES:
-            _arc = f"library/{_fn}"
-            if _arc in names:
-                with open(os.path.join(_libdir, _fn), "wb") as f:
-                    f.write(z.read(_arc))
-    return pid
-
-
-def _switch_project(new_pid: str) -> None:
-    """Lưu dự án hiện tại rồi chuyển sang dự án khác (nạp lại design)."""
-    _save_design_inputs(st.session_state.design_data)
-    st.session_state["current_pid"] = new_pid
-    st.session_state.pop("design_data", None)
-    st.rerun()
-
-
-def _render_project_panel() -> None:
-    """Bảng quản lý nhiều dự án + Lưu/Mở .zip — render trong sidebar."""
-    _u = (AUTH.current_user() or {}).get("username")
-    if not _u:
-        return
-    projs = WS.list_projects(_u)
-    if not projs:
-        st.session_state["current_pid"] = WS.create_project(_u, "Dự án 1")
-        projs = WS.list_projects(_u)
-    ids   = [p["id"] for p in projs]
-    names = {p["id"]: p.get("name", p["id"]) for p in projs}
-    cur   = st.session_state.get("current_pid") or ids[0]
-    if cur not in ids:
-        cur = ids[0]; st.session_state["current_pid"] = cur
-
-    st.markdown(
-        "<hr style='border-color:#2a2a3a;margin:10px 0'>"
-        "<p style='font-size:10px;color:#555;margin:0 0 6px;"
-        "text-transform:uppercase;letter-spacing:0.4px'>📁 Dự án</p>",
-        unsafe_allow_html=True)
-
-    sel = st.selectbox("Dự án hiện tại", ids, index=ids.index(cur),
-                       format_func=lambda i: names.get(i, i), key="proj_select")
-    if sel != cur:
-        _switch_project(sel)
-
-    with st.expander("⚙️ Quản lý dự án", expanded=False):
-        _nn = st.text_input("Tên dự án mới", key="proj_new_name",
-                            placeholder="VD: Cầu Sông Hàn")
-        _c1, _c2 = st.columns(2)
-        if _c1.button("➕ Tạo mới", key="proj_create", use_container_width=True):
-            if _nn.strip():
-                _save_design_inputs(st.session_state.design_data)
-                st.session_state["current_pid"] = WS.create_project(_u, _nn.strip())
-                st.session_state.pop("design_data", None)
-                st.rerun()
-            else:
-                st.warning("Nhập tên dự án mới.")
-        if _c2.button("📑 Nhân bản", key="proj_dup", use_container_width=True):
-            _save_design_inputs(st.session_state.design_data)
-            st.session_state["current_pid"] = WS.duplicate_project(_u, cur)
-            st.session_state.pop("design_data", None)
-            st.rerun()
-        _rn = st.text_input("Đổi tên dự án hiện tại", value=names.get(cur, ""),
-                            key="proj_rename")
-        if st.button("✏️ Lưu tên", key="proj_rename_btn", use_container_width=True):
-            WS.rename_project(_u, cur, _rn.strip() or cur)
-            st.rerun()
-        if len(ids) > 1:
-            if st.button("🗑️ Xoá dự án này", key="proj_del",
-                         use_container_width=True):
-                WS.delete_project(_u, cur)
-                st.session_state["current_pid"] = None
-                st.session_state.pop("design_data", None)
-                st.rerun()
-        else:
-            st.caption("Không thể xoá dự án cuối cùng.")
-
-    _safe = WS._slug(names.get(cur, "duan"))
-    st.download_button(
-        "💾 Lưu dự án (.zip)", data=_project_zip_bytes(),
-        file_name=f"duan_{_safe}_{time.strftime('%Y%m%d')}.zip",
-        mime="application/zip", use_container_width=True, key="proj_dl")
-
-    _up = st.file_uploader("📂 Mở dự án (.zip)", type=["zip"], key="proj_up")
-    if _up is not None:
-        _rl = st.checkbox("Ghi đè thư viện cá nhân từ file", value=True,
-                          key="proj_up_lib",
-                          help="Thư viện dùng chung cho mọi dự án của bạn.")
-        if st.button("⬆️ Khôi phục từ file", key="proj_up_btn",
-                     use_container_width=True):
-            try:
-                _pid = _import_project_zip(_u, _up.getvalue(), replace_lib=_rl)
-                st.session_state["current_pid"] = _pid
-                st.session_state.pop("design_data", None)
-                for _k in ("dam_beams", "dam_piers", "dam_mos", "lib_railings",
-                           "lib_caps", "lib_stems", "lib_footings"):
-                    st.session_state.pop(_k, None)
-                st.success("✅ Đã khôi phục dự án từ file.")
-                st.rerun()
-            except Exception as _e:
-                st.error(f"File dự án không hợp lệ: {_e}")
-
-
 # ── Topbar + nav buttons (phủ lên topbar) ────────────────────────────────────
 _cur_tab = st.session_state.get('current_tab', 'THUYẾT MINH')
 _render_topbar(st.session_state.design_data, _cur_tab)
 
-# ── TOOLBAR TRÊN CÙNG (ghim cố định) ──
-with st.container(key="cau_toolbar"):
-    # ── CỤM DỰ ÁN trên toolbar trên cùng (popover chứa chọn/lưu/mở/quản lý) ───────
-    _pj_col, _ = st.columns([1, 4])
-    with _pj_col:
-        with st.popover("📁 Dự án", use_container_width=True):
-            _render_project_panel()
+# ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
+#    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
+_has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
+_dk1, _dk2, _dk4, _dk3 = st.columns(4)
+with _dk1:
+    if st.button("🌊 Thông số thủy văn & vị trí cầu",
+                 use_container_width=True, key="declbtn_step1",
+                 help="Khai báo thủy văn, mực nước, vị trí & tĩnh không"):
+        st.session_state.field_touched = set()
+        st.session_state.field_errors = {}
+        st.session_state.field_warnings = {}
+        st.session_state.open_dialog = "step1"
+        st.rerun()
+with _dk2:
+    if st.button("🛣️ Tiêu chuẩn hình học tuyến đường",
+                 use_container_width=True, key="declbtn_step2",
+                 help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
+        st.session_state.open_dialog = "step2"
+        st.rerun()
+with _dk4:
+    _has_geo = bool(st.session_state.get("df_geology") is not None
+                    or st.session_state.get("dia_chat_frames"))
+    if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
+                 use_container_width=True, key="declbtn_geodata",
+                 help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
+        st.session_state.open_dialog = "geodata"
+        st.rerun()
+with _dk3:
+    if st.button("✅ Xem lại thông số & Chạy tính toán",
+                 use_container_width=True, key="declbtn_step3",
+                 type="primary" if not _has_kq_decl else "secondary",
+                 help="Xem lại toàn bộ rồi chạy pipeline AI"):
+        st.session_state.open_dialog = "step3"
+        st.rerun()
 
-    # ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
-    #    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
-    _has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
-    _dk1, _dk2, _dk4, _dk3 = st.columns(4)
-    with _dk1:
-        if st.button("🌊 Thông số thủy văn & vị trí cầu",
-                     use_container_width=True, key="declbtn_step1",
-                     help="Khai báo thủy văn, mực nước, vị trí & tĩnh không"):
-            st.session_state.field_touched = set()
-            st.session_state.field_errors = {}
-            st.session_state.field_warnings = {}
-            st.session_state.open_dialog = "step1"
-            st.rerun()
-    with _dk2:
-        if st.button("🛣️ Tiêu chuẩn hình học tuyến đường",
-                     use_container_width=True, key="declbtn_step2",
-                     help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
-            st.session_state.open_dialog = "step2"
-            st.rerun()
-    with _dk4:
-        _has_geo = bool(st.session_state.get("df_geology") is not None
-                        or st.session_state.get("dia_chat_frames"))
-        if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
-                     use_container_width=True, key="declbtn_geodata",
-                     help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
-            st.session_state.open_dialog = "geodata"
-            st.rerun()
-    with _dk3:
-        if st.button("✅ Xem lại thông số & Chạy tính toán",
-                     use_container_width=True, key="declbtn_step3",
-                     type="primary" if not _has_kq_decl else "secondary",
-                     help="Xem lại toàn bộ rồi chạy pipeline AI"):
-            st.session_state.open_dialog = "step3"
-            st.rerun()
-
-    _col_tabs = st.columns(len(_TAB_META))
-    for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
-        with _col:
-            if _m['state'] == 'locked':
-                st.button(
-                    f"{_m['icon']} {_m['key']}",
-                    disabled=True,
-                    use_container_width=True,
-                    help=f"🔒 {_m['lock_msg']}",
-                    key=f"ribbonbtn_{_ci}",
-                )
-            else:
-                if st.button(
-                    f"{_m['icon']} {_m['key']}",
-                    use_container_width=True,
-                    type="primary" if (_cur_tab == _m['key']) else "secondary",
-                    key=f"ribbonbtn_{_ci}",
-                ):
-                    st.session_state.current_tab = _m['key']
-                    st.rerun()
+_col_tabs = st.columns(len(_TAB_META))
+for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
+    with _col:
+        if _m['state'] == 'locked':
+            st.button(
+                f"{_m['icon']} {_m['key']}",
+                disabled=True,
+                use_container_width=True,
+                help=f"🔒 {_m['lock_msg']}",
+                key=f"ribbonbtn_{_ci}",
+            )
+        else:
+            if st.button(
+                f"{_m['icon']} {_m['key']}",
+                use_container_width=True,
+                type="primary" if (_cur_tab == _m['key']) else "secondary",
+                key=f"ribbonbtn_{_ci}",
+            ):
+                st.session_state.current_tab = _m['key']
+                st.rerun()
 
 # ── Hộp khai báo độc lập — mỗi box là @st.fragment để tránh rerun toàn bộ ──
 
@@ -3087,6 +2911,151 @@ def _render_data_backup() -> None:
 
 
 # ── DỰ ÁN: đóng gói / khôi phục .zip (design + thư viện cá nhân) ────────────
+def _project_zip_bytes() -> bytes:
+    """Gói dự án hiện tại thành .zip: manifest + design.json + library/*.json."""
+    _u, _pid = _cur_user_pid()
+    design = {k: st.session_state.design_data[k]
+              for k in _DESIGN_SAVE_KEYS if k in st.session_state.design_data}
+    try:
+        design = json.loads(json.dumps(design, ensure_ascii=False, default=str))
+    except Exception:
+        pass
+    meta = WS.project_meta(_u, _pid) if _u else {}
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as z:
+        z.writestr("manifest.json", json.dumps({
+            "kind": "ai-bridge-project", "version": 1, "app": "AI-Bridge-Design",
+            "user": _u, "project": meta,
+            "saved_at": time.strftime("%Y-%m-%d %H:%M:%S"),
+        }, ensure_ascii=False, indent=2))
+        z.writestr("design.json", json.dumps(design, ensure_ascii=False, indent=2))
+        _libdir = st.session_state.get("user_lib_dir") or CLIB.active_lib_dir()
+        for _fn in CLIB.STORE_FILES:
+            _p = os.path.join(_libdir, _fn)
+            if os.path.exists(_p):
+                z.write(_p, arcname=f"library/{_fn}")
+    return buf.getvalue()
+
+
+def _import_project_zip(username: str, data: bytes, replace_lib: bool = True) -> str:
+    """Khôi phục từ .zip → TẠO dự án mới (không đè dự án hiện tại). Trả về pid mới.
+    replace_lib=True → ghi đè thư viện cá nhân (dùng chung mọi dự án) bằng file."""
+    z = zipfile.ZipFile(io.BytesIO(data))
+    names = set(z.namelist())
+    design = {}
+    if "design.json" in names:
+        design = json.loads(z.read("design.json").decode("utf-8"))
+    pname = "Dự án nhập"
+    if "manifest.json" in names:
+        try:
+            mani = json.loads(z.read("manifest.json").decode("utf-8"))
+            pname = (mani.get("project") or {}).get("name") or pname
+        except Exception:
+            pass
+    pid = WS.create_project(username, pname, design)
+    if replace_lib:
+        _libdir = WS.user_library_dir(username)
+        os.makedirs(_libdir, exist_ok=True)
+        for _fn in CLIB.STORE_FILES:
+            _arc = f"library/{_fn}"
+            if _arc in names:
+                with open(os.path.join(_libdir, _fn), "wb") as f:
+                    f.write(z.read(_arc))
+    return pid
+
+
+def _switch_project(new_pid: str) -> None:
+    """Lưu dự án hiện tại rồi chuyển sang dự án khác (nạp lại design)."""
+    _save_design_inputs(st.session_state.design_data)
+    st.session_state["current_pid"] = new_pid
+    st.session_state.pop("design_data", None)
+    st.rerun()
+
+
+def _render_project_panel() -> None:
+    """Bảng quản lý nhiều dự án + Lưu/Mở .zip — render trong sidebar."""
+    _u = (AUTH.current_user() or {}).get("username")
+    if not _u:
+        return
+    projs = WS.list_projects(_u)
+    if not projs:
+        st.session_state["current_pid"] = WS.create_project(_u, "Dự án 1")
+        projs = WS.list_projects(_u)
+    ids   = [p["id"] for p in projs]
+    names = {p["id"]: p.get("name", p["id"]) for p in projs}
+    cur   = st.session_state.get("current_pid") or ids[0]
+    if cur not in ids:
+        cur = ids[0]; st.session_state["current_pid"] = cur
+
+    st.markdown(
+        "<hr style='border-color:#2a2a3a;margin:10px 0'>"
+        "<p style='font-size:10px;color:#555;margin:0 0 6px;"
+        "text-transform:uppercase;letter-spacing:0.4px'>📁 Dự án</p>",
+        unsafe_allow_html=True)
+
+    sel = st.selectbox("Dự án hiện tại", ids, index=ids.index(cur),
+                       format_func=lambda i: names.get(i, i), key="proj_select")
+    if sel != cur:
+        _switch_project(sel)
+
+    with st.expander("⚙️ Quản lý dự án", expanded=False):
+        _nn = st.text_input("Tên dự án mới", key="proj_new_name",
+                            placeholder="VD: Cầu Sông Hàn")
+        _c1, _c2 = st.columns(2)
+        if _c1.button("➕ Tạo mới", key="proj_create", use_container_width=True):
+            if _nn.strip():
+                _save_design_inputs(st.session_state.design_data)
+                st.session_state["current_pid"] = WS.create_project(_u, _nn.strip())
+                st.session_state.pop("design_data", None)
+                st.rerun()
+            else:
+                st.warning("Nhập tên dự án mới.")
+        if _c2.button("📑 Nhân bản", key="proj_dup", use_container_width=True):
+            _save_design_inputs(st.session_state.design_data)
+            st.session_state["current_pid"] = WS.duplicate_project(_u, cur)
+            st.session_state.pop("design_data", None)
+            st.rerun()
+        _rn = st.text_input("Đổi tên dự án hiện tại", value=names.get(cur, ""),
+                            key="proj_rename")
+        if st.button("✏️ Lưu tên", key="proj_rename_btn", use_container_width=True):
+            WS.rename_project(_u, cur, _rn.strip() or cur)
+            st.rerun()
+        if len(ids) > 1:
+            if st.button("🗑️ Xoá dự án này", key="proj_del",
+                         use_container_width=True):
+                WS.delete_project(_u, cur)
+                st.session_state["current_pid"] = None
+                st.session_state.pop("design_data", None)
+                st.rerun()
+        else:
+            st.caption("Không thể xoá dự án cuối cùng.")
+
+    _safe = WS._slug(names.get(cur, "duan"))
+    st.download_button(
+        "💾 Lưu dự án (.zip)", data=_project_zip_bytes(),
+        file_name=f"duan_{_safe}_{time.strftime('%Y%m%d')}.zip",
+        mime="application/zip", use_container_width=True, key="proj_dl")
+
+    _up = st.file_uploader("📂 Mở dự án (.zip)", type=["zip"], key="proj_up")
+    if _up is not None:
+        _rl = st.checkbox("Ghi đè thư viện cá nhân từ file", value=True,
+                          key="proj_up_lib",
+                          help="Thư viện dùng chung cho mọi dự án của bạn.")
+        if st.button("⬆️ Khôi phục từ file", key="proj_up_btn",
+                     use_container_width=True):
+            try:
+                _pid = _import_project_zip(_u, _up.getvalue(), replace_lib=_rl)
+                st.session_state["current_pid"] = _pid
+                st.session_state.pop("design_data", None)
+                for _k in ("dam_beams", "dam_piers", "dam_mos", "lib_railings",
+                           "lib_caps", "lib_stems", "lib_footings"):
+                    st.session_state.pop(_k, None)
+                st.success("✅ Đã khôi phục dự án từ file.")
+                st.rerun()
+            except Exception as _e:
+                st.error(f"File dự án không hợp lệ: {_e}")
+
+
 with st.sidebar:
 
     # ── VÙNG A: Thông tin dự án ──────────────────────────────────────────
@@ -3139,7 +3108,8 @@ with st.sidebar:
                 st.session_state['show_account'] = False
                 st.rerun()
 
-    # (Cụm Dự án đã chuyển LÊN TOOLBAR TRÊN CÙNG — nút 📁 Dự án.)
+    # ── Quản lý nhiều dự án + Lưu/Mở .zip ────────────────────────────────
+    _render_project_panel()
 
     # ── VÙNG B: Thông số hiện hành ───────────────────────────────────────
     st.markdown(
