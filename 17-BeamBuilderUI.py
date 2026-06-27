@@ -2937,7 +2937,9 @@ def beam_record_elev_fig(rec: dict):
     if sN:
         lo, hi = _zbounds(sN); _add(L_mm, L_mm, lo, hi, False, w=1.7)
 
-    # ── 3) Mặt bậc ĐỨNG nơi cạnh trong xuất hiện/biến mất (đầu đặc, vách ngăn) ──
+    # ── 3) Mặt bậc ĐỨNG nơi lòng rỗng kết thúc/bắt đầu (vách ngăn, đầu dầm) ──
+    #     Nét đứng đóng lòng rỗng: trải HẾT chiều cao trong (từ đáy bản trên tới
+    #     đáy lòng rỗng) = hợp các cạnh ngang trong của 2 phía.
     for k in range(len(stations) - 1):
         x_b = stations[k][1]
         sec_p = stations[k][3] or stations[k][2]
@@ -2946,9 +2948,11 @@ def beam_record_elev_fig(rec: dict):
             continue
         zp = {round(h["z"], 0) for h in _sec_hedges(sec_p) if not h["outer"]}
         zn = {round(h["z"], 0) for h in _sec_hedges(sec_n) if not h["outer"]}
-        changed = sorted(zp.symmetric_difference(zn))
-        if changed:
-            _add(x_b, x_b, min(changed), max(changed), True)
+        if zp == zn:
+            continue
+        allz = zp | zn
+        if len(allz) >= 2:                       # có chiều cao thực → vẽ nét đứng
+            _add(x_b, x_b, min(allz), max(allz), True)
 
     # ── 4) Kích thước: chiều dài L (dưới) + chiều cao H (phải) ──
     allz = [p[1] for (x0, x1, sa, sb) in stations
