@@ -230,19 +230,40 @@ import streamlit.components.v1 as _cc
 _cc.html(
     """<script>
     (function(){
+      function isLight(d){
+        // 1) color-scheme Streamlit đặt theo theme
+        try{
+          var cs=getComputedStyle(d.documentElement).colorScheme||"";
+          if(/dark/.test(cs)) return false;
+          if(/light/.test(cs)) return true;
+        }catch(e){}
+        // 2) màu nền OPAQUE đầu tiên (stApp → stMain → body → html)
+        var sel=['[data-testid="stApp"]','[data-testid="stMain"]','body','html'];
+        for(var i=0;i<sel.length;i++){
+          var el=(i<2)?d.querySelector(sel[i]):(sel[i]=='body'?d.body:d.documentElement);
+          if(!el) continue;
+          var m=(getComputedStyle(el).backgroundColor||'').match(/[\\d.]+/g);
+          if(m&&m.length>=3&&(m.length<4||parseFloat(m[3])>0.1)){
+            var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2];
+            return L>140;
+          }
+        }
+        return null;
+      }
       function apply(){
         try{
-          var d=window.parent.document;
-          var a=d.querySelector('[data-testid="stApp"]')||d.body;
-          var m=(getComputedStyle(a).backgroundColor||'').match(/\\d+/g);
-          var light=false;
-          if(m){var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2]; light=L>140;}
+          var d=window.parent.document, lt=isLight(d);
+          if(lt===null) return;
           var h=d.documentElement;
-          h.classList.toggle('cau-light',light);
-          h.classList.toggle('cau-dark',!light);
+          h.classList.toggle('cau-light',lt);
+          h.classList.toggle('cau-dark',!lt);
         }catch(e){}
       }
-      apply(); setTimeout(apply,250); setTimeout(apply,800); setTimeout(apply,2000);
+      apply(); [150,400,900,2000,4000].forEach(function(t){setTimeout(apply,t);});
+      try{ // theo dõi đổi theme runtime
+        new MutationObserver(apply).observe(window.parent.document.documentElement,
+          {attributes:true, attributeFilter:['style','class']});
+      }catch(e){}
     })();
     </script>""", height=0)
 
@@ -2547,25 +2568,6 @@ def _render_statusbar(d: dict) -> None:
 _cur_tab = st.session_state.get('current_tab', 'THUYẾT MINH')
 _render_topbar(st.session_state.design_data, _cur_tab)
 
-# ── CỤM TÁC GIẢ / ĐỀ TÀI — LÊN TRÊN CÙNG (đã chuyển khỏi sidebar) ─────────────
-_logo_top = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Images", "UTH.jpg")
-_cta, _ctb = st.columns([1, 4])
-with _cta:
-    if os.path.exists(_logo_top):
-        st.image(_logo_top, width=190)
-with _ctb:
-    st.markdown(
-        "<div style='background:#1e1e2e;border:1px solid #2a2a3a;border-radius:8px;"
-        "padding:10px 14px'>"
-        "<span style='font-size:11px;color:#777;text-transform:uppercase;"
-        "letter-spacing:0.6px'>Đề tài</span>"
-        "<div style='font-size:15px;font-weight:700;color:#f0f0f0;line-height:1.4'>"
-        "Tích hợp AI và BIM tự động hóa thiết kế cầu đường bộ</div>"
-        "<div style='font-size:12px;color:#cfcfcf;margin-top:4px'>"
-        "👤 <b style='color:#fff'>SVTH:</b> Chương DND &nbsp;·&nbsp; "
-        "👨‍🏫 <b style='color:#fff'>GVHD:</b> T.S Nguyễn Văn Hiển</div>"
-        "</div>", unsafe_allow_html=True)
-
 # ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
 #    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
 _has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
@@ -3131,7 +3133,26 @@ def _render_project_panel() -> None:
 with st.sidebar:
 
     # ── VÙNG A: Thông tin dự án ──────────────────────────────────────────
-    # (Logo UTH + Đề tài/SVTH/GVHD đã chuyển LÊN TRÊN CÙNG của trang chính.)
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    logo_path   = os.path.join(current_dir, "Images", "UTH.jpg")
+    if os.path.exists(logo_path):
+        st.image(logo_path, width=260)
+
+    st.markdown(
+        "<div style='background:#1e1e2e;border:1px solid #2a2a3a;"
+        "border-radius:8px;padding:14px 14px;margin:6px 0'>"
+        "<div style='font-size:12px;color:#777;margin-bottom:8px;"
+        "text-transform:uppercase;letter-spacing:0.6px'>Đề tài</div>"
+        "<div style='font-size:17px;font-weight:700;color:#f0f0f0;line-height:1.45'>"
+        "Tích hợp AI và BIM tự động hóa<br>thiết kế cầu đường bộ</div>"
+        "<hr style='border-color:#2a2a3a;margin:11px 0'>"
+        "<div style='font-size:14px;color:#cfcfcf;line-height:1.7'>"
+        "👤 <b style='color:#fff'>SVTH:</b> Chương DND<br>"
+        "👨‍🏫 <b style='color:#fff'>GVHD:</b> T.S Nguyễn Văn Hiển"
+        "</div></div>",
+        unsafe_allow_html=True,
+    )
+
     _u = AUTH.current_user()
     st.markdown(
         f"<div style='display:flex;align-items:center;gap:8px;padding:6px 0'>"
