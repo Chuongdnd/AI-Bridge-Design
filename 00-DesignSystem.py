@@ -276,9 +276,11 @@ def mong_color(loai_mong: str) -> str:
 
 GLOBAL_CSS = f"""
 <style>
-/* ── Base ── KHÔNG ép nền/chữ .stApp nữa → để Streamlit tự nhuộm theo theme
-   hệ thống (sáng/tối). Việc ép #0f0f1a trước đây làm app luôn tối và khiến JS
-   dò theme đọc nhầm nền. Chrome tối còn lại được lật qua html.cau-light. */
+/* ── Base ── */
+.stApp {{
+    background: {Color.BG_BASE};
+    color: {Color.TEXT_PRIMARY};
+}}
 
 /* ── Utility cards ── */
 .ds-card {{

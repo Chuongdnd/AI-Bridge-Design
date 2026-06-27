@@ -192,80 +192,6 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
 </style>
 """, unsafe_allow_html=True)
 
-# ── THEME SÁNG/TỐI bám theo Streamlit (OS hệ thống HOẶC toggle trong app) ─────
-# prefers-color-scheme chỉ theo OS; nếu người dùng đổi theme bằng nút của
-# Streamlit thì phải đọc st.context.theme. Áp cả 2 để chắc chắn lật được chrome
-# còn cố định tối (metric, panel phải, pipeline đáy, card thư viện/IFC, dialog…).
-_LIGHT_RULES = """
-.stApp { background:#f4f6f9 !important; color:#1a1f2b !important; }
-[data-testid="stMetric"] { background:#eef2f8 !important; border-color:#cdd5e0 !important; }
-[data-testid="stMetricValue"] { color:#1769aa !important; }
-.uth-topbar { background:#e8edf4 !important; border-bottom-color:#bcd0e8 !important; }
-.ds-card { background:#f4f6f9 !important; border-color:#cdd5e0 !important; }
-[style*="#141420"],[style*="#0a1f35"],[style*="#1e1e2e"],[style*="#0a0a14"],
-[style*="#1a1a2a"],[style*="#12121c"],[style*="#0d0d1a"],[style*="#12202e"],
-[style*="#1a2330"],[style*="#0f0f1a"],[style*="#0e1117"],[style*="#0d1a10"],
-[style*="#141a20"],[style*="#0a2818"],[style*="#12121e"]
-{ background:#eef2f8 !important; border-color:#cdd5e0 !important; }
-[style*="#1a2000"]{ background:#eafaf1 !important; }
-[style*="#1f1600"]{ background:#fff8e1 !important; }
-[style*="#2d0a0a"]{ background:#fdecea !important; }
-[style*="color:#fff"],[style*="color:#f0f0f0"],[style*="color:#dde3ea"],
-[style*="color:#ddd"],[style*="color:#e0e0e0"],[style*="color:#eee"]
-{ color:#1a1f2b !important; }
-[style*="color:#aaa"],[style*="color:#999"],[style*="color:#888"],
-[style*="color:#777"],[style*="color:#666"],[style*="color:#555"]
-{ color:#5a6270 !important; }
-"""
-# ── GIAO DIỆN do người dùng CHỌN (nút 🎨 ở sidebar) — chắc chắn 100% ──────────
-# "Sáng" → ép light-override; "Tối" → giữ tối; "Tự động" → theo OS/nền thực (JS).
-_theme_choice = st.session_state.get("ui_theme", "🌗 Tự động")
-if "Sáng" in _theme_choice:
-    st.markdown(f"<style>{_LIGHT_RULES}</style>", unsafe_allow_html=True)
-elif "Tối" in _theme_choice:
-    pass  # giữ giao diện tối mặc định
-else:
-    # Tự động: áp khi <html>.cau-light (JS dò nền thực) + @media OS sáng
-    st.markdown(
-        f"<style>html.cau-light {{{_LIGHT_RULES}}}"
-        f"@media (prefers-color-scheme: light){{{_LIGHT_RULES}}}</style>",
-        unsafe_allow_html=True)
-    import streamlit.components.v1 as _cc
-    _cc.html(
-        """<script>
-        (function(){
-          function isLight(d){
-            try{
-              var cs=getComputedStyle(d.documentElement).colorScheme||"";
-              if(/dark/.test(cs)) return false;
-              if(/light/.test(cs)) return true;
-            }catch(e){}
-            var sel=['[data-testid="stApp"]','[data-testid="stMain"]','body','html'];
-            for(var i=0;i<sel.length;i++){
-              var el=(i<2)?d.querySelector(sel[i]):(sel[i]=='body'?d.body:d.documentElement);
-              if(!el) continue;
-              var m=(getComputedStyle(el).backgroundColor||'').match(/[\\d.]+/g);
-              if(m&&m.length>=3&&(m.length<4||parseFloat(m[3])>0.1)){
-                var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2];
-                return L>140;
-              }
-            }
-            return null;
-          }
-          function apply(){
-            try{
-              var d=window.parent.document, lt=isLight(d);
-              if(lt===null) return;
-              var h=d.documentElement;
-              h.classList.toggle('cau-light',lt);
-              h.classList.toggle('cau-dark',!lt);
-            }catch(e){}
-          }
-          apply(); [150,400,900,2000,4000].forEach(function(t){setTimeout(apply,t);});
-          try{ new MutationObserver(apply).observe(window.parent.document.documentElement,
-              {attributes:true, attributeFilter:['style','class']}); }catch(e){}
-        })();
-        </script>""", height=0)
 
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
@@ -3151,13 +3077,6 @@ with st.sidebar:
         "👨‍🏫 <b style='color:#fff'>GVHD:</b> T.S Nguyễn Văn Hiển"
         "</div></div>",
         unsafe_allow_html=True,
-    )
-
-    # ── Nút chọn GIAO DIỆN (Sáng / Tối / Tự động) — đổi là áp ngay ──────────
-    st.radio(
-        "🎨 Giao diện", ["🌗 Tự động", "☀️ Sáng", "🌙 Tối"],
-        key="ui_theme", horizontal=True,
-        help="Sáng/Tối: ép giao diện · Tự động: theo theme hệ thống",
     )
 
     _u = AUTH.current_user()

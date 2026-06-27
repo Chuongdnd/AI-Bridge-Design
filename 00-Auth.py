@@ -162,18 +162,6 @@ footer                           { display: none !important; }
 </style>
 """, unsafe_allow_html=True)
 
-    # Theme SÁNG → lật nền login + form (gắn theo class .cau-light do JS đặt ở
-    # 00-Interface, + fallback @media prefers-color-scheme cho OS sáng)
-    _login_light = """
-.stApp { background:#f4f6f9 !important; }
-[data-testid="stForm"] { background:#ffffff !important; border-color:#cdd5e0 !important;
-    box-shadow:0 8px 40px rgba(0,0,0,0.12) !important; }
-"""
-    st.markdown(
-        f"<style>html.cau-light {{{_login_light}}}"
-        f"@media (prefers-color-scheme: light){{{_login_light}}}</style>",
-        unsafe_allow_html=True)
-
     # Khoang trong phia tren de can chinh doc
     st.markdown("<br><br><br>", unsafe_allow_html=True)
 
