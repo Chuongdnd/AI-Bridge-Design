@@ -217,55 +217,55 @@ _LIGHT_RULES = """
 [style*="color:#777"],[style*="color:#666"],[style*="color:#555"]
 { color:#5a6270 !important; }
 """
-# Áp light-override khi <html> có class .cau-light (JS gắn theo NỀN THỰC của app)
-# + fallback @media (prefers-color-scheme) cho OS sáng. st.context.theme KHÔNG tin
-# cậy lúc mới tải / khi đổi theme nên không dùng nữa.
-st.markdown(
-    f"<style>html.cau-light {{{_LIGHT_RULES}}}"
-    f"@media (prefers-color-scheme: light){{{_LIGHT_RULES}}}</style>",
-    unsafe_allow_html=True)
-# JS đọc màu NỀN computed của stApp (đã gồm theme Streamlit thực) → gắn class
-# cau-light/cau-dark cho <html> cha. Chạy trong iframe srcdoc (cùng origin).
-import streamlit.components.v1 as _cc
-_cc.html(
-    """<script>
-    (function(){
-      function isLight(d){
-        // 1) color-scheme Streamlit đặt theo theme
-        try{
-          var cs=getComputedStyle(d.documentElement).colorScheme||"";
-          if(/dark/.test(cs)) return false;
-          if(/light/.test(cs)) return true;
-        }catch(e){}
-        // 2) màu nền OPAQUE đầu tiên (stApp → stMain → body → html)
-        var sel=['[data-testid="stApp"]','[data-testid="stMain"]','body','html'];
-        for(var i=0;i<sel.length;i++){
-          var el=(i<2)?d.querySelector(sel[i]):(sel[i]=='body'?d.body:d.documentElement);
-          if(!el) continue;
-          var m=(getComputedStyle(el).backgroundColor||'').match(/[\\d.]+/g);
-          if(m&&m.length>=3&&(m.length<4||parseFloat(m[3])>0.1)){
-            var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2];
-            return L>140;
+# ── GIAO DIỆN do người dùng CHỌN (nút 🎨 ở sidebar) — chắc chắn 100% ──────────
+# "Sáng" → ép light-override; "Tối" → giữ tối; "Tự động" → theo OS/nền thực (JS).
+_theme_choice = st.session_state.get("ui_theme", "🌗 Tự động")
+if "Sáng" in _theme_choice:
+    st.markdown(f"<style>{_LIGHT_RULES}</style>", unsafe_allow_html=True)
+elif "Tối" in _theme_choice:
+    pass  # giữ giao diện tối mặc định
+else:
+    # Tự động: áp khi <html>.cau-light (JS dò nền thực) + @media OS sáng
+    st.markdown(
+        f"<style>html.cau-light {{{_LIGHT_RULES}}}"
+        f"@media (prefers-color-scheme: light){{{_LIGHT_RULES}}}</style>",
+        unsafe_allow_html=True)
+    import streamlit.components.v1 as _cc
+    _cc.html(
+        """<script>
+        (function(){
+          function isLight(d){
+            try{
+              var cs=getComputedStyle(d.documentElement).colorScheme||"";
+              if(/dark/.test(cs)) return false;
+              if(/light/.test(cs)) return true;
+            }catch(e){}
+            var sel=['[data-testid="stApp"]','[data-testid="stMain"]','body','html'];
+            for(var i=0;i<sel.length;i++){
+              var el=(i<2)?d.querySelector(sel[i]):(sel[i]=='body'?d.body:d.documentElement);
+              if(!el) continue;
+              var m=(getComputedStyle(el).backgroundColor||'').match(/[\\d.]+/g);
+              if(m&&m.length>=3&&(m.length<4||parseFloat(m[3])>0.1)){
+                var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2];
+                return L>140;
+              }
+            }
+            return null;
           }
-        }
-        return null;
-      }
-      function apply(){
-        try{
-          var d=window.parent.document, lt=isLight(d);
-          if(lt===null) return;
-          var h=d.documentElement;
-          h.classList.toggle('cau-light',lt);
-          h.classList.toggle('cau-dark',!lt);
-        }catch(e){}
-      }
-      apply(); [150,400,900,2000,4000].forEach(function(t){setTimeout(apply,t);});
-      try{ // theo dõi đổi theme runtime
-        new MutationObserver(apply).observe(window.parent.document.documentElement,
-          {attributes:true, attributeFilter:['style','class']});
-      }catch(e){}
-    })();
-    </script>""", height=0)
+          function apply(){
+            try{
+              var d=window.parent.document, lt=isLight(d);
+              if(lt===null) return;
+              var h=d.documentElement;
+              h.classList.toggle('cau-light',lt);
+              h.classList.toggle('cau-dark',!lt);
+            }catch(e){}
+          }
+          apply(); [150,400,900,2000,4000].forEach(function(t){setTimeout(apply,t);});
+          try{ new MutationObserver(apply).observe(window.parent.document.documentElement,
+              {attributes:true, attributeFilter:['style','class']}); }catch(e){}
+        })();
+        </script>""", height=0)
 
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
@@ -3151,6 +3151,13 @@ with st.sidebar:
         "👨‍🏫 <b style='color:#fff'>GVHD:</b> T.S Nguyễn Văn Hiển"
         "</div></div>",
         unsafe_allow_html=True,
+    )
+
+    # ── Nút chọn GIAO DIỆN (Sáng / Tối / Tự động) — đổi là áp ngay ──────────
+    st.radio(
+        "🎨 Giao diện", ["🌗 Tự động", "☀️ Sáng", "🌙 Tối"],
+        key="ui_theme", horizontal=True,
+        help="Sáng/Tối: ép giao diện · Tự động: theo theme hệ thống",
     )
 
     _u = AUTH.current_user()
