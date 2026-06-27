@@ -6385,6 +6385,15 @@ with _col_main:
             except Exception:
                 pass
 
+            # Khe ụ giữa xà mũ Super-T → khoảng cách gối = chiều dài dầm + ụ giữa
+            # (2 đầu dầm kê 2 vai kê thấp). 0 nếu xà mũ 1 đoạn.
+            try:
+                _pier_tru = _resolve_assembly(d, "tru")
+                d["cap_gap_m"] = (BVK._get_PB().cap_mid_gap_m(_pier_tru)
+                                  if _pier_tru else 0.0)
+            except Exception:
+                d["cap_gap_m"] = 0.0
+
             # Thông tin brief
             _geo_d = d.get("geo_logic", {})
             st.caption(

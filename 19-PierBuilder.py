@@ -757,6 +757,23 @@ def _sec_v_extent(section: dict) -> float:
     return (vmax - vmin) * MM
 
 
+def cap_mid_gap_m(pier: dict) -> float:
+    """Bề rộng (dọc cầu, m) KHỐI GIỮA cao của xà mũ = KHE giữa 2 đầu dầm SPT.
+
+    Xà mũ Super-T có ≥3 đoạn (vai kê thấp ở 2 đầu + ụ giữa cao): 2 đầu dầm kê lên
+    2 đoạn vai kê THẤP, ụ giữa CAO nằm giữa 2 đầu dầm → khoảng cách gối = chiều
+    dài dầm + bề rộng ụ giữa. Trả 0 nếu xà mũ 1 đoạn (dầm liền, không có ụ giữa)."""
+    p = migrate_pier(pier or {})
+    caps = _cap_layers(p.get("parts", {}).get("xa_mu", {}))
+    if len(caps) < 3:
+        return 0.0
+    hs = [_sec_v_extent(l["section"]) for l in caps]
+    hi = max(range(len(caps)), key=lambda i: hs[i])
+    if hs[hi] <= min(hs[0], hs[-1]) + 1e-6:   # ụ giữa không cao hơn vai kê → bỏ
+        return 0.0
+    return float(caps[hi].get("D", 0.0) or 0.0)
+
+
 def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
                    target_width: float = None) -> list:
     """Hình chiếu MẶT CẮT NGANG cầu (ngang u × cao z) của trụ lắp ghép.
