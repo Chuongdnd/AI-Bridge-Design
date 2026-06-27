@@ -2743,7 +2743,7 @@ def beam_record_mcn_fig(rec: dict):
     ref = m.sections[ref_name]
     ref_cx = (min(p[0] for p in ref.outer) + max(p[0] for p in ref.outer)) / 2.0
     _LC = (getattr(_PLOT, "LAYER_COLORS", None) or {}) if _PLOT else {}
-    C_SOLID = _LC.get("0", "#2b2b2b")          # nét thấy (vết cắt)
+    C_SOLID = _LC.get("3", "#1e8449")          # nét thấy = đường bao BTCT (layer 3)
     C_HID   = _LC.get("4-hidden", "#1f9ed1")   # nét khuất (phía sau)
 
     fig = go.Figure()
@@ -2868,7 +2868,7 @@ def beam_record_elev_fig(rec: dict):
         return None
 
     _LC = (getattr(_PLOT, "LAYER_COLORS", None) or {}) if _PLOT else {}
-    C_SOLID = _LC.get("0", "#2b2b2b")
+    C_SOLID = _LC.get("3", "#1e8449")           # nét thấy = đường bao BTCT (layer 3)
     C_HID   = _LC.get("4-hidden", "#1f9ed1")
 
     fig = go.Figure()
@@ -3080,7 +3080,7 @@ def beam_record_plan_fig(rec: dict):
         return None
 
     _LC = (getattr(_PLOT, "LAYER_COLORS", None) or {}) if _PLOT else {}
-    C_SOLID = _LC.get("0", "#2b2b2b")           # nét thấy (đường bao)
+    C_SOLID = _LC.get("3", "#1e8449")           # nét thấy = đường bao BTCT (layer 3)
     C_HID   = _LC.get("4-hidden", "#1f9ed1")    # nét khuất (đứt)
 
     fig = go.Figure()
