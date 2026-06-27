@@ -3560,28 +3560,42 @@ def _beam_has_sections(b: dict) -> bool:
 
 
 def _auto_apply_lib_beam_for_pa(d: dict, ribbon: str, pfx: str) -> None:
-    """Khi PA CHƯA khai báo/áp dầm nhưng thư viện NGƯỜI DÙNG có dầm DXF khớp nhịp
-    → tự nạp dầm gần nhất (theo loại + chiều dài) để các mặt cắt hiển thị dầm
-    THỰC. Không ghi vào lib_dam_applied (chỉ gợi ý hiển thị; người dùng vẫn áp
-    dầm khác tùy ý). Không có dầm DXF → để fallback sinh mặt cắt tham số lo."""
+    """Khi PA CHƯA áp dầm thủ công, tự lo mặt cắt hiển thị ĐÚNG LOẠI theo kết quả:
+
+    • Thư viện NGƯỜI DÙNG có dầm DXF CÙNG LOẠI (khớp loại dự đoán) → nạp dầm gần
+      chiều dài nhất để mặt cắt vẽ dầm THỰC.
+    • Không có dầm DXF cùng loại → DỌN mặt cắt cũ để _resolve_beam_sections sinh
+      preset/mặt cắt tham số ĐÚNG LOẠI (tránh 'kết quả Super-T nhưng hiển thị dầm
+      bản' do trước đây nạp chéo loại).
+
+    Không ghi lib_dam_applied (chỉ gợi ý hiển thị; người dùng vẫn áp dầm tùy ý)."""
     if (d.get("lib_dam_applied") or {}).get(ribbon):
-        return                                   # đã áp thủ công
-    if st.session_state.get(f"_loaded_beam_{pfx}"):
-        return                                   # đã nạp dầm nào đó
+        return                                   # tôn trọng lựa chọn thủ công
     kcn = d.get("kcn_result") or {}
-    beams = [b for b in (st.session_state.get("dam_beams") or CLIB.load_beams())
-             if _beam_has_sections(b)]
-    if not beams:
-        return                                   # không có dầm DXF → tham số
+    pred     = str(kcn.get("loai_dam", "") or "")
+    pred_lib = KCN._CATALOG_TO_LIB_TYPE.get(pred, pred)
+    L        = float(kcn.get("chieu_dai") or 0)
+    same = [b for b in (st.session_state.get("dam_beams") or CLIB.load_beams())
+            if _beam_has_sections(b)
+            and str(b.get("loai_dam", "")).strip() == pred_lib]
+    target = (min(same, key=lambda b: abs(float(b.get("chieu_dai") or 0) - L))
+              if same else None)
+    sig = (pred_lib, (target or {}).get("id"))
+    if st.session_state.get(f"_auto_sig_{pfx}") == sig:
+        return                                   # đã xử lý đúng cho loại+dầm này
     try:
-        lb, _ = KCN.select_library_beam(kcn.get("loai_dam", ""),
-                                        kcn.get("chieu_dai", 0), beams)
+        BBUI.clear_pfx_sections(pfx)             # bỏ mặt cắt auto/loại cũ
     except Exception:
-        lb = None
-    if lb and _beam_has_sections(lb):
-        st.session_state[f"{pfx}_beam_type"] = lb.get("loai_dam", "Super-T")
-        BBUI.import_beam_state(BBUI.effective_pfx(pfx, lb.get("loai_dam")), lb)
-        st.session_state[f"_loaded_beam_{pfx}"] = lb.get("id") or "auto"
+        pass
+    st.session_state.pop(f"_loaded_beam_{pfx}", None)
+    if target is not None:
+        st.session_state[f"{pfx}_beam_type"] = target.get("loai_dam", pred_lib)
+        try:
+            BBUI.import_beam_state(BBUI.effective_pfx(pfx, target.get("loai_dam")), target)
+            st.session_state[f"_loaded_beam_{pfx}"] = target.get("id") or "auto"
+        except Exception:
+            pass
+    st.session_state[f"_auto_sig_{pfx}"] = sig
 
 
 def _render_dam_edit_panel(d: dict) -> None:
