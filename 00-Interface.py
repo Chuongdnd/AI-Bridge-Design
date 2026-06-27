@@ -44,6 +44,9 @@ st.markdown("""
 .stDeployButton                   { display: none !important; }
 #MainMenu                         { display: none !important; }
 footer                            { display: none !important; }
+/* Ẩn menu đa trang ở sidebar (Interface, Dia Chat, Du Toan…) — chỉ điều hướng
+   bằng ribbon ở trên cùng */
+[data-testid="stSidebarNav"]      { display: none !important; }
 
 /* ── Metrics ── */
 [data-testid="stMetric"] {
@@ -2526,6 +2529,25 @@ def _render_statusbar(d: dict) -> None:
 _cur_tab = st.session_state.get('current_tab', 'THUYẾT MINH')
 _render_topbar(st.session_state.design_data, _cur_tab)
 
+# ── CỤM TÁC GIẢ / ĐỀ TÀI — LÊN TRÊN CÙNG (đã chuyển khỏi sidebar) ─────────────
+_logo_top = os.path.join(os.path.dirname(os.path.abspath(__file__)), "Images", "UTH.jpg")
+_cta, _ctb = st.columns([1, 4])
+with _cta:
+    if os.path.exists(_logo_top):
+        st.image(_logo_top, width=190)
+with _ctb:
+    st.markdown(
+        "<div style='background:#1e1e2e;border:1px solid #2a2a3a;border-radius:8px;"
+        "padding:10px 14px'>"
+        "<span style='font-size:11px;color:#777;text-transform:uppercase;"
+        "letter-spacing:0.6px'>Đề tài</span>"
+        "<div style='font-size:15px;font-weight:700;color:#f0f0f0;line-height:1.4'>"
+        "Tích hợp AI và BIM tự động hóa thiết kế cầu đường bộ</div>"
+        "<div style='font-size:12px;color:#cfcfcf;margin-top:4px'>"
+        "👤 <b style='color:#fff'>SVTH:</b> Chương DND &nbsp;·&nbsp; "
+        "👨‍🏫 <b style='color:#fff'>GVHD:</b> T.S Nguyễn Văn Hiển</div>"
+        "</div>", unsafe_allow_html=True)
+
 # ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
 #    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
 _has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
@@ -3091,26 +3113,7 @@ def _render_project_panel() -> None:
 with st.sidebar:
 
     # ── VÙNG A: Thông tin dự án ──────────────────────────────────────────
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    logo_path   = os.path.join(current_dir, "Images", "UTH.jpg")
-    if os.path.exists(logo_path):
-        st.image(logo_path, width=260)
-
-    st.markdown(
-        "<div style='background:#1e1e2e;border:1px solid #2a2a3a;"
-        "border-radius:8px;padding:14px 14px;margin:6px 0'>"
-        "<div style='font-size:12px;color:#777;margin-bottom:8px;"
-        "text-transform:uppercase;letter-spacing:0.6px'>Đề tài</div>"
-        "<div style='font-size:17px;font-weight:700;color:#f0f0f0;line-height:1.45'>"
-        "Tích hợp AI và BIM tự động hóa<br>thiết kế cầu đường bộ</div>"
-        "<hr style='border-color:#2a2a3a;margin:11px 0'>"
-        "<div style='font-size:14px;color:#cfcfcf;line-height:1.7'>"
-        "👤 <b style='color:#fff'>SVTH:</b> Chương DND<br>"
-        "👨‍🏫 <b style='color:#fff'>GVHD:</b> T.S Nguyễn Văn Hiển"
-        "</div></div>",
-        unsafe_allow_html=True,
-    )
-
+    # (Logo UTH + Đề tài/SVTH/GVHD đã chuyển LÊN TRÊN CÙNG của trang chính.)
     _u = AUTH.current_user()
     st.markdown(
         f"<div style='display:flex;align-items:center;gap:8px;padding:6px 0'>"
