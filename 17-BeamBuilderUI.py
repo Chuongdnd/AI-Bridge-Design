@@ -853,6 +853,16 @@ def _cad_key(pfx: str, name: str) -> str:
     return f"cad_{pfx}_{name}"
 
 
+def clear_pfx_sections(base_pfx: str) -> None:
+    """Xoá toàn bộ session CAD của pfx (base + mọi hậu tố loại dầm) để
+    _resolve_beam_sections sinh lại mặt cắt ĐÚNG LOẠI. Dùng khi dầm auto đổi loại
+    (tránh kẹt mặt cắt loại cũ — vd kết quả Super-T nhưng còn cache dầm bản)."""
+    prefix = f"cad_{base_pfx}"
+    for k in list(st.session_state.keys()):
+        if isinstance(k, str) and k.startswith(prefix):
+            st.session_state.pop(k, None)
+
+
 def _cad_init(pfx: str, bb):
     """Khởi tạo session state CAD.
     Ưu tiên tải từ file JSON đã lưu; nếu không có thì dùng preset mặc định.
