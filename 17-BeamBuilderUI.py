@@ -2958,14 +2958,17 @@ def beam_record_elev_fig(rec: dict):
         loft_here = (sk[2] is not sk[3]) or (sk1[2] is not sk1[3])
         if (sec_p is sec_n) and not loft_here:
             continue
+        lo_p, hi_p = _zbounds(sec_p); lo_n, hi_n = _zbounds(sec_n)
+        if abs(lo_p - lo_n) > 1 or abs(hi_p - hi_n) > 1:
+            continue   # bậc bao ngoài THẤY ĐƯỢC → đã vẽ nét LIỀN ở bước 2
         zp = {round(h["z"], 0) for h in _sec_hedges(sec_p) if not h["outer"]}
         zn = {round(h["z"], 0) for h in _sec_hedges(sec_n) if not h["outer"]}
         allz = zp | zn
-        lo, hi = _zbounds(sec_n if (sk1[2] is not sk1[3]) else sec_p)
+        lo, hi = lo_n, hi_n
         if len(allz) >= 2 and (max(allz) - min(allz)) >= 0.15 * (hi - lo):
-            _add(x_b, x_b, min(allz), max(allz), True)   # lòng rỗng → chiều cao trong
+            _add(x_b, x_b, min(allz), max(allz), True)   # lòng rỗng (khuất) → chiều cao trong
         else:
-            _add(x_b, x_b, lo, hi, True)                 # đặc/chuyển tiếp → cả chiều cao
+            _add(x_b, x_b, lo, hi, True)                 # chuyển tiếp (khuất) → cả chiều cao
 
     # ── 4) Kích thước: chiều dài L (dưới) + chiều cao H (phải) ──
     allz = [p[1] for (x0, x1, sa, sb) in stations
@@ -3177,10 +3180,13 @@ def beam_record_plan_fig(rec: dict):
         loft_here = (sk[2] is not sk[3]) or (sk1[2] is not sk1[3])
         if (sec_p is sec_n) and not loft_here:
             continue
+        lo_p, hi_p = _bounds(sec_p); lo_n, hi_n = _bounds(sec_n)
+        if abs(lo_p - lo_n) > 1 or abs(hi_p - hi_n) > 1:
+            continue   # bậc bao ngoài THẤY ĐƯỢC → đã vẽ nét LIỀN ở bước 2
         up = {round(w["u"], 0) for w in _sec_walls(sec_p) if not w["outer"]}
         un = {round(w["u"], 0) for w in _sec_walls(sec_n) if not w["outer"]}
         allu = up | un
-        lo, hi = _bounds(sec_n if (sk1[2] is not sk1[3]) else sec_p)
+        lo, hi = lo_n, hi_n
         if len(allu) >= 2 and (max(allu) - min(allu)) >= 0.15 * (hi - lo):
             _add(x_b, x_b, min(allu), max(allu), True)   # vách trong → khoảng vách
         else:
