@@ -2788,12 +2788,17 @@ def beam_record_elev_fig(rec: dict):
         x=xs + xs[::-1], y=zt + zb[::-1], fill="toself",
         fillcolor="rgba(100,160,200,0.35)", line=dict(color="#34607a", width=1.7),
         mode="lines", name="Mặt cắt dọc", hoverinfo="skip"))
+    # ── Kích thước: chiều dài L (dưới) + chiều cao H (phải) ──
+    z_lo = min(zb); z_hi = max(zt); H = z_hi - z_lo
+    _dim_h(fig, 0, L, z_lo - 0.30 * max(H, 0.5), z_lo, f"L = {L:.2f} m")
+    _dim_v(fig, z_lo, z_hi, L + max(0.4, 0.035 * L), L,
+           f"H = {H * 1000:.0f} mm")
     fig.update_layout(
         template="plotly_white", height=300,
         title=dict(text=f"② Mặt cắt dọc tim dầm · L={L:.1f}m", x=0.5, font=dict(size=12)),
         xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
         yaxis=dict(title="Cao (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
-        margin=dict(l=55, r=20, t=50, b=45))
+        margin=dict(l=55, r=20, t=50, b=55))
     return fig
 
 
@@ -2808,6 +2813,38 @@ def _pt_in_poly(x, z, poly):
             inside = not inside
         j = i
     return inside
+
+
+def _dim_h(fig, x0, x1, y_dim, y_feat, text, color="#c0392b"):
+    """Đường kích thước NGANG (đo theo x) tại cao độ y_dim, gióng từ y_feat."""
+    fig.add_trace(go.Scatter(
+        x=[x0, x1], y=[y_dim, y_dim], mode="lines",
+        line=dict(color=color, width=1.0), showlegend=False, hoverinfo="skip"))
+    for xe in (x0, x1):                                  # đường gióng
+        fig.add_trace(go.Scatter(
+            x=[xe, xe], y=[y_feat, y_dim], mode="lines",
+            line=dict(color=color, width=0.6, dash="dot"),
+            showlegend=False, hoverinfo="skip"))
+    fig.add_annotation(
+        x=(x0 + x1) / 2.0, y=y_dim, text=text, showarrow=False,
+        yshift=(-11 if y_dim < y_feat else 11),
+        font=dict(size=9, color=color), bgcolor="rgba(255,255,255,0.85)")
+
+
+def _dim_v(fig, y0, y1, x_dim, x_feat, text, color="#c0392b"):
+    """Đường kích thước ĐỨNG (đo theo y) tại vị trí x_dim, gióng từ x_feat."""
+    fig.add_trace(go.Scatter(
+        x=[x_dim, x_dim], y=[y0, y1], mode="lines",
+        line=dict(color=color, width=1.0), showlegend=False, hoverinfo="skip"))
+    for ye in (y0, y1):
+        fig.add_trace(go.Scatter(
+            x=[x_feat, x_dim], y=[ye, ye], mode="lines",
+            line=dict(color=color, width=0.6, dash="dot"),
+            showlegend=False, hoverinfo="skip"))
+    fig.add_annotation(
+        x=x_dim, y=(y0 + y1) / 2.0, text=text, showarrow=False,
+        xshift=(11 if x_dim > x_feat else -11), textangle=-90,
+        font=dict(size=9, color=color), bgcolor="rgba(255,255,255,0.85)")
 
 
 def _sec_walls(sec, eps=2.0):
@@ -2955,6 +2992,15 @@ def beam_record_plan_fig(rec: dict):
         changed = sorted(up.symmetric_difference(un))
         if changed:
             _add(x_b, x_b, min(changed), max(changed), True)   # mặt bậc → khuất
+
+    # ── 4) Kích thước: chiều dài L (dưới) + bề rộng B (phải) ──
+    allu = [p[0] for (x0, x1, sa, sb) in stations
+            for s in (sa, sb) if s for p in s.outer]
+    if allu:
+        u_lo = min(allu) / 1000.0; u_hi = max(allu) / 1000.0
+        B_mm = max(allu) - min(allu); span = max(u_hi - u_lo, 0.5)
+        _dim_h(fig, 0, L, u_lo - 0.30 * span, u_lo, f"L = {L:.2f} m")
+        _dim_v(fig, u_lo, u_hi, L + max(0.4, 0.035 * L), L, f"B = {B_mm:.0f} mm")
 
     fig.update_layout(
         template="plotly_white", height=300,
