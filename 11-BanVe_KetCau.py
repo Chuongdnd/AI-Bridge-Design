@@ -568,15 +568,18 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
     if L_nhip is None:
         L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
 
+    # Khe ụ giữa xà mũ (Super-T): KHOẢNG CÁCH GỐI = chiều dài dầm + bề rộng ụ giữa
+    # (2 đầu dầm kê 2 vai kê thấp, ụ giữa cao nằm GIỮA 2 đầu dầm). 0 nếu xà mũ 1
+    # đoạn (dầm liền) → giữ nguyên hành vi cũ.
+    _cap_gap = float((d or {}).get("cap_gap_m", 0.0) or 0.0)
+
     if sl.get("mode") != "two_tier":
         # Bố trí ĐỀU. Ưu tiên chiều dài người dùng đặt/áp dầm thư viện
-        # (span_layout['L_dan']/['L_main']); nếu chưa có thì dùng L_nhip mặc định
-        # (đã bám tĩnh không từ predict_kcn_default). Trước đây nhánh này bỏ qua
-        # L_dan → gán dầm/khai báo chiều dài không có tác dụng.
+        # (span_layout['L_dan']/['L_main']); nếu chưa có thì dùng L_nhip mặc định.
         L_user = sl.get("L_dan") or sl.get("L_main")
         if L_user and float(L_user) > 0:
             L_nhip = float(L_user)
-        return _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip)
+        return _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip + _cap_gap)
 
     L_clear = B_tk + 2.0 * _PIER_SAFETY
     L_dan   = float(sl.get("L_dan") or L_nhip)
@@ -586,6 +589,8 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
     L_main  = float(L_main) if L_main else _snap_up_std(L_clear)
     if L_main + 1e-6 < L_clear:               # không đủ tĩnh không → tự nâng
         L_main = _snap_up_std(L_clear)
+    L_dan  += _cap_gap        # khoảng cách gối = chiều dài dầm + ụ giữa xà mũ
+    L_main += _cap_gap
 
     main_L = x_tim - L_main / 2.0
     main_R = x_tim + L_main / 2.0

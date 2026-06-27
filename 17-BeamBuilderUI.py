@@ -2435,10 +2435,18 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     spans    = list(zip(supports[:-1], supports[1:]))
     main_idx = _main_span_idx(d, spans)
 
+    # Khe ụ giữa xà mũ (Super-T): 2 đầu dầm kê 2 vai kê thấp, ụ giữa cao nằm GIỮA
+    # → mỗi đầu dầm tại TRỤ lùi vào nửa bề rộng ụ giữa (chừa khe). Tại MỐ không lùi.
+    _cap_gap = float((d or {}).get("cap_gap_m", 0.0) or 0.0)
+    _ns = len(spans)
     result = []
     for i_nhip, (span_x0, span_x1) in enumerate(spans):
         full_pts = (main_pts if (main_pts is not None and i_nhip == main_idx)
                     else base_pts)
+        _off0 = _cap_gap / 2.0 if i_nhip > 0 else 0.0          # gối trái là trụ?
+        _off1 = _cap_gap / 2.0 if i_nhip < _ns - 1 else 0.0    # gối phải là trụ?
+        span_x0 = span_x0 + _off0
+        span_x1 = span_x1 - _off1
         scale   = (span_x1 - span_x0) / L_m
 
         bot_x = [span_x0 + s * scale for s, _ in full_pts]
