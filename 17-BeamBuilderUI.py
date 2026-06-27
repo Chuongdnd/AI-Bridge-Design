@@ -2800,65 +2800,151 @@ def _pt_in_poly(x, z, poly):
     return inside
 
 
-def beam_record_plan_fig(rec: dict):
-    """MẶT BẰNG dầm — NHÌN TỪ TRÊN XUỐNG: vẽ MỌI cạnh dọc của tiết diện (vách
-    khoang, sườn, mép cánh…). Nét THẤY = liền; nét KHUẤT (bị vật liệu phía trên
-    che) = ĐỨT theo layer 4-hidden. Trục: x = dọc dầm (m), y = ngang dầm (m)."""
-    m, L_mm, _ = _model_from_record(rec)
-    if m is None:
-        return None
-    L = L_mm / 1000.0
-    # Mặt cắt đại diện = SÂU NHẤT (giữa nhịp — đủ khoang/sườn nhất)
-    secs = [s for s in m.sections.values() if getattr(s, "outer", None)]
-    if not secs:
-        return None
-    def _depth(s):
-        zs = [p[1] for p in s.outer]; return max(zs) - min(zs)
-    sec = max(secs, key=_depth)
-
-    _LC = (getattr(_PLOT, "LAYER_COLORS", None) or {}) if _PLOT else {}
-    C_SOLID = _LC.get("0", "#2b2b2b")          # nét thấy (đường bao)
-    C_HID   = _LC.get("4-hidden", "#1f9ed1")    # nét khuất (đứt)
-    eps = 2.0                                    # 2mm — kiểm tra vật liệu phía trên
-
-    fig = go.Figure()
-    rings = [sec.outer] + list(sec.holes or [])
-    span_y = (max(p[0] for p in sec.outer) - min(p[0] for p in sec.outer)) or 1.0
-
-    def _add_long(yt, hidden):
-        fig.add_trace(go.Scatter(
-            x=[0, L], y=[yt, yt], mode="lines",
-            line=dict(color=(C_HID if hidden else C_SOLID),
-                      width=1.0 if hidden else 1.4,
-                      dash="dash" if hidden else "solid"),
-            showlegend=False, hoverinfo="skip"))
-
-    seen = set()
-    for ri, ring in enumerate(rings):
-        npr = len(ring)
-        for i in range(npr):
-            a = ring[i]; b = ring[(i + 1) % npr]
-            if abs(a[0] - b[0]) > 0.04 * span_y:    # chỉ cạnh ĐỨNG (vách)
+def _sec_walls(sec, eps=2.0):
+    """Cạnh ĐỨNG (vách dọc) của 1 mặt cắt khi nhìn từ trên: list dict(u, hidden,
+    outer). hidden=True nếu có vật liệu NGAY PHÍA TRÊN mép (bị bản/cánh che).
+    outer=True nếu là mép bao trái/phải (silhouette)."""
+    outer = sec.outer
+    if not outer:
+        return []
+    u_lo = min(p[0] for p in outer); u_hi = max(p[0] for p in outer)
+    span_u = (u_hi - u_lo) or 1.0
+    rings = [(0, outer)] + [(1, list(h)) for h in (getattr(sec, "holes", None) or [])]
+    out = []; seen = set()
+    for ri, ring in rings:
+        n = len(ring)
+        for i in range(n):
+            a = ring[i]; b = ring[(i + 1) % n]
+            if abs(a[0] - b[0]) > 0.04 * span_u:        # bỏ cạnh NGANG
                 continue
-            xt = (a[0] + b[0]) / 2.0
-            ztop = max(a[1], b[1])
-            key = round(xt, 1)
+            u = (a[0] + b[0]) / 2.0
+            key = round(u, 0)
             if key in seen:
                 continue
             seen.add(key)
-            # khuất nếu CÓ vật liệu ngay phía trên (điểm (xt, ztop+eps) ∈ biên),
-            # và KHÔNG nằm trong lỗ; cạnh của LỖ luôn là nét khuất (nằm trong khối).
-            hidden = (ri > 0) or (_pt_in_poly(xt, ztop + eps, sec.outer)
-                                  and not any(_pt_in_poly(xt, ztop + eps, h)
-                                              for h in (sec.holes or [])))
-            _add_long(xt / 1000.0, hidden)
+            ztop = max(a[1], b[1])
+            is_outer = (ri == 0 and (abs(u - u_lo) < 0.04 * span_u
+                                     or abs(u - u_hi) < 0.04 * span_u))
+            hidden = (ri > 0) or (
+                not is_outer
+                and _pt_in_poly(u, ztop + eps, outer)
+                and not any(_pt_in_poly(u, ztop + eps, h)
+                            for h in (getattr(sec, "holes", None) or [])))
+            out.append(dict(u=u, hidden=bool(hidden), outer=bool(is_outer)))
+    return out
 
-    # Bao NGOÀI (mép trái/phải) + 2 đầu dầm — nét THẤY liền
-    ymin = min(p[0] for p in sec.outer) / 1000.0
-    ymax = max(p[0] for p in sec.outer) / 1000.0
-    fig.add_trace(go.Scatter(
-        x=[0, L, L, 0, 0], y=[ymin, ymin, ymax, ymax, ymin], mode="lines",
-        line=dict(color=C_SOLID, width=1.6), showlegend=False, hoverinfo="skip"))
+
+def beam_record_plan_fig(rec: dict):
+    """MẶT BẰNG dầm — NHÌN TỪ TRÊN XUỐNG theo TRẮC DỌC THỰC. Vẽ:
+      • Đường bao ngoài (bậc theo bề rộng từng đoạn — đầu khấc, vuốt cánh).
+      • MỌI vách dọc bên trong (vách máng/khoang, sườn, mép cánh) trải theo đúng
+        đoạn mà mặt cắt đó tồn tại.
+      • Mặt bậc ngang nơi cấu tạo thay đổi (đầu đặc, vách ngăn).
+    Nét THẤY = liền (layer 0); nét KHUẤT (bị bản trên che) = ĐỨT (layer 4-hidden).
+    Trục: x = dọc dầm (m), y = ngang dầm (m)."""
+    m, L_mm, bb = _model_from_record(rec)
+    if m is None:
+        return None
+    L = L_mm / 1000.0
+    try:
+        segs = bb._resolve_segments(m)
+    except Exception:
+        segs = []
+    if not segs:
+        return None
+
+    _LC = (getattr(_PLOT, "LAYER_COLORS", None) or {}) if _PLOT else {}
+    C_SOLID = _LC.get("0", "#2b2b2b")           # nét thấy (đường bao)
+    C_HID   = _LC.get("4-hidden", "#1f9ed1")    # nét khuất (đứt)
+
+    fig = go.Figure()
+
+    def _sec(name):
+        s = m.sections.get(name)
+        return s if (s and getattr(s, "outer", None)) else None
+
+    def _bounds(sec):
+        us = [p[0] for p in sec.outer]
+        return min(us), max(us)
+
+    def _add(x0, x1, u0, u1, hidden, w=None):
+        fig.add_trace(go.Scatter(
+            x=[x0 / 1000.0, x1 / 1000.0], y=[u0 / 1000.0, u1 / 1000.0],
+            mode="lines",
+            line=dict(color=(C_HID if hidden else C_SOLID),
+                      width=(w if w else (1.0 if hidden else 1.5)),
+                      dash="dash" if hidden else "solid"),
+            showlegend=False, hoverinfo="skip"))
+
+    # ── Stations dọc dầm (đã gồm fill + mirror) ──
+    stations = []          # (x0, x1, sec_a, sec_b)  [mm]
+    x = 0.0
+    for s in segs:
+        Lg = float(s["length"]); x1 = x + Lg
+        if s.get("type") == "constant":
+            sa = _sec(s.get("section")); stations.append((x, x1, sa, sa))
+        else:
+            stations.append((x, x1, _sec(s.get("from_sec")), _sec(s.get("to_sec"))))
+        x = x1
+    if not any(st[2] for st in stations):
+        return None
+
+    # ── 1) Vách dọc bên trong + mép cánh (theo từng đoạn) ──
+    #     Bỏ qua mép bao ngoài (silhouette) — xử lý ở bước 2 cho đúng bậc.
+    for (x0, x1, sa, sb) in stations:
+        if sa is None:
+            continue
+        wa = _sec_walls(sa)
+        if sb is sa or sb is None:
+            for w in wa:
+                if not w["outer"]:
+                    _add(x0, x1, w["u"], w["u"], w["hidden"])
+        else:                                   # đoạn loft → vách "vuốt"
+            wb = _sec_walls(sb)
+            wa_s = sorted([w for w in wa if not w["outer"]], key=lambda d: d["u"])
+            wb_s = sorted([w for w in wb if not w["outer"]], key=lambda d: d["u"])
+            if wa_s and len(wa_s) == len(wb_s):
+                for da, db in zip(wa_s, wb_s):
+                    _add(x0, x1, da["u"], db["u"], da["hidden"] or db["hidden"])
+            else:
+                for w in wa_s:
+                    _add(x0, x1, w["u"], w["u"], w["hidden"])
+
+    # ── 2) Đường bao NGOÀI — bậc theo bề rộng từng đoạn (nét THẤY) ──
+    prev = None
+    for (x0, x1, sa, sb) in stations:
+        sec = sb if sb is not None else sa
+        if sec is None:
+            continue
+        lo, hi = _bounds(sec)
+        if prev is not None:
+            plo, phi = prev
+            if abs(hi - phi) > 1:               # bậc mép trên → nối đứng
+                _add(x0, x0, phi, hi, False, w=1.7)
+            if abs(lo - plo) > 1:               # bậc mép dưới
+                _add(x0, x0, plo, lo, False, w=1.7)
+        _add(x0, x1, hi, hi, False, w=1.7)      # mép trên
+        _add(x0, x1, lo, lo, False, w=1.7)      # mép dưới
+        prev = (lo, hi)
+    # 2 đầu dầm
+    s0 = stations[0][2]; sN = stations[-1][3] or stations[-1][2]
+    if s0:
+        lo, hi = _bounds(s0); _add(0, 0, lo, hi, False, w=1.7)
+    if sN:
+        lo, hi = _bounds(sN); _add(L_mm, L_mm, lo, hi, False, w=1.7)
+
+    # ── 3) Mặt bậc NGANG nơi vách trong xuất hiện/biến mất (đầu đặc, vách ngăn) ──
+    for k in range(len(stations) - 1):
+        x_b = stations[k][1]
+        sec_p = stations[k][3] or stations[k][2]
+        sec_n = stations[k + 1][2] or stations[k + 1][3]
+        if sec_p is None or sec_n is None or sec_p is sec_n:
+            continue
+        up = {round(w["u"], 0) for w in _sec_walls(sec_p) if not w["outer"]}
+        un = {round(w["u"], 0) for w in _sec_walls(sec_n) if not w["outer"]}
+        changed = sorted(up.symmetric_difference(un))
+        if changed:
+            _add(x_b, x_b, min(changed), max(changed), True)   # mặt bậc → khuất
 
     fig.update_layout(
         template="plotly_white", height=300,
