@@ -2945,22 +2945,27 @@ def beam_record_elev_fig(rec: dict):
     if sN:
         lo, hi = _zbounds(sN); _add(L_mm, L_mm, lo, hi, False, w=1.7)
 
-    # ── 3) Mặt bậc ĐỨNG nơi lòng rỗng kết thúc/bắt đầu (vách ngăn, đầu dầm) ──
-    #     Nét đứng đóng lòng rỗng: trải HẾT chiều cao trong (từ đáy bản trên tới
-    #     đáy lòng rỗng) = hợp các cạnh ngang trong của 2 phía.
+    # ── 3) Nét ĐỨNG tại RANH GIỚI đoạn: vách ngăn, đầu dầm & ĐOẠN CHUYỂN TIẾP ──
+    #     Mỗi ranh giới có đổi tiết diện HOẶC kề đoạn vuốt (loft) → 1 nét đứng:
+    #     có lòng rỗng → trải hết chiều cao trong; tiết diện đặc → cả chiều cao.
     for k in range(len(stations) - 1):
         x_b = stations[k][1]
-        sec_p = stations[k][3] or stations[k][2]
-        sec_n = stations[k + 1][2] or stations[k + 1][3]
-        if sec_p is None or sec_n is None or sec_p is sec_n:
+        sk = stations[k]; sk1 = stations[k + 1]
+        sec_p = sk[3] or sk[2]
+        sec_n = sk1[2] or sk1[3]
+        if sec_p is None or sec_n is None:
+            continue
+        loft_here = (sk[2] is not sk[3]) or (sk1[2] is not sk1[3])
+        if (sec_p is sec_n) and not loft_here:
             continue
         zp = {round(h["z"], 0) for h in _sec_hedges(sec_p) if not h["outer"]}
         zn = {round(h["z"], 0) for h in _sec_hedges(sec_n) if not h["outer"]}
-        if zp == zn:
-            continue
         allz = zp | zn
-        if len(allz) >= 2:                       # có chiều cao thực → vẽ nét đứng
-            _add(x_b, x_b, min(allz), max(allz), True)
+        lo, hi = _zbounds(sec_n if (sk1[2] is not sk1[3]) else sec_p)
+        if len(allz) >= 2 and (max(allz) - min(allz)) >= 0.15 * (hi - lo):
+            _add(x_b, x_b, min(allz), max(allz), True)   # lòng rỗng → chiều cao trong
+        else:
+            _add(x_b, x_b, lo, hi, True)                 # đặc/chuyển tiếp → cả chiều cao
 
     # ── 4) Kích thước: chiều dài L (dưới) + chiều cao H (phải) ──
     allz = [p[1] for (x0, x1, sa, sb) in stations
@@ -3159,18 +3164,27 @@ def beam_record_plan_fig(rec: dict):
     if sN:
         lo, hi = _bounds(sN); _add(L_mm, L_mm, lo, hi, False, w=1.7)
 
-    # ── 3) Mặt bậc NGANG nơi vách trong xuất hiện/biến mất (đầu đặc, vách ngăn) ──
+    # ── 3) Nét NGANG tại RANH GIỚI đoạn: đầu đặc, vách ngăn & ĐOẠN CHUYỂN TIẾP ──
+    #     Ranh giới đổi tiết diện HOẶC kề đoạn vuốt (loft) → 1 nét ngang: có vách
+    #     trong → trải khoảng vách; tiết diện đặc → cả bề rộng.
     for k in range(len(stations) - 1):
         x_b = stations[k][1]
-        sec_p = stations[k][3] or stations[k][2]
-        sec_n = stations[k + 1][2] or stations[k + 1][3]
-        if sec_p is None or sec_n is None or sec_p is sec_n:
+        sk = stations[k]; sk1 = stations[k + 1]
+        sec_p = sk[3] or sk[2]
+        sec_n = sk1[2] or sk1[3]
+        if sec_p is None or sec_n is None:
+            continue
+        loft_here = (sk[2] is not sk[3]) or (sk1[2] is not sk1[3])
+        if (sec_p is sec_n) and not loft_here:
             continue
         up = {round(w["u"], 0) for w in _sec_walls(sec_p) if not w["outer"]}
         un = {round(w["u"], 0) for w in _sec_walls(sec_n) if not w["outer"]}
-        changed = sorted(up.symmetric_difference(un))
-        if changed:
-            _add(x_b, x_b, min(changed), max(changed), True)   # mặt bậc → khuất
+        allu = up | un
+        lo, hi = _bounds(sec_n if (sk1[2] is not sk1[3]) else sec_p)
+        if len(allu) >= 2 and (max(allu) - min(allu)) >= 0.15 * (hi - lo):
+            _add(x_b, x_b, min(allu), max(allu), True)   # vách trong → khoảng vách
+        else:
+            _add(x_b, x_b, lo, hi, True)                 # đặc/chuyển tiếp → cả bề rộng
 
     # ── 4) Kích thước: chiều dài L (dưới) + bề rộng B (phải) ──
     allu = [p[0] for (x0, x1, sa, sb) in stations
