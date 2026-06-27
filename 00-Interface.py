@@ -6816,8 +6816,11 @@ with _col_main:
                                if y is not None]
                         # Super‑T: đỉnh xà mũ kê tại ĐÁY DẦM ĐẦU DẦM (mặt cắt đầu)
                         _cap_y = (min(_ys) if (_which == "end" and _ys) else None)
+                        # GIỮA NHỊP (mid) không có trụ → KHÔNG vẽ kết cấu dưới +
+                        # dim của nó ngay từ gốc (sạch hơn lọc trace theo tên).
                         _fig = BVK.ve_mat_cat_ngang_2d(
-                            d, pier_assembly=_pa_tru_mcn, cap_top_y=_cap_y)
+                            d, pier_assembly=_pa_tru_mcn, cap_top_y=_cap_y,
+                            show_substructure=(_which == "end"))
                         if _trs:
                             _fig.layout.annotations = tuple(
                                 a for a in (_fig.layout.annotations or [])

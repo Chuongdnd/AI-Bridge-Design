@@ -2285,6 +2285,7 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
     bc     = float(d.get("bc", 12.0))
     oh     = float(kcn.get("overhang", 0.5))
     t_ban  = float(d.get("t_ban_mm", 200)) / 1000.0
+    i_ng   = float(d.get("i_doc_ngang", 2.0)) / 100.0   # dốc ngang: đáy bản dốc 2%
 
     x_first = -bc / 2 + oh
     result  = []
@@ -2311,8 +2312,11 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
             continue
         _sgn = -1.0 if mir else 1.0
         x_center = x_first + i_dam * kc_dam
+        # Đáy bản mặt cầu dốc 2% → dầm đặt thấp dần ra mép (đỉnh dầm = đáy bản tại
+        # tim dầm). z giảm theo |x_center|.
+        _z_top_dam = -t_ban - abs(x_center) * i_ng
         xs = [x_center + _sgn * p[0] / 1000.0 for p in sec.outer]
-        ys = [-t_ban   + p[1] / 1000.0 for p in sec.outer]
+        ys = [_z_top_dam + p[1] / 1000.0 for p in sec.outer]
         xs.append(xs[0]); ys.append(ys[0])
         result.append(go.Scatter(
             x=xs, y=ys,
