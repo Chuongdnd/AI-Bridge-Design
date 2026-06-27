@@ -772,18 +772,30 @@ def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
     H_cap = _part_height_m(cap, "xa_mu")
     out = []
 
-    # 1) XÀ MŨ — dùng mặt cắt (ngang u, cao v) đoạn CAO NHẤT; co bề rộng theo cầu.
+    # 1) XÀ MŨ — mặt cắt (ngang u, cao v) đoạn CAO NHẤT; co bề rộng theo cầu.
+    #    Dầm kê tại ĐỈNH các khối THẤP (đầu dầm khấc Super-T kê lên 2 bên), khối
+    #    GIỮA cao nhất NHÔ LÊN đỡ bản mặt cầu. Giữ NGUYÊN chênh cao giữa các khối
+    #    (neo theo mức kê dầm = z_top = đáy dầm), KHÔNG ép mọi khối cùng đỉnh.
     cap_secs = _cap_layers(cap)
+    z_cap_b = z_top - H_cap
     if cap_secs:
         sec = max(cap_secs, key=lambda l: _sec_v_extent(l["section"]))["section"]
         if target_width:
             sec = _scale_section_u(sec, target_width)
-        for s in _section_solids(sec):
-            _, _, _, vmax = _solids_bbox([s])
+        _solids = _section_solids(sec)
+        _tops   = [_solids_bbox([s])[3] for s in _solids]    # đỉnh từng khối
+        _v_top  = max(_tops) if _tops else 0.0
+        _lows   = [t for t in _tops if t < _v_top - 1e-6]    # các khối thấp (kê dầm)
+        _v_ref  = max(_lows) if _lows else _v_top            # cap phẳng → kê tại đỉnh chung
+        _cap_ys = []
+        for s in _solids:
+            ys = [z_top + (v - _v_ref) * MM for (u, v) in s["outer"]]
+            _cap_ys += ys
             out.append({"name": "Xà mũ", "color": _COL["xa_mu"],
                         "xs": [u * MM for (u, v) in s["outer"]],
-                        "ys": [z_top + (v - vmax) * MM for (u, v) in s["outer"]]})
-    z_cap_b = z_top - H_cap
+                        "ys": ys})
+        if _cap_ys:
+            z_cap_b = min(_cap_ys)
 
     # 2) THÂN — mỗi khối footprint → 1 chữ nhật ngang [umin,umax] × cao H_than.
     than_sec = than_layers[0]["section"] if than_layers else than.get("section")
