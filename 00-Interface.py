@@ -217,16 +217,34 @@ _LIGHT_RULES = """
 [style*="color:#777"],[style*="color:#666"],[style*="color:#555"]
 { color:#5a6270 !important; }
 """
-try:
-    _APP_THEME = str(st.context.theme.type or "").lower()
-except Exception:
-    _APP_THEME = ""
-# OS sáng (fallback khi không đọc được st.context)
-st.markdown(f"<style>@media (prefers-color-scheme: light){{{_LIGHT_RULES}}}</style>",
-            unsafe_allow_html=True)
-# Theme Streamlit đang SÁNG (toggle hoặc OS) → áp trực tiếp (chuẩn xác hơn)
-if _APP_THEME == "light":
-    st.markdown(f"<style>{_LIGHT_RULES}</style>", unsafe_allow_html=True)
+# Áp light-override khi <html> có class .cau-light (JS gắn theo NỀN THỰC của app)
+# + fallback @media (prefers-color-scheme) cho OS sáng. st.context.theme KHÔNG tin
+# cậy lúc mới tải / khi đổi theme nên không dùng nữa.
+st.markdown(
+    f"<style>html.cau-light {{{_LIGHT_RULES}}}"
+    f"@media (prefers-color-scheme: light){{{_LIGHT_RULES}}}</style>",
+    unsafe_allow_html=True)
+# JS đọc màu NỀN computed của stApp (đã gồm theme Streamlit thực) → gắn class
+# cau-light/cau-dark cho <html> cha. Chạy trong iframe srcdoc (cùng origin).
+import streamlit.components.v1 as _cc
+_cc.html(
+    """<script>
+    (function(){
+      function apply(){
+        try{
+          var d=window.parent.document;
+          var a=d.querySelector('[data-testid="stApp"]')||d.body;
+          var m=(getComputedStyle(a).backgroundColor||'').match(/\\d+/g);
+          var light=false;
+          if(m){var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2]; light=L>140;}
+          var h=d.documentElement;
+          h.classList.toggle('cau-light',light);
+          h.classList.toggle('cau-dark',!light);
+        }catch(e){}
+      }
+      apply(); setTimeout(apply,250); setTimeout(apply,800); setTimeout(apply,2000);
+    })();
+    </script>""", height=0)
 
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
