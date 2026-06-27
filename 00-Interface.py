@@ -81,7 +81,7 @@ html:not(.cau-sb-collapsed) [data-testid="stSidebar"] {
     transition: min-width 0.05s, max-width 0.05s, transform 0.15s;
     will-change: min-width, max-width, transform;
 }
-[data-testid="stSidebar"] > div:first-child { padding: 56px 14px 32px !important; }
+[data-testid="stSidebar"] > div:first-child { padding: 8px 14px 32px !important; }
 
 /* Main content tự co giãn theo sidebar */
 section[data-testid="stMain"] {
@@ -155,9 +155,13 @@ section[data-testid="stMain"] {
     border-color: #f39c12 !important;
 }
 
-/* ── Topbar: đẩy main content xuống 52px ── */
+/* Thanh ribbon trang trí trùng lặp (.uth-topbar) → ẩn, để CỤM NÚT THẬT
+   (Dự án + khai báo + tab) làm thanh công cụ trên cùng, hết bị nhân đôi. */
+.uth-topbar { display: none !important; }
+
+/* ── Nội dung bắt đầu sát trên (không còn topbar trang trí) ── */
 section[data-testid="stMain"] .block-container {
-    padding-top: 52px !important;
+    padding-top: 10px !important;
     padding-bottom: 32px !important;
     max-width: 100% !important;
 }
