@@ -159,9 +159,23 @@ section[data-testid="stMain"] {
    (Dự án + khai báo + tab) làm thanh công cụ trên cùng, hết bị nhân đôi. */
 .uth-topbar { display: none !important; }
 
-/* ── Nội dung bắt đầu sát trên (không còn topbar trang trí) ── */
+/* ── Thu gọn HEADER trống của Streamlit (vùng đỏ khoanh) + giữ icon góc phải ── */
+[data-testid="stHeader"] { height: 0 !important; min-height: 0 !important;
+    background: transparent !important; }
+[data-testid="stToolbar"] { position: fixed !important; top: 2px !important;
+    right: 6px !important; z-index: 1002 !important; }
+
+/* ── TOOLBAR trên cùng GHIM CỐ ĐỊNH (sticky) khi cuộn ── */
+.st-key-cau_toolbar {
+    position: sticky !important; top: 0 !important; z-index: 500 !important;
+    background: #0d0d1a !important; border-bottom: 2px solid #007acc !important;
+    padding: 6px 10px 2px !important; margin: 0 0 8px !important;
+}
+.st-key-cau_toolbar [data-testid="stVerticalBlock"] { gap: 4px !important; }
+
+/* ── Nội dung bắt đầu sát trên (không còn header/topbar trang trí) ── */
 section[data-testid="stMain"] .block-container {
-    padding-top: 10px !important;
+    padding-top: 0 !important;
     padding-bottom: 32px !important;
     max-width: 100% !important;
 }
@@ -2648,67 +2662,69 @@ def _render_project_panel() -> None:
 _cur_tab = st.session_state.get('current_tab', 'THUYẾT MINH')
 _render_topbar(st.session_state.design_data, _cur_tab)
 
-# ── CỤM DỰ ÁN trên toolbar trên cùng (popover chứa chọn/lưu/mở/quản lý) ───────
-_pj_col, _ = st.columns([1, 4])
-with _pj_col:
-    with st.popover("📁 Dự án", use_container_width=True):
-        _render_project_panel()
+# ── TOOLBAR TRÊN CÙNG (ghim cố định) ──
+with st.container(key="cau_toolbar"):
+    # ── CỤM DỰ ÁN trên toolbar trên cùng (popover chứa chọn/lưu/mở/quản lý) ───────
+    _pj_col, _ = st.columns([1, 4])
+    with _pj_col:
+        with st.popover("📁 Dự án", use_container_width=True):
+            _render_project_panel()
 
-# ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
-#    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
-_has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
-_dk1, _dk2, _dk4, _dk3 = st.columns(4)
-with _dk1:
-    if st.button("🌊 Thông số thủy văn & vị trí cầu",
-                 use_container_width=True, key="declbtn_step1",
-                 help="Khai báo thủy văn, mực nước, vị trí & tĩnh không"):
-        st.session_state.field_touched = set()
-        st.session_state.field_errors = {}
-        st.session_state.field_warnings = {}
-        st.session_state.open_dialog = "step1"
-        st.rerun()
-with _dk2:
-    if st.button("🛣️ Tiêu chuẩn hình học tuyến đường",
-                 use_container_width=True, key="declbtn_step2",
-                 help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
-        st.session_state.open_dialog = "step2"
-        st.rerun()
-with _dk4:
-    _has_geo = bool(st.session_state.get("df_geology") is not None
-                    or st.session_state.get("dia_chat_frames"))
-    if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
-                 use_container_width=True, key="declbtn_geodata",
-                 help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
-        st.session_state.open_dialog = "geodata"
-        st.rerun()
-with _dk3:
-    if st.button("✅ Xem lại thông số & Chạy tính toán",
-                 use_container_width=True, key="declbtn_step3",
-                 type="primary" if not _has_kq_decl else "secondary",
-                 help="Xem lại toàn bộ rồi chạy pipeline AI"):
-        st.session_state.open_dialog = "step3"
-        st.rerun()
+    # ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
+    #    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
+    _has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
+    _dk1, _dk2, _dk4, _dk3 = st.columns(4)
+    with _dk1:
+        if st.button("🌊 Thông số thủy văn & vị trí cầu",
+                     use_container_width=True, key="declbtn_step1",
+                     help="Khai báo thủy văn, mực nước, vị trí & tĩnh không"):
+            st.session_state.field_touched = set()
+            st.session_state.field_errors = {}
+            st.session_state.field_warnings = {}
+            st.session_state.open_dialog = "step1"
+            st.rerun()
+    with _dk2:
+        if st.button("🛣️ Tiêu chuẩn hình học tuyến đường",
+                     use_container_width=True, key="declbtn_step2",
+                     help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
+            st.session_state.open_dialog = "step2"
+            st.rerun()
+    with _dk4:
+        _has_geo = bool(st.session_state.get("df_geology") is not None
+                        or st.session_state.get("dia_chat_frames"))
+        if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
+                     use_container_width=True, key="declbtn_geodata",
+                     help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
+            st.session_state.open_dialog = "geodata"
+            st.rerun()
+    with _dk3:
+        if st.button("✅ Xem lại thông số & Chạy tính toán",
+                     use_container_width=True, key="declbtn_step3",
+                     type="primary" if not _has_kq_decl else "secondary",
+                     help="Xem lại toàn bộ rồi chạy pipeline AI"):
+            st.session_state.open_dialog = "step3"
+            st.rerun()
 
-_col_tabs = st.columns(len(_TAB_META))
-for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
-    with _col:
-        if _m['state'] == 'locked':
-            st.button(
-                f"{_m['icon']} {_m['key']}",
-                disabled=True,
-                use_container_width=True,
-                help=f"🔒 {_m['lock_msg']}",
-                key=f"ribbonbtn_{_ci}",
-            )
-        else:
-            if st.button(
-                f"{_m['icon']} {_m['key']}",
-                use_container_width=True,
-                type="primary" if (_cur_tab == _m['key']) else "secondary",
-                key=f"ribbonbtn_{_ci}",
-            ):
-                st.session_state.current_tab = _m['key']
-                st.rerun()
+    _col_tabs = st.columns(len(_TAB_META))
+    for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
+        with _col:
+            if _m['state'] == 'locked':
+                st.button(
+                    f"{_m['icon']} {_m['key']}",
+                    disabled=True,
+                    use_container_width=True,
+                    help=f"🔒 {_m['lock_msg']}",
+                    key=f"ribbonbtn_{_ci}",
+                )
+            else:
+                if st.button(
+                    f"{_m['icon']} {_m['key']}",
+                    use_container_width=True,
+                    type="primary" if (_cur_tab == _m['key']) else "secondary",
+                    key=f"ribbonbtn_{_ci}",
+                ):
+                    st.session_state.current_tab = _m['key']
+                    st.rerun()
 
 # ── Hộp khai báo độc lập — mỗi box là @st.fragment để tránh rerun toàn bộ ──
 
