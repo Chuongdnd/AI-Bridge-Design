@@ -1405,7 +1405,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
 # ===========================================================================
 
 
-def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None):
+def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
+                        show_substructure=True):
     """MCN điển hình: bản, lớp phủ, dầm, lan can, kích thước, chú thích lớp.
 
     beam_params : dict | None — nếu có, ưu tiên dùng giá trị từ beam_params_final
@@ -1458,9 +1459,8 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None)
                   "rgba(200,210,200,0.45)", "rgba(127,140,141,0.3)",
                   "BT đổ tại chỗ" if i == 0 else "", showlegend=(i == 0), lw=0.5)
 
-    # ── Độ dốc ngang mặt cầu (crown tại tim) — CHỈ bản/lớp phủ dốc, dầm phẳng ──
-    # Bề mặt hạ dần ra 2 mép theo i_doc_ngang; ĐÁY bản giữ phẳng (haunch thay đổi)
-    # nên dầm vẫn nằm ngang.
+    # ── Độ dốc ngang mặt cầu (crown tại tim) — bản & lớp phủ dốc; ĐÁY bản cũng
+    # dốc song song (bề dày bản KHÔNG đổi) → DẦM đặt thấp dần theo độ dốc.
     _i_ng = float(d.get("i_doc_ngang", 2.0)) / 100.0
     _xe   = bc / 2
     def _off(x):          # độ hạ cao độ mặt theo dốc ngang (đỉnh tại tim x=0)
@@ -1479,9 +1479,11 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None)
            _off(_xe), 0.0, _off(-_xe)],
           "#7f8c8d", "#566573", "Lớp dính bám + phòng nước", lw=0.8, opacity=0.7)
 
-    # ── Bản mặt cầu BTCT ── mặt TRÊN dốc ngang, đáy PHẲNG (dầm nằm ngang) ──
-    _poly(fig, [-_xe, 0, _xe, _xe, -_xe],
-          [_off(-_xe), 0.0, _off(_xe), -t_ban, -t_ban],
+    # ── Bản mặt cầu BTCT ── mặt TRÊN và ĐÁY cùng dốc ngang 2% → BỀ DÀY KHÔNG ĐỔI
+    #    (≥ t_ban mọi vùng). Đáy bản dốc nên dầm đặt thấp dần ra mép theo độ dốc.
+    _poly(fig, [-_xe, 0, _xe, _xe, 0, -_xe],
+          [_off(-_xe), 0.0, _off(_xe),
+           _off(_xe) - t_ban, -t_ban, _off(-_xe) - t_ban],
           _C["ban"], _C["btong_dk"], "Bản mặt cầu BTCT")
     # Ghi chú độ dốc ngang
     fig.add_annotation(x=_xe * 0.5, y=t_phu + _off(_xe * 0.5) + 0.12,
@@ -1561,131 +1563,134 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None)
     )
 
     # ── Kết cấu bên dưới dầm: Xà mũ → Thân trụ → Bệ cọc → Cọc (MCN) ──────
-    H_tru_sub  = float(d.get("H_tru_est", 5.0))
-    mong_sub   = d.get("mong_result") or {}
-    D_coc_sub, L_coc_sub, _n_coc_sub = mong_dims(mong_sub)
-    n_coc_sub  = max(3, _n_coc_sub)
-
-    cap_H_sub  = 0.80
-    cap_W_sub  = min(bc * 0.46, bc / 2 - 0.10)
-    W_shaft_sub = max(0.80, bc * 0.065)
-    be_H_sub   = 1.50
-    be_W_sub   = min(cap_W_sub * 1.12, bc / 2 - 0.05)
-    H_show     = min(H_tru_sub, 3.5)   # trụ cao > 3.5m → dùng ký hiệu cắt
-
-    # MCN điển hình (giữa nhịp): KHÔNG có gối/đá kê → dầm đặt TRỰC TIẾP trên xà
-    # mũ, đỉnh xà mũ = đáy dầm (không để khoảng hở).
-    h_goi_s    = _h_goi(d)
-    z_dam_b_s  = float(cap_top_y) if cap_top_y is not None else (-t_ban - H_dam)
-    z_bot_sub  = z_dam_b_s                     # đỉnh xà mũ = đáy dầm (dầm kê thẳng)
-    z_cap_t_s  = z_bot_sub
-    r_coc_sub  = D_coc_sub / 2
-    _stem_centers = []   # tâm ngang từng thân → vẽ ký hiệu cắt
-
-    if pier_assembly:
-        # TRỤ LẮP GHÉP thật (xà mũ co bề rộng cầu, thân/bệ giữ tiết diện).
-        _PB = _get_PB()
-        _lab = {"Xà mũ": "Xà mũ trụ", "Thân trụ": "Thân trụ (MCN)", "Bệ trụ": "Bệ cọc"}
-        _polys = _PB.pier_mcn_polys(pier_assembly, z_top=z_cap_t_s,
-                                    H_than=H_show, target_width=bc)
-        _seen = set()
-        for _pl in _polys:
-            _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
-            _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["btong_dk"],
-                  _lab.get(_nm, _nm) if _sl else "", opacity=0.88, showlegend=_sl)
-        _than = [pl for pl in _polys if pl["name"] == "Thân trụ"]
-        _be   = [pl for pl in _polys if pl["name"] == "Bệ trụ"]
-        _cap  = [pl for pl in _polys if pl["name"] == "Xà mũ"]
-        z_cap_b_s = min((y for pl in _cap for y in pl["ys"]),
-                        default=z_cap_t_s - cap_H_sub)
-        z_sh_b_s = min((y for pl in _than for y in pl["ys"]),
-                       default=z_cap_b_s - H_show)
-        z_be_b_s = min((y for pl in _be for y in pl["ys"]), default=z_sh_b_s - be_H_sub)
-        z_be_t_s = z_sh_b_s
-        _stem_centers = [sum(pl["xs"]) / len(pl["xs"]) for pl in _than]
-        _allx = [x for pl in _polys for x in pl["xs"]]
-        if _allx:
-            be_W_sub = max(abs(min(_allx)), abs(max(_allx)))
+    # CHỈ vẽ tại mặt cắt CÓ TRỤ (đầu dầm). MCN giữa nhịp không có trụ → bỏ toàn
+    # bộ kết cấu phần dưới + các dim phần dưới (tránh "kết cấu dưới + dim thừa").
+    if not show_substructure:
+        z_substructure_bot = -t_ban - H_dam - 0.5
     else:
-        z_cap_b_s = z_cap_t_s - cap_H_sub
-        z_sh_b_s   = z_cap_b_s - H_show
-        z_be_t_s   = z_sh_b_s
-        z_be_b_s   = z_sh_b_s - be_H_sub
+        H_tru_sub  = float(d.get("H_tru_est", 5.0))
+        mong_sub   = d.get("mong_result") or {}
+        D_coc_sub, L_coc_sub, _n_coc_sub = mong_dims(mong_sub)
+        n_coc_sub  = max(3, _n_coc_sub)
 
-        # Xà mũ
-        _poly(fig, [-cap_W_sub, cap_W_sub, cap_W_sub, -cap_W_sub],
-              [z_cap_b_s, z_cap_b_s, z_cap_t_s, z_cap_t_s],
-              _C["btong"], _C["dam_dk"], "Xà mũ trụ", opacity=0.85)
+        cap_H_sub  = 0.80
+        cap_W_sub  = min(bc * 0.46, bc / 2 - 0.10)
+        W_shaft_sub = max(0.80, bc * 0.065)
+        be_H_sub   = 1.50
+        be_W_sub   = min(cap_W_sub * 1.12, bc / 2 - 0.05)
+        H_show     = min(H_tru_sub, 3.5)   # trụ cao > 3.5m → dùng ký hiệu cắt
 
-        # Thân trụ (2 cột)
-        for xc_sh in [-cap_W_sub * 0.48, cap_W_sub * 0.48]:
-            _poly(fig, [xc_sh - W_shaft_sub/2, xc_sh + W_shaft_sub/2,
-                        xc_sh + W_shaft_sub/2, xc_sh - W_shaft_sub/2],
-                  [z_sh_b_s, z_sh_b_s, z_cap_b_s, z_cap_b_s],
-                  _C["btong"], _C["btong_dk"],
-                  "Thân trụ (MCN)" if xc_sh < 0 else "", showlegend=(xc_sh < 0))
-            _stem_centers.append(xc_sh)
+        # MCN điển hình (đầu dầm): dầm đặt TRỰC TIẾP trên xà mũ, đỉnh xà mũ = đáy
+        # dầm (không để khoảng hở).
+        h_goi_s    = _h_goi(d)
+        z_dam_b_s  = float(cap_top_y) if cap_top_y is not None else (-t_ban - H_dam)
+        z_bot_sub  = z_dam_b_s                     # đỉnh xà mũ = đáy dầm (dầm kê thẳng)
+        z_cap_t_s  = z_bot_sub
+        r_coc_sub  = D_coc_sub / 2
+        _stem_centers = []   # tâm ngang từng thân → vẽ ký hiệu cắt
 
-        # Bệ cọc
-        _poly(fig, [-be_W_sub, be_W_sub, be_W_sub, -be_W_sub],
-              [z_be_b_s, z_be_b_s, z_be_t_s, z_be_t_s],
-              _C["be"], _C["be_dk"], "Bệ cọc")
+        if pier_assembly:
+            # TRỤ LẮP GHÉP thật (xà mũ co bề rộng cầu, thân/bệ giữ tiết diện).
+            _PB = _get_PB()
+            _lab = {"Xà mũ": "Xà mũ trụ", "Thân trụ": "Thân trụ (MCN)", "Bệ trụ": "Bệ cọc"}
+            _polys = _PB.pier_mcn_polys(pier_assembly, z_top=z_cap_t_s,
+                                        H_than=H_show, target_width=bc)
+            _seen = set()
+            for _pl in _polys:
+                _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
+                _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["btong_dk"],
+                      _lab.get(_nm, _nm) if _sl else "", opacity=0.88, showlegend=_sl)
+            _than = [pl for pl in _polys if pl["name"] == "Thân trụ"]
+            _be   = [pl for pl in _polys if pl["name"] == "Bệ trụ"]
+            _cap  = [pl for pl in _polys if pl["name"] == "Xà mũ"]
+            z_cap_b_s = min((y for pl in _cap for y in pl["ys"]),
+                            default=z_cap_t_s - cap_H_sub)
+            z_sh_b_s = min((y for pl in _than for y in pl["ys"]),
+                           default=z_cap_b_s - H_show)
+            z_be_b_s = min((y for pl in _be for y in pl["ys"]), default=z_sh_b_s - be_H_sub)
+            z_be_t_s = z_sh_b_s
+            _stem_centers = [sum(pl["xs"]) / len(pl["xs"]) for pl in _than]
+            _allx = [x for pl in _polys for x in pl["xs"]]
+            if _allx:
+                be_W_sub = max(abs(min(_allx)), abs(max(_allx)))
+        else:
+            z_cap_b_s = z_cap_t_s - cap_H_sub
+            z_sh_b_s   = z_cap_b_s - H_show
+            z_be_t_s   = z_sh_b_s
+            z_be_b_s   = z_sh_b_s - be_H_sub
 
-    # Ký hiệu cắt ngang nếu trụ cao > 3.5m (vẽ tại tâm từng thân)
-    if H_tru_sub > 3.5 and _stem_centers:
-        for xc_sh in _stem_centers:
-            for dy_break in [0.14, 0.28]:
-                fig.add_shape(type="line",
-                    x0=xc_sh - W_shaft_sub * 0.75, y0=z_sh_b_s - dy_break,
-                    x1=xc_sh + W_shaft_sub * 0.75, y1=z_sh_b_s - dy_break,
-                    line=dict(color=_C["btong_dk"], width=1.5))
-        fig.add_annotation(x=0, y=z_sh_b_s - 0.21,
-            text=f"// (H_trụ={H_tru_sub:.1f}m)",
-            showarrow=False, font=dict(size=7, color=_C["dim"]),
-            bgcolor="rgba(255,255,255,0.8)")
+            # Xà mũ
+            _poly(fig, [-cap_W_sub, cap_W_sub, cap_W_sub, -cap_W_sub],
+                  [z_cap_b_s, z_cap_b_s, z_cap_t_s, z_cap_t_s],
+                  _C["btong"], _C["dam_dk"], "Xà mũ trụ", opacity=0.85)
 
-    # Cọc — MẶT ĐỨNG: cọc thẳng đứng từ đáy bệ đi xuống (không vẽ mặt bằng tròn)
-    n_coc_show = max(3, min(n_coc_sub, 8))
-    coc_ys = np.linspace(-be_W_sub * 0.80, be_W_sub * 0.80, n_coc_show)
-    _z_pile_top = z_be_b_s
-    _z_pile_bot = z_be_b_s - L_coc_sub
-    _pile_lw    = max(3, int(D_coc_sub * 12))
-    for j, yc in enumerate(coc_ys):
+            # Thân trụ (2 cột)
+            for xc_sh in [-cap_W_sub * 0.48, cap_W_sub * 0.48]:
+                _poly(fig, [xc_sh - W_shaft_sub/2, xc_sh + W_shaft_sub/2,
+                            xc_sh + W_shaft_sub/2, xc_sh - W_shaft_sub/2],
+                      [z_sh_b_s, z_sh_b_s, z_cap_b_s, z_cap_b_s],
+                      _C["btong"], _C["btong_dk"],
+                      "Thân trụ (MCN)" if xc_sh < 0 else "", showlegend=(xc_sh < 0))
+                _stem_centers.append(xc_sh)
+
+            # Bệ cọc
+            _poly(fig, [-be_W_sub, be_W_sub, be_W_sub, -be_W_sub],
+                  [z_be_b_s, z_be_b_s, z_be_t_s, z_be_t_s],
+                  _C["be"], _C["be_dk"], "Bệ cọc")
+
+        # Ký hiệu cắt ngang nếu trụ cao > 3.5m (vẽ tại tâm từng thân)
+        if H_tru_sub > 3.5 and _stem_centers:
+            for xc_sh in _stem_centers:
+                for dy_break in [0.14, 0.28]:
+                    fig.add_shape(type="line",
+                        x0=xc_sh - W_shaft_sub * 0.75, y0=z_sh_b_s - dy_break,
+                        x1=xc_sh + W_shaft_sub * 0.75, y1=z_sh_b_s - dy_break,
+                        line=dict(color=_C["btong_dk"], width=1.5))
+            fig.add_annotation(x=0, y=z_sh_b_s - 0.21,
+                text=f"// (H_trụ={H_tru_sub:.1f}m)",
+                showarrow=False, font=dict(size=7, color=_C["dim"]),
+                bgcolor="rgba(255,255,255,0.8)")
+
+        # Cọc — MẶT ĐỨNG: cọc thẳng đứng từ đáy bệ đi xuống
+        n_coc_show = max(3, min(n_coc_sub, 8))
+        coc_ys = np.linspace(-be_W_sub * 0.80, be_W_sub * 0.80, n_coc_show)
+        _z_pile_top = z_be_b_s
+        _z_pile_bot = z_be_b_s - L_coc_sub
+        _pile_lw    = max(3, int(D_coc_sub * 12))
+        for j, yc in enumerate(coc_ys):
+            fig.add_trace(go.Scatter(
+                x=[yc, yc], y=[_z_pile_top, _z_pile_bot], mode="lines",
+                line=dict(color=_C["be_dk"], width=_pile_lw),
+                name=f"Cọc Ø{int(D_coc_sub*1000)}mm (MCN)" if j == 0 else "",
+                showlegend=(j == 0), hoverinfo="skip",
+            ))
         fig.add_trace(go.Scatter(
-            x=[yc, yc], y=[_z_pile_top, _z_pile_bot], mode="lines",
-            line=dict(color=_C["be_dk"], width=_pile_lw),
-            name=f"Cọc Ø{int(D_coc_sub*1000)}mm (MCN)" if j == 0 else "",
-            showlegend=(j == 0), hoverinfo="skip",
-        ))
-    fig.add_trace(go.Scatter(
-        x=list(coc_ys), y=[_z_pile_bot] * n_coc_show, mode="markers",
-        marker=dict(symbol="triangle-down", size=6, color=_C["be_dk"]),
-        showlegend=False, hoverinfo="skip"))
+            x=list(coc_ys), y=[_z_pile_bot] * n_coc_show, mode="markers",
+            marker=dict(symbol="triangle-down", size=6, color=_C["be_dk"]),
+            showlegend=False, hoverinfo="skip"))
 
-    # Kích thước bệ cọc và khoảng cách cọc (đặt ngay dưới đáy bệ)
-    _dim_h(fig, z_be_b_s - 0.35,
-           -be_W_sub, be_W_sub, f"B_bệ = {be_W_sub*2:.1f}m", dy=0)
-    if n_coc_show >= 2:
-        kc_coc_show = abs(coc_ys[1] - coc_ys[0])
-        _dim_h(fig, z_be_b_s - 0.90,
-               coc_ys[0], coc_ys[1], f"a_cọc={kc_coc_show:.2f}m",
-               color="#8e44ad", dy=0)
-    fig.add_annotation(
-        x=be_W_sub + 0.6, y=(_z_pile_top + _z_pile_bot) / 2,
-        text=f"Cọc Ø{int(D_coc_sub*1000)}mm<br>L≈{L_coc_sub:.0f}m",
-        showarrow=True, arrowhead=2, arrowcolor=_C["be_dk"],
-        ax=40, ay=0,
-        font=dict(size=7, color=_C["be_dk"]),
-        bgcolor="rgba(255,255,255,0.9)",
-    )
-    _dim_v(fig, be_W_sub + 1.8, z_cap_b_s, z_cap_t_s,
-           f"xà mũ {cap_H_sub:.2f}m", dx=0.2)
-    _dim_v(fig, be_W_sub + 1.8, z_be_b_s, z_be_t_s,
-           f"bệ {be_H_sub:.2f}m", dx=0.2)
+        # Kích thước bệ cọc và khoảng cách cọc (đặt ngay dưới đáy bệ)
+        _dim_h(fig, z_be_b_s - 0.35,
+               -be_W_sub, be_W_sub, f"B_bệ = {be_W_sub*2:.1f}m", dy=0)
+        if n_coc_show >= 2:
+            kc_coc_show = abs(coc_ys[1] - coc_ys[0])
+            _dim_h(fig, z_be_b_s - 0.90,
+                   coc_ys[0], coc_ys[1], f"a_cọc={kc_coc_show:.2f}m",
+                   color="#8e44ad", dy=0)
+        fig.add_annotation(
+            x=be_W_sub + 0.6, y=(_z_pile_top + _z_pile_bot) / 2,
+            text=f"Cọc Ø{int(D_coc_sub*1000)}mm<br>L≈{L_coc_sub:.0f}m",
+            showarrow=True, arrowhead=2, arrowcolor=_C["be_dk"],
+            ax=40, ay=0,
+            font=dict(size=7, color=_C["be_dk"]),
+            bgcolor="rgba(255,255,255,0.9)",
+        )
+        _dim_v(fig, be_W_sub + 1.8, z_cap_b_s, z_cap_t_s,
+               f"xà mũ {cap_H_sub:.2f}m", dx=0.2)
+        _dim_v(fig, be_W_sub + 1.8, z_be_b_s, z_be_t_s,
+               f"bệ {be_H_sub:.2f}m", dx=0.2)
 
-    # MCN điển hình giữa nhịp: KHÔNG vẽ gối/đá kê (dầm kê thẳng trên xà mũ).
-
-    z_substructure_bot = _z_pile_bot - 1.0
+        z_substructure_bot = _z_pile_bot - 1.0
 
     # Tỷ lệ ước tính (dựa vào bề rộng)
     ty_le = max(50, int(bc * 8))

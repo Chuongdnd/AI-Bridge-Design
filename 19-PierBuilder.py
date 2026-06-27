@@ -779,17 +779,22 @@ def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
     cap_secs = _cap_layers(cap)
     z_cap_b = z_top - H_cap
     if cap_secs:
-        sec = max(cap_secs, key=lambda l: _sec_v_extent(l["section"]))["section"]
+        # Xà mũ Super-T = nhiều ĐOẠN (layer) dọc cầu: vai kê đầu/cuối THẤP (đầu dầm
+        # khấc kê lên), ụ giữa CAO (đỡ bản). Neo sao cho VAI KÊ ở z_top (=đáy dầm)
+        # → ụ giữa NHÔ LÊN (h_high − seat_h) trên đáy dầm. Đồng bộ với trắc dọc.
+        cap_hs = [_sec_v_extent(l["section"]) for l in cap_secs]
+        seat_h = min(cap_hs[0], cap_hs[-1]) if cap_hs else H_cap   # cao vai kê
+        hi     = max(range(len(cap_secs)), key=lambda i: cap_hs[i])
+        h_high = cap_hs[hi]
+        sec    = cap_secs[hi]["section"]                          # mặt cắt đoạn cao nhất
         if target_width:
             sec = _scale_section_u(sec, target_width)
         _solids = _section_solids(sec)
-        _tops   = [_solids_bbox([s])[3] for s in _solids]    # đỉnh từng khối
-        _v_top  = max(_tops) if _tops else 0.0
-        _lows   = [t for t in _tops if t < _v_top - 1e-6]    # các khối thấp (kê dầm)
-        _v_ref  = max(_lows) if _lows else _v_top            # cap phẳng → kê tại đỉnh chung
+        _, _, _, _v_sec_top = _solids_bbox(_solids) if _solids else (0, 0, 0, 0.0)
+        _z_cap_top = z_top + (h_high - seat_h)    # đỉnh ụ giữa (trên đáy dầm)
         _cap_ys = []
         for s in _solids:
-            ys = [z_top + (v - _v_ref) * MM for (u, v) in s["outer"]]
+            ys = [_z_cap_top + (v - _v_sec_top) * MM for (u, v) in s["outer"]]
             _cap_ys += ys
             out.append({"name": "Xà mũ", "color": _COL["xa_mu"],
                         "xs": [u * MM for (u, v) in s["outer"]],
