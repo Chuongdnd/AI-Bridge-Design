@@ -2726,6 +2726,18 @@ def beam_record_mcn_fig(rec: dict):
         geo[nm] = dict(cx=(min(us) + max(us)) / 2.0,
                        w=(max(us) - min(us)) or 600.0,
                        vmin=min(vs), vmax=max(vs))
+    # Mặt cắt ĐẦY ĐỦ nhất (nhiều cấu tạo nhất) = đại diện phần PHÍA SAU vết cắt →
+    # chiếu lên các mặt cắt đặc/hẹp dưới dạng nét KHUẤT (đứt).
+    def _detail(nm):
+        s = m.sections[nm]
+        return len(s.outer) + sum(len(h) for h in (s.holes or []))
+    ref_name = max(names, key=_detail)
+    ref = m.sections[ref_name]
+    ref_cx = (min(p[0] for p in ref.outer) + max(p[0] for p in ref.outer)) / 2.0
+    _LC = (getattr(_PLOT, "LAYER_COLORS", None) or {}) if _PLOT else {}
+    C_SOLID = _LC.get("0", "#2b2b2b")          # nét thấy (vết cắt)
+    C_HID   = _LC.get("4-hidden", "#1f9ed1")   # nét khuất (phía sau)
+
     fig = go.Figure()
     gap = 700.0                               # khe hở BAO giữa 2 mặt cắt (mm)
     ticks, tickt = [], []
@@ -2736,11 +2748,29 @@ def beam_record_mcn_fig(rec: dict):
         cx = geo[nm]["cx"]; w = geo[nm]["w"]
         if prev_w is not None:                # tâm cách tâm = nửa+khe+nửa
             x_off += prev_w / 2.0 + gap + w / 2.0
+        # ── Nét KHUẤT: cấu tạo mặt cắt đầy đủ phía sau vết cắt (nếu khác) ──
+        if nm != ref_name and _detail(nm) < _detail(ref_name):
+            gx = [(p[0] - ref_cx) + x_off for p in ref.outer] + [(ref.outer[0][0] - ref_cx) + x_off]
+            gy = [p[1] for p in ref.outer] + [ref.outer[0][1]]
+            fig.add_trace(go.Scatter(
+                x=gx, y=gy, mode="lines",
+                line=dict(color=C_HID, width=1.0, dash="dash"),
+                showlegend=False, hoverinfo="skip"))
+            for h in (ref.holes or []):
+                if len(h) < 3:
+                    continue
+                hgx = [(p[0] - ref_cx) + x_off for p in h] + [(h[0][0] - ref_cx) + x_off]
+                hgy = [p[1] for p in h] + [h[0][1]]
+                fig.add_trace(go.Scatter(
+                    x=hgx, y=hgy, mode="lines",
+                    line=dict(color=C_HID, width=1.0, dash="dash"),
+                    showlegend=False, hoverinfo="skip"))
+        # ── Nét THẤY: vết cắt tại vị trí ──
         xs = [(p[0] - cx) + x_off for p in sec.outer] + [(sec.outer[0][0] - cx) + x_off]
         ys = [p[1] for p in sec.outer] + [sec.outer[0][1]]
         fig.add_trace(go.Scatter(
-            x=xs, y=ys, fill="toself", fillcolor="rgba(100,160,200,0.35)",
-            line=dict(color="#34607a", width=1.7), mode="lines",
+            x=xs, y=ys, fill="toself", fillcolor="rgba(100,160,200,0.28)",
+            line=dict(color=C_SOLID, width=1.7), mode="lines",
             name=nm, hoverinfo="skip"))
         for h in sec.holes:
             if len(h) < 3:
@@ -2749,7 +2779,7 @@ def beam_record_mcn_fig(rec: dict):
             hy = [p[1] for p in h] + [h[0][1]]
             fig.add_trace(go.Scatter(
                 x=hx, y=hy, fill="toself", fillcolor="white",
-                line=dict(color="#34607a", width=1), mode="lines",
+                line=dict(color=C_SOLID, width=1.2), mode="lines",
                 showlegend=False, hoverinfo="skip"))
         _add_mcn_dims(fig, x_off, w, geo[nm]["vmin"], geo[nm]["vmax"])
         ticks.append(x_off); tickt.append(nm)
@@ -2782,24 +2812,157 @@ def _beam_envelopes(rec: dict, N=64):
     return xs, ztop, zbot, yl, yr, L_mm / 1000.0
 
 
+def _sec_hedges(sec):
+    """Cạnh NẰM NGANG (mặt trên/dưới, đáy cánh, nóc/đáy lỗ rỗng) của 1 mặt cắt
+    khi nhìn từ BÊN HÔNG: list dict(z, hidden, outer). outer=True nếu nằm trên
+    đường bao trên/dưới (silhouette); hidden=True nếu là cạnh trong (đáy cánh,
+    biên lỗ) — bị bê tông phía trước che."""
+    outer = sec.outer
+    if not outer:
+        return []
+    z_lo = min(p[1] for p in outer); z_hi = max(p[1] for p in outer)
+    span_z = (z_hi - z_lo) or 1.0
+    rings = [(0, outer)] + [(1, list(h)) for h in (getattr(sec, "holes", None) or [])]
+    out = []; seen = set()
+    for ri, ring in rings:
+        n = len(ring)
+        for i in range(n):
+            a = ring[i]; b = ring[(i + 1) % n]
+            if abs(a[1] - b[1]) > 0.04 * span_z:        # bỏ cạnh ĐỨNG
+                continue
+            z = (a[1] + b[1]) / 2.0
+            key = round(z, 0)
+            if key in seen:
+                continue
+            seen.add(key)
+            is_outer = (ri == 0 and (abs(z - z_lo) < 0.04 * span_z
+                                     or abs(z - z_hi) < 0.04 * span_z))
+            out.append(dict(z=z, hidden=(not is_outer), outer=bool(is_outer)))
+    return out
+
+
 def beam_record_elev_fig(rec: dict):
-    """MẶT CẮT DỌC tim dầm — bao hình chiều cao theo chiều dài."""
-    e = _beam_envelopes(rec)
-    if not e:
+    """MẶT CẮT DỌC tim dầm — NHÌN TỪ BÊN HÔNG theo TRẮC DỌC THỰC. Vẽ:
+      • Đường bao trên/dưới (bậc theo chiều cao từng đoạn — đầu khấc, vuốt đáy).
+      • Cạnh ngang bên trong (đáy cánh, nóc/đáy lỗ rỗng) trải đúng đoạn → nét KHUẤT.
+      • Mặt bậc đứng nơi cấu tạo thay đổi (đầu đặc, vách ngăn).
+    Nét THẤY = liền (layer 0); nét KHUẤT (bị bê tông phía trước che) = ĐỨT
+    (layer 4-hidden). Trục: x = dọc dầm (m), y = cao (m)."""
+    m, L_mm, bb = _model_from_record(rec)
+    if m is None:
         return None
-    xs, zt, zb, yl, yr, L = e
-    fig = go.Figure(go.Scatter(
-        x=xs + xs[::-1], y=zt + zb[::-1], fill="toself",
-        fillcolor="rgba(100,160,200,0.35)", line=dict(color="#34607a", width=1.7),
-        mode="lines", name="Mặt cắt dọc", hoverinfo="skip"))
-    # ── Kích thước: chiều dài L (dưới) + chiều cao H (phải) ──
-    z_lo = min(zb); z_hi = max(zt); H = z_hi - z_lo
-    _dim_h(fig, 0, L, z_lo - 0.30 * max(H, 0.5), z_lo, f"L = {L:.2f} m")
-    _dim_v(fig, z_lo, z_hi, L + max(0.4, 0.035 * L), L,
-           f"H = {H * 1000:.0f} mm")
+    L = L_mm / 1000.0
+    try:
+        segs = bb._resolve_segments(m)
+    except Exception:
+        segs = []
+    if not segs:
+        return None
+
+    _LC = (getattr(_PLOT, "LAYER_COLORS", None) or {}) if _PLOT else {}
+    C_SOLID = _LC.get("0", "#2b2b2b")
+    C_HID   = _LC.get("4-hidden", "#1f9ed1")
+
+    fig = go.Figure()
+
+    def _sec(name):
+        s = m.sections.get(name)
+        return s if (s and getattr(s, "outer", None)) else None
+
+    def _zbounds(sec):
+        zs = [p[1] for p in sec.outer]
+        return min(zs), max(zs)
+
+    def _add(x0, x1, z0, z1, hidden, w=None):
+        fig.add_trace(go.Scatter(
+            x=[x0 / 1000.0, x1 / 1000.0], y=[z0 / 1000.0, z1 / 1000.0],
+            mode="lines",
+            line=dict(color=(C_HID if hidden else C_SOLID),
+                      width=(w if w else (1.0 if hidden else 1.5)),
+                      dash="dash" if hidden else "solid"),
+            showlegend=False, hoverinfo="skip"))
+
+    # ── Stations dọc dầm (đã gồm fill + mirror) ──
+    stations = []
+    x = 0.0
+    for s in segs:
+        Lg = float(s["length"]); x1 = x + Lg
+        if s.get("type") == "constant":
+            sa = _sec(s.get("section")); stations.append((x, x1, sa, sa))
+        else:
+            stations.append((x, x1, _sec(s.get("from_sec")), _sec(s.get("to_sec"))))
+        x = x1
+    if not any(st[2] for st in stations):
+        return None
+
+    # ── 1) Cạnh ngang bên trong (đáy cánh, lỗ rỗng) → nét KHUẤT ──
+    for (x0, x1, sa, sb) in stations:
+        if sa is None:
+            continue
+        ha = _sec_hedges(sa)
+        if sb is sa or sb is None:
+            for h in ha:
+                if not h["outer"]:
+                    _add(x0, x1, h["z"], h["z"], True)
+        else:                                   # đoạn loft → cạnh "vuốt"
+            hb = _sec_hedges(sb)
+            ha_s = sorted([h for h in ha if not h["outer"]], key=lambda d: d["z"])
+            hb_s = sorted([h for h in hb if not h["outer"]], key=lambda d: d["z"])
+            if ha_s and len(ha_s) == len(hb_s):
+                for da, db in zip(ha_s, hb_s):
+                    _add(x0, x1, da["z"], db["z"], True)
+            else:
+                for h in ha_s:
+                    _add(x0, x1, h["z"], h["z"], True)
+
+    # ── 2) Đường bao trên/dưới — bậc theo chiều cao từng đoạn (nét THẤY) ──
+    prev = None
+    for (x0, x1, sa, sb) in stations:
+        sec = sb if sb is not None else sa
+        if sec is None:
+            continue
+        lo, hi = _zbounds(sec)
+        if prev is not None:
+            plo, phi = prev
+            if abs(hi - phi) > 1:
+                _add(x0, x0, phi, hi, False, w=1.7)
+            if abs(lo - plo) > 1:
+                _add(x0, x0, plo, lo, False, w=1.7)
+        _add(x0, x1, hi, hi, False, w=1.7)      # bao trên
+        _add(x0, x1, lo, lo, False, w=1.7)      # bao dưới
+        prev = (lo, hi)
+    s0 = stations[0][2]; sN = stations[-1][3] or stations[-1][2]
+    if s0:
+        lo, hi = _zbounds(s0); _add(0, 0, lo, hi, False, w=1.7)
+    if sN:
+        lo, hi = _zbounds(sN); _add(L_mm, L_mm, lo, hi, False, w=1.7)
+
+    # ── 3) Mặt bậc ĐỨNG nơi cạnh trong xuất hiện/biến mất (đầu đặc, vách ngăn) ──
+    for k in range(len(stations) - 1):
+        x_b = stations[k][1]
+        sec_p = stations[k][3] or stations[k][2]
+        sec_n = stations[k + 1][2] or stations[k + 1][3]
+        if sec_p is None or sec_n is None or sec_p is sec_n:
+            continue
+        zp = {round(h["z"], 0) for h in _sec_hedges(sec_p) if not h["outer"]}
+        zn = {round(h["z"], 0) for h in _sec_hedges(sec_n) if not h["outer"]}
+        changed = sorted(zp.symmetric_difference(zn))
+        if changed:
+            _add(x_b, x_b, min(changed), max(changed), True)
+
+    # ── 4) Kích thước: chiều dài L (dưới) + chiều cao H (phải) ──
+    allz = [p[1] for (x0, x1, sa, sb) in stations
+            for s in (sa, sb) if s for p in s.outer]
+    if allz:
+        z_lo = min(allz) / 1000.0; z_hi = max(allz) / 1000.0
+        H_mm = max(allz) - min(allz); H = max(z_hi - z_lo, 0.5)
+        _dim_h(fig, 0, L, z_lo - 0.30 * H, z_lo, f"L = {L:.2f} m")
+        _dim_v(fig, z_lo, z_hi, L + max(0.4, 0.035 * L), L, f"H = {H_mm:.0f} mm")
+
     fig.update_layout(
         template="plotly_white", height=300,
-        title=dict(text=f"② Mặt cắt dọc tim dầm · L={L:.1f}m", x=0.5, font=dict(size=12)),
+        title=dict(text=f"② Mặt cắt dọc tim dầm · L={L:.1f}m — nét đứt = khuất",
+                   x=0.5, font=dict(size=12)),
         xaxis=dict(title="Dọc dầm (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
         yaxis=dict(title="Cao (m)", showgrid=True, gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
         margin=dict(l=55, r=20, t=50, b=55))
