@@ -73,6 +73,17 @@ html:not(.cau-sb-collapsed) [data-testid="stSidebar"] {
     min-width: var(--sidebar-width, 300px) !important;
     max-width: var(--sidebar-width, 300px) !important;
 }
+/* THU GỌN: Streamlit đặt aria-expanded="false" (kèm class .cau-sb-collapsed do JS
+   gắn dự phòng) → ẩn HẲN, bề rộng = 0, thắng mọi khóa width (300px desktop / 100%
+   hay 85% mobile) để KHÔNG chiếm chỗ trên điện thoại. */
+[data-testid="stSidebar"][aria-expanded="false"],
+html.cau-sb-collapsed [data-testid="stSidebar"] {
+    min-width: 0 !important;
+    max-width: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+    transform: translateX(-100%) !important;
+}
 [data-testid="stSidebar"] {
     transition: min-width 0.05s, max-width 0.05s, transform 0.15s;
     will-change: min-width, max-width, transform;
@@ -106,9 +117,11 @@ section[data-testid="stMain"] {
 /* ── Mobile: gỡ lệch 300px, xếp dọc, chống tràn ngang ── */
 @media (max-width: 768px) {
     .panel-drag-handle { display: none !important; }
-    [data-testid="stSidebar"] {
-        min-width: 100% !important;
-        max-width: 100% !important;
+    /* Mở = phủ ~85% (chừa dải để chạm ra ngoài đóng lại); THU GỌN dùng rule
+       aria-expanded="false" ở trên → bề rộng 0, ẩn hẳn. */
+    html:not(.cau-sb-collapsed) [data-testid="stSidebar"]:not([aria-expanded="false"]) {
+        min-width: 85% !important;
+        max-width: 85% !important;
     }
     /* Topbar + overlay nút ribbon bám mép trái */
     .uth-topbar { left: 0 !important; }
