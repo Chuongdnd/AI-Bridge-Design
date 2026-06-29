@@ -6329,12 +6329,14 @@ with _col_main:
             except Exception:
                 pass
 
-            # Khe ụ giữa xà mũ Super-T → khoảng cách gối = chiều dài dầm + ụ giữa
-            # (2 đầu dầm kê 2 vai kê thấp). 0 nếu xà mũ 1 đoạn.
+            # NHỊP = chiều dài dầm + bề rộng Ụ GIỮA xà mũ + 0.2m KHE CO GIÃN
+            # (0.1m mỗi đầu dầm). 2 đầu dầm kê 2 vai kê thấp, ụ giữa cao ở giữa.
+            # VD Super-T 38.2m + ụ giữa 1.6m → nhịp = 38.2 + 1.6 + 0.2 = 40m.
+            # 0 nếu xà mũ 1 đoạn (dầm liền, không ụ giữa).
             try:
                 _pier_tru = _resolve_assembly(d, "tru")
-                d["cap_gap_m"] = (BVK._get_PB().cap_mid_gap_m(_pier_tru)
-                                  if _pier_tru else 0.0)
+                _gmid = (BVK._get_PB().cap_mid_gap_m(_pier_tru) if _pier_tru else 0.0)
+                d["cap_gap_m"] = (_gmid + 0.2) if _gmid > 1e-6 else 0.0
             except Exception:
                 d["cap_gap_m"] = 0.0
 
