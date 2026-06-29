@@ -774,6 +774,28 @@ def cap_mid_gap_m(pier: dict) -> float:
     return float(caps[hi].get("D", 0.0) or 0.0)
 
 
+def cap_seat_notch_depth_m(pier: dict) -> float:
+    """Độ sâu KHẤC (vai kê) dưới ĐỈNH TƯỜNG TAI của xà mũ (m) — dầm SPT kê vào
+    khấc, KHÔNG kê đỉnh tường tai. Lấy từ mặt cắt đoạn VAI KÊ (đoạn thấp nhất):
+    đỉnh tường tai = v cao nhất; khấc = phần lõm GIỮA (|u| nhỏ) thấp hơn đỉnh.
+    Trả 0 nếu mặt cắt không có khấc (đỉnh phẳng)."""
+    p = migrate_pier(pier or {})
+    caps = _cap_layers(p.get("parts", {}).get("xa_mu", {}))
+    if not caps:
+        return 0.0
+    hs = [_sec_v_extent(l["section"]) for l in caps]
+    seat = caps[min(range(len(caps)), key=lambda i: hs[i])]["section"]  # đoạn thấp = vai kê
+    pts = [q for s in _section_solids(seat) for q in s.get("outer", [])]
+    if not pts:
+        return 0.0
+    umax = max((abs(u) for (u, v) in pts), default=0.0) or 1.0
+    v_top = max(v for (u, v) in pts)
+    central = [v for (u, v) in pts if abs(u) < 0.4 * umax and v < v_top - 1.0]
+    if not central:
+        return 0.0                       # đỉnh phẳng giữa → không có khấc
+    return max(0.0, (v_top - max(central)) * MM)
+
+
 def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
                    target_width: float = None) -> list:
     """Hình chiếu MẶT CẮT NGANG cầu (ngang u × cao z) của trụ lắp ghép.
