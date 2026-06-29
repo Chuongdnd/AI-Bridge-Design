@@ -7107,11 +7107,21 @@ with _col_main:
                             if _brec.get("so_luong_dam"):
                                 _kcn_r["so_luong_dam"] = int(_brec["so_luong_dam"])
                         _d_role = {**d, "kcn_result": _kcn_r, "ai_result": _kcn_r}
-                        # 2D + 3D từ MÔ HÌNH DẦM THƯ VIỆN (thay hình tham số cũ)
+                        # 2D + 3D: ƯU TIÊN mặt cắt ĐÃ KHAI BÁO trong SESSION (form
+                        # tham số / CAD) → đồng bộ với bố trí chung & 3D toàn cầu.
+                        # Chỉ khi session trống mới dùng bản ghi thư viện _brec.
+                        _eff_role = BBUI.effective_pfx(_spt_pfx, _loai_r)
+                        _rec_src = None
+                        if st.session_state.get(BBUI._cad_key(_eff_role, "sections")):
+                            _rec_src = BBUI.export_beam_state(_eff_role)
+                            _rec_src["chieu_dai"] = _Lval
+                            _rec_src["loai_dam"]  = _loai_r
+                        elif _brec and _brec.get("sections"):
+                            _rec_src = _brec
                         _bfigs = {}
-                        if _brec and (_brec.get("sections")):
+                        if _rec_src and _rec_src.get("sections"):
                             try:
-                                _bfigs = BBUI.beam_record_figs(_brec)
+                                _bfigs = BBUI.beam_record_figs(_rec_src)
                             except Exception:
                                 _bfigs = {}
                         # Form khai báo thông số (tham số hóa) chỉ gắn 1 LẦN (loại
