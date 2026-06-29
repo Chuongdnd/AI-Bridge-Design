@@ -1316,6 +1316,90 @@ def _segdicts_to_segments(bb, seg_dicts, has_fn, avail, reverse=False):
     return out
 
 
+def render_param_declare(d: dict, base_pfx: str = "spt") -> bool:
+    """Form KHAI BÁO THÔNG SỐ DẦM theo DIM có tên → sinh mặt cắt + đoạn, ghi vào
+    session của pfx → MCN/3D/trắc dọc + khối lượng TOÀN CẦU cập nhật theo, đồng
+    thời cập nhật kcn_result (chiều cao/chiều dài/số dầm/khoảng cách).
+
+    Trả True nếu vừa áp dụng (đã st.rerun)."""
+    bb   = _get_bb()
+    kcn  = dict(d.get("kcn_result") or d.get("ai_result") or {})
+    loai = (st.session_state.get(f"{base_pfx}_beam_type")
+            or kcn.get("loai_dam") or "Super-T")
+    t    = bb.normalize_beam_type(loai)
+    spec = bb.PARAM_SPECS.get(t, [])
+    if not spec:
+        st.info("Loại dầm chưa hỗ trợ tham số hóa.")
+        return False
+
+    pfx   = effective_pfx(base_pfx, loai)
+    pkey  = f"_param_{pfx}"
+    saved = st.session_state.get(pkey) or bb.param_defaults(loai)
+
+    with st.form(f"paramform_{pfx}"):
+        st.caption(f"Loại dầm: **{loai}** — khai DIM (mm), bấm áp dụng để cập "
+                   "nhật kích thước · mặt cắt · 3D · khối lượng toàn cầu.")
+        groups: dict = {}
+        for sp in spec:
+            groups.setdefault(sp["group"], []).append(sp)
+        vals: dict = {}
+        for gname, items in groups.items():
+            st.markdown(f"**{gname}**")
+            cols = st.columns(len(items))
+            for c, sp in zip(cols, items):
+                with c:
+                    vals[sp["key"]] = st.number_input(
+                        sp["label"], value=float(saved.get(sp["key"], sp["default"])),
+                        min_value=float(sp["min"]), max_value=float(sp["max"]),
+                        step=float(sp["step"]), key=f"{pkey}_{sp['key']}")
+        st.markdown("**Bố trí dầm trên mặt cắt cầu**")
+        gc = st.columns(3)
+        with gc[0]:
+            L_m = st.number_input("Chiều dài dầm L (m)",
+                                  value=float(kcn.get("chieu_dai", 38.2) or 38.2),
+                                  min_value=5.0, max_value=80.0, step=0.1,
+                                  key=f"{pkey}_L")
+        with gc[1]:
+            n_dam = st.number_input("Số dầm / MCN",
+                                    value=int(kcn.get("so_luong_dam")
+                                              or kcn.get("so_luong_dam_mcn", 5)),
+                                    min_value=2, max_value=20, step=1,
+                                    key=f"{pkey}_ndam")
+        with gc[2]:
+            kc = st.number_input("Khoảng cách dầm (m)",
+                                 value=float(kcn.get("khoang_cach_dam", 2.2) or 2.2),
+                                 min_value=0.5, max_value=5.0, step=0.05,
+                                 key=f"{pkey}_kc")
+        applied = st.form_submit_button(
+            "🔄 Áp dụng thông số → cập nhật toàn cầu",
+            type="primary", use_container_width=True)
+
+    if applied:
+        secs, segs, fill = bb.build_param_sections(loai, vals)
+        st.session_state[_cad_key(pfx, "sections")] = secs
+        cs = st.session_state.get(_cad_key(pfx, "state")) or {}
+        cs["segs"] = segs
+        cs["fill_sec"] = fill
+        cs["asym"] = False
+        st.session_state[_cad_key(pfx, "state")] = cs
+        st.session_state[pkey] = vals
+        st.session_state[f"{base_pfx}_beam_type"] = loai
+        # Cập nhật kcn_result (toàn cầu): cao dầm/chiều dài/số dầm/khoảng cách.
+        kcn["loai_dam"]      = loai
+        kcn["chieu_cao_dam"] = float(vals.get("H", 1750)) / 1000.0
+        kcn["chieu_cao"]     = kcn["chieu_cao_dam"]
+        kcn["chieu_dai"]     = float(L_m)
+        kcn["so_luong_dam"]  = int(n_dam)
+        kcn["khoang_cach_dam"] = float(kc)
+        d["kcn_result"] = kcn
+        if d.get("ai_result") is not None:
+            d["ai_result"] = kcn
+        st.success("✅ Đã áp dụng thông số — mặt cắt, 3D và khối lượng toàn cầu "
+                   "sẽ cập nhật.")
+        st.rerun()
+    return False
+
+
 def render_cad_spt_tab(d: dict, pfx: str = "spt", show_type: bool = True):
     """
     Tab chi tiết dầm — hỗ trợ Super-T, T ngược, I-Beam.

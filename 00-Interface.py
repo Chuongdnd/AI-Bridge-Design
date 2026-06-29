@@ -7012,9 +7012,18 @@ with _col_main:
                                 BBUI.effective_pfx(_spt_pfx, _bm.get("loai_dam")), _bm)
                             st.session_state[f"_loaded_beam_{_spt_pfx}"] = _applied_id
 
-                    st.markdown("##### 🔩 Chi tiết dầm — Kết quả")
-                    st.caption("Tab này HIỂN THỊ kết quả chi tiết dầm của phương án "
-                               "(việc dựng/khai báo dầm làm ở **📚 Thư viện → Dầm**).")
+                    st.markdown("##### 🔩 Chi tiết dầm")
+                    st.caption("Khai báo nhanh THÔNG SỐ dầm bên dưới (tham số hóa) "
+                               "để cập nhật toàn cầu, hoặc dựng chi tiết ở "
+                               "**📚 Thư viện → Dầm**.")
+
+                    # ⓪ Khai báo thông số dầm (tham số hóa) → cập nhật toàn cầu
+                    with st.expander("📐 Khai báo thông số dầm (tham số hóa)",
+                                     expanded=False):
+                        try:
+                            BBUI.render_param_declare(d, base_pfx=_spt_pfx)
+                        except Exception as _epd:
+                            st.error(f"Lỗi form thông số dầm: {_epd}")
 
                     # ① Mặt bằng bố trí dầm theo từng nhịp
                     st.markdown("**① Mặt bằng bố trí dầm theo nhịp**")
