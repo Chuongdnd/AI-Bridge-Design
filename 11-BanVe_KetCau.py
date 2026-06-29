@@ -1602,7 +1602,8 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
             _PB = _get_PB()
             _lab = {"Xà mũ": "Xà mũ trụ", "Thân trụ": "Thân trụ (MCN)", "Bệ trụ": "Bệ cọc"}
             _polys = _PB.pier_mcn_polys(pier_assembly, z_top=z_cap_t_s,
-                                        H_than=H_show, target_width=bc)
+                                        H_than=H_show, target_width=bc,
+                                        seat_view=True)   # MCN đầu dầm: vẽ vai kê
             _seen = set()
             for _pl in _polys:
                 _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)

@@ -797,12 +797,15 @@ def cap_seat_notch_depth_m(pier: dict) -> float:
 
 
 def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
-                   target_width: float = None) -> list:
+                   target_width: float = None, seat_view: bool = False) -> list:
     """Hình chiếu MẶT CẮT NGANG cầu (ngang u × cao z) của trụ lắp ghép.
 
     Trả list {name,color,xs(ngang m),ys(cao z m)}. z_top = cao độ ĐỈNH xà mũ
     (= đáy dầm); H_than = chiều cao thân (m). Xà mũ co bề rộng = target_width.
-    Thân/bệ giữ tiết diện thật → mỗi khối là 1 chữ nhật theo bề rộng ngang."""
+    Thân/bệ giữ tiết diện thật → mỗi khối là 1 chữ nhật theo bề rộng ngang.
+
+    seat_view=True → MCN cắt tại ĐẦU DẦM: vẽ mặt cắt đoạn VAI KÊ (thấp) để thấy
+    KHẤC kê dầm + tường tai (phần kê dầm). seat_view=False → vẽ đoạn ụ giữa (cao)."""
     p = migrate_pier(pier or {})
     parts = p.get("parts", {})
     be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
@@ -826,12 +829,20 @@ def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
         seat_h = min(cap_hs[0], cap_hs[-1]) if cap_hs else H_cap   # cao vai kê
         hi     = max(range(len(cap_secs)), key=lambda i: cap_hs[i])
         h_high = cap_hs[hi]
-        sec    = cap_secs[hi]["section"]                          # mặt cắt đoạn cao nhất
+        if seat_view and len(cap_secs) >= 2:
+            # MCN tại ĐẦU DẦM: mặt phẳng cắt qua VAI KÊ → vẽ mặt cắt đoạn THẤP
+            # (có khấc kê dầm + tường tai). ụ giữa nằm giữa cầu (sau mặt cắt) →
+            # không vẽ ở đây. Neo ĐỈNH tường tai vai kê = z_top.
+            _si  = 0 if cap_hs[0] <= cap_hs[-1] else len(cap_secs) - 1
+            sec  = cap_secs[_si]["section"]
+            _z_cap_top = z_top                     # đỉnh tường tai vai kê = z_top
+        else:
+            sec  = cap_secs[hi]["section"]         # mặt cắt đoạn cao nhất (ụ giữa)
+            _z_cap_top = z_top + (h_high - seat_h)  # đỉnh ụ giữa (trên đáy dầm)
         if target_width:
             sec = _scale_section_u(sec, target_width)
         _solids = _section_solids(sec)
         _, _, _, _v_sec_top = _solids_bbox(_solids) if _solids else (0, 0, 0, 0.0)
-        _z_cap_top = z_top + (h_high - seat_h)    # đỉnh ụ giữa (trên đáy dầm)
         _cap_ys = []
         for s in _solids:
             xs = [u * MM for (u, v) in s["outer"]]
