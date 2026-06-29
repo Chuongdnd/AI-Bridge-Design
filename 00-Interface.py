@@ -587,7 +587,7 @@ if 'design_data' not in st.session_state:
         'day_dam': 0.0, 'khau_do_ngang': 0.0, 'bc': 12.0, 'loai_duong': "Do thi",
         'B': 20.0, 'H': 4.75, 'loai_doi_tuong_vuot': "Vượt sông", 'goc_giao': 90.0,
         'MNCN': 3.5, 'MNTT': 2.0, 'MNTC': 1.5, 'MNTN': 0.5, 'h_tn_tb': 0.0,
-        'x_tim_clearance': 0.0,
+        'x_tim_clearance': 350.0,
         'cap_song': 'VI', 'vtk': 60, 'i_max_hinh_hoc': 4.0, 'R_hinh_hoc': 5000,
         't_ban_mm': 200,
         'is_urban': 0,
@@ -1187,7 +1187,7 @@ def dialog_step1():
 
         x_tim_clearance = _field_with_feedback(
             label     = "📍 Lý trình tim tĩnh không (m)",
-            value     = float(draft.get('x_tim_clearance', st.session_state.design_data.get('x_tim_clearance', 0.0))),
+            value     = float(draft.get('x_tim_clearance', st.session_state.design_data.get('x_tim_clearance', 350.0))),
             key       = "d1_xtim",
             check_fn  = VAL.check_x_tim,
             check_args= (_lt_min, _lt_max),
@@ -2581,7 +2581,7 @@ def _decl_box_thuy_van():
                                      step=0.5, key="dinp_B")
             _day_dam = st.number_input("Cao trình đáy cầu (m)", value=float(_sd.get('day_dam', 0.0)),
                                         step=0.1, key="dinp_day_dam")
-            _xtim = st.number_input("Lý trình tim TK (m)", value=float(_sd.get('x_tim_clearance', 0.0)),
+            _xtim = st.number_input("Lý trình tim TK (m)", value=float(_sd.get('x_tim_clearance', 350.0)),
                                      step=1.0, key="dinp_xtim")
         with _tc2:
             _mn2 = st.number_input("MNTT (m)", value=float(_sd.get('MNTT', 2.0)),
