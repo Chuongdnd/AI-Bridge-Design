@@ -1072,6 +1072,7 @@ def _dxf_upload_card(pfx: str, bb, secs: dict, cad_state: dict,
                 sec.outer = _res["outer"]
                 sec.holes = _res["holes"]
                 cad_state[_fp_key] = _fp
+                cad_state[f"_tim_src_{sec_name}"] = _res.get("tim_source")
                 _w = _res.get("width_mm", 0)
                 _h = _res.get("height_mm", 0)
                 _tim = ("tim CAD" if _res.get("tim_source") == "cad_line"
@@ -1093,6 +1094,15 @@ def _dxf_upload_card(pfx: str, bb, secs: dict, cad_state: dict,
     else:
         if not has_data:
             st.caption("Chưa có DXF")
+
+    # Chỉ báo TIM: cho biết mặt cắt được căn theo đường hồng (CAD) hay trọng tâm.
+    if has_data:
+        _ts = cad_state.get(f"_tim_src_{sec_name}")
+        if _ts == "cad_line":
+            st.caption("🎯 Căn theo **tim hồng** (CAD) — u=0 tại đường hồng.")
+        elif _ts == "centroid":
+            st.caption("⚠️ **Không thấy tim hồng** → căn theo trọng tâm (dễ lệch). "
+                       "Vẽ 1 đường **THẲNG ĐỨNG màu hồng** trùm mặt cắt làm tim.")
 
 
 def render_ifc_export_card(
