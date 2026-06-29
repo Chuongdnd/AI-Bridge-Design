@@ -2460,25 +2460,55 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # LỚP 4 — TRỤ CẦU (Mesh3d KHỐI 3D)
         # =========================================================
 
-        _grp_state["g"] = "Trụ"
-        for i_p, xt in enumerate(piers):
-            sl = (i_p == 0)
-
-            # Xà mũ
-            _ag(_abox(xt-cap_thick, xt+cap_thick, -cap_W, cap_W,
-                                z_capb, z_capt, "#d5dbdb", 0.90,
-                                "Xà mũ" if sl else "", sl=sl))
-
-            # Thân trụ (n_cot cột)
-            col_offs = np.linspace(-cap_W*0.6, cap_W*0.6, n_cot)
-            for i_c, off_c in enumerate(col_offs):
-                _ag(_abox(
-                    xt - W_tru/2, xt + W_tru/2,
-                    off_c - W_cot/2, off_c + W_cot/2,
-                    z_shb, z_sht, "#c8d6c0", 0.92,
-                    f"Thân trụ T{i_p+1}" if (sl and i_c == 0) else "",
-                    sl=sl and i_c == 0,
-                ))
+        # TRỤ LẮP GHÉP thật (mặc định 2 thân SPT, từ d["_pier_model"]) — thay
+        # KHỐI TRỤ CŨ. Dựng mesh trong hệ cục bộ (x=dọc, y=ngang, z=cao) rồi NẮN
+        # về hệ địa hình VN-2000 qua _vn (bám cong tuyến) + nhân hz cho trục cao.
+        _pier_model = d.get("_pier_model")
+        _PBp = _get_PB()
+        if _pier_model:
+            _H_total = H_tru + 2.30                   # đáy bệ → đỉnh xà mũ
+            _z_base_pier = cao_dd - _H_total           # cao độ đáy bệ (m thực)
+            for i_p, xt in enumerate(piers):
+                sl = (i_p == 0)
+                try:
+                    _ptr = _PBp.build_pier_mesh_traces(
+                        _pier_model, H_tru=_H_total, x_ctr=xt,
+                        z_base=_z_base_pier, cap_width=bc)
+                except Exception as _pe:
+                    print(f"[add_all] trụ lắp ghép lỗi: {_pe}")
+                    _ptr = []
+                for _tr in _ptr:
+                    _nm = str(getattr(_tr, "name", "") or "")
+                    try:
+                        _nx, _ny = [], []
+                        for _vx, _vy in zip(list(_tr.x), list(_tr.y)):
+                            _gx, _gy = _vn(_vx, _vy)
+                            _nx.append(_gx); _ny.append(_gy)
+                        _tr.x = _nx; _tr.y = _ny
+                        _tr.z = [_vz * hz for _vz in list(_tr.z)]
+                        # Nhóm chú giải: bệ → "Bệ cọc", còn lại → "Trụ"
+                        _tr.legendgroup = "Bệ cọc" if "Bệ" in _nm else "Trụ"
+                        _tr.showlegend = bool(sl and _nm)
+                    except Exception:
+                        pass
+                    fig.add_trace(_tr)
+        else:
+            # Fallback: KHỐI TRỤ CŨ (chỉ khi chưa resolve được trụ lắp ghép).
+            _grp_state["g"] = "Trụ"
+            for i_p, xt in enumerate(piers):
+                sl = (i_p == 0)
+                _ag(_abox(xt-cap_thick, xt+cap_thick, -cap_W, cap_W,
+                                    z_capb, z_capt, "#d5dbdb", 0.90,
+                                    "Xà mũ" if sl else "", sl=sl))
+                col_offs = np.linspace(-cap_W*0.6, cap_W*0.6, n_cot)
+                for i_c, off_c in enumerate(col_offs):
+                    _ag(_abox(
+                        xt - W_tru/2, xt + W_tru/2,
+                        off_c - W_cot/2, off_c + W_cot/2,
+                        z_shb, z_sht, "#c8d6c0", 0.92,
+                        f"Thân trụ T{i_p+1}" if (sl and i_c == 0) else "",
+                        sl=sl and i_c == 0,
+                    ))
 
         # =========================================================
         # LỚP 5 — MÓNG (Mesh3d KHỐI + cọc lines)
@@ -2488,11 +2518,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         for i_p, xt in enumerate(piers):
             sl = (i_p == 0)
 
-            # Bệ cọc (hộp)
-            _grp_state["g"] = "Bệ cọc"
-            _ag(_abox(xt-be_long, xt+be_long, -be_W, be_W,
-                                z_beb, z_bet, "#aab7b8", 0.90,
-                                "Bệ cọc" if sl else "", sl=sl))
+            # Bệ cọc (hộp) — CHỈ vẽ khi KHÔNG dùng trụ lắp ghép (trụ lắp ghép đã
+            # gồm bệ thật) → tránh vẽ trùng bệ.
+            if not _pier_model:
+                _grp_state["g"] = "Bệ cọc"
+                _ag(_abox(xt-be_long, xt+be_long, -be_W, be_W,
+                                    z_beb, z_bet, "#aab7b8", 0.90,
+                                    "Bệ cọc" if sl else "", sl=sl))
 
             # Cọc (line - OK vì cọc thực tế cũng tròn/mảnh)
             _grp_state["g"] = "Cọc"
