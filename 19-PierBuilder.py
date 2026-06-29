@@ -817,6 +817,7 @@ def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
     #    (neo theo mức kê dầm = z_top = đáy dầm), KHÔNG ép mọi khối cùng đỉnh.
     cap_secs = _cap_layers(cap)
     z_cap_b = z_top - H_cap
+    _cap_outlines = []   # biên xà mũ (x,y) → thân trụ kéo lên sát đáy xà mũ
     if cap_secs:
         # Xà mũ Super-T = nhiều ĐOẠN (layer) dọc cầu: vai kê đầu/cuối THẤP (đầu dầm
         # khấc kê lên), ụ giữa CAO (đỡ bản). Neo sao cho VAI KÊ ở z_top (=đáy dầm)
@@ -833,22 +834,35 @@ def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
         _z_cap_top = z_top + (h_high - seat_h)    # đỉnh ụ giữa (trên đáy dầm)
         _cap_ys = []
         for s in _solids:
+            xs = [u * MM for (u, v) in s["outer"]]
             ys = [_z_cap_top + (v - _v_sec_top) * MM for (u, v) in s["outer"]]
             _cap_ys += ys
-            out.append({"name": "Xà mũ", "color": _COL["xa_mu"],
-                        "xs": [u * MM for (u, v) in s["outer"]],
-                        "ys": ys})
+            _cap_outlines.append(list(zip(xs, ys)))
+            out.append({"name": "Xà mũ", "color": _COL["xa_mu"], "xs": xs, "ys": ys})
         if _cap_ys:
             z_cap_b = min(_cap_ys)
 
-    # 2) THÂN — mỗi khối footprint → 1 chữ nhật ngang [umin,umax] × cao H_than.
+    # Cao độ ĐÁY xà mũ tại hoành độ x (nội suy biên dưới) → thân trụ kéo lên sát.
+    def _cap_bot_at(x):
+        yy = []
+        for poly in _cap_outlines:
+            n = len(poly)
+            for i in range(n):
+                x0, y0 = poly[i]; x1, y1 = poly[(i + 1) % n]
+                if min(x0, x1) - 1e-9 <= x <= max(x0, x1) + 1e-9 and abs(x1 - x0) > 1e-9:
+                    yy.append(y0 + (x - x0) / (x1 - x0) * (y1 - y0))
+        return min(yy) if yy else z_cap_b
+
+    # 2) THÂN — đáy phẳng (= đỉnh bệ); ĐỈNH thân trụ KÉO LÊN bám đáy xà mũ (theo độ
+    #    dốc) → hết khoảng hở giữa thân trụ và xà mũ khi xà mũ dốc/đáy không phẳng.
+    z_be_t = z_cap_b - H_than
     than_sec = than_layers[0]["section"] if than_layers else than.get("section")
     for s in _section_solids(than_sec):
         umin, umax, _, _ = _solids_bbox([s])
+        xL, xR = umin * MM, umax * MM
         out.append({"name": "Thân trụ", "color": _COL["than"],
-                    "xs": [umin * MM, umax * MM, umax * MM, umin * MM],
-                    "ys": [z_cap_b - H_than, z_cap_b - H_than, z_cap_b, z_cap_b]})
-    z_be_t = z_cap_b - H_than
+                    "xs": [xL, xR, xR, xL],
+                    "ys": [z_be_t, z_be_t, _cap_bot_at(xR), _cap_bot_at(xL)]})
 
     # 3) BỆ — footprint → chữ nhật ngang.
     be_sec = be_layers[0]["section"] if be_layers else be.get("section")
