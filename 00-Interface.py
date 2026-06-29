@@ -3881,16 +3881,12 @@ def _asm_cfg(kind: str) -> dict:
             "default": PB.default_abutment, "migrate": PB.migrate_abutment,
             "preview": PB.build_abutment_preview_fig, "total_h": PB.abutment_total_height,
             "parts": [
-                {"role": "than", "label": "Tường thân",
-                 "hint": "Vẽ NHIỀU mặt cắt DỌC cầu (hình bên: tường thân + vai "
-                         "kê gối); hệ thống xếp nối tiếp theo NGANG cầu và LOFT "
-                         "(vuốt) giữa các mặt cắt kề nhau.",
+                {"role": "than", "label": "Tường thân (gồm bệ)",
+                 "hint": "Vẽ NHIỀU mặt cắt DỌC cầu (tường thân ĐÃ GỒM cả bệ); "
+                         "hệ thống xếp nối tiếp theo NGANG cầu và LOFT (vuốt) "
+                         "giữa các mặt cắt kề nhau.",
                  "param": "B", "plabel": "Bề rộng ngang cầu B (m)",
                  "pmin": 1.0, "pmax": 40.0, "pdef": 8.0, "flex": True},
-                {"role": "be", "label": "Bệ mố",
-                 "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao.",
-                 "param": "H", "plabel": "Chiều cao H (m)",
-                 "pmin": 0.3, "pmax": 10.0, "pdef": 1.5, "flex": False},
             ],
         }
     return {
@@ -4227,12 +4223,18 @@ def _render_asm_edit_panel(cfg: dict) -> None:
     _nm = st.text_input(f"Tên {lab.lower()}", value=cur.get("ten", ""),
                         placeholder=cfg["name_ph"], key=f"_lib_{kind}_name")
 
-    # Khai báo mặt cắt từng bộ phận (full-width, hình mặt cắt nhỏ gọn)
-    _ptabs = st.tabs([f"🧱 {pt['label']}" for pt in cfg["parts"]])
-    for _tab, spec in zip(_ptabs, cfg["parts"]):
-        with _tab:
-            parts[spec["role"]] = _render_asm_part_editor(
-                kind, spec, parts.get(spec["role"], {}))
+    # Khai báo mặt cắt từng bộ phận (full-width, hình mặt cắt nhỏ gọn).
+    # 1 bộ phận → KHÔNG chia tab; nhiều bộ phận → mỗi bộ phận 1 tab.
+    if len(cfg["parts"]) == 1:
+        spec = cfg["parts"][0]
+        parts[spec["role"]] = _render_asm_part_editor(
+            kind, spec, parts.get(spec["role"], {}))
+    else:
+        _ptabs = st.tabs([f"🧱 {pt['label']}" for pt in cfg["parts"]])
+        for _tab, spec in zip(_ptabs, cfg["parts"]):
+            with _tab:
+                parts[spec["role"]] = _render_asm_part_editor(
+                    kind, spec, parts.get(spec["role"], {}))
 
     rec = {"id": editing_id or "", "ten": _nm, "loai": kind, "parts": parts}
     rec["H_ref"] = cfg["total_h"](rec)
