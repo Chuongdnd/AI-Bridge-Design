@@ -1336,9 +1336,22 @@ def render_param_declare(d: dict, base_pfx: str = "spt") -> bool:
     pkey  = f"_param_{pfx}"
     saved = st.session_state.get(pkey) or bb.param_defaults(loai)
 
-    with st.form(f"paramform_{pfx}"):
-        st.caption(f"Loại dầm: **{loai}** — khai DIM (mm), bấm áp dụng để cập "
-                   "nhật kích thước · mặt cắt · 3D · khối lượng toàn cầu.")
+    st.caption(f"Loại dầm: **{loai}** — gõ DIM (mm) theo KÝ HIỆU trên mặt cắt, "
+               "bấm áp dụng để cập nhật kích thước · mặt cắt · 3D · khối lượng toàn cầu.")
+    col_fig, col_form = st.columns([1, 1.2])
+    with col_fig:
+        # Mặt cắt MẪU có ký hiệu DIM (vẽ theo giá trị đã lưu/mặc định) → tham chiếu
+        try:
+            _dimfig = bb.make_dim_figure(loai, saved)
+            _aspect(_dimfig, f"dimfig_{pfx}")
+            st.plotly_chart(_dimfig, use_container_width=True,
+                            config={"displayModeBar": False}, key=f"dimfig_{pfx}")
+            st.caption("🔴 Ký hiệu đỏ trên mặt cắt ↔ nhãn ô nhập bên phải "
+                       "(cập nhật hình sau khi áp dụng).")
+        except Exception as _ef:
+            st.warning(f"Không vẽ được mặt cắt mẫu: {_ef}")
+
+    with col_form, st.form(f"paramform_{pfx}"):
         groups: dict = {}
         for sp in spec:
             groups.setdefault(sp["group"], []).append(sp)
@@ -1349,7 +1362,8 @@ def render_param_declare(d: dict, base_pfx: str = "spt") -> bool:
             for c, sp in zip(cols, items):
                 with c:
                     vals[sp["key"]] = st.number_input(
-                        sp["label"], value=float(saved.get(sp["key"], sp["default"])),
+                        f"{sp.get('sym', sp['key'])} · {sp['label']}",
+                        value=float(saved.get(sp["key"], sp["default"])),
                         min_value=float(sp["min"]), max_value=float(sp["max"]),
                         step=float(sp["step"]), key=f"{pkey}_{sp['key']}")
         st.markdown("**Bố trí dầm trên mặt cắt cầu**")

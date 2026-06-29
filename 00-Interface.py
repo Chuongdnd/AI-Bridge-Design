@@ -7013,17 +7013,9 @@ with _col_main:
                             st.session_state[f"_loaded_beam_{_spt_pfx}"] = _applied_id
 
                     st.markdown("##### 🔩 Chi tiết dầm")
-                    st.caption("Khai báo nhanh THÔNG SỐ dầm bên dưới (tham số hóa) "
+                    st.caption("Khai báo THÔNG SỐ dầm (tham số hóa) ở mục ③ bên dưới "
                                "để cập nhật toàn cầu, hoặc dựng chi tiết ở "
                                "**📚 Thư viện → Dầm**.")
-
-                    # ⓪ Khai báo thông số dầm (tham số hóa) → cập nhật toàn cầu
-                    with st.expander("📐 Khai báo thông số dầm (tham số hóa)",
-                                     expanded=False):
-                        try:
-                            BBUI.render_param_declare(d, base_pfx=_spt_pfx)
-                        except Exception as _epd:
-                            st.error(f"Lỗi form thông số dầm: {_epd}")
 
                     # ① Mặt bằng bố trí dầm theo từng nhịp
                     st.markdown("**① Mặt bằng bố trí dầm theo nhịp**")
@@ -7122,11 +7114,15 @@ with _col_main:
                                 _bfigs = BBUI.beam_record_figs(_brec)
                             except Exception:
                                 _bfigs = {}
+                        # Form khai báo thông số (tham số hóa) chỉ gắn 1 LẦN (loại
+                        # đầu hiển thị) → ghi global, tránh trùng key form.
+                        _declare_cb = ((lambda: BBUI.render_param_declare(d, base_pfx=_spt_pfx))
+                                       if _shown == 0 else None)
                         try:
                             CTD.render_chi_tiet_loai(
                                 _d_role, st, _loai_r,
                                 key_prefix=f"ctd_{selected_ribbon}_{_ri}",
-                                beam_figs=_bfigs)
+                                beam_figs=_bfigs, declare=_declare_cb)
                             _shown += 1
                         except Exception as _er:
                             st.error(f"Lỗi chi tiết {_lbl}: {_er}")

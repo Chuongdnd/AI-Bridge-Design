@@ -791,35 +791,116 @@ def normalize_beam_type(loai_dam: str) -> str:
 
 
 # Đặc tả DIM cho form (đơn vị mm, trừ n_hole). default lấy theo dầm điển hình.
+# sym = ký hiệu hiển thị TRÊN mặt cắt (khớp nhãn ô nhập) để biết dim ở đoạn nào.
 PARAM_SPECS = {
     "supert": [
-        dict(key="H",        label="Chiều cao dầm H",            default=1750, min=600,  max=2500, step=10, group="Kích thước"),
-        dict(key="W_top",    label="Bề rộng cánh trên (mép–mép)", default=2200, min=800,  max=2600, step=10, group="Cánh trên"),
-        dict(key="t_flange", label="Dày mép cánh trên",           default=75,   min=40,   max=300,  step=5,  group="Cánh trên"),
-        dict(key="W_web",    label="Bề rộng 2 sườn (mép ngoài)",  default=1020, min=500,  max=1700, step=10, group="Sườn"),
-        dict(key="t_web",    label="Dày sườn (mỗi bên)",          default=215,  min=120,  max=450,  step=5,  group="Sườn"),
+        dict(key="H",        sym="H",  label="Chiều cao dầm",               default=1750, min=600,  max=2500, step=10, group="Kích thước"),
+        dict(key="W_top",    sym="B",  label="Bề rộng cánh trên (mép–mép)", default=2200, min=800,  max=2600, step=10, group="Cánh trên"),
+        dict(key="t_flange", sym="t₁", label="Dày mép cánh trên",           default=75,   min=40,   max=300,  step=5,  group="Cánh trên"),
+        dict(key="W_web",    sym="b",  label="Bề rộng 2 sườn (mép ngoài)",  default=1020, min=500,  max=1700, step=10, group="Sườn"),
+        dict(key="t_web",    sym="t",  label="Dày sườn (mỗi bên)",          default=215,  min=120,  max=450,  step=5,  group="Sườn"),
     ],
     "dam_i": [
-        dict(key="H",     label="Chiều cao dầm H",      default=1650, min=600, max=2500, step=10, group="Kích thước"),
-        dict(key="w_top", label="Bề rộng cánh trên",    default=820,  min=300, max=1400, step=10, group="Cánh trên"),
-        dict(key="t_top", label="Dày cánh trên",        default=200,  min=80,  max=500,  step=5,  group="Cánh trên"),
-        dict(key="w_bot", label="Bề rộng cánh dưới",    default=900,  min=300, max=1400, step=10, group="Cánh dưới"),
-        dict(key="t_bot", label="Dày cánh dưới",        default=240,  min=80,  max=600,  step=5,  group="Cánh dưới"),
-        dict(key="t_web", label="Dày sườn",             default=200,  min=120, max=400,  step=5,  group="Sườn"),
+        dict(key="H",     sym="H",  label="Chiều cao dầm",      default=1650, min=600, max=2500, step=10, group="Kích thước"),
+        dict(key="w_top", sym="B₁", label="Bề rộng cánh trên",  default=820,  min=300, max=1400, step=10, group="Cánh trên"),
+        dict(key="t_top", sym="t₁", label="Dày cánh trên",      default=200,  min=80,  max=500,  step=5,  group="Cánh trên"),
+        dict(key="w_bot", sym="B₂", label="Bề rộng cánh dưới",  default=900,  min=300, max=1400, step=10, group="Cánh dưới"),
+        dict(key="t_bot", sym="t₂", label="Dày cánh dưới",      default=240,  min=80,  max=600,  step=5,  group="Cánh dưới"),
+        dict(key="t_web", sym="tw", label="Dày sườn",           default=200,  min=120, max=400,  step=5,  group="Sườn"),
     ],
     "t_nguoc": [
-        dict(key="H",         label="Chiều cao dầm H",       default=1200, min=500, max=2200, step=10, group="Kích thước"),
-        dict(key="w_flange",  label="Bề rộng bầu dưới",       default=980,  min=400, max=1500, step=10, group="Bầu dưới"),
-        dict(key="t_flange",  label="Chiều cao bầu dưới",     default=500,  min=150, max=1000, step=10, group="Bầu dưới"),
-        dict(key="w_web",     label="Bề rộng sườn",           default=220,  min=120, max=500,  step=5,  group="Sườn"),
+        dict(key="H",         sym="H",  label="Chiều cao dầm",     default=1200, min=500, max=2200, step=10, group="Kích thước"),
+        dict(key="w_flange",  sym="B",  label="Bề rộng bầu dưới",   default=980,  min=400, max=1500, step=10, group="Bầu dưới"),
+        dict(key="t_flange",  sym="tf", label="Chiều cao bầu dưới", default=500,  min=150, max=1000, step=10, group="Bầu dưới"),
+        dict(key="w_web",     sym="bw", label="Bề rộng sườn",       default=220,  min=120, max=500,  step=5,  group="Sườn"),
     ],
     "ban_rong": [
-        dict(key="H",      label="Chiều cao bản H",        default=990,  min=400, max=1600, step=10, group="Kích thước"),
-        dict(key="W",      label="Bề rộng bản",            default=990,  min=500, max=1600, step=10, group="Kích thước"),
-        dict(key="d_hole", label="Đường kính khoang rỗng", default=560,  min=0,   max=1200, step=10, group="Khoang rỗng"),
-        dict(key="n_hole", label="Số khoang rỗng",         default=2,    min=0,   max=4,    step=1,  group="Khoang rỗng"),
+        dict(key="H",      sym="H", label="Chiều cao bản",          default=990,  min=400, max=1600, step=10, group="Kích thước"),
+        dict(key="W",      sym="B", label="Bề rộng bản",            default=990,  min=500, max=1600, step=10, group="Kích thước"),
+        dict(key="d_hole", sym="Ø", label="Đường kính khoang rỗng", default=560,  min=0,   max=1200, step=10, group="Khoang rỗng"),
+        dict(key="n_hole", sym="n", label="Số khoang rỗng",         default=2,    min=0,   max=4,    step=1,  group="Khoang rỗng"),
     ],
 }
+
+
+def make_dim_figure(loai_dam: str, P: dict):
+    """Vẽ MẶT CẮT MẪU + ký hiệu DIM (theo sym của PARAM_SPECS) → người dùng biết
+    mỗi thông số ứng với đoạn nào trên mặt cắt. Trả về go.Figure (mm)."""
+    t   = normalize_beam_type(loai_dam)
+    P   = {**param_defaults(loai_dam), **(P or {})}
+    sec = _named_mid_section(loai_dam, P)
+    H   = max(300.0, float(P.get("H", 1750)))
+    xs  = [p[0] for p in sec.outer] or [0.0]
+    xm  = max(abs(min(xs)), abs(max(xs))) or H * 0.5
+
+    fig = go.Figure()
+    ox = [p[0] for p in sec.outer] + [sec.outer[0][0]]
+    oz = [p[1] for p in sec.outer] + [sec.outer[0][1]]
+    fig.add_trace(go.Scatter(x=ox, y=oz, fill="toself",
+        fillcolor="rgba(46,204,113,0.18)", line=dict(color="#27ae60", width=2),
+        mode="lines", hoverinfo="skip", showlegend=False))
+    for h in (sec.holes or []):
+        hx = [p[0] for p in h] + [h[0][0]]; hz = [p[1] for p in h] + [h[0][1]]
+        fig.add_trace(go.Scatter(x=hx, y=hz, fill="toself",
+            fillcolor="rgba(255,255,255,0.92)", line=dict(color="#27ae60", width=1),
+            mode="lines", hoverinfo="skip", showlegend=False))
+
+    DC = "#c0392b"; e = max(40.0, 0.02 * H)        # nửa chiều dài tick
+    def _ln(x0, z0, x1, z1):
+        fig.add_trace(go.Scatter(x=[x0, x1], y=[z0, z1], mode="lines",
+            line=dict(color=DC, width=1), hoverinfo="skip", showlegend=False))
+    def _tx(x, z, s):
+        fig.add_annotation(x=x, y=z, text=f"<b>{s}</b>", showarrow=False,
+            font=dict(color=DC, size=14), bgcolor="rgba(255,255,255,0.75)")
+    def hdim(x0, x1, z, s):
+        _ln(x0, z, x1, z); _ln(x0, z + e, x0, z - e); _ln(x1, z + e, x1, z - e)
+        _tx((x0 + x1) / 2.0, z + (e * 2 if z >= 0 else -e * 2), s)
+    def vdim(z0, z1, x, s):
+        _ln(x, z0, x, z1); _ln(x - e, z0, x + e, z0); _ln(x - e, z1, x + e, z1)
+        _tx(x - e * 2.6, (z0 + z1) / 2.0, s)
+
+    g = max(110.0, 0.08 * H)
+    if t == "supert":
+        Wt = float(P["W_top"]); Ww = float(P["W_web"]); tw = float(P["t_web"]); tf = float(P["t_flange"])
+        ht = Wt / 2.0; hwe = min(Ww / 2.0, ht - 20.0); htr = max(60.0, hwe - tw)
+        z_tr = -0.671 * H; hb = max(40.0, hwe - 20.0)
+        vdim(0, -H, -ht - g, "H")
+        hdim(-ht, ht, g, "B")
+        hdim(-hb, hb, -H - g, "b")
+        vdim(0, -tf, ht + g, "t₁")
+        hdim(htr, hwe, z_tr - g, "t")
+    elif t == "dam_i":
+        wt = float(P["w_top"]); tt = float(P["t_top"]); wb = float(P["w_bot"]); tb = float(P["t_bot"]); ww = float(P["t_web"])
+        ht, hb, hw = wt / 2.0, wb / 2.0, ww / 2.0
+        z_t = -min(tt, 0.45 * H); z_b = -(H - min(tb, 0.45 * H))
+        vdim(0, -H, -max(ht, hb) - g, "H")
+        hdim(-ht, ht, g, "B₁")
+        hdim(-hb, hb, -H - g, "B₂")
+        vdim(0, z_t, ht + g, "t₁")
+        vdim(-H, z_b, hb + g, "t₂")
+        hdim(-hw, hw, (z_t + z_b) / 2.0, "tw")
+    elif t == "t_nguoc":
+        wf = float(P["w_flange"]); tf = float(P["t_flange"]); ww = float(P["w_web"])
+        hwf, hww = wf / 2.0, ww / 2.0; z_b = -(H - min(tf, 0.85 * H))
+        vdim(0, -H, -hwf - g, "H")
+        hdim(-hwf, hwf, -H - g, "B")
+        vdim(-H, z_b, hwf + g, "tf")
+        hdim(-hww, hww, g, "bw")
+    else:  # ban_rong
+        W = float(P["W"]); d = float(P.get("d_hole", 0)); hw = W / 2.0
+        vdim(0, -H, -hw - g, "H")
+        hdim(-hw, hw, g, "B")
+        if sec.holes:
+            _hx = [p[0] for p in sec.holes[0]]
+            cx = (min(_hx) + max(_hx)) / 2.0; r = (max(_hx) - min(_hx)) / 2.0
+            hdim(cx - r, cx + r, -H / 2.0, "Ø")
+
+    fig.update_layout(
+        margin=dict(l=8, r=8, t=8, b=8), height=320,
+        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(visible=False, scaleanchor="y", scaleratio=1.0),
+        yaxis=dict(visible=False), showlegend=False)
+    return fig
 
 
 def param_defaults(loai_dam: str) -> dict:
