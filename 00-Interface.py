@@ -4425,11 +4425,14 @@ def _resolve_assembly(d, kind: str) -> dict:
             if cap or stem or foot:
                 return PB.build_pier_from_parts(cap, stem, foot,
                                                 ten=pp.get("ten", "Trụ lắp ghép"))
+    items = st.session_state.get(cfg["ss"]) or cfg["load"]()
     rid = (d or {}).get(cfg["id_key"])
     if not rid:
+        # MỐ MẶC ĐỊNH = mố THƯ VIỆN đầu tiên (vd "Mố chữ U") thay khối mố generic cũ.
+        if kind == "mo" and items:
+            return items[0]
         return None
-    items = st.session_state.get(cfg["ss"]) or cfg["load"]()
-    return cfg["get"](items, rid)
+    return cfg["get"](items, rid) or (items[0] if kind == "mo" and items else None)
 
 
 def _sync_beam_height(d, ribbon):
