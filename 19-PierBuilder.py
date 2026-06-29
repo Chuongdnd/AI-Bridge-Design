@@ -860,9 +860,15 @@ def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
     for s in _section_solids(than_sec):
         umin, umax, _, _ = _solids_bbox([s])
         xL, xR = umin * MM, umax * MM
+        # Đỉnh thân trụ BÁM ĐÁY xà mũ tại MỌI vị trí trong [xL, xR] (gồm cả các
+        # điểm gãy của biên đáy xà mũ) → thân trụ không ngàm vào xà mũ, chỉ kéo
+        # dài tới sát đáy xà mũ ở mọi điểm; hết khoảng hở khi đáy gãy/dốc.
+        _midx = sorted(x for poly in _cap_outlines for (x, _y) in poly if xL < x < xR)
+        _topx = [xL] + _midx + [xR]
+        _top = [(x, _cap_bot_at(x)) for x in _topx]
         out.append({"name": "Thân trụ", "color": _COL["than"],
-                    "xs": [xL, xR, xR, xL],
-                    "ys": [z_be_t, z_be_t, _cap_bot_at(xR), _cap_bot_at(xL)]})
+                    "xs": [xL, xR] + [x for (x, _y) in reversed(_top)],
+                    "ys": [z_be_t, z_be_t] + [y for (_x, y) in reversed(_top)]})
 
     # 3) BỆ — footprint → chữ nhật ngang.
     be_sec = be_layers[0]["section"] if be_layers else be.get("section")
