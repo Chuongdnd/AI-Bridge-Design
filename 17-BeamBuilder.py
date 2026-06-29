@@ -1298,6 +1298,14 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
         if not pts or len(pts) < 2:
             continue
 
+        # POLYLINE 2 điểm hở = ĐOẠN THẲNG (vd đường TIM vẽ bằng PLINE, layer
+        # CENTER/màu hồng) → đưa vào line_objs để dò tim, KHÔNG coi là biên kín.
+        if (etype in ("LWPOLYLINE", "POLYLINE") and not closed
+                and len(pts) == 2):
+            raw_lines.append((pts[0], pts[1]))
+            line_objs.append((pts[0], pts[1], *_ent_style(entity)))
+            continue
+
         # Force-close nếu flag closed hoặc đầu/cuối gần nhau (< 0.5 mm)
         if pts[0] != pts[-1]:
             gap = ((pts[0][0] - pts[-1][0]) ** 2 +
