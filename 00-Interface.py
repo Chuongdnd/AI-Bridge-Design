@@ -7012,10 +7012,9 @@ with _col_main:
                                 BBUI.effective_pfx(_spt_pfx, _bm.get("loai_dam")), _bm)
                             st.session_state[f"_loaded_beam_{_spt_pfx}"] = _applied_id
 
-                    st.markdown("##### 🔩 Chi tiết dầm")
-                    st.caption("Khai báo THÔNG SỐ dầm (tham số hóa) ở mục ③ bên dưới "
-                               "để cập nhật toàn cầu, hoặc dựng chi tiết ở "
-                               "**📚 Thư viện → Dầm**.")
+                    st.markdown("##### 🔩 Chi tiết dầm — Kết quả")
+                    st.caption("Tab này HIỂN THỊ kết quả chi tiết dầm của phương án "
+                               "(việc dựng/khai báo dầm làm ở **📚 Thư viện → Dầm**).")
 
                     # ① Mặt bằng bố trí dầm theo từng nhịp
                     st.markdown("**① Mặt bằng bố trí dầm theo nhịp**")
@@ -7107,32 +7106,18 @@ with _col_main:
                             if _brec.get("so_luong_dam"):
                                 _kcn_r["so_luong_dam"] = int(_brec["so_luong_dam"])
                         _d_role = {**d, "kcn_result": _kcn_r, "ai_result": _kcn_r}
-                        # 2D + 3D: ƯU TIÊN mặt cắt ĐÃ KHAI BÁO trong SESSION (form
-                        # tham số / CAD) → đồng bộ với bố trí chung & 3D toàn cầu.
-                        # Chỉ khi session trống mới dùng bản ghi thư viện _brec.
-                        _eff_role = BBUI.effective_pfx(_spt_pfx, _loai_r)
-                        _rec_src = None
-                        if st.session_state.get(BBUI._cad_key(_eff_role, "sections")):
-                            _rec_src = BBUI.export_beam_state(_eff_role)
-                            _rec_src["chieu_dai"] = _Lval
-                            _rec_src["loai_dam"]  = _loai_r
-                        elif _brec and _brec.get("sections"):
-                            _rec_src = _brec
+                        # 2D + 3D từ MÔ HÌNH DẦM THƯ VIỆN (thay hình tham số cũ)
                         _bfigs = {}
-                        if _rec_src and _rec_src.get("sections"):
+                        if _brec and (_brec.get("sections")):
                             try:
-                                _bfigs = BBUI.beam_record_figs(_rec_src)
+                                _bfigs = BBUI.beam_record_figs(_brec)
                             except Exception:
                                 _bfigs = {}
-                        # Form khai báo thông số (tham số hóa) chỉ gắn 1 LẦN (loại
-                        # đầu hiển thị) → ghi global, tránh trùng key form.
-                        _declare_cb = ((lambda: BBUI.render_param_declare(d, base_pfx=_spt_pfx))
-                                       if _shown == 0 else None)
                         try:
                             CTD.render_chi_tiet_loai(
                                 _d_role, st, _loai_r,
                                 key_prefix=f"ctd_{selected_ribbon}_{_ri}",
-                                beam_figs=_bfigs, declare=_declare_cb)
+                                beam_figs=_bfigs)
                             _shown += 1
                         except Exception as _er:
                             st.error(f"Lỗi chi tiết {_lbl}: {_er}")
