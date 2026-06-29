@@ -65,6 +65,16 @@ html:not(.cau-sb-collapsed) [data-testid="stSidebar"] {
     min-width: var(--sidebar-width, 300px) !important;
     max-width: var(--sidebar-width, 300px) !important;
 }
+/* THU GỌN: CHỈ bám cờ GỐC aria-expanded="false" của Streamlit (lật tin cậy khi
+   đóng/mở) → ẩn HẲN, bề rộng = 0, thắng mọi khóa width. KHÔNG bám class JS
+   .cau-sb-collapsed (có thể kẹt khi mở lại trên điện thoại → sidebar không hiện). */
+[data-testid="stSidebar"][aria-expanded="false"] {
+    min-width: 0 !important;
+    max-width: 0 !important;
+    width: 0 !important;
+    overflow: hidden !important;
+    transform: translateX(-100%) !important;
+}
 [data-testid="stSidebar"] {
     transition: min-width 0.05s, max-width 0.05s, transform 0.15s;
     will-change: min-width, max-width, transform;
@@ -98,9 +108,13 @@ section[data-testid="stMain"] {
 /* ── Mobile: gỡ lệch 300px, xếp dọc, chống tràn ngang ── */
 @media (max-width: 768px) {
     .panel-drag-handle { display: none !important; }
-    [data-testid="stSidebar"] {
-        min-width: 100% !important;
-        max-width: 100% !important;
+    /* MỞ (aria-expanded != false) = phủ ~85% (chừa dải chạm ngoài để đóng); THU
+       GỌN dùng rule aria-expanded="false" ở trên → bề rộng 0. Bám CỜ GỐC, không
+       bám class JS để mở lại luôn hiện. */
+    [data-testid="stSidebar"]:not([aria-expanded="false"]) {
+        min-width: 85% !important;
+        max-width: 85% !important;
+        transform: none !important;
     }
     /* Topbar + overlay nút ribbon bám mép trái */
     .uth-topbar { left: 0 !important; }
@@ -565,7 +579,7 @@ if 'design_data' not in st.session_state:
         'day_dam': 0.0, 'khau_do_ngang': 0.0, 'bc': 12.0, 'loai_duong': "Do thi",
         'B': 20.0, 'H': 4.75, 'loai_doi_tuong_vuot': "Vượt sông", 'goc_giao': 90.0,
         'MNCN': 3.5, 'MNTT': 2.0, 'MNTC': 1.5, 'MNTN': 0.5, 'h_tn_tb': 0.0,
-        'x_tim_clearance': 0.0,
+        'x_tim_clearance': 350.0,
         'cap_song': 'VI', 'vtk': 60, 'i_max_hinh_hoc': 4.0, 'R_hinh_hoc': 5000,
         't_ban_mm': 200,
         'is_urban': 0,
@@ -1165,7 +1179,7 @@ def dialog_step1():
 
         x_tim_clearance = _field_with_feedback(
             label     = "📍 Lý trình tim tĩnh không (m)",
-            value     = float(draft.get('x_tim_clearance', st.session_state.design_data.get('x_tim_clearance', 0.0))),
+            value     = float(draft.get('x_tim_clearance', st.session_state.design_data.get('x_tim_clearance', 350.0))),
             key       = "d1_xtim",
             check_fn  = VAL.check_x_tim,
             check_args= (_lt_min, _lt_max),
@@ -2559,7 +2573,7 @@ def _decl_box_thuy_van():
                                      step=0.5, key="dinp_B")
             _day_dam = st.number_input("Cao trình đáy cầu (m)", value=float(_sd.get('day_dam', 0.0)),
                                         step=0.1, key="dinp_day_dam")
-            _xtim = st.number_input("Lý trình tim TK (m)", value=float(_sd.get('x_tim_clearance', 0.0)),
+            _xtim = st.number_input("Lý trình tim TK (m)", value=float(_sd.get('x_tim_clearance', 350.0)),
                                      step=1.0, key="dinp_xtim")
         with _tc2:
             _mn2 = st.number_input("MNTT (m)", value=float(_sd.get('MNTT', 2.0)),
@@ -6307,12 +6321,14 @@ with _col_main:
             except Exception:
                 pass
 
-            # Khe ụ giữa xà mũ Super-T → khoảng cách gối = chiều dài dầm + ụ giữa
-            # (2 đầu dầm kê 2 vai kê thấp). 0 nếu xà mũ 1 đoạn.
+            # NHỊP = chiều dài dầm + bề rộng Ụ GIỮA xà mũ + 0.2m KHE CO GIÃN
+            # (0.1m mỗi đầu dầm). 2 đầu dầm kê 2 vai kê thấp, ụ giữa cao ở giữa.
+            # VD Super-T 38.2m + ụ giữa 1.6m → nhịp = 38.2 + 1.6 + 0.2 = 40m.
+            # 0 nếu xà mũ 1 đoạn (dầm liền, không ụ giữa).
             try:
                 _pier_tru = _resolve_assembly(d, "tru")
-                d["cap_gap_m"] = (BVK._get_PB().cap_mid_gap_m(_pier_tru)
-                                  if _pier_tru else 0.0)
+                _gmid = (BVK._get_PB().cap_mid_gap_m(_pier_tru) if _pier_tru else 0.0)
+                d["cap_gap_m"] = (_gmid + 0.2) if _gmid > 1e-6 else 0.0
             except Exception:
                 d["cap_gap_m"] = 0.0
 

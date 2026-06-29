@@ -1020,10 +1020,15 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     spans    = [(supports[i], supports[i+1]) for i in range(len(supports)-1)]
 
     # ── Cao độ kết cấu (tuyệt đối) ───────────────────────────────────────
-    h_goi    = _h_goi(d)             # chiều cao gối (đáy dầm → đỉnh xà mũ)
+    h_goi    = _h_goi(d)             # (giữ tham chiếu; gối không vẽ riêng nữa)
     z_deck   = cao_dd + H_dam + t_ban
-    z_dam_b  = cao_dd                # đáy dầm SPT (kê trên gối)
-    z_cap_t  = cao_dd - h_goi        # đỉnh xà mũ = đáy dầm − gối (dầm kê trên gối)
+    z_dam_b  = cao_dd                # đáy dầm SPT (kê vào KHẤC xà mũ)
+    # Dầm kê vào KHẤC (vai kê) của xà mũ, KHÔNG kê đỉnh tường tai → ĐỈNH xà mũ
+    # (tường tai/ụ giữa) NHÔ CAO HƠN đáy dầm đúng bằng độ sâu khấc (lấy theo
+    # mặt cắt xà mũ thư viện). Không vẽ khối gối riêng (dầm lọt thẳng vào khấc).
+    _notch_dep = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
+                  if pier_assembly else 0.0)
+    z_cap_t  = cao_dd + _notch_dep   # đỉnh tường tai = đáy dầm + độ sâu khấc
     z_cap_b  = z_cap_t - 0.80
     z_sh_b   = z_cap_b - H_tru       # đáy thân trụ đại diện (mố/ghi chú dùng)
     z_be_t   = z_sh_b
@@ -1394,11 +1399,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         margin=dict(l=70, r=30, t=70, b=130),
         hovermode="closest",
     )
-    # ── GỐI cầu tại mỗi vị trí đỡ (đáy dầm kê trên gối, trên đỉnh xà mũ) ────
-    if h_goi > 0:
-        for _is, _xs in enumerate(supports):
-            _goi_block_2d(fig, _xs, z_cap_t, h_goi, w=0.5,
-                          name="Gối cầu" if _is == 0 else "", sl=(_is == 0))
+    # Dầm kê THẲNG vào khấc xà mũ (tường tai nhô 2 bên) → KHÔNG vẽ khối gối riêng
+    # (trước đây khối gối tối ở đỉnh xà mũ trông như 'lỗ chữ nhật').
 
     _add_elevation_table(fig, d, loc="tl")
     _apply_layers_2d(fig)
@@ -1585,12 +1587,13 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
         be_W_sub   = min(cap_W_sub * 1.12, bc / 2 - 0.05)
         H_show     = min(H_tru_sub, 3.5)   # trụ cao > 3.5m → dùng ký hiệu cắt
 
-        # MCN điển hình (đầu dầm): dầm đặt TRỰC TIẾP trên xà mũ, đỉnh xà mũ = đáy
-        # dầm (không để khoảng hở).
+        # MCN điển hình (đầu dầm): dầm kê vào KHẤC xà mũ → ĐỈNH xà mũ (tường tai)
+        # nhô CAO HƠN đáy dầm = độ sâu khấc (theo mặt cắt xà mũ thư viện).
         h_goi_s    = _h_goi(d)
         z_dam_b_s  = float(cap_top_y) if cap_top_y is not None else (-t_ban - H_dam)
-        z_bot_sub  = z_dam_b_s                     # đỉnh xà mũ = đáy dầm (dầm kê thẳng)
-        z_cap_t_s  = z_bot_sub
+        _notch_dep_s = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
+                        if pier_assembly else 0.0)
+        z_cap_t_s  = z_dam_b_s + _notch_dep_s      # đỉnh tường tai = đáy dầm + khấc
         r_coc_sub  = D_coc_sub / 2
         _stem_centers = []   # tâm ngang từng thân → vẽ ký hiệu cắt
 
@@ -1599,7 +1602,8 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
             _PB = _get_PB()
             _lab = {"Xà mũ": "Xà mũ trụ", "Thân trụ": "Thân trụ (MCN)", "Bệ trụ": "Bệ cọc"}
             _polys = _PB.pier_mcn_polys(pier_assembly, z_top=z_cap_t_s,
-                                        H_than=H_show, target_width=bc)
+                                        H_than=H_show, target_width=bc,
+                                        seat_view=True)   # MCN đầu dầm: vẽ vai kê
             _seen = set()
             for _pl in _polys:
                 _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)

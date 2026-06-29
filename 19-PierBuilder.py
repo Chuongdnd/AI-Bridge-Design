@@ -774,13 +774,38 @@ def cap_mid_gap_m(pier: dict) -> float:
     return float(caps[hi].get("D", 0.0) or 0.0)
 
 
+def cap_seat_notch_depth_m(pier: dict) -> float:
+    """Độ sâu KHẤC (vai kê) dưới ĐỈNH TƯỜNG TAI của xà mũ (m) — dầm SPT kê vào
+    khấc, KHÔNG kê đỉnh tường tai. Lấy từ mặt cắt đoạn VAI KÊ (đoạn thấp nhất):
+    đỉnh tường tai = v cao nhất; khấc = phần lõm GIỮA (|u| nhỏ) thấp hơn đỉnh.
+    Trả 0 nếu mặt cắt không có khấc (đỉnh phẳng)."""
+    p = migrate_pier(pier or {})
+    caps = _cap_layers(p.get("parts", {}).get("xa_mu", {}))
+    if not caps:
+        return 0.0
+    hs = [_sec_v_extent(l["section"]) for l in caps]
+    seat = caps[min(range(len(caps)), key=lambda i: hs[i])]["section"]  # đoạn thấp = vai kê
+    pts = [q for s in _section_solids(seat) for q in s.get("outer", [])]
+    if not pts:
+        return 0.0
+    umax = max((abs(u) for (u, v) in pts), default=0.0) or 1.0
+    v_top = max(v for (u, v) in pts)
+    central = [v for (u, v) in pts if abs(u) < 0.4 * umax and v < v_top - 1.0]
+    if not central:
+        return 0.0                       # đỉnh phẳng giữa → không có khấc
+    return max(0.0, (v_top - max(central)) * MM)
+
+
 def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
-                   target_width: float = None) -> list:
+                   target_width: float = None, seat_view: bool = False) -> list:
     """Hình chiếu MẶT CẮT NGANG cầu (ngang u × cao z) của trụ lắp ghép.
 
     Trả list {name,color,xs(ngang m),ys(cao z m)}. z_top = cao độ ĐỈNH xà mũ
     (= đáy dầm); H_than = chiều cao thân (m). Xà mũ co bề rộng = target_width.
-    Thân/bệ giữ tiết diện thật → mỗi khối là 1 chữ nhật theo bề rộng ngang."""
+    Thân/bệ giữ tiết diện thật → mỗi khối là 1 chữ nhật theo bề rộng ngang.
+
+    seat_view=True → MCN cắt tại ĐẦU DẦM: vẽ mặt cắt đoạn VAI KÊ (thấp) để thấy
+    KHẤC kê dầm + tường tai (phần kê dầm). seat_view=False → vẽ đoạn ụ giữa (cao)."""
     p = migrate_pier(pier or {})
     parts = p.get("parts", {})
     be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
@@ -795,6 +820,7 @@ def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
     #    (neo theo mức kê dầm = z_top = đáy dầm), KHÔNG ép mọi khối cùng đỉnh.
     cap_secs = _cap_layers(cap)
     z_cap_b = z_top - H_cap
+    _cap_outlines = []   # biên xà mũ (x,y) → thân trụ kéo lên sát đáy xà mũ
     if cap_secs:
         # Xà mũ Super-T = nhiều ĐOẠN (layer) dọc cầu: vai kê đầu/cuối THẤP (đầu dầm
         # khấc kê lên), ụ giữa CAO (đỡ bản). Neo sao cho VAI KÊ ở z_top (=đáy dầm)
@@ -803,30 +829,57 @@ def pier_mcn_polys(pier: dict, z_top: float = 0.0, H_than: float = 5.0,
         seat_h = min(cap_hs[0], cap_hs[-1]) if cap_hs else H_cap   # cao vai kê
         hi     = max(range(len(cap_secs)), key=lambda i: cap_hs[i])
         h_high = cap_hs[hi]
-        sec    = cap_secs[hi]["section"]                          # mặt cắt đoạn cao nhất
+        if seat_view and len(cap_secs) >= 2:
+            # MCN tại ĐẦU DẦM: mặt phẳng cắt qua VAI KÊ → vẽ mặt cắt đoạn THẤP
+            # (có khấc kê dầm + tường tai). ụ giữa nằm giữa cầu (sau mặt cắt) →
+            # không vẽ ở đây. Neo ĐỈNH tường tai vai kê = z_top.
+            _si  = 0 if cap_hs[0] <= cap_hs[-1] else len(cap_secs) - 1
+            sec  = cap_secs[_si]["section"]
+            _z_cap_top = z_top                     # đỉnh tường tai vai kê = z_top
+        else:
+            sec  = cap_secs[hi]["section"]         # mặt cắt đoạn cao nhất (ụ giữa)
+            _z_cap_top = z_top + (h_high - seat_h)  # đỉnh ụ giữa (trên đáy dầm)
         if target_width:
             sec = _scale_section_u(sec, target_width)
         _solids = _section_solids(sec)
         _, _, _, _v_sec_top = _solids_bbox(_solids) if _solids else (0, 0, 0, 0.0)
-        _z_cap_top = z_top + (h_high - seat_h)    # đỉnh ụ giữa (trên đáy dầm)
         _cap_ys = []
         for s in _solids:
+            xs = [u * MM for (u, v) in s["outer"]]
             ys = [_z_cap_top + (v - _v_sec_top) * MM for (u, v) in s["outer"]]
             _cap_ys += ys
-            out.append({"name": "Xà mũ", "color": _COL["xa_mu"],
-                        "xs": [u * MM for (u, v) in s["outer"]],
-                        "ys": ys})
+            _cap_outlines.append(list(zip(xs, ys)))
+            out.append({"name": "Xà mũ", "color": _COL["xa_mu"], "xs": xs, "ys": ys})
         if _cap_ys:
             z_cap_b = min(_cap_ys)
 
-    # 2) THÂN — mỗi khối footprint → 1 chữ nhật ngang [umin,umax] × cao H_than.
+    # Cao độ ĐÁY xà mũ tại hoành độ x (nội suy biên dưới) → thân trụ kéo lên sát.
+    def _cap_bot_at(x):
+        yy = []
+        for poly in _cap_outlines:
+            n = len(poly)
+            for i in range(n):
+                x0, y0 = poly[i]; x1, y1 = poly[(i + 1) % n]
+                if min(x0, x1) - 1e-9 <= x <= max(x0, x1) + 1e-9 and abs(x1 - x0) > 1e-9:
+                    yy.append(y0 + (x - x0) / (x1 - x0) * (y1 - y0))
+        return min(yy) if yy else z_cap_b
+
+    # 2) THÂN — đáy phẳng (= đỉnh bệ); ĐỈNH thân trụ KÉO LÊN bám đáy xà mũ (theo độ
+    #    dốc) → hết khoảng hở giữa thân trụ và xà mũ khi xà mũ dốc/đáy không phẳng.
+    z_be_t = z_cap_b - H_than
     than_sec = than_layers[0]["section"] if than_layers else than.get("section")
     for s in _section_solids(than_sec):
         umin, umax, _, _ = _solids_bbox([s])
+        xL, xR = umin * MM, umax * MM
+        # Đỉnh thân trụ BÁM ĐÁY xà mũ tại MỌI vị trí trong [xL, xR] (gồm cả các
+        # điểm gãy của biên đáy xà mũ) → thân trụ không ngàm vào xà mũ, chỉ kéo
+        # dài tới sát đáy xà mũ ở mọi điểm; hết khoảng hở khi đáy gãy/dốc.
+        _midx = sorted(x for poly in _cap_outlines for (x, _y) in poly if xL < x < xR)
+        _topx = [xL] + _midx + [xR]
+        _top = [(x, _cap_bot_at(x)) for x in _topx]
         out.append({"name": "Thân trụ", "color": _COL["than"],
-                    "xs": [umin * MM, umax * MM, umax * MM, umin * MM],
-                    "ys": [z_cap_b - H_than, z_cap_b - H_than, z_cap_b, z_cap_b]})
-    z_be_t = z_cap_b - H_than
+                    "xs": [xL, xR] + [x for (x, _y) in reversed(_top)],
+                    "ys": [z_be_t, z_be_t] + [y for (_x, y) in reversed(_top)]})
 
     # 3) BỆ — footprint → chữ nhật ngang.
     be_sec = be_layers[0]["section"] if be_layers else be.get("section")
