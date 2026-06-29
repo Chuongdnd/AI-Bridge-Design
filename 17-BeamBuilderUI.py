@@ -1336,37 +1336,31 @@ def render_param_declare(d: dict, base_pfx: str = "spt") -> bool:
     pkey  = f"_param_{pfx}"
     saved = st.session_state.get(pkey) or bb.param_defaults(loai)
 
-    st.caption(f"Loại dầm: **{loai}** — gõ DIM (mm) theo KÝ HIỆU trên mặt cắt, "
-               "bấm áp dụng để cập nhật kích thước · mặt cắt · 3D · khối lượng toàn cầu.")
-    col_fig, col_form = st.columns([1, 1.2])
-    with col_fig:
-        # Mặt cắt MẪU có ký hiệu DIM (vẽ theo giá trị đã lưu/mặc định) → tham chiếu
-        try:
-            _dimfig = bb.make_dim_figure(loai, saved)
-            _aspect(_dimfig, f"dimfig_{pfx}")
-            st.plotly_chart(_dimfig, use_container_width=True,
-                            config={"displayModeBar": False}, key=f"dimfig_{pfx}")
-            st.caption("🔴 Ký hiệu đỏ trên mặt cắt ↔ nhãn ô nhập bên phải "
-                       "(cập nhật hình sau khi áp dụng).")
-        except Exception as _ef:
-            st.warning(f"Không vẽ được mặt cắt mẫu: {_ef}")
+    st.caption(f"Loại dầm: **{loai}** — gõ giá trị (mm) vào BẢNG dưới (cột Giá trị). "
+               "Ký hiệu khớp với DIM trên các bản vẽ mặt cắt 2D ở mục ① bên dưới.")
 
-    with col_form, st.form(f"paramform_{pfx}"):
-        groups: dict = {}
-        for sp in spec:
-            groups.setdefault(sp["group"], []).append(sp)
+    with st.form(f"paramform_{pfx}"):
         vals: dict = {}
-        for gname, items in groups.items():
-            st.markdown(f"**{gname}**")
-            cols = st.columns(len(items))
-            for c, sp in zip(cols, items):
-                with c:
-                    vals[sp["key"]] = st.number_input(
-                        f"{sp.get('sym', sp['key'])} · {sp['label']}",
-                        value=float(saved.get(sp["key"], sp["default"])),
-                        min_value=float(sp["min"]), max_value=float(sp["max"]),
-                        step=float(sp["step"]), key=f"{pkey}_{sp['key']}")
-        st.markdown("**Bố trí dầm trên mặt cắt cầu**")
+        cur_group = None
+        # Bảng: Thông số | Ký hiệu | Giá trị (đầu mục theo nhóm cánh/sườn/bầu…)
+        _hh = st.columns([3, 1, 2])
+        _hh[0].markdown("**Thông số**")
+        _hh[1].markdown("**Ký hiệu**")
+        _hh[2].markdown("**Giá trị (mm)**")
+        for sp in spec:
+            if sp["group"] != cur_group:
+                cur_group = sp["group"]
+                st.markdown(f"*{cur_group}*")
+            rc = st.columns([3, 1, 2])
+            rc[0].markdown(sp["label"])
+            rc[1].markdown(f"**{sp.get('sym', sp['key'])}**")
+            with rc[2]:
+                vals[sp["key"]] = st.number_input(
+                    sp["label"], value=float(saved.get(sp["key"], sp["default"])),
+                    min_value=float(sp["min"]), max_value=float(sp["max"]),
+                    step=float(sp["step"]), key=f"{pkey}_{sp['key']}",
+                    label_visibility="collapsed")
+        st.markdown("*Bố trí dầm trên mặt cắt cầu*")
         gc = st.columns(3)
         with gc[0]:
             L_m = st.number_input("Chiều dài dầm L (m)",
@@ -2781,8 +2775,10 @@ def _order_sec_names(names):
     return sorted(names, key=_key)
 
 
-def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b"):
-    """Đường kích thước (dim) bề rộng + chiều cao cho 1 mặt cắt, toạ độ dữ liệu mm."""
+def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b",
+                  sym_w="B", sym_h="H"):
+    """Đường kích thước (dim) bề rộng + chiều cao cho 1 mặt cắt (toạ độ mm).
+    Nhãn dim dạng "KÝ HIỆU = GIÁ TRỊ" (vd B = 2200, H = 1750)."""
     xL, xR = x_ctr - w / 2.0, x_ctr + w / 2.0
     H = vmax - vmin
     off = max(90.0, 0.06 * max(w, H))        # khoảng đẩy đường dim ra ngoài
@@ -2796,7 +2792,7 @@ def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b"):
         fig.add_trace(go.Scatter(
             x=[xe, xe], y=[vmin, y_d - tk * 0.3], mode="lines",
             line=dict(color=color, width=0.8), showlegend=False, hoverinfo="skip"))
-    fig.add_annotation(x=x_ctr, y=y_d, text=f"{w:.0f}", showarrow=False,
+    fig.add_annotation(x=x_ctr, y=y_d, text=f"{sym_w} = {w:.0f}", showarrow=False,
                        yshift=-9, font=dict(size=9, color=color),
                        bgcolor="rgba(255,255,255,0.85)")
     # ── Dim CHIỀU CAO (bên trái mặt cắt) ──────────────────────────────────
@@ -2808,7 +2804,7 @@ def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b"):
         fig.add_trace(go.Scatter(
             x=[xL, x_d - tk * 0.3], y=[ye, ye], mode="lines",
             line=dict(color=color, width=0.8), showlegend=False, hoverinfo="skip"))
-    fig.add_annotation(x=x_d, y=(vmin + vmax) / 2.0, text=f"{H:.0f}",
+    fig.add_annotation(x=x_d, y=(vmin + vmax) / 2.0, text=f"{sym_h} = {H:.0f}",
                        showarrow=False, xshift=-10, textangle=-90,
                        font=dict(size=9, color=color),
                        bgcolor="rgba(255,255,255,0.85)")
