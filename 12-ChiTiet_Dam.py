@@ -1258,87 +1258,60 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None
     )
     if _from_lib:
         st.caption("📐 Các hình dưới đây dựng từ **mô hình dầm trong Thư viện**.")
-    _render_param_table(d_loai, st)
+    # CHỈ vẽ khi có DẦM THƯ VIỆN thực (có mặt cắt). KHÔNG còn dựng mặt cắt tham
+    # số 'dầm cũ' (tiết diện & kích thước không đúng thực tế).
+    if not _from_lib:
+        st.info("⚠️ Chưa có **dầm thư viện** cho loại/chiều dài này. Vào "
+                "**📚 Thư viện → Dầm** để tạo/upload mặt cắt rồi áp dụng cho "
+                "phương án. Hệ thống không tự dựng mặt cắt tham số nữa.")
+        return
 
-    # ① MẶT CẮT NGANG — ưu tiên mặt cắt thư viện thật
+    # ① Mặt cắt ngang — từ mô hình dầm THƯ VIỆN
     if beam_figs.get("mcn") is not None:
         st.markdown("**① Mặt cắt ngang — các vị trí đã khai báo (A-A, B-B, …)**")
         _aspect(beam_figs["mcn"], st, f"{key_prefix}_mcn_lib")
         st.plotly_chart(beam_figs["mcn"], use_container_width=True,
                         config={"scrollZoom": True, "displayModeBar": True},
                         key=f"{key_prefix}_mcn_lib")
-    else:
-        # ① MCN A-A chi tiết (Super-T máng hở)
-        if "super" in loai_fixed.lower():
-            st.markdown("**① Mặt cắt A-A — Dầm Super-T (máng hở, có khoang rỗng)**")
-            try:
-                fig_aa = ve_spt_aa_detail(d_loai)
-                _aspect(fig_aa, st, f"{key_prefix}_aa_detail")
-                st.plotly_chart(fig_aa, use_container_width=True,
-                                config={"scrollZoom": True, "displayModeBar": True},
-                                key=f"{key_prefix}_aa_detail")
-            except Exception as e:
-                import traceback
-                st.error(f"Lỗi A-A chi tiết: {e}")
-                with st.expander("Chi tiết"):
-                    st.code(traceback.format_exc())
-
-        _mcn_label = ("**① Mặt cắt ngang tổng quan — A-A (đặc), B-B (hở), C-C (trụ)**"
-                      if "super" in loai_fixed.lower()
-                      else "**① Mặt cắt ngang — A-A (đầu dầm/gối) và B-B (giữa nhịp)**")
-        st.markdown(_mcn_label)
-        try:
-            fig_mcn = ve_chi_tiet_mcn(d_loai)
-            _aspect(fig_mcn, st, f"{key_prefix}_mcn")
-            st.plotly_chart(fig_mcn, use_container_width=True,
-                            config={"scrollZoom": True, "displayModeBar": True},
-                            key=f"{key_prefix}_mcn")
-        except Exception as e:
-            import traceback
-            st.error(f"Lỗi MCN: {e}")
-            with st.expander("Chi tiết"):
-                st.code(traceback.format_exc())
 
     # ② Mặt cắt dọc
-    st.markdown("**② Mặt cắt dọc — Tim dầm**")
-    try:
-        fig_doc = (beam_figs["elev"] if beam_figs.get("elev") is not None
-                   else ve_chi_tiet_mat_cat_doc(d_loai))
-        _aspect(fig_doc, st, f"{key_prefix}_doc")
-        st.plotly_chart(fig_doc, use_container_width=True,
-                        config={"scrollZoom": True, "displayModeBar": True},
-                        key=f"{key_prefix}_doc")
-    except Exception as e:
-        st.error(f"Lỗi mặt cắt dọc: {e}")
+    if beam_figs.get("elev") is not None:
+        st.markdown("**② Mặt cắt dọc — Tim dầm**")
+        try:
+            _aspect(beam_figs["elev"], st, f"{key_prefix}_doc")
+            st.plotly_chart(beam_figs["elev"], use_container_width=True,
+                            config={"scrollZoom": True, "displayModeBar": True},
+                            key=f"{key_prefix}_doc")
+        except Exception as e:
+            st.error(f"Lỗi mặt cắt dọc: {e}")
 
     # ③ Mặt bằng
-    st.markdown("**③ Mặt bằng dầm — Nhìn từ trên**")
-    try:
-        fig_mb = (beam_figs["plan"] if beam_figs.get("plan") is not None
-                  else ve_chi_tiet_mat_bang(d_loai))
-        _aspect(fig_mb, st, f"{key_prefix}_mb")
-        st.plotly_chart(fig_mb, use_container_width=True,
-                        config={"scrollZoom": True, "displayModeBar": True},
-                        key=f"{key_prefix}_mb")
-    except Exception as e:
-        st.error(f"Lỗi mặt bằng: {e}")
+    if beam_figs.get("plan") is not None:
+        st.markdown("**③ Mặt bằng dầm — Nhìn từ trên**")
+        try:
+            _aspect(beam_figs["plan"], st, f"{key_prefix}_mb")
+            st.plotly_chart(beam_figs["plan"], use_container_width=True,
+                            config={"scrollZoom": True, "displayModeBar": True},
+                            key=f"{key_prefix}_mb")
+        except Exception as e:
+            st.error(f"Lỗi mặt bằng: {e}")
 
-    # ④ 3D dầm — ưu tiên MÔ HÌNH THƯ VIỆN (người dùng dựng), fallback tham số
-    st.markdown("**④ Mô hình 3D — Shaded (xoay tự do)**")
-    try:
-        fig_3d = (beam_figs["solid"] if beam_figs.get("solid") is not None
-                  else ve_chi_tiet_3d(d_loai))
-        if _PLOT is not None:
-            _PLOT.to_concrete_3d(fig_3d)   # khối đặc màu bê tông (quy tắc thể hiện)
-        st.plotly_chart(fig_3d, use_container_width=True,
-                        config={"scrollZoom": True, "displayModeBar": True},
-                        key=f"{key_prefix}_3d")
-        st.caption("Kéo để xoay · Scroll để zoom · Shift+drag để pan · Nháy đúp để reset")
-    except Exception as e:
-        import traceback
-        st.error(f"Lỗi 3D: {e}")
-        with st.expander("Chi tiết"):
-            st.code(traceback.format_exc())
+    # ④ 3D dầm — từ MÔ HÌNH THƯ VIỆN
+    if beam_figs.get("solid") is not None:
+        st.markdown("**④ Mô hình 3D — Shaded (xoay tự do)**")
+        try:
+            fig_3d = beam_figs["solid"]
+            if _PLOT is not None:
+                _PLOT.to_concrete_3d(fig_3d)   # khối đặc màu bê tông
+            st.plotly_chart(fig_3d, use_container_width=True,
+                            config={"scrollZoom": True, "displayModeBar": True},
+                            key=f"{key_prefix}_3d")
+            st.caption("Kéo để xoay · Scroll để zoom · Shift+drag để pan · Nháy đúp để reset")
+        except Exception as e:
+            import traceback
+            st.error(f"Lỗi 3D: {e}")
+            with st.expander("Chi tiết"):
+                st.code(traceback.format_exc())
 
 
 def render_chi_tiet_dam_tab(d, st):

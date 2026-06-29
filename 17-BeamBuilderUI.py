@@ -1867,14 +1867,53 @@ def _pa_kcn_for_pfx(pfx: str):
     return loai, H * 1000.0
 
 
+def _load_lib_beams():
+    """Danh sách dầm thư viện: ưu tiên cache session, fallback đọc file."""
+    beams = st.session_state.get("dam_beams")
+    if beams:
+        return beams
+    try:
+        import importlib.util as _iu
+        _spec = _iu.spec_from_file_location(
+            "component_library",
+            pathlib.Path(__file__).parent / "utils" / "component_library.py")
+        _cl = _iu.module_from_spec(_spec)
+        _spec.loader.exec_module(_cl)
+        return _cl.load_beams() or []
+    except Exception:
+        return []
+
+
+def _pick_library_beam_for_pfx(pfx: str):
+    """Chọn dầm THƯ VIỆN (có 'sections' thực) khớp loại dự đoán + chiều dài gần
+    nhất cho 1 pfx. Trả bản ghi dầm (dict) hoặc None nếu thư viện chưa có dầm."""
+    beams = [b for b in (_load_lib_beams() or [])
+             if isinstance(b, dict) and b.get("sections")
+             and any((s or {}).get("outer") for s in b["sections"].values())]
+    if not beams:
+        return None
+    loai, _Hmm = _pa_kcn_for_pfx(pfx)
+    dd  = st.session_state.get("design_data") or {}
+    kcn = dd.get("kcn_result") or dd.get("ai_result") or {}
+    L   = float(kcn.get("chieu_dai") or 0)
+    _c  = str(loai or "").strip().lower()
+
+    def _same(b):
+        a = str(b.get("loai_dam", "")).strip().lower()
+        return bool(a) and (a == _c or a in _c or _c in a)
+
+    same = [b for b in beams if _same(b)]
+    pool = same or beams                       # không cùng loại → lấy gần L nhất
+    return min(pool, key=lambda b: abs(float(b.get("chieu_dai") or 0) - L))
+
+
 def _resolve_beam_sections(pfx: str = "spt"):
-    """Bộ mặt cắt dầm + tên mặt cắt giữa nhịp (fill_sec), theo thứ tự ưu tiên:
-    1) mặt cắt người dùng đang khai báo trong session,
-    2) dầm mặc định đã lưu (spt_sections_saved.json),
-    3) THEO NHỊP/LOẠI của phương án: Super-T → preset máng; loại khác → SINH mặt
-       cắt tham số đúng loại + chiều cao (để mọi view có dầm phù hợp dù chưa khai
-       báo, không còn luôn hiển thị Super-T).
-    Đảm bảo mọi view luôn có dầm để vẽ kể cả khi chưa mở tab Chi tiết dầm."""
+    """Bộ mặt cắt dầm + tên mặt cắt giữa nhịp (fill_sec) — CHỈ dùng dầm THỰC từ
+    THƯ VIỆN (có 'sections'), KHÔNG sinh mặt cắt tham số/preset 'dầm cũ' (tiết
+    diện & kích thước không đúng thực tế):
+    1) mặt cắt người dùng đang khai báo trong session (đã nạp từ dầm thư viện),
+    2) nếu trống → chọn dầm THƯ VIỆN khớp loại + chiều dài gần nhất.
+    Trả ({}, fill) nếu thư viện chưa có dầm nào → view hiển thị thông báo."""
     bb = _get_bb()
     pfx = _resolve_storage_pfx(pfx)   # dò pfx thực (kèm hậu tố loại dầm)
     secs      = st.session_state.get(_cad_key(pfx, "sections"))
@@ -1882,18 +1921,15 @@ def _resolve_beam_sections(pfx: str = "spt"):
     fill_sec  = cad_state.get("fill_sec")
     _has_outer = bool(secs) and any(getattr(s, "outer", None) for s in secs.values())
     if not _has_outer:
-        saved = _load_defaults(bb)
-        if saved:
-            secs     = saved["secs"]
-            fill_sec = fill_sec or saved.get("fill_sec")
+        rec = _pick_library_beam_for_pfx(pfx)
+        if rec and rec.get("sections"):
+            secs = {k: bb.CrossSection(name=k, outer=list(v.get("outer", [])),
+                                       holes=[list(h) for h in v.get("holes", [])],
+                                       open=False)
+                    for k, v in rec["sections"].items() if (v or {}).get("outer")}
+            fill_sec = fill_sec or rec.get("fill_sec") or "B-B"
         else:
-            _loai, _Hmm = _pa_kcn_for_pfx(pfx)
-            if (not _loai) or ("super" in _loai.lower()):
-                secs     = {sn: getattr(bb, fn)() for sn, (fn, _) in _SEC_PRESETS.items()}
-                fill_sec = fill_sec or "B-B"
-            else:
-                secs     = {"MC": bb.make_parametric_section(_loai, _Hmm)}
-                fill_sec = "MC"
+            return {}, (fill_sec or "B-B")     # thư viện trống → không vẽ dầm cũ
     return secs, (fill_sec or "B-B")
 
 

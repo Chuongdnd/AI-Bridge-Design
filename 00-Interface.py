@@ -3546,11 +3546,15 @@ def _auto_apply_lib_beam_for_pa(d: dict, ribbon: str, pfx: str) -> None:
     pred     = str(kcn.get("loai_dam", "") or "")
     pred_lib = KCN._CATALOG_TO_LIB_TYPE.get(pred, pred)
     L        = float(kcn.get("chieu_dai") or 0)
-    same = [b for b in (st.session_state.get("dam_beams") or CLIB.load_beams())
-            if _beam_has_sections(b)
-            and str(b.get("loai_dam", "")).strip() == pred_lib]
-    target = (min(same, key=lambda b: abs(float(b.get("chieu_dai") or 0) - L))
-              if same else None)
+    _beams_all = [b for b in (st.session_state.get("dam_beams") or CLIB.load_beams())
+                  if _beam_has_sections(b)]
+    same = [b for b in _beams_all
+            if str(b.get("loai_dam", "")).strip() == pred_lib]
+    # CHỈ dùng dầm THƯ VIỆN thực: cùng loại trước, không có thì lấy dầm thực gần
+    # chiều dài nhất (không sinh mặt cắt tham số 'dầm cũ' nữa).
+    _pool  = same or _beams_all
+    target = (min(_pool, key=lambda b: abs(float(b.get("chieu_dai") or 0) - L))
+              if _pool else None)
     sig = (pred_lib, (target or {}).get("id"))
     if st.session_state.get(f"_auto_sig_{pfx}") == sig:
         return                                   # đã xử lý đúng cho loại+dầm này
