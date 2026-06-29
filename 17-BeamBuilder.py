@@ -1175,20 +1175,31 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
     line_objs: list = []   # (start, end, layer, linetype, color) — dò tim dầm
 
     def _ent_style(ent):
-        """Lấy (layer, linetype, color ACI), tự giải ByLayer."""
+        """Lấy (layer, linetype, color ACI, rgb true-color), tự giải ByLayer."""
         lay = str(getattr(ent.dxf, "layer", "") or "")
         lt  = str(getattr(ent.dxf, "linetype", "") or "")
         col = int(getattr(ent.dxf, "color", 256) or 256)
+        rgb = None
         try:
-            if lt.upper() in ("", "BYLAYER") or col == 256:
-                _lo = doc.layers.get(lay)
+            rgb = ent.rgb            # (r,g,b) nếu true-color; None nếu dùng ACI
+        except Exception:
+            rgb = None
+        try:
+            _lo = doc.layers.get(lay) if (lt.upper() in ("", "BYLAYER")
+                                          or col == 256 or rgb is None) else None
+            if _lo is not None:
                 if lt.upper() in ("", "BYLAYER"):
                     lt = str(_lo.dxf.linetype or "")
                 if col == 256:
                     col = int(_lo.dxf.color or 7)
+                if rgb is None:
+                    try:
+                        rgb = _lo.rgb
+                    except Exception:
+                        pass
         except Exception:
             pass
-        return lay, lt, col
+        return lay, lt, col, rgb
 
     for entity in msp:
         etype = entity.dxftype()
@@ -1377,11 +1388,26 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
 
     # ── Ưu tiên TIM DẦM do người dùng vẽ trong CAD ──────────────────────────
     #   (đường thẳng đứng, linetype CENTER/DASHDOT hoặc layer/màu quy ước).
+    def _is_magenta(col, rgb):
+        """Đường TIM màu HỒNG/MAGENTA: ACI 6, hoặc true-color hồng (R&B cao, G thấp)."""
+        try:
+            if int(col) == 6:
+                return True
+        except Exception:
+            pass
+        if rgb:
+            try:
+                r, g, b = rgb
+                return r > 110 and b > 110 and g < 0.65 * min(r, b)
+            except Exception:
+                return False
+        return False
+
     def _detect_tim_line():
         h = max(ymax - ymin, 1e-6)
         w = max(xmax - xmin, 1e-6)
         cands = []
-        for _s, _e, _lay, _lt, _col in line_objs:
+        for _s, _e, _lay, _lt, _col, _rgb in line_objs:
             _dx = abs(_e[0] - _s[0])
             _dy = abs(_e[1] - _s[1])
             if _dy < 0.25 * h:                 # đủ dài theo phương đứng
@@ -1389,20 +1415,23 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
             if _dx > max(2.0, 0.03 * w):       # gần như thẳng đứng
                 continue
             _xl = (_s[0] + _e[0]) / 2.0
-            if _xl < xmin - 0.5 * w or _xl > xmax + 0.5 * w:
+            _mag = _is_magenta(_col, _rgb)
+            # Đường HỒNG/MAGENTA = quy ước TIM → KHÔNG lọc theo bbox (mặt cắt có
+            # thể vẽ LỆCH khỏi tim, vd tường cánh). Đường khác mới lọc theo bbox.
+            if not _mag and (_xl < xmin - 0.5 * w or _xl > xmax + 0.5 * w):
                 continue
             _U = (str(_lay) + " " + str(_lt)).upper()
             _score = 0
             if any(k in _U for k in ("TIM", "CENTER", "AXIS", "DASHDOT", "DASH")):
                 _score += 3
-            if int(_col) == 6:                 # magenta — màu tim quy ước
-                _score += 2
+            if _mag:                           # màu hồng/magenta = tim ưu tiên cao nhất
+                _score += 5
             cands.append((_score, _xl))
         if not cands:
             return None
         _best = max(s for s, _ in cands)
         _mid = (xmin + xmax) / 2.0
-        if _best >= 2:                         # có dấu hiệu rõ → chọn ứng viên tốt nhất
+        if _best >= 2:                         # có dấu hiệu rõ (gồm magenta) → chọn ứng viên tốt nhất
             return min((c for c in cands if c[0] == _best),
                        key=lambda c: abs(c[1] - _mid))[1]
         if len(cands) == 1:                    # chỉ 1 đường đứng → coi là tim
