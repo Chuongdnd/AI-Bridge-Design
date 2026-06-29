@@ -49,16 +49,55 @@ def _default_db() -> dict:
     }
 
 
-def _load() -> dict:
-    if not os.path.exists(_AUTH_FILE):
-        db = _default_db()
-        _save(db)
-        return db
+def _secrets_users() -> dict:
+    """Tài khoản khai trong st.secrets[auth_users] — NGUỒN BỀN qua reboot trên
+    Streamlit Cloud (file auth_users.json là TẠM, mất khi reboot). Định dạng:
+        [auth_users.admin]
+        password = "matkhau_moi"
+        name = "Administrator"   # tùy chọn
+        role = "admin"           # tùy chọn (mặc định: user)
+        email = ""               # tùy chọn
+    """
+    out = {}
     try:
-        with open(_AUTH_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+        su = dict(st.secrets.get("auth_users", {}) or {})
     except Exception:
-        return _default_db()
+        su = {}
+    for uname, info in su.items():
+        info = {"password": info} if isinstance(info, str) else dict(info)
+        pw = str(info.get("password", "")).strip()
+        if not pw:
+            continue
+        salt = secrets.token_hex(16)
+        out[str(uname).strip()] = {
+            "name":          info.get("name", uname),
+            "email":         info.get("email", ""),
+            "role":          info.get("role", "user"),
+            "salt":          salt,
+            "password_hash": _hash(pw, salt),
+        }
+    return out
+
+
+def _load() -> dict:
+    if os.path.exists(_AUTH_FILE):
+        try:
+            with open(_AUTH_FILE, "r", encoding="utf-8") as f:
+                db = json.load(f)
+        except Exception:
+            db = _default_db()
+    else:
+        db = _default_db()
+    # Seed/ghi đè từ Secrets → mật khẩu khai ở Secrets luôn đúng sau reboot Cloud
+    _sec = _secrets_users()
+    if _sec:
+        db.setdefault("users", {})
+        db["users"].update(_sec)
+        try:
+            _save(db)
+        except Exception:
+            pass
+    return db
 
 
 def _save(db: dict):
