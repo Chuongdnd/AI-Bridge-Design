@@ -79,8 +79,69 @@ def _secrets_users() -> dict:
     return out
 
 
+# ── Kho BỀN ngoài: GitHub Gist riêng (đăng ký/đổi mật khẩu qua UI persist thật) ──
+# Khai trong st.secrets:
+#   [gist_auth]
+#   token    = "ghp_xxx"        # PAT có quyền 'gist'
+#   gist_id  = "xxxxxxxx"       # id của gist riêng
+#   filename = "auth_users.json"  # (tùy chọn)
+def _gist_cfg():
+    try:
+        g = st.secrets.get("gist_auth", None)
+        if g and g.get("token") and g.get("gist_id"):
+            return (g["token"], g["gist_id"], g.get("filename", "auth_users.json"))
+    except Exception:
+        pass
+    return None
+
+
+def _gist_fetch(cfg):
+    import urllib.request
+    token, gid, fname = cfg
+    req = urllib.request.Request(
+        f"https://api.github.com/gists/{gid}",
+        headers={"Authorization": f"token {token}",
+                 "Accept": "application/vnd.github+json",
+                 "User-Agent": "uth-bridge-app"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        data = json.loads(r.read().decode("utf-8"))
+    f = (data.get("files") or {}).get(fname)
+    if not f:
+        return None
+    content = (f.get("content") or "").strip()
+    return json.loads(content) if content else None
+
+
+def _gist_write(cfg, db):
+    import urllib.request
+    token, gid, fname = cfg
+    body = json.dumps({"files": {fname: {"content":
+            json.dumps(db, ensure_ascii=False, indent=2)}}}).encode("utf-8")
+    req = urllib.request.Request(
+        f"https://api.github.com/gists/{gid}", data=body, method="PATCH",
+        headers={"Authorization": f"token {token}",
+                 "Accept": "application/vnd.github+json",
+                 "Content-Type": "application/json",
+                 "User-Agent": "uth-bridge-app"})
+    urllib.request.urlopen(req, timeout=10).read()
+
+
 def _load() -> dict:
-    if os.path.exists(_AUTH_FILE):
+    cfg = _gist_cfg()
+    if cfg:
+        # Kho ngoài (Gist) — cache trong phiên để khỏi gọi API mỗi lần rerun
+        db = st.session_state.get("_auth_db_cache")
+        if db is None:
+            try:
+                db = _gist_fetch(cfg)
+            except Exception:
+                db = None
+            if not (isinstance(db, dict) and db.get("users")):
+                db = _default_db()
+                try: _gist_write(cfg, db)
+                except Exception: pass
+            st.session_state["_auth_db_cache"] = db
+    elif os.path.exists(_AUTH_FILE):
         try:
             with open(_AUTH_FILE, "r", encoding="utf-8") as f:
                 db = json.load(f)
@@ -88,21 +149,29 @@ def _load() -> dict:
             db = _default_db()
     else:
         db = _default_db()
-    # Seed/ghi đè từ Secrets → mật khẩu khai ở Secrets luôn đúng sau reboot Cloud
+    # Overlay tài khoản khai trong Secrets (admin cố định / khôi phục)
     _sec = _secrets_users()
     if _sec:
         db.setdefault("users", {})
         db["users"].update(_sec)
-        try:
-            _save(db)
-        except Exception:
-            pass
     return db
 
 
 def _save(db: dict):
-    with open(_AUTH_FILE, "w", encoding="utf-8") as f:
-        json.dump(db, f, ensure_ascii=False, indent=2)
+    cfg = _gist_cfg()
+    if cfg:
+        st.session_state["_auth_db_cache"] = db
+        try:
+            _gist_write(cfg, db)
+        except Exception as _e:
+            try: st.warning(f"Không ghi được kho tài khoản (Gist): {_e}")
+            except Exception: pass
+    else:
+        try:
+            with open(_AUTH_FILE, "w", encoding="utf-8") as f:
+                json.dump(db, f, ensure_ascii=False, indent=2)
+        except Exception:
+            pass
 
 
 # ─────────────────────────────────────────────────────────────────────────────
