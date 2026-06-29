@@ -1236,12 +1236,15 @@ def _render_param_table(d_loai, st):
                   "Giá trị":  [r[1] for r in rows]})
 
 
-def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None):
+def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None,
+                         declare=None):
     """
     Render tab chi tiết cho một loại dầm cố định.
     Hiển thị MCN A-A/B-B, mặt cắt dọc, mặt bằng, 3D.
     beam_figs: dict {mcn,elev,plan,solid} — nếu có → dùng hình từ MÔ HÌNH DẦM
                THƯ VIỆN (người dùng dựng) thay cho các hình tham số cũ.
+    declare:   callable 0 tham số — nếu có → render FORM KHAI BÁO THÔNG SỐ
+               (tham số hóa) tại vị trí bảng thông số cũ (thay bảng chỉ-đọc).
     """
     beam_figs = beam_figs or {}
     _from_lib = bool(beam_figs.get("solid") or beam_figs.get("mcn"))
@@ -1258,7 +1261,13 @@ def render_chi_tiet_loai(d_actual, st, loai_fixed, key_prefix="", beam_figs=None
     )
     if _from_lib:
         st.caption("📐 Các hình dưới đây dựng từ **mô hình dầm trong Thư viện**.")
-    _render_param_table(d_loai, st)
+    # KHAI BÁO THÔNG SỐ (tham số hóa) — thay bảng thông số chỉ-đọc cũ.
+    if declare is not None:
+        st.markdown("**📐 Khai báo thông số dầm (tham số hóa)**")
+        try:
+            declare()
+        except Exception as _ed:
+            st.error(f"Lỗi form thông số dầm: {_ed}")
 
     # ① MẶT CẮT NGANG — ưu tiên mặt cắt thư viện thật
     if beam_figs.get("mcn") is not None:

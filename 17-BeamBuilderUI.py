@@ -1316,6 +1316,98 @@ def _segdicts_to_segments(bb, seg_dicts, has_fn, avail, reverse=False):
     return out
 
 
+def render_param_declare(d: dict, base_pfx: str = "spt") -> bool:
+    """Form KHAI BÁO THÔNG SỐ DẦM theo DIM có tên → sinh mặt cắt + đoạn, ghi vào
+    session của pfx → MCN/3D/trắc dọc + khối lượng TOÀN CẦU cập nhật theo, đồng
+    thời cập nhật kcn_result (chiều cao/chiều dài/số dầm/khoảng cách).
+
+    Trả True nếu vừa áp dụng (đã st.rerun)."""
+    bb   = _get_bb()
+    kcn  = dict(d.get("kcn_result") or d.get("ai_result") or {})
+    loai = (st.session_state.get(f"{base_pfx}_beam_type")
+            or kcn.get("loai_dam") or "Super-T")
+    t    = bb.normalize_beam_type(loai)
+    spec = bb.PARAM_SPECS.get(t, [])
+    if not spec:
+        st.info("Loại dầm chưa hỗ trợ tham số hóa.")
+        return False
+
+    pfx   = effective_pfx(base_pfx, loai)
+    pkey  = f"_param_{pfx}"
+    saved = st.session_state.get(pkey) or bb.param_defaults(loai)
+
+    st.caption(f"Loại dầm: **{loai}** — gõ giá trị (mm) vào BẢNG dưới (cột Giá trị). "
+               "Ký hiệu khớp với DIM trên các bản vẽ mặt cắt 2D ở mục ① bên dưới.")
+
+    with st.form(f"paramform_{pfx}"):
+        vals: dict = {}
+        cur_group = None
+        # Bảng: Thông số | Ký hiệu | Giá trị (đầu mục theo nhóm cánh/sườn/bầu…)
+        _hh = st.columns([3, 1, 2])
+        _hh[0].markdown("**Thông số**")
+        _hh[1].markdown("**Ký hiệu**")
+        _hh[2].markdown("**Giá trị (mm)**")
+        for sp in spec:
+            if sp["group"] != cur_group:
+                cur_group = sp["group"]
+                st.markdown(f"*{cur_group}*")
+            rc = st.columns([3, 1, 2])
+            rc[0].markdown(sp["label"])
+            rc[1].markdown(f"**{sp.get('sym', sp['key'])}**")
+            with rc[2]:
+                vals[sp["key"]] = st.number_input(
+                    sp["label"], value=float(saved.get(sp["key"], sp["default"])),
+                    min_value=float(sp["min"]), max_value=float(sp["max"]),
+                    step=float(sp["step"]), key=f"{pkey}_{sp['key']}",
+                    label_visibility="collapsed")
+        st.markdown("*Bố trí dầm trên mặt cắt cầu*")
+        gc = st.columns(3)
+        with gc[0]:
+            L_m = st.number_input("Chiều dài dầm L (m)",
+                                  value=float(kcn.get("chieu_dai", 38.2) or 38.2),
+                                  min_value=5.0, max_value=80.0, step=0.1,
+                                  key=f"{pkey}_L")
+        with gc[1]:
+            n_dam = st.number_input("Số dầm / MCN",
+                                    value=int(kcn.get("so_luong_dam")
+                                              or kcn.get("so_luong_dam_mcn", 5)),
+                                    min_value=2, max_value=20, step=1,
+                                    key=f"{pkey}_ndam")
+        with gc[2]:
+            kc = st.number_input("Khoảng cách dầm (m)",
+                                 value=float(kcn.get("khoang_cach_dam", 2.2) or 2.2),
+                                 min_value=0.5, max_value=5.0, step=0.05,
+                                 key=f"{pkey}_kc")
+        applied = st.form_submit_button(
+            "🔄 Áp dụng thông số → cập nhật toàn cầu",
+            type="primary", use_container_width=True)
+
+    if applied:
+        secs, segs, fill = bb.build_param_sections(loai, vals)
+        st.session_state[_cad_key(pfx, "sections")] = secs
+        cs = st.session_state.get(_cad_key(pfx, "state")) or {}
+        cs["segs"] = segs
+        cs["fill_sec"] = fill
+        cs["asym"] = False
+        st.session_state[_cad_key(pfx, "state")] = cs
+        st.session_state[pkey] = vals
+        st.session_state[f"{base_pfx}_beam_type"] = loai
+        # Cập nhật kcn_result (toàn cầu): cao dầm/chiều dài/số dầm/khoảng cách.
+        kcn["loai_dam"]      = loai
+        kcn["chieu_cao_dam"] = float(vals.get("H", 1750)) / 1000.0
+        kcn["chieu_cao"]     = kcn["chieu_cao_dam"]
+        kcn["chieu_dai"]     = float(L_m)
+        kcn["so_luong_dam"]  = int(n_dam)
+        kcn["khoang_cach_dam"] = float(kc)
+        d["kcn_result"] = kcn
+        if d.get("ai_result") is not None:
+            d["ai_result"] = kcn
+        st.success("✅ Đã áp dụng thông số — mặt cắt, 3D và khối lượng toàn cầu "
+                   "sẽ cập nhật.")
+        st.rerun()
+    return False
+
+
 def render_cad_spt_tab(d: dict, pfx: str = "spt", show_type: bool = True):
     """
     Tab chi tiết dầm — hỗ trợ Super-T, T ngược, I-Beam.
@@ -2683,8 +2775,10 @@ def _order_sec_names(names):
     return sorted(names, key=_key)
 
 
-def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b"):
-    """Đường kích thước (dim) bề rộng + chiều cao cho 1 mặt cắt, toạ độ dữ liệu mm."""
+def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b",
+                  sym_w="B", sym_h="H"):
+    """Đường kích thước (dim) bề rộng + chiều cao cho 1 mặt cắt (toạ độ mm).
+    Nhãn dim dạng "KÝ HIỆU = GIÁ TRỊ" (vd B = 2200, H = 1750)."""
     xL, xR = x_ctr - w / 2.0, x_ctr + w / 2.0
     H = vmax - vmin
     off = max(90.0, 0.06 * max(w, H))        # khoảng đẩy đường dim ra ngoài
@@ -2698,7 +2792,7 @@ def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b"):
         fig.add_trace(go.Scatter(
             x=[xe, xe], y=[vmin, y_d - tk * 0.3], mode="lines",
             line=dict(color=color, width=0.8), showlegend=False, hoverinfo="skip"))
-    fig.add_annotation(x=x_ctr, y=y_d, text=f"{w:.0f}", showarrow=False,
+    fig.add_annotation(x=x_ctr, y=y_d, text=f"{sym_w} = {w:.0f}", showarrow=False,
                        yshift=-9, font=dict(size=9, color=color),
                        bgcolor="rgba(255,255,255,0.85)")
     # ── Dim CHIỀU CAO (bên trái mặt cắt) ──────────────────────────────────
@@ -2710,7 +2804,7 @@ def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b"):
         fig.add_trace(go.Scatter(
             x=[xL, x_d - tk * 0.3], y=[ye, ye], mode="lines",
             line=dict(color=color, width=0.8), showlegend=False, hoverinfo="skip"))
-    fig.add_annotation(x=x_d, y=(vmin + vmax) / 2.0, text=f"{H:.0f}",
+    fig.add_annotation(x=x_d, y=(vmin + vmax) / 2.0, text=f"{sym_h} = {H:.0f}",
                        showarrow=False, xshift=-10, textangle=-90,
                        font=dict(size=9, color=color),
                        bgcolor="rgba(255,255,255,0.85)")
