@@ -1129,7 +1129,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             _z_base_mo = z_terr_mo - 0.5
             for _pl in _PB.abutment_elevation_polys(
                     abutment_assembly, H_tru=(z_cap_t - _z_base_mo),
-                    x_face=xm, out_dir=sign, z_base=_z_base_mo):
+                    x_face=xm, out_dir=sign, z_base=_z_base_mo,
+                    seat_z=z_dam_b):       # vai kê = đáy dầm; bệ = ĐTN−0.5
                 _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
                       (_pl["name"] if side == "Trái" else ""),
                       showlegend=(side == "Trái"))
@@ -2564,7 +2565,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 try:
                     _mtr = _PBm2.build_abutment_mesh_traces(
                         _mo_model, H_tru=_Htru_mo, x_face=xm,
-                        out_dir=sgn, z_base=_zbase_mo)
+                        out_dir=sgn, z_base=_zbase_mo, seat_z=cao_dd)
                 except Exception as _me:
                     print(f"[add_all] mố lỗi: {_me}"); _mtr = []
                 for _tr in _mtr:
