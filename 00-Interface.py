@@ -34,11 +34,11 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 st.markdown("""
 <style>
 /* ── Ẩn Streamlit toolbar/menu/footer ── */
-/* TẠM: HIỆN 3 ký hiệu GitHub (toolbar actions) + đưa LÊN TRÊN thanh topbar
-   tùy chỉnh (z-index 500/501) để không bị che. Khôi phục: đặt lại display:none. */
-[data-testid="stToolbarActions"]  { display: flex !important; z-index: 1000 !important; }
-[data-testid="stToolbar"]         { z-index: 1000 !important; }
-[data-testid="stHeader"]          { z-index: 1000 !important; background: transparent !important; }
+/* ── Ẩn cụm Share/GitHub/menu (stToolbar) + thu HEADER để KHÔNG che ribbon ── */
+[data-testid="stToolbar"]         { display: none !important; }
+[data-testid="stToolbarActions"]  { display: none !important; }
+[data-testid="stHeader"]          { height: 0 !important; min-height: 0 !important;
+    background: transparent !important; z-index: 0 !important; pointer-events: none !important; }
 [data-testid="stDecoration"]      { display: none !important; }
 [data-testid="stStatusWidget"]    { display: none !important; }
 .stDeployButton                   { display: none !important; }
