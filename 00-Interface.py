@@ -7044,7 +7044,13 @@ with _col_main:
                         # đồng bộ chiều cao & vị trí với mố trên cầu.
                         _asm_vt  = d.get("_mo_model") or _resolve_assembly(d, "mo")
                         _Hmo_vt  = float(d.get("H_tru_est") or 0) or None
-                        _cao_dd_vt = float(d.get("cao_day_dam", (_Hmo_vt or 5.0) + 5.0))
+                        _cao_dd_vt0 = float(d.get("cao_day_dam", (_Hmo_vt or 5.0) + 5.0))
+                        # Đáy dầm PHÍA MỐ = đáy dầm − độ sâu khấc (đầu dầm lên mố đầu trơn)
+                        try:
+                            _nd_vt = PB.cap_seat_notch_depth_m(_pa_tru) if _pa_tru else 0.0
+                        except Exception:
+                            _nd_vt = 0.0
+                        _cao_dd_vt = _cao_dd_vt0 - float(_nd_vt or 0.0)
                         _zbase_vt  = float(d.get("h_tn_tb", 2.0)) - 0.5
                         _fig3d_vt = (PB.build_abutment_preview_fig(
                                         _asm_vt, H_tru=_Hmo_vt, target_width=_bc_vt,
