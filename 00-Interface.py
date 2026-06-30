@@ -6508,6 +6508,17 @@ with _col_main:
                                 ),
                             )
 
+                            # Lưu LƯỚI cầu (mesh) đã dựng để XUẤT IFC khớp ĐÚNG 3D
+                            # đang xem (kèm he_so_z để khôi phục cao độ thực khi xuất).
+                            try:
+                                st.session_state[f"_bridge3d_{selected_ribbon}"] = (
+                                    [t for t in _fig_t.data
+                                     if getattr(t, "type", "") == "mesh3d"],
+                                    float(he_so_z) or 1.0,
+                                )
+                            except Exception:
+                                pass
+
                             st.plotly_chart(_fig_t, use_container_width=True,
                                             config={"displayModeBar": True})
                             st.caption(
@@ -7290,10 +7301,16 @@ with _col_main:
                         return None
 
                     def _bridge_ifc_bytes():
-                        # IFC khớp ĐÚNG 3D Tổng hợp mới nhất: dùng CÙNG builder hệ
-                        # VN-2000 (add_all_to_terrain_fig + dầm _vn2000) với he_so_z=1
-                        # (hình học THỰC). Có địa hình → bám tuyến; không có → fallback
-                        # ve_cau_3d (hệ lý trình).
+                        # ƯU TIÊN: dùng CHÍNH lưới 3D Tổng hợp đang xem (đã lưu) →
+                        # IFC khớp đúng (mố đúng hướng, dầm gác xà mũ); z_scale khôi
+                        # phục cao độ thực (chia he_so_z hiển thị).
+                        _cache = st.session_state.get(f"_bridge3d_{selected_ribbon}")
+                        if _cache and _cache[0]:
+                            _ct, _chz = _cache
+                            return IFCX.mesh_traces_to_ifc(
+                                _ct, project_name=f"Cau {selected_ribbon}",
+                                z_scale=(1.0 / _chz if _chz else 1.0))
+                        # Fallback: dựng lại bằng builder VN-2000 / ve_cau_3d.
                         _pfx3 = _PA_SPT_PFX.get(selected_ribbon, "spt")
                         _trs = []
                         if _df_geo is not None and not getattr(_df_geo, "empty", True):
