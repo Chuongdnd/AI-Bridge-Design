@@ -34,11 +34,11 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 st.markdown("""
 <style>
 /* ── Ẩn Streamlit toolbar/menu/footer ── */
-/* TẠM: HIỆN 3 ký hiệu GitHub (toolbar actions) + đưa LÊN TRÊN thanh topbar
-   tùy chỉnh (z-index 500/501) để không bị che. Khôi phục: đặt lại display:none. */
-[data-testid="stToolbarActions"]  { display: flex !important; z-index: 1000 !important; }
-[data-testid="stToolbar"]         { z-index: 1000 !important; }
-[data-testid="stHeader"]          { z-index: 1000 !important; background: transparent !important; }
+/* ── Ẩn cụm Share/GitHub/menu (stToolbar) + thu HEADER để KHÔNG che ribbon ── */
+[data-testid="stToolbar"]         { display: none !important; }
+[data-testid="stToolbarActions"]  { display: none !important; }
+[data-testid="stHeader"]          { height: 0 !important; min-height: 0 !important;
+    background: transparent !important; z-index: 0 !important; pointer-events: none !important; }
 [data-testid="stDecoration"]      { display: none !important; }
 [data-testid="stStatusWidget"]    { display: none !important; }
 .stDeployButton                   { display: none !important; }
@@ -2319,12 +2319,8 @@ def _render_topbar(d: dict, cur_tab: str) -> None:
         f"color:#007acc;white-space:nowrap;border-right:1px solid #1e1e2e;"
         f"height:44px;display:flex;align-items:center'>🏗️ UTH</div>"
         f"<div class='uth-tabs'>{_tabs_h}</div>"
-        f"<div class='uth-info' style='border-left:1px solid #1e1e2e;padding:0 12px;"
-        f"font-size:10px;color:#666;white-space:nowrap;"
-        f"max-width:260px;overflow:hidden;text-overflow:ellipsis'>{_info}</div>"
-        f"<div style='border-left:1px solid #1e1e2e;padding:0 12px;"
-        f"font-size:11px;color:#aaa;white-space:nowrap'>"
-        f"{_crown} {_uname}</div>"
+        # Đã BỎ cụm "L=… · Super-T" và "👤 Administrator" ở góc phải topbar vì
+        # đè lên cụm icon GitHub của Streamlit. (Chỉ bỏ 2 cụm này, giữ ribbon.)
         f"</div>",
         unsafe_allow_html=True,
     )
