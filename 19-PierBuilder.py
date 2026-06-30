@@ -360,6 +360,85 @@ def build_pier_from_parts(cap: dict = None, stem: dict = None,
     return {"ten": ten, "parts": parts, "loai": "tru"}
 
 
+def _poly_centroid_u(outer):
+    """Hoành độ u (mm) trọng tâm 1 đa giác (đơn vị mặt cắt)."""
+    pts = outer[:-1] if outer and outer[0] == outer[-1] else outer
+    n = len(pts)
+    if n < 3:
+        return sum(p[0] for p in pts) / max(1, n) if pts else 0.0
+    a2 = cu = 0.0
+    for i in range(n):
+        j = (i + 1) % n
+        cr = pts[i][0] * pts[j][1] - pts[j][0] * pts[i][1]
+        a2 += cr; cu += (pts[i][0] + pts[j][0]) * cr
+    if abs(a2) < 1e-9:
+        return sum(p[0] for p in pts) / n
+    return cu / (3.0 * a2)
+
+
+def pier_stem_info(pier: dict):
+    """Nhận diện THÂN trụ → ('2cot', khoảng_cách_2_cột_m) hoặc ('dac', bề_rộng_m)
+    hoặc (None, 0). Dùng để hiện ô khai báo phù hợp + giá trị hiện tại."""
+    p = migrate_pier(pier or {})
+    lays = stem_layers_of(p.get("parts", {}).get("than", {}))
+    if not lays:
+        return None, 0.0
+    solids = _section_solids(lays[0]["section"])
+    if len(solids) >= 2:
+        cs = sorted(solids, key=lambda s: _poly_centroid_u(s["outer"]))
+        return "2cot", abs(_poly_centroid_u(cs[-1]["outer"])
+                           - _poly_centroid_u(cs[0]["outer"])) * MM
+    if len(solids) == 1:
+        us = [u for (u, _v) in solids[0]["outer"]]
+        return "dac", (max(us) - min(us)) * MM if us else 0.0
+    return None, 0.0
+
+
+def apply_stem_params(pier: dict, spacing_m: float = None,
+                      width_m: float = None) -> dict:
+    """Chỉnh THÂN trụ theo khai báo: spacing_m = khoảng cách 2 cột (trụ 2 thân);
+    width_m = bề rộng thân (trụ đặc 1 thân). Trả pier MỚI (copy), không đổi gốc."""
+    import copy
+    p = copy.deepcopy(migrate_pier(pier or {}))
+    than = p.get("parts", {}).get("than", {})
+    lays = stem_layers_of(than)
+    if not lays:
+        return p
+    new_lays = []
+    for lay in lays:
+        sec = dict(lay.get("section") or {})
+        solids = _section_solids(sec)
+        if len(solids) == 2 and spacing_m and spacing_m > 0:
+            cs = sorted(solids, key=lambda s: _poly_centroid_u(s["outer"]))
+            tc = spacing_m / 2.0 / MM            # tâm cột mục tiêu (mm)
+            ns = []
+            for k, s in enumerate(cs):
+                c = _poly_centroid_u(s["outer"])
+                shift = (-tc - c) if k == 0 else (tc - c)
+                ns.append({"outer": [[u + shift, v] for (u, v) in s["outer"]],
+                           "holes": [[[u + shift, v] for (u, v) in h]
+                                     for h in s.get("holes", [])]})
+            sec["solids"] = ns
+            sec["outer"] = ns[0]["outer"]
+            sec["holes"] = ns[0].get("holes", [])
+        elif len(solids) == 1 and width_m and width_m > 0:
+            s = solids[0]
+            us = [u for (u, _v) in s["outer"]]
+            cu = (min(us) + max(us)) / 2.0
+            cur = (max(us) - min(us)) or 1.0
+            f = (width_m / MM) / cur
+            no = [[cu + (u - cu) * f, v] for (u, v) in s["outer"]]
+            nh = [[[cu + (u - cu) * f, v] for (u, v) in h]
+                  for h in s.get("holes", [])]
+            sec["solids"] = [{"outer": no, "holes": nh}]
+            sec["outer"] = no
+            sec["holes"] = nh
+        new_lays.append({**lay, "section": sec})
+    than = dict(than); than["layers"] = new_lays
+    p["parts"] = dict(p["parts"]); p["parts"]["than"] = than
+    return p
+
+
 
 def _plan_mesh(section, z0, H, x_ctr, color, name):
     """Bệ/thân: section (u,v) mm → mặt bằng (x=v dọc, y=u ngang), đùn z.

@@ -352,6 +352,8 @@ _DESIGN_SAVE_KEYS = [
     'mong_result','lop_phu_result', 'cao_day_dam', 'H_tru_est',
     'lib_dam_applied', 'pile_layouts', 'railing_by_pa', 'span_layout_by_pa',
     'h_goi_m', '_auto_pier_cap',
+    'abutment_assembly_id', 'pier_assembly_id',
+    'pier_col_spacing_m', 'pier_solid_width_m',
 ]
 
 def _cur_user_pid():
@@ -4411,20 +4413,34 @@ def _auto_pier_on_beam_change(d, ribbon):
 def _resolve_assembly(d, kind: str) -> dict:
     """Bản ghi trụ/mố lắp ghép đang gán cho cầu (None nếu dùng mặc định)."""
     cfg = _asm_cfg(kind)
+
+    def _ap_pier(rec):
+        """Áp khai báo THÂN trụ (khoảng cách 2 cột / bề rộng thân) cho mọi vị trí."""
+        if not rec:
+            return rec
+        _sp = (d or {}).get("pier_col_spacing_m")
+        _wd = (d or {}).get("pier_solid_width_m")
+        if _sp or _wd:
+            try:
+                rec = PB.apply_stem_params(rec, spacing_m=_sp, width_m=_wd)
+            except Exception:
+                pass
+        return rec
+
     if kind == "tru":
         pp = _current_pier_parts()
         if pp and pp.get("pier_id"):              # TRỤ TỔNG đã lưu
             rec = CLIB.get_pier(_saved_piers(), pp["pier_id"])
             if rec:
-                return _pier_total_assembly(rec)
+                return _ap_pier(_pier_total_assembly(rec))
         if pp and (pp.get("cap_id") or pp.get("stem_id") or pp.get("footing_id")):
             caps, stems, foots = _pier_part_libs()
             cap  = CLIB.get_cap(caps, pp.get("cap_id"))
             stem = CLIB.get_stem(stems, pp.get("stem_id"))
             foot = CLIB.get_footing(foots, pp.get("footing_id"))
             if cap or stem or foot:
-                return PB.build_pier_from_parts(cap, stem, foot,
-                                                ten=pp.get("ten", "Trụ lắp ghép"))
+                return _ap_pier(PB.build_pier_from_parts(
+                    cap, stem, foot, ten=pp.get("ten", "Trụ lắp ghép")))
     items = st.session_state.get(cfg["ss"]) or cfg["load"]()
     rid = (d or {}).get(cfg["id_key"])
     if not rid:
@@ -4432,7 +4448,8 @@ def _resolve_assembly(d, kind: str) -> dict:
         if kind == "mo" and items:
             return items[0]
         return None
-    return cfg["get"](items, rid) or (items[0] if kind == "mo" and items else None)
+    _rec = cfg["get"](items, rid) or (items[0] if kind == "mo" and items else None)
+    return _ap_pier(_rec) if kind == "tru" else _rec
 
 
 def _sync_beam_height(d, ribbon):
@@ -6912,6 +6929,33 @@ with _col_main:
                     st.metric("Lý trình vị trí cắt", f"{_x_cut_show:.2f} m")
                     st.metric("Cao độ đáy dầm", f"{d.get('cao_day_dam', 0):.3f} m")
                     st.metric("H trụ ước tính", f"{d.get('H_tru_est', 0):.2f} m")
+
+                # ── Khai báo THÂN TRỤ (áp cho MỌI trụ trên cầu) ─────────────
+                if _selected_vt.startswith("tru"):
+                    _pa_param = _resolve_assembly(d, "tru")
+                    try:
+                        _stype, _sval = (PB.pier_stem_info(_pa_param)
+                                         if _pa_param else (None, 0.0))
+                    except Exception:
+                        _stype, _sval = (None, 0.0)
+                    if _stype == "2cot":
+                        _cur = float(d.get("pier_col_spacing_m") or _sval or 9.0)
+                        _new = st.number_input(
+                            "↔️ Khoảng cách 2 cột trụ (m) — áp cho MỌI trụ 2 thân",
+                            min_value=0.5, max_value=20.0, value=round(_cur, 2),
+                            step=0.1, key="pier_col_spacing_in",
+                            help="Khai báo 1 lần → cập nhật mọi trụ 2 thân trên cầu.")
+                        d["pier_col_spacing_m"] = float(_new)
+                        st.session_state.design_data["pier_col_spacing_m"] = float(_new)
+                    elif _stype == "dac":
+                        _cur = float(d.get("pier_solid_width_m") or _sval or 2.0)
+                        _new = st.number_input(
+                            "↔️ Bề rộng thân trụ (m) — áp cho MỌI trụ đặc thân hẹp",
+                            min_value=0.3, max_value=10.0, value=round(_cur, 2),
+                            step=0.1, key="pier_solid_width_in",
+                            help="Khai báo 1 lần → cập nhật mọi trụ đặc thân hẹp trên cầu.")
+                        d["pier_solid_width_m"] = float(_new)
+                        st.session_state.design_data["pier_solid_width_m"] = float(_new)
 
                 # ── 🔵 Sơ đồ cọc tại vị trí — upload DXF mặt bằng + cọc xiên ──
                 _vt_label_cur = _vi_tri_labels[_vt_idx]
