@@ -14,6 +14,7 @@ Trả về bytes để Streamlit download_button dùng trực tiếp.
 """
 
 import io
+import re
 import math
 import numpy as np
 
@@ -100,6 +101,75 @@ def _title_block(msp, title, subtitle, scale, x0=0, y0=0):
     msp.add_text(f"TỶ LỆ: {scale}", dxfattribs={"layer": "TEXT", "height": h}).set_placement((x0, y0 - 1.1))
     msp.add_text("ĐẠI HỌC GIAO THÔNG VẬN TẢI TP.HCM (UTH) — AI BRIDGE DESIGN",
                  dxfattribs={"layer": "TEXT", "height": h * 0.8}).set_placement((x0, y0 - 1.6))
+
+
+def _strip_html(s) -> str:
+    return re.sub(r"<[^>]+>", " ", str(s or "")).replace("&nbsp;", " ").strip()
+
+
+def _trace_layer(nm: str) -> str:
+    nm = nm or ""
+    if "ầm" in nm:                                           return "GIRDER"
+    if any(k in nm for k in ("Trụ", "Xà", "Bệ", "Cọc", "Mố")): return "PIER"
+    if any(k in nm for k in ("Bản", "phủ", "BTN", "mặt cầu", "Lớp")): return "DECK"
+    if "Lan can" in nm:                                      return "RAILING"
+    if "nước" in nm or "MN" in nm:                           return "WATER"
+    if "Tĩnh không" in nm:                                   return "CLEARANCE"
+    return "DESIGN_LINE"
+
+
+def fig_to_dxf_bytes(fig, title: str = "BAN VE") -> bytes:
+    """Chuyển figure Plotly 2D (toạ độ MÉT) → DXF (mét) — giữ ĐÚNG hình như hệ
+    thống (dùng chính polygon/đường/chữ mà webapp vẽ). Scatter→lwpolyline,
+    shapes→line/rect, annotations→text."""
+    if not _HAS_EZDXF:
+        raise RuntimeError("Thiếu thư viện ezdxf")
+    doc = _setup_doc(title)
+    msp = doc.modelspace()
+
+    for tr in getattr(fig, "data", []):
+        if getattr(tr, "type", "") != "scatter":
+            continue
+        xs, ys = tr.x, tr.y
+        if xs is None or ys is None:
+            continue
+        _lyr    = _trace_layer(getattr(tr, "name", ""))
+        _closed = str(getattr(tr, "fill", None) or "") in ("toself", "tonext")
+        seg = []
+        for x, y in zip(xs, ys):
+            if x is None or y is None:
+                if len(seg) >= 2:
+                    msp.add_lwpolyline(seg, close=_closed, dxfattribs={"layer": _lyr})
+                seg = []
+            else:
+                seg.append((float(x), float(y)))
+        if len(seg) >= 2:
+            msp.add_lwpolyline(seg, close=_closed, dxfattribs={"layer": _lyr})
+
+    for sh in (getattr(fig.layout, "shapes", None) or []):
+        try:
+            if sh.type == "line":
+                msp.add_line((float(sh.x0), float(sh.y0)), (float(sh.x1), float(sh.y1)),
+                             dxfattribs={"layer": "DIMS"})
+            elif sh.type == "rect":
+                _x0, _y0, _x1, _y1 = float(sh.x0), float(sh.y0), float(sh.x1), float(sh.y1)
+                msp.add_lwpolyline([(_x0, _y0), (_x1, _y0), (_x1, _y1), (_x0, _y1)],
+                                   close=True, dxfattribs={"layer": "CLEARANCE"})
+        except Exception:
+            pass
+
+    for an in (getattr(fig.layout, "annotations", None) or []):
+        try:
+            _txt = _strip_html(an.text)
+            if _txt:
+                msp.add_text(_txt, dxfattribs={"layer": "TEXT", "height": 0.18}
+                             ).set_placement((float(an.x), float(an.y)))
+        except Exception:
+            pass
+
+    buf = io.StringIO()
+    doc.write(buf)
+    return buf.getvalue().encode("utf-8")
 
 
 # ===========================================================================

@@ -7310,23 +7310,54 @@ with _col_main:
                         return IFCX.mesh_traces_to_ifc(_trs,
                                                        project_name=f"Tru {selected_ribbon}")
 
+                    # ── DXF 2D khớp hệ thống: vẽ lại figure 2D thực rồi convert ──
+                    def _pfx_exp():
+                        return _PA_SPT_PFX.get(selected_ribbon, "spt")
+
+                    def _mcn_dxf_bytes():
+                        _fig = BVK.ve_mat_cat_ngang_2d(
+                            d, pier_assembly=_resolve_assembly(d, "tru"))
+                        try:
+                            for _t in (BBUI.get_mcn_overlay_traces(d, pfx=_pfx_exp()) or []):
+                                _fig.add_trace(_t)
+                        except Exception:
+                            pass
+                        return EXP.fig_to_dxf_bytes(_fig, "MAT CAT NGANG DIEN HINH")
+
+                    def _td_dxf_bytes():
+                        _fig = BVK.ve_so_do_nhip_2d(
+                            d, pier_assembly=_resolve_assembly(d, "tru"),
+                            abutment_assembly=_resolve_assembly(d, "mo"))
+                        try:
+                            for _t in (BBUI.get_elevation_profile_traces(d, pfx=_pfx_exp()) or []):
+                                _fig.add_trace(_t)
+                        except Exception:
+                            pass
+                        return EXP.fig_to_dxf_bytes(_fig, "TRAC DOC / SO DO NHIP")
+
+                    def _tru_dxf_bytes():
+                        _fig = BVK.ve_mcn_vi_tri(
+                            d, vi_tri="tru_1",
+                            pier_assembly=_resolve_assembly(d, "tru"))
+                        return EXP.fig_to_dxf_bytes(_fig, "TRU - MAT CAT NGANG")
+
                     # Cây xuất 3 cấp: (thư mục, dir, [ (cấu kiện, sub_dir,
                     #   [ (id, định dạng, tệp, producer) ]) ]). Quy ước: 2D→DXF, 3D→IFC.
                     _exp_tree = [
                         ("🌉 Kết cấu cầu", "KetCauCau", [
                             ("Mặt cắt ngang", "MatCatNgang", [
                                 ("mcn2d", "2D — DXF",            "mat_cat_ngang.dxf",
-                                 lambda: EXP.export_mcn_dxf(d)),
+                                 _mcn_dxf_bytes),
                                 ("mcn3d", "3D — IFC (kéo dọc cầu)", "mat_cat_ngang_3d.ifc",
                                  _bridge_ifc_bytes),
                             ]),
                             ("Trắc dọc", "TracDoc", [
                                 ("td2d", "2D — DXF", "trac_doc.dxf",
-                                 lambda: EXP.export_trac_doc_dxf(d)),
+                                 _td_dxf_bytes),
                             ]),
                             ("Trụ cầu", "Tru", [
                                 ("tru2d", "2D — DXF", "tru.dxf",
-                                 lambda: EXP.export_tru_dxf(d)),
+                                 _tru_dxf_bytes),
                                 ("tru3d", "3D — IFC", "tru.ifc",
                                  _pier_ifc_bytes),
                             ]),
