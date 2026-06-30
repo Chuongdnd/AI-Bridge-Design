@@ -296,13 +296,27 @@ def _resolve_railings(d):
     return rails
 
 
+def _rail_geom(prof, bc):
+    """Hình học đặt lan can theo CHÂN ĐẾ (đáy):
+      • y_edge: offset đặt sao cho mép NGOÀI CHÂN ĐẾ (đáy) trùng mép cầu ±bc/2
+        → đáy lan can ngồi ĐÚNG góc mép bản (không treo theo phần thân phình).
+      • y_in  : mép TRONG chân đế (m, +) — vị trí lớp phủ ngừng.
+    prof = [[y_m, z_m]] (z=0 ở đáy). Chân đế = các điểm sát đáy (≤ zmin+30mm)."""
+    if not prof:
+        return bc / 2.0, bc / 2.0
+    zmin = min(p[1] for p in prof)
+    base = [p for p in prof if p[1] <= zmin + 0.03] or prof
+    y_out = max(p[0] for p in base)        # mép ngoài chân đế
+    y_in_b = min(p[0] for p in base)       # mép trong chân đế
+    return bc / 2.0 - y_out, bc / 2.0 - (y_out - y_in_b)
+
+
 def _railing_inner_y(d, bc):
-    """Mép TRONG của lan can (m, +) và NỬA bề rộng dải phân cách (m). Dùng để cắt
-    lớp phủ: lớp phủ chỉ phủ trong khoảng (−y_in … +y_in), trừ dải giữa nếu có."""
+    """Mép TRONG lan can (m, +) + NỬA bề rộng dải phân cách (m) để cắt lớp phủ."""
     rails = _resolve_railings(d)
     lc = rails.get("lan_can"); gpc = rails.get("giai_phan_cach")
-    w_lc = float((lc or {}).get("rong_mm", 0) or 0) / 1000.0
-    y_in = (bc / 2.0 - w_lc) if w_lc > 0 else bc / 2.0
+    prof = [[p[0] / 1000.0, p[1] / 1000.0] for p in ((lc or {}).get("outer") or [])]
+    _, y_in = _rail_geom(prof, bc) if prof else (bc / 2.0, bc / 2.0)
     w_gpc = float((gpc or {}).get("rong_mm", 0) or 0) / 1000.0 if gpc else 0.0
     return y_in, w_gpc / 2.0
 
@@ -320,10 +334,9 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
     lc = rails.get("lan_can")
     if lc and lc.get("outer"):
         prof = _prof_m(lc)
-        # Neo MẶT NGOÀI lan can (mép y lớn nhất) ngay TẠI mép cầu (±bc/2). Profile
-        # KHÔNG đối xứng quanh 0 nên không thể dùng nửa bề rộng → dùng ymax.
-        _ymax = max((p[0] for p in prof), default=0.0)
-        y_edge = bc / 2 - _ymax
+        # Neo theo CHÂN ĐẾ: mép ngoài đáy lan can trùng mép cầu (đáy ngồi đúng góc
+        # mép bản, không treo theo phần thân phình ra).
+        y_edge, _ = _rail_geom(prof, bc)
         for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
             _m = _sweep_profile_curve_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir, vn_func=vn_func,
@@ -357,8 +370,7 @@ def _railing_traces_3d(d, x_start, x_end, bc, z_deck):
     lc = rails.get("lan_can")
     if lc and lc.get("outer"):
         prof = _prof_m(lc)
-        _ymax = max((p[0] for p in prof), default=0.0)   # neo mặt ngoài tại mép cầu
-        y_edge = bc / 2 - _ymax
+        y_edge, _ = _rail_geom(prof, bc)          # neo mép ngoài CHÂN ĐẾ tại mép cầu
         for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
             _m = _sweep_profile_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir,
@@ -1587,11 +1599,11 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
     _lc2 = (_rails2d or {}).get("lan_can")
     if _lc2 and _lc2.get("outer"):
         _profm = [[p[0] / 1000.0, p[1] / 1000.0] for p in _lc2["outer"]]
-        _ymax_l = max(p[0] for p in _profm)
+        _yedge_l, _ = _rail_geom(_profm, bc)   # mép ngoài chân đế → mép cầu
         for side in (-1, 1):
             xb = side * _xe
-            _zb = _off(xb)               # đỉnh bản tại mép (đáy lan can)
-            xs = [side * (yy + _xe - _ymax_l) for yy, _ in _profm]
+            _zb = _off(xb)               # đỉnh bản tại mép (đáy lan can ngồi đây)
+            xs = [side * (yy + _yedge_l) for yy, _ in _profm]
             zs = [_zb + zz for _, zz in _profm]
             _poly(fig, xs, zs, _C["lan_can"], "#2c3e50",
                   "Lan can" if side == -1 else "", showlegend=(side == -1))
