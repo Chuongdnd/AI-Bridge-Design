@@ -7290,18 +7290,30 @@ with _col_main:
                         return None
 
                     def _bridge_ifc_bytes():
-                        # IFC khớp 3D hệ thống: dùng LƯỚI THỰC (trụ/mố lắp ghép từ
-                        # ve_cau_3d + dầm thư viện từ BBUI) → faceted brep.
-                        _pa3 = _resolve_assembly(d, "tru")
-                        _ab3 = _resolve_assembly(d, "mo")
-                        _fig3 = BVK.ve_cau_3d(d, pier_assembly=_pa3,
-                                              abutment_assembly=_ab3)
-                        _trs = list(_fig3.data)
-                        try:
-                            _pfx3 = _PA_SPT_PFX.get(selected_ribbon, "spt")
-                            _trs += list(BBUI.get_beam_model_mesh_traces(d, pfx=_pfx3) or [])
-                        except Exception:
-                            pass
+                        # IFC khớp ĐÚNG 3D Tổng hợp mới nhất: dùng CÙNG builder hệ
+                        # VN-2000 (add_all_to_terrain_fig + dầm _vn2000) với he_so_z=1
+                        # (hình học THỰC). Có địa hình → bám tuyến; không có → fallback
+                        # ve_cau_3d (hệ lý trình).
+                        _pfx3 = _PA_SPT_PFX.get(selected_ribbon, "spt")
+                        _trs = []
+                        if _df_geo is not None and not getattr(_df_geo, "empty", True):
+                            try:
+                                _tmp = go.Figure()
+                                BVK.add_all_to_terrain_fig(_tmp, d, _df_geo, he_so_z=1.0)
+                                _trs = list(_tmp.data)
+                                _trs += list(BBUI.get_beam_model_mesh_traces_vn2000(
+                                    d, _df_geo, 1.0, pfx=_pfx3) or [])
+                            except Exception:
+                                _trs = []
+                        if not _trs:
+                            _fig3 = BVK.ve_cau_3d(
+                                d, pier_assembly=_resolve_assembly(d, "tru"),
+                                abutment_assembly=_resolve_assembly(d, "mo"))
+                            _trs = list(_fig3.data)
+                            try:
+                                _trs += list(BBUI.get_beam_model_mesh_traces(d, pfx=_pfx3) or [])
+                            except Exception:
+                                pass
                         return IFCX.mesh_traces_to_ifc(_trs,
                                                        project_name=f"Cau {selected_ribbon}")
 
