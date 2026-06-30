@@ -6463,6 +6463,9 @@ with _col_main:
                                         _fig_t.add_trace(_spt_t)
                                 except Exception:
                                     pass
+                                # Biến dạng XIÊN kết cấu theo góc giao (giữ nguyên
+                                # địa hình đã vẽ trước đó → start_index=_n_before).
+                                BVK.apply_skew_3d(_fig_t, d, start_index=_n_before)
                                 BVK.apply_render_mode(_fig_t, render_mode_3d)
                                 # Ẩn cấu kiện theo lựa chọn "Tùy chỉnh hiển thị"
                                 _hide3d = [g for g in _COMP_GROUPS3D
@@ -6546,6 +6549,9 @@ with _col_main:
                                 st.caption("🔩 Dầm thực tế từ mô hình thư viện")
                         except Exception:
                             pass
+                        # Biến dạng XIÊN kết cấu cầu theo góc giao (bỏ qua địa
+                        # hình/mặt nước/tĩnh không theo tên nhóm).
+                        BVK.apply_skew_3d(fig_3d, d)
                         BVK.apply_render_mode(fig_3d, _rm_no_terr)
                         st.plotly_chart(fig_3d, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
@@ -7296,12 +7302,16 @@ with _col_main:
                         _ab3 = _resolve_assembly(d, "mo")
                         _fig3 = BVK.ve_cau_3d(d, pier_assembly=_pa3,
                                               abutment_assembly=_ab3)
-                        _trs = list(_fig3.data)
                         try:
                             _pfx3 = _PA_SPT_PFX.get(selected_ribbon, "spt")
-                            _trs += list(BBUI.get_beam_model_mesh_traces(d, pfx=_pfx3) or [])
+                            for _tb in (BBUI.get_beam_model_mesh_traces(d, pfx=_pfx3) or []):
+                                _tb.legendgroup = "Dầm"
+                                _fig3.add_trace(_tb)
                         except Exception:
                             pass
+                        # Biến dạng XIÊN theo góc giao trước khi xuất IFC (khớp 3D).
+                        BVK.apply_skew_3d(_fig3, d)
+                        _trs = list(_fig3.data)
                         return IFCX.mesh_traces_to_ifc(_trs,
                                                        project_name=f"Cau {selected_ribbon}")
 
