@@ -7036,9 +7036,11 @@ with _col_main:
                                         seat_z=_cao_dd_vt, z_base=_zbase_vt)
                                      if _asm_vt else None)
                     else:
-                        # KHỚP trụ trong 3D toàn cầu: cùng _pier_model, H_total = H_trụ
-                        # + 2.30 (đáy bệ→đỉnh xà mũ), cap_width = bề rộng cầu.
-                        _asm_vt  = d.get("_pier_model") or _pa_tru
+                        # KHỚP trụ: dùng _pa_tru VỪA dựng lại (đã áp khoảng cách cột/
+                        # bề rộng trụ mới) — KHÔNG dùng d["_pier_model"] (cache cũ từ
+                        # lúc tính, chưa có thông số vừa nhập → 3D không cập nhật).
+                        # H_total = H_trụ + 2.30 (đáy bệ→đỉnh xà mũ); cap_width = b.rộng cầu.
+                        _asm_vt  = _pa_tru or d.get("_pier_model")
                         _Hpier_vt = float(d.get("H_tru_est", 5.0)) + 2.30
                         _fig3d_vt = (PB.build_pier_preview_fig(
                                         _asm_vt, H_tru=_Hpier_vt, cap_width=_bc_vt)
