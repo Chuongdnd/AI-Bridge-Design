@@ -1819,13 +1819,17 @@ def dialog_step3():
             "🤖 Pipeline AI: TK → Hình học → KCN → Trụ → Móng → Lớp phủ → Bản vẽ → So sánh PA</p>",
             unsafe_allow_html=True,
         )
-        submitted = st.button(
+        # on_click callback: bắt cú nhấn TIN CẬY ngay cả khi vừa sửa ô nhập
+        # (tránh phải nhấn nhiều lần). Streamlit commit mọi widget rồi mới gọi cb.
+        st.button(
             "🚀 CHẠY TÍNH TOÁN AI",
             use_container_width=True,
             type="primary",
             key="d3_submit",
+            on_click=lambda: st.session_state.update(_d3_run=True),
         )
 
+    submitted = st.session_state.pop("_d3_run", False)
     if submitted:
         d = st.session_state.wizard_draft
         mien             = d['mien']
@@ -2155,15 +2159,23 @@ def dialog_step3():
                 f"LoaiTru={res.get('tru_result',{}).get('loai_tru','?')} | "
                 f"LoaiMong={res.get('mong_result',{}).get('loai_mong','?')}"
             )
-            time.sleep(1.2)
             if n_errors == 0:
-                st.success("✅ Pipeline hoàn tất — chuyển sang Bản vẽ kỹ thuật")
+                st.success("✅ Hoàn thành khai báo & tính toán AI — chuyển sang Bản vẽ.")
+                # toast tồn tại qua rerun → người dùng thấy báo sau khi đóng hộp thoại
+                try:
+                    st.toast("✅ Hoàn thành khai báo & tính toán AI!", icon="🎉")
+                except Exception:
+                    pass
             else:
                 st.warning(
-                    f"⚠️ Pipeline hoàn tất với {n_errors} bước có cảnh báo. "
+                    f"⚠️ Hoàn thành với {n_errors} bước có cảnh báo. "
                     "Kết quả vẫn được lưu — xem chi tiết ở trên."
                 )
-            time.sleep(0.8)
+                try:
+                    st.toast(f"⚠️ Hoàn thành ({n_errors} cảnh báo).", icon="⚠️")
+                except Exception:
+                    pass
+            time.sleep(0.6)
             st.session_state.open_dialog = None
             st.session_state.wizard_draft = {}
             st.session_state.current_tab = "Phương án 1"
