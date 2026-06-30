@@ -6397,18 +6397,10 @@ with _col_main:
                     _COMP_GROUPS3D = ["Địa hình", "Mặt cầu", "Dầm", "Lan can",
                                       "Trụ", "Mố", "Bệ cọc", "Cọc",
                                       "Đường đầu cầu", "Mặt nước", "Tĩnh không"]
-                    with st.expander("⚙️ Tùy chỉnh hiển thị 3D", expanded=False):
-                        render_mode_3d = st.selectbox(
-                            "🖥️ Chế độ hiển thị:",
-                            ["Shaded", "Realistic", "X-Ray", "Wireframe"],
-                            key="rm3d",
-                            help="Shaded: mặc định • Realistic: đổ bóng cao • "
-                                 "X-Ray: xuyên thấu • Wireframe: khung lưới")
-                        _show_comps3d = st.multiselect(
-                            "🧩 Ẩn/hiện cấu kiện:", _COMP_GROUPS3D,
-                            default=_COMP_GROUPS3D, key="show_comp3d",
-                            help="Bỏ chọn cấu kiện để ẩn khỏi mô hình 3D toàn cầu.")
-                    # Đã BỎ tùy chọn Địa hình/Mịn hóa/Phóng đại → dùng mặc định
+                    # Đã BỎ expander "Tùy chỉnh hiển thị 3D" → dùng mặc định; ẩn/hiện
+                    # cấu kiện thao tác trực tiếp bằng CHÚ GIẢI (legend) của biểu đồ.
+                    render_mode_3d = "Shaded"
+                    _show_comps3d  = _COMP_GROUPS3D
                     che_do_view = "Bề mặt mịn"
                     do_min_view = 3
                     he_so_z     = 0.5
@@ -6472,8 +6464,12 @@ with _col_main:
                             _z_cam_ref = float(d.get("cao_mat_cau") or d.get("cao_day_dam", 8.0))
                             _z_cam_sc  = _z_cam_ref * he_so_z
                             _fig_t.update_layout(
-                                # Hiện chú giải để bấm ẩn/hiện cấu kiện (đặt trên
-                                # cùng, ngang — tránh đè thanh cao độ bên phải).
+                                # Bỏ tiêu đề figure (bị chồng lên chú giải) — thông
+                                # tin cầu đã hiển thị ở dòng trên các tab.
+                                title=dict(text=""),
+                                margin=dict(t=84, l=0, r=0, b=0),
+                                # Chú giải ngang đặt trên cùng (trong vùng margin
+                                # trống) để bấm ẩn/hiện cấu kiện, không đè text.
                                 showlegend=True,
                                 legend=dict(orientation="h", x=0, y=1.0,
                                             yanchor="bottom", font=dict(size=9),
