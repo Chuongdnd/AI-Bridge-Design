@@ -6463,6 +6463,9 @@ with _col_main:
                                         _fig_t.add_trace(_spt_t)
                                 except Exception:
                                     pass
+                                # Biến dạng XIÊN kết cấu theo góc giao (giữ nguyên
+                                # địa hình đã vẽ trước đó → start_index=_n_before).
+                                BVK.apply_skew_3d(_fig_t, d, start_index=_n_before)
                                 BVK.apply_render_mode(_fig_t, render_mode_3d)
                                 # Ẩn cấu kiện theo lựa chọn "Tùy chỉnh hiển thị"
                                 _hide3d = [g for g in _COMP_GROUPS3D
@@ -6557,6 +6560,9 @@ with _col_main:
                                 st.caption("🔩 Dầm thực tế từ mô hình thư viện")
                         except Exception:
                             pass
+                        # Biến dạng XIÊN kết cấu cầu theo góc giao (bỏ qua địa
+                        # hình/mặt nước/tĩnh không theo tên nhóm).
+                        BVK.apply_skew_3d(fig_3d, d)
                         BVK.apply_render_mode(fig_3d, _rm_no_terr)
                         st.plotly_chart(fig_3d, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
@@ -7302,35 +7308,43 @@ with _col_main:
 
                     def _bridge_ifc_bytes():
                         # ƯU TIÊN: dùng CHÍNH lưới 3D Tổng hợp đang xem (đã lưu) →
-                        # IFC khớp đúng (mố đúng hướng, dầm gác xà mũ); z_scale khôi
-                        # phục cao độ thực (chia he_so_z hiển thị).
+                        # IFC khớp đúng (mố đúng hướng, dầm gác xà mũ, ĐÃ XIÊN theo
+                        # góc giao vì cache lưu sau apply_skew_3d); z_scale khôi phục
+                        # cao độ thực (chia he_so_z hiển thị).
                         _cache = st.session_state.get(f"_bridge3d_{selected_ribbon}")
                         if _cache and _cache[0]:
                             _ct, _chz = _cache
                             return IFCX.mesh_traces_to_ifc(
                                 _ct, project_name=f"Cau {selected_ribbon}",
                                 z_scale=(1.0 / _chz if _chz else 1.0))
-                        # Fallback: dựng lại bằng builder VN-2000 / ve_cau_3d.
+                        # Fallback: dựng lại bằng builder VN-2000 / ve_cau_3d, rồi
+                        # biến dạng XIÊN theo góc giao cho khớp 3D hiển thị.
                         _pfx3 = _PA_SPT_PFX.get(selected_ribbon, "spt")
                         _trs = []
                         if _df_geo is not None and not getattr(_df_geo, "empty", True):
                             try:
                                 _tmp = go.Figure()
                                 BVK.add_all_to_terrain_fig(_tmp, d, _df_geo, he_so_z=1.0)
+                                for _tb in (BBUI.get_beam_model_mesh_traces_vn2000(
+                                        d, _df_geo, 1.0, pfx=_pfx3) or []):
+                                    _tb.legendgroup = "Dầm"
+                                    _tmp.add_trace(_tb)
+                                BVK.apply_skew_3d(_tmp, d)
                                 _trs = list(_tmp.data)
-                                _trs += list(BBUI.get_beam_model_mesh_traces_vn2000(
-                                    d, _df_geo, 1.0, pfx=_pfx3) or [])
                             except Exception:
                                 _trs = []
                         if not _trs:
                             _fig3 = BVK.ve_cau_3d(
                                 d, pier_assembly=_resolve_assembly(d, "tru"),
                                 abutment_assembly=_resolve_assembly(d, "mo"))
-                            _trs = list(_fig3.data)
                             try:
-                                _trs += list(BBUI.get_beam_model_mesh_traces(d, pfx=_pfx3) or [])
+                                for _tb in (BBUI.get_beam_model_mesh_traces(d, pfx=_pfx3) or []):
+                                    _tb.legendgroup = "Dầm"
+                                    _fig3.add_trace(_tb)
                             except Exception:
                                 pass
+                            BVK.apply_skew_3d(_fig3, d)
+                            _trs = list(_fig3.data)
                         return IFCX.mesh_traces_to_ifc(_trs,
                                                        project_name=f"Cau {selected_ribbon}")
 

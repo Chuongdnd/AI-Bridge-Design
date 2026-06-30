@@ -3870,6 +3870,53 @@ def _to_concrete(trace) -> None:
     trace.color = ASPHALT_3D if col in _ASPHALT_SRC_3D else CONCRETE_3D
 
 
+# Cụm KHÔNG biến dạng theo góc xiên (địa hình thực, mặt nước, khung tĩnh không,
+# nền/mặt đường đầu cầu chạy thẳng theo lý trình) — chỉ KẾT CẤU CẦU mới xiên.
+_SKEW_SKIP_KW = ("địa hình", "dia hinh", "terrain", "mặt nước", "mat nuoc",
+                 "nước", "nuoc", "tĩnh không", "tinh khong", "đường đầu cầu",
+                 "duong dau cau")
+
+
+def apply_skew_3d(fig, d, start_index=0):
+    """Biến dạng XIÊN mô hình 3D theo GÓC GIAO (goc_giao) — đồng bộ với bình đồ 2D.
+
+    Cắt xiên = phép TRƯỢT (shear) trong mặt phẳng lý trình–ngang cầu: điểm có
+    toạ độ ngang y bị dịch theo lý trình x một lượng y·cot(α) (α = góc giao).
+    Dầm vẫn song song tim cầu (mỗi dầm ở y cố định chỉ tịnh tiến theo x); mố/trụ
+    nghiêng đúng theo phương cắt xiên — giống mặt cầu hình bình hành ở bình đồ.
+
+    • start_index: chỉ biến dạng các trace từ vị trí này trở đi (bỏ qua nền địa
+      hình đã vẽ trước khi overlay kết cấu).
+    • Luôn BỎ QUA địa hình/mặt nước/tĩnh không/đường đầu cầu theo tên & nhóm.
+    """
+    try:
+        goc = float((d or {}).get("goc_giao", 90.0))
+    except Exception:
+        goc = 90.0
+    if goc >= 89.9 or goc <= 0:
+        return fig                                   # không xiên → giữ nguyên
+    alpha = np.radians(max(30.0, min(89.9, goc)))
+    cot = 1.0 / np.tan(alpha)
+    for _i, tr in enumerate(fig.data):
+        if _i < start_index:
+            continue
+        _key = (str(getattr(tr, "legendgroup", "") or "") + " " +
+                str(getattr(tr, "name", "") or "")).lower()
+        if any(k in _key for k in _SKEW_SKIP_KW):
+            continue
+        x = getattr(tr, "x", None); y = getattr(tr, "y", None)
+        if x is None or y is None:
+            continue
+        try:
+            xa = np.asarray(x, dtype=float); ya = np.asarray(y, dtype=float)
+            if xa.shape != ya.shape:
+                continue
+            tr.x = (xa + ya * cot)
+        except Exception:
+            continue
+    return fig
+
+
 def apply_render_mode(fig, mode="Shaded"):
     """
     Áp dụng chế độ hiển thị lên figure 3D sau khi đã tạo.
