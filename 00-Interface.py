@@ -256,6 +256,7 @@ try:
     MOT  = importlib.import_module("07-AI_MoTru")       # AI Mố – Trụ v2
     MONG = importlib.import_module("08-AI_Mong")        # Móng (rule-based)
     EXP  = importlib.import_module("09-Export_CAD_IFC") # Export DXF / IFC
+    IFCX = importlib.import_module("18-IFC_Exporter")   # IFC từ lưới 3D thực
     PLOT = importlib.import_module("00-Drawing_Utils")
     TV   = importlib.import_module("00-Terrain_Viewer")
     LPC  = importlib.import_module("10-LopPhu_MatCau")  # Lớp phủ mặt cầu
@@ -7253,6 +7254,33 @@ with _col_main:
                                 return _fh.read()
                         return None
 
+                    def _bridge_ifc_bytes():
+                        # IFC khớp 3D hệ thống: dùng LƯỚI THỰC (trụ/mố lắp ghép từ
+                        # ve_cau_3d + dầm thư viện từ BBUI) → faceted brep.
+                        _pa3 = _resolve_assembly(d, "tru")
+                        _ab3 = _resolve_assembly(d, "mo")
+                        _fig3 = BVK.ve_cau_3d(d, pier_assembly=_pa3,
+                                              abutment_assembly=_ab3)
+                        _trs = list(_fig3.data)
+                        try:
+                            _pfx3 = _PA_SPT_PFX.get(selected_ribbon, "spt")
+                            _trs += list(BBUI.get_beam_model_mesh_traces(d, pfx=_pfx3) or [])
+                        except Exception:
+                            pass
+                        return IFCX.mesh_traces_to_ifc(_trs,
+                                                       project_name=f"Cau {selected_ribbon}")
+
+                    def _pier_ifc_bytes():
+                        # IFC trụ khớp 3D toàn cầu (cùng _pier_model + H_total + cap_width)
+                        _pm = d.get("_pier_model") or _resolve_assembly(d, "tru")
+                        if not _pm:
+                            return EXP.export_pier_ifc(d)
+                        _Ht = float(d.get("H_tru_est", 5.0)) + 2.30
+                        _trs = PB.build_pier_mesh_traces(
+                            _pm, H_tru=_Ht, cap_width=float(d.get("bc", 12.0)))
+                        return IFCX.mesh_traces_to_ifc(_trs,
+                                                       project_name=f"Tru {selected_ribbon}")
+
                     # Cây xuất 3 cấp: (thư mục, dir, [ (cấu kiện, sub_dir,
                     #   [ (id, định dạng, tệp, producer) ]) ]). Quy ước: 2D→DXF, 3D→IFC.
                     _exp_tree = [
@@ -7261,7 +7289,7 @@ with _col_main:
                                 ("mcn2d", "2D — DXF",            "mat_cat_ngang.dxf",
                                  lambda: EXP.export_mcn_dxf(d)),
                                 ("mcn3d", "3D — IFC (kéo dọc cầu)", "mat_cat_ngang_3d.ifc",
-                                 lambda: EXP.export_bridge_ifc(d)),
+                                 _bridge_ifc_bytes),
                             ]),
                             ("Trắc dọc", "TracDoc", [
                                 ("td2d", "2D — DXF", "trac_doc.dxf",
@@ -7271,11 +7299,11 @@ with _col_main:
                                 ("tru2d", "2D — DXF", "tru.dxf",
                                  lambda: EXP.export_tru_dxf(d)),
                                 ("tru3d", "3D — IFC", "tru.ifc",
-                                 lambda: EXP.export_pier_ifc(d)),
+                                 _pier_ifc_bytes),
                             ]),
                             ("Kết cấu toàn cầu", "ToanCau", [
                                 ("cau3d", "3D — IFC", "ket_cau_cau.ifc",
-                                 lambda: EXP.export_bridge_ifc(d)),
+                                 _bridge_ifc_bytes),
                             ]),
                         ]),
                         ("🗺️ Địa hình", "DiaHinh", [
