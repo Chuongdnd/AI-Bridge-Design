@@ -1128,6 +1128,29 @@ def _abut_seat_w(layers):
     return (max(below) if below else w_top), w_bot
 
 
+def abut_seat_u_m(mo: dict) -> float:
+    """u (m) TÂM VAI KÊ dầm (ledge ngang cao nhất dưới tường đỉnh) của đoạn thân
+    chính → để CĂN vai kê về đúng vị trí gối (đầu dầm). 0.0 nếu không xác định."""
+    p = migrate_abutment(mo)
+    lays = [l for l in abut_body_layers(p["parts"]["than"])
+            if (l.get("section") or {}).get("outer")]
+    if not lays:
+        return 0.0
+    body = max(lays, key=lambda l: float(l.get("B", 0) or 0))
+    pts = body["section"]["outer"]
+    w_top = max(w for (_u, w) in pts)
+    best_w, best_us = None, None
+    n = len(pts)
+    for i in range(n):
+        u0, w0 = pts[i]; u1, w1 = pts[(i + 1) % n]
+        if (abs(w1 - w0) < 5.0 and abs(u1 - u0) > 300.0
+                and w0 < w_top - 200.0 and (best_w is None or w0 > best_w)):
+            best_w, best_us = w0, (min(u0, u1), max(u0, u1))
+    if best_us is None:
+        return 0.0
+    return (best_us[0] + best_us[1]) / 2.0 * MM
+
+
 def _abut_vmap(layers, z_base, seat_z, H_tru, than):
     """(z_body0, vsc, w_ref) cho mặt cắt mố. Nếu seat_z cho → NEO VAI KÊ = seat_z
     (đáy dầm), ĐÁY BỆ = z_base, dùng MỐC w CHUNG (w nhỏ nhất mọi đoạn) để mọi đoạn

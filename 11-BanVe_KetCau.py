@@ -1123,19 +1123,30 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                 "", showlegend=False, lw=1)
 
         # Phần nổi trên mặt đất (thân mố từ terrain → deck)
+        _pile_ztop = z_mo_bot          # đỉnh cọc (mặc định generic)
+        _pile_xc   = xm                # tâm nhóm cọc
+        _pile_span = abs(W_mo)         # bề rộng bố trí cọc
         if abutment_assembly:
             _PB = _get_PB()
             # Đỉnh mố (vai kê gối) = ĐÁY DẦM (z_cap_t). ĐÁY mố (bệ) chôn 0.5m
             # dưới ĐƯỜNG TỰ NHIÊN tại mố (giống quy ước bệ trụ). out_dir=sign:
             # MẶT TRƯỚC mố (phía nhịp, u>0) quay VÀO NHỊP, lưng (u<0) ra mái dốc.
             _z_base_mo = z_terr_mo - 0.5
+            # Căn VAI KÊ về đúng GỐI (đầu dầm tại xm): dịch x_face theo u-tâm vai kê.
+            _xf_mo = xm - sign * _PB.abut_seat_u_m(abutment_assembly)
+            _mo_allx = []
             for _pl in _PB.abutment_elevation_polys(
                     abutment_assembly, H_tru=(z_cap_t - _z_base_mo),
-                    x_face=xm, out_dir=sign, z_base=_z_base_mo,
+                    x_face=_xf_mo, out_dir=sign, z_base=_z_base_mo,
                     seat_z=z_dam_b):       # vai kê = đáy dầm; bệ = ĐTN−0.5
                 _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
                       (_pl["name"] if side == "Trái" else ""),
                       showlegend=(side == "Trái"))
+                _mo_allx += list(_pl["xs"])
+            if _mo_allx:                  # cọc ĐI THEO BỆ mố mới
+                _pile_xc   = (min(_mo_allx) + max(_mo_allx)) / 2.0
+                _pile_span = max(_mo_allx) - min(_mo_allx)
+            _pile_ztop = _z_base_mo       # cọc bắt đầu từ ĐÁY BỆ mố
         else:
             _poly(fig,
                 [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
@@ -1154,17 +1165,18 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         _mo_key = "mo_trai" if side == "Trái" else "mo_phai"
         _piles_mo = _layout_piles(d, _mo_key)
         if _piles_mo:
-            # Sơ đồ cọc khai báo từ DXF → vẽ theo tọa độ thật (đỉnh cọc = đáy bệ)
+            # Sơ đồ cọc khai báo từ DXF → vẽ theo tọa độ thật (đỉnh cọc = đáy bệ mố)
             _draw_piles_elevation(
-                fig, _piles_mo, x_center=xm, z_top=z_mo_bot,
+                fig, _piles_mo, x_center=_pile_xc, z_top=_pile_ztop,
                 color="rgba(120,90,50,0.75)",
                 legend_name=(f"Cọc mố ({len(_piles_mo)} cọc)" if side == "Trái" else None))
         else:
             n_mo = max(2, min(3, n_coc_row))
-            coc_xs_mo = np.linspace(xm + sign*W_mo*0.2, xm + sign*W_mo*0.8, n_mo)
+            coc_xs_mo = np.linspace(_pile_xc - _pile_span*0.3,
+                                    _pile_xc + _pile_span*0.3, n_mo)
             for j, xc in enumerate(coc_xs_mo):
                 fig.add_trace(go.Scatter(
-                    x=[xc, xc], y=[z_mo_bot, z_mo_bot - L_coc],
+                    x=[xc, xc], y=[_pile_ztop, _pile_ztop - L_coc],
                     mode="lines",
                     line=dict(color="rgba(120,90,50,0.65)", width=max(2, int(D_coc_m * 12))),
                     name=f"Cọc mố Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
@@ -1172,7 +1184,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                     showlegend=(side == "Trái" and j == 0),
                 ))
             fig.add_trace(go.Scatter(
-                x=list(coc_xs_mo), y=[z_mo_bot - L_coc] * n_mo,
+                x=list(coc_xs_mo), y=[_pile_ztop - L_coc] * n_mo,
                 mode="markers",
                 marker=dict(symbol="triangle-down", size=5, color="rgba(120,90,50,0.8)"),
                 showlegend=False, hoverinfo="skip",
@@ -2564,9 +2576,10 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 _zt_mo    = float(np.interp(xm, lt_v, vz_v))   # ĐTN tại mố
                 _zbase_mo = _zt_mo - 0.5
                 _Htru_mo  = max(0.5, cao_dd - _zbase_mo)        # đỉnh mố = đáy dầm
+                _xf_mo3d  = xm - sgn * _PBm2.abut_seat_u_m(_mo_model)  # vai kê tại gối
                 try:
                     _mtr = _PBm2.build_abutment_mesh_traces(
-                        _mo_model, H_tru=_Htru_mo, x_face=xm,
+                        _mo_model, H_tru=_Htru_mo, x_face=_xf_mo3d,
                         out_dir=sgn, z_base=_zbase_mo, seat_z=cao_dd)
                 except Exception as _me:
                     print(f"[add_all] mố lỗi: {_me}"); _mtr = []
