@@ -1244,29 +1244,18 @@ def _abut_footing_top_w(layers, seat_w, w_bot):
 
 
 def _abut_zmap(layers, z_base, seat_z, H_tru, than):
-    """Trả HÀM zmap(w, sec_wmin) → cao độ z. seat_z cho → NEO VAI KÊ=seat_z, ĐÁY
-    BỆ=z_base nhưng CHỈ CO GIÃN ĐOẠN THÂN TƯỜNG (giữa đỉnh bệ và vai kê); phần
-    trên vai kê (tường đỉnh) và BỆ giữ TỈ LỆ THẬT → giữ đúng hình như 3D thư viện.
-    seat_z=None → tỉ lệ thật theo từng đoạn (mốc đáy mỗi đoạn)."""
+    """Trả HÀM zmap(w, sec_wmin) → cao độ z. seat_z cho → LẤY NGUYÊN KHỐI mố thư
+    viện, CO GIÃN ĐỀU theo chiều cao (giữ đúng hình đã vẽ): neo VAI KÊ = seat_z
+    (đáy dầm) và ĐÁY SÂU NHẤT của mố = z_base (ĐTN−0.5), dùng MỐC w CHUNG cho mọi
+    đoạn → tương quan các khối giữ y như thư viện. seat_z=None → tỉ lệ thật/đoạn."""
     if seat_z is not None:
-        seat_w, w_bot = _abut_seat_w(layers)
-        if seat_w is not None and w_bot is not None and (seat_w - w_bot) * MM > 1e-6:
-            ftop = _abut_footing_top_w(layers, seat_w, w_bot)
-            if ftop is None or not (w_bot < ftop < seat_w):
-                # Không tách được bệ → co giãn đều toàn thân; ĐÁY bệ KẸP phẳng z_base.
-                vsc = (seat_z - z_base) / ((seat_w - w_bot) * MM)
-                return lambda w, _swm: max(z_base, z_base + (w - w_bot) * MM * vsc)
-            z_ftop = z_base + (ftop - w_bot) * MM        # đỉnh bệ (bệ giữ tỉ lệ thật)
-            _wall = (seat_w - ftop)
-            def zmap(w, _swm):
-                if w >= seat_w:                          # TRÊN vai kê: tỉ lệ thật
-                    return seat_z + (w - seat_w) * MM
-                if w >= ftop:                            # THÂN TƯỜNG: co giãn
-                    return z_ftop + (w - ftop) / _wall * (seat_z - z_ftop)
-                # BỆ: tỉ lệ thật, ĐÁY KẸP PHẲNG cùng cấp z_base (mố là 1 khối, bệ
-                # liền 1 cấp — tường cánh vẽ sâu hơn không thòng xuống dưới bệ).
-                return max(z_base, z_base + (w - w_bot) * MM)
-            return zmap
+        seat_w, _ = _abut_seat_w(layers)
+        w_all = [w for l in (layers or [])
+                 for (u, w) in ((l.get("section") or {}).get("outer") or [])]
+        gmin = min(w_all) if w_all else None
+        if seat_w is not None and gmin is not None and (seat_w - gmin) * MM > 1e-6:
+            vsc = (seat_z - z_base) / ((seat_w - gmin) * MM)
+            return lambda w, _swm: z_base + (w - gmin) * MM * vsc
     raw_h = _abut_body_raw_h(layers) if layers else 5.0
     body_h = _abut_body_height_m(than, H_tru)
     vsc = (body_h / raw_h) if raw_h > 1e-6 else 1.0
