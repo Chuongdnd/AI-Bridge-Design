@@ -325,25 +325,27 @@ def _rail_geom(prof, bc):
 
 
 def _rail_place(prof, bc):
-    """Trả (prof2, y_edge, base_z): prof2 = biên dạng đã DỊCH phần THÒ XUỐNG
-    (z<base_z) ra ngoài để cạnh đứng phía trong của nó trùng MÉP BẢN (không thò
-    vào trong phạm vi bản). Phần trên giữ nguyên."""
+    """Trả (prof, y_edge, base_z): KÉO CẢ KHỐI (giữ nguyên hình) ra ngoài sao cho
+    cạnh đứng PHÍA TRONG của phần THÒ XUỐNG (z<base_z) trùng MÉP BẢN ±bc/2 — phần
+    thò xuống ốp đúng mép bản, cả khối dịch theo (không kéo riêng cạnh nào)."""
     y_edge, _, base_z = _rail_geom(prof, bc)
-    y_out = bc / 2.0 - y_edge                         # mép bản theo toạ độ profile
     drape_inner = min((p[0] for p in prof if p[1] < base_z - 1e-6), default=None)
     if drape_inner is None:
         return prof, y_edge, base_z
-    sh = y_out - drape_inner                          # đẩy cạnh trong drape ra mép bản
-    prof2 = [[p[0] + (sh if p[1] < base_z - 1e-6 else 0.0), p[1]] for p in prof]
-    return prof2, y_edge, base_z
+    return prof, bc / 2.0 - drape_inner, base_z       # neo cạnh trong drape tại mép
 
 
 def _railing_inner_y(d, bc):
-    """Mép TRONG lan can (m, +) + NỬA bề rộng dải phân cách (m) để cắt lớp phủ."""
+    """Mép TRONG lan can (m, +) + NỬA bề rộng dải phân cách (m) để cắt lớp phủ.
+    Lớp phủ ngừng tại mặt trong chân (phía đường) SAU khi kéo cả khối ra mép."""
     rails = _resolve_railings(d)
     lc = rails.get("lan_can"); gpc = rails.get("giai_phan_cach")
     prof = [[p[0] / 1000.0, p[1] / 1000.0] for p in ((lc or {}).get("outer") or [])]
-    _, y_in, _ = _rail_geom(prof, bc) if prof else (bc / 2.0, bc / 2.0, 0.0)
+    if prof:
+        _, y_edge, _ = _rail_place(prof, bc)
+        y_in = min(p[0] for p in prof) + y_edge       # mặt trong chân sau khi neo
+    else:
+        y_in = bc / 2.0
     w_gpc = float((gpc or {}).get("rong_mm", 0) or 0) / 1000.0 if gpc else 0.0
     return y_in, w_gpc / 2.0
 
