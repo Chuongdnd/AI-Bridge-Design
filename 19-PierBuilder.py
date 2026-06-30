@@ -1249,13 +1249,13 @@ def _abut_zmap(layers, z_base, seat_z, H_tru, than):
     (đáy dầm) và ĐÁY SÂU NHẤT của mố = z_base (ĐTN−0.5), dùng MỐC w CHUNG cho mọi
     đoạn → tương quan các khối giữ y như thư viện. seat_z=None → tỉ lệ thật/đoạn."""
     if seat_z is not None:
-        seat_w, _ = _abut_seat_w(layers)
-        w_all = [w for l in (layers or [])
-                 for (u, w) in ((l.get("section") or {}).get("outer") or [])]
-        gmin = min(w_all) if w_all else None
-        if seat_w is not None and gmin is not None and (seat_w - gmin) * MM > 1e-6:
-            vsc = (seat_z - z_base) / ((seat_w - gmin) * MM)
-            return lambda w, _swm: z_base + (w - gmin) * MM * vsc
+        seat_w, w_bot = _abut_seat_w(layers)   # w_bot = đáy BỆ THÂN CHÍNH
+        if seat_w is not None and w_bot is not None and (seat_w - w_bot) * MM > 1e-6:
+            # Neo BỆ THÂN CHÍNH (phần chính/hatch) = z_base (ĐTN−0.5); vai kê = đáy
+            # dầm. CO GIÃN ĐỀU 1 mốc chung → giữ đúng tương quan khối như thư viện
+            # (tường cánh vẽ sâu hơn sẽ xuống dưới bệ thân, đúng hình gốc).
+            vsc = (seat_z - z_base) / ((seat_w - w_bot) * MM)
+            return lambda w, _swm: z_base + (w - w_bot) * MM * vsc
     raw_h = _abut_body_raw_h(layers) if layers else 5.0
     body_h = _abut_body_height_m(than, H_tru)
     vsc = (body_h / raw_h) if raw_h > 1e-6 else 1.0
