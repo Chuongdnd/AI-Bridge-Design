@@ -2443,14 +2443,26 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         _i0   = int(np.argmin(lt_v))
         x_org = float(vx_v[_i0]); y_org = float(vy_v[_i0])
 
+        # ── Góc xiên (góc giao) → hệ số trượt theo lý trình ────────────────
+        # Cắt xiên = TRƯỢT dọc tim tuyến: điểm ở offset `off` dịch lý trình một
+        # lượng off·cot(α) (α=góc giao). Tim cầu (off=0) GIỮ NGUYÊN trên tuyến →
+        # cầu không văng ra ngoài; mố/trụ/đầu bản nghiêng đúng phương xiên.
+        try:
+            _goc_sk = float(d.get("goc_giao", 90.0))
+        except Exception:
+            _goc_sk = 90.0
+        _cot = (0.0 if _goc_sk >= 89.9 or _goc_sk <= 0
+                else 1.0 / np.tan(np.radians(max(30.0, min(89.9, _goc_sk)))))
+
         def _at(s):
             return (float(np.interp(s, lt_v, vx_v)),
                     float(np.interp(s, lt_v, vy_v)),
                     float(np.interp(s, lt_v, goc_v)),
                     float(np.interp(s, lt_v, vz_v)))
 
-        def _vn(s, off=0.0):
-            xc, yc, goc, _ = _at(s)
+        def _vn(s, off=0.0, skew=True):
+            s_eff = (s + off * _cot) if skew else s     # trượt lý trình theo góc xiên
+            xc, yc, goc, _ = _at(s_eff)
             perp = goc + np.pi / 2
             return (xc + off * np.cos(perp) - x_org,
                     yc + off * np.sin(perp) - y_org)
@@ -2487,8 +2499,10 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
         # ── Helper: HỘP 3D căn theo tim tuyến VN-2000 ────────────────────
         # Cùng logic _box3d nhưng XY lấy từ _vn(lý_trình, offset_ngang)
-        def _abox(s0, s1, oL, oR, zb, zt, color, opacity=0.88, name="", sl=True):
-            c = [_vn(s0, oL), _vn(s0, oR), _vn(s1, oR), _vn(s1, oL)]
+        def _abox(s0, s1, oL, oR, zb, zt, color, opacity=0.88, name="", sl=True,
+                  skew=True):
+            c = [_vn(s0, oL, skew), _vn(s0, oR, skew),
+                 _vn(s1, oR, skew), _vn(s1, oL, skew)]
             vx = [p[0] for p in c] + [p[0] for p in c]
             vy = [p[1] for p in c] + [p[1] for p in c]
             vz = [zb]*4 + [zt]*4
@@ -2504,15 +2518,15 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             )
 
         def _aswept(s0, s1, oL, oR, zb, zt, color, opacity=0.88,
-                    name="", sl=True, step=5.0):
+                    name="", sl=True, step=5.0, skew=True):
             """Tấm 3D (lớp phủ / bản mặt cầu) QUÉT dọc tim tuyến — chia nhỏ theo
             lý trình để bám đúng đường cong, thay cho hộp thẳng nối đầu–cuối."""
             m  = max(2, int(abs(s1 - s0) / step))
             ss = np.linspace(s0, s1, m + 1)
             vx, vy, vz = [], [], []
             for s in ss:
-                xL, yL = _vn(s, oL)
-                xR, yR = _vn(s, oR)
+                xL, yL = _vn(s, oL, skew)
+                xR, yR = _vn(s, oR, skew)
                 vx += [xL, xR, xL, xR]
                 vy += [yL, yR, yL, yR]
                 vz += [zb, zb, zt, zt]      # 0=Lđáy 1=Rđáy 2=Lđỉnh 3=Rđỉnh
@@ -2561,7 +2575,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             (MNTN * hz, f"MNTN = {MNTN:.3f}m", "#1abc9c", 0.25),
         ]:
             _ag(_abox(xL_water, xR_water, -yw_local, yw_local,
-                                z_w - 0.05 * hz, z_w, clr, op, lbl))
+                                z_w - 0.05 * hz, z_w, clr, op, lbl, skew=False))
 
         # Khung tĩnh không B×H (dây đỏ)
         _grp_state["g"] = "Tĩnh không"
@@ -2785,13 +2799,14 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # ── ĐƯỜNG ĐẦU CẦU: nền đắp + mặt đường vươn 50m mỗi bên ──────────────
         # Extrapolate tim tuyến beyond survey range (np.interp would clamp).
         def _vn_ext(s, off=0.0):
+            # Đường đầu cầu chạy THẲNG theo tim tuyến (không trượt xiên) → skew=False
             if s < lt_v[0]:
-                xc, yc = _vn(float(lt_v[0]), off); g = float(goc_v[0]); dd = s - lt_v[0]
+                xc, yc = _vn(float(lt_v[0]), off, False); g = float(goc_v[0]); dd = s - lt_v[0]
                 return (xc + dd*np.cos(g), yc + dd*np.sin(g))
             if s > lt_v[-1]:
-                xc, yc = _vn(float(lt_v[-1]), off); g = float(goc_v[-1]); dd = s - lt_v[-1]
+                xc, yc = _vn(float(lt_v[-1]), off, False); g = float(goc_v[-1]); dd = s - lt_v[-1]
                 return (xc + dd*np.cos(g), yc + dd*np.sin(g))
-            return _vn(s, off)
+            return _vn(s, off, False)
 
         def _approach_emb(s0, s1, z_top_fn, taluy=1.5, name="", sl=True, step=5.0):
             """Nền đắp đầu cầu QUÉT dọc tim tuyến: mặt cắt hình thang (đỉnh = mặt
@@ -3868,6 +3883,53 @@ def _to_concrete(trace) -> None:
     if col in _NON_CONCRETE_3D:
         return
     trace.color = ASPHALT_3D if col in _ASPHALT_SRC_3D else CONCRETE_3D
+
+
+# Cụm KHÔNG biến dạng theo góc xiên (địa hình thực, mặt nước, khung tĩnh không,
+# nền/mặt đường đầu cầu chạy thẳng theo lý trình) — chỉ KẾT CẤU CẦU mới xiên.
+_SKEW_SKIP_KW = ("địa hình", "dia hinh", "terrain", "mặt nước", "mat nuoc",
+                 "nước", "nuoc", "tĩnh không", "tinh khong", "đường đầu cầu",
+                 "duong dau cau")
+
+
+def apply_skew_3d(fig, d, start_index=0):
+    """Biến dạng XIÊN mô hình 3D theo GÓC GIAO (goc_giao) — đồng bộ với bình đồ 2D.
+
+    Cắt xiên = phép TRƯỢT (shear) trong mặt phẳng lý trình–ngang cầu: điểm có
+    toạ độ ngang y bị dịch theo lý trình x một lượng y·cot(α) (α = góc giao).
+    Dầm vẫn song song tim cầu (mỗi dầm ở y cố định chỉ tịnh tiến theo x); mố/trụ
+    nghiêng đúng theo phương cắt xiên — giống mặt cầu hình bình hành ở bình đồ.
+
+    • start_index: chỉ biến dạng các trace từ vị trí này trở đi (bỏ qua nền địa
+      hình đã vẽ trước khi overlay kết cấu).
+    • Luôn BỎ QUA địa hình/mặt nước/tĩnh không/đường đầu cầu theo tên & nhóm.
+    """
+    try:
+        goc = float((d or {}).get("goc_giao", 90.0))
+    except Exception:
+        goc = 90.0
+    if goc >= 89.9 or goc <= 0:
+        return fig                                   # không xiên → giữ nguyên
+    alpha = np.radians(max(30.0, min(89.9, goc)))
+    cot = 1.0 / np.tan(alpha)
+    for _i, tr in enumerate(fig.data):
+        if _i < start_index:
+            continue
+        _key = (str(getattr(tr, "legendgroup", "") or "") + " " +
+                str(getattr(tr, "name", "") or "")).lower()
+        if any(k in _key for k in _SKEW_SKIP_KW):
+            continue
+        x = getattr(tr, "x", None); y = getattr(tr, "y", None)
+        if x is None or y is None:
+            continue
+        try:
+            xa = np.asarray(x, dtype=float); ya = np.asarray(y, dtype=float)
+            if xa.shape != ya.shape:
+                continue
+            tr.x = (xa + ya * cot)
+        except Exception:
+            continue
+    return fig
 
 
 def apply_render_mode(fig, mode="Shaded"):

@@ -3462,10 +3462,20 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
     _i0  = int(np.argmin(lt_v))
     x_org = float(vx_v[_i0]); y_org = float(vy_v[_i0])
 
+    # Góc xiên (góc giao): dầm ở offset `off` trượt lý trình off·cot(α) → khớp
+    # mố/trụ xiên; tim cầu (off=0) giữ nguyên trên tuyến.
+    try:
+        _goc_sk = float(d.get("goc_giao", 90.0))
+    except Exception:
+        _goc_sk = 90.0
+    _cot = (0.0 if _goc_sk >= 89.9 or _goc_sk <= 0
+            else 1.0 / np.tan(np.radians(max(30.0, min(89.9, _goc_sk)))))
+
     def _vn(s, off):
-        xc = float(np.interp(s, lt_v, vx_v))
-        yc = float(np.interp(s, lt_v, vy_v))
-        g  = float(np.interp(s, lt_v, gc_v))
+        s_eff = s + off * _cot                     # trượt lý trình theo góc xiên
+        xc = float(np.interp(s_eff, lt_v, vx_v))
+        yc = float(np.interp(s_eff, lt_v, vy_v))
+        g  = float(np.interp(s_eff, lt_v, gc_v))
         p  = g + np.pi / 2
         return (xc + off * np.cos(p) - x_org, yc + off * np.sin(p) - y_org)
 
