@@ -3078,7 +3078,8 @@ with st.sidebar:
         "<hr style='border-color:#2a2a3a;margin:11px 0'>"
         "<div style='font-size:14px;color:#cfcfcf;line-height:1.7'>"
         "👤 <b style='color:#fff'>SVTH:</b> Chương DND<br>"
-        "👨‍🏫 <b style='color:#fff'>GVHD:</b> T.S Nguyễn Văn Hiển"
+        "👨‍🏫 <b style='color:#fff'>GVHD:</b> T.S Nguyễn Văn Hiển<br>"
+        "👨‍🏫 <b style='color:#fff'>GVHD:</b> T.S Lê Văn Quốc Anh"
         "</div></div>",
         unsafe_allow_html=True,
     )
