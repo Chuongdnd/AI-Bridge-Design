@@ -1185,19 +1185,20 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             _z_base_mo = z_terr_mo - 0.5
             # Căn VAI KÊ về đúng GỐI (đầu dầm tại xm): dịch x_face theo u-tâm vai kê.
             _xf_mo = xm - sign * _PB.abut_seat_u_m(abutment_assembly)
-            _mo_allx = []
+            _mo_allx = []; _mo_allz = []
             for _pl in _PB.abutment_elevation_polys(
                     abutment_assembly, H_tru=(z_cap_t - _z_base_mo),
                     x_face=_xf_mo, out_dir=sign, z_base=_z_base_mo,
-                    seat_z=z_dam_b):       # vai kê = đáy dầm; bệ = ĐTN−0.5
+                    seat_z=z_dam_b):       # vai kê = đáy dầm; ĐỈNH bệ = ĐTN−0.5
                 _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
                       (_pl["name"] if side == "Trái" else ""),
                       showlegend=(side == "Trái"))
-                _mo_allx += list(_pl["xs"])
+                _mo_allx += list(_pl["xs"]); _mo_allz += list(_pl["zs"])
             if _mo_allx:                  # cọc ĐI THEO BỆ mố mới
                 _pile_xc   = (min(_mo_allx) + max(_mo_allx)) / 2.0
                 _pile_span = max(_mo_allx) - min(_mo_allx)
-            _pile_ztop = _z_base_mo       # cọc bắt đầu từ ĐÁY BỆ mố
+            # Cọc bắt đầu từ ĐÁY BỆ thực (đáy mố sâu nhất, dưới ĐTN).
+            _pile_ztop = min(_mo_allz) if _mo_allz else _z_base_mo
         else:
             _poly(fig,
                 [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
@@ -3111,10 +3112,11 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                     x=[-_mw, _mw], y=[_zl, _zl], mode="lines",
                     line=dict(color=_cl, width=1.2, dash="dot"),
                     name=_lab, showlegend=True))
+            _zbe_bot = min((z for p in _mcn_pl for z in p["zs"]), default=_z_base_mo)
             _piles_mo_vt = _layout_piles(d, vi_tri)
             if _piles_mo_vt:
                 _draw_piles_section(
-                    fig, _piles_mo_vt, x_center=0.0, z_top=_z_base_mo,
+                    fig, _piles_mo_vt, x_center=0.0, z_top=_zbe_bot,
                     color="#7d5a32", legend_name=f"Cọc ({len(_piles_mo_vt)} cọc)")
         else:
             mo_dep = 3.5
@@ -3598,7 +3600,7 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
             _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
                   ("Mố" if not _seen else ""), showlegend=(not _seen))
             _seen = True
-        z_top_pile = _zb_mo
+        z_top_pile = min((z for p in _el_pl for z in p["zs"]), default=_zb_mo)
     elif g["is_mo"]:
         # Thân mố + tường cánh (mặt cắt dọc) — generic (chưa có mố thư viện)
         body_dc = max(0.8, bhd * 0.35)

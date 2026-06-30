@@ -1198,12 +1198,18 @@ def abut_body_traces(layers, zmap, x_face, out_dir, color,
         if ftop_w is not None and not _is_loft:
             # TÁCH bệ (dưới ftop) + tường (trên ftop) → nhận diện BỆ MỐ riêng.
             for s in _section_solids(secA):
-                foot = _clip_poly_w(s["outer"], ftop_w, True)
-                wall = _clip_poly_w(s["outer"], ftop_w, False)
-                if len(foot) >= 3:
+                # BỆ = chữ nhật SẠCH (u-extent vùng bệ × đáy→đỉnh bệ) → đáy bệ 1
+                # cấp, gờ bệ phẳng (bỏ bậc lẻ của tường cánh trong vùng bệ).
+                _fp = [p for p in s["outer"] if p[1] <= ftop_w + 1e-6]
+                if _fp:
+                    _fu = [p[0] for p in s["outer"]]
+                    _wm = min(p[1] for p in s["outer"])
+                    fmin, fmax = min(_fu), max(_fu)
                     out.append(_abut_body_straight_mesh(
-                        {"outer": foot, "holes": []}, y, _B, x_face, out_dir,
-                        zmap, be_color, be_name))
+                        {"outer": [[fmin, _wm], [fmax, _wm],
+                                   [fmax, ftop_w], [fmin, ftop_w]], "holes": []},
+                        y, _B, x_face, out_dir, zmap, be_color, be_name))
+                wall = _clip_poly_w(s["outer"], ftop_w, False)
                 if len(wall) >= 3:
                     out.append(_abut_body_straight_mesh(
                         {"outer": wall, "holes": []}, y, _B, x_face, out_dir,
@@ -1280,23 +1286,31 @@ def _abut_footing_top_w(layers, seat_w, w_bot):
     return max(cand) if cand else None
 
 
-def _abut_zmap(layers, z_base, seat_z, H_tru, than):
-    """Trả HÀM zmap(w, sec_wmin) → cao độ z. seat_z cho → LẤY NGUYÊN KHỐI mố thư
-    viện, CO GIÃN ĐỀU theo chiều cao (giữ đúng hình đã vẽ): neo VAI KÊ = seat_z
-    (đáy dầm) và ĐÁY SÂU NHẤT của mố = z_base (ĐTN−0.5), dùng MỐC w CHUNG cho mọi
-    đoạn → tương quan các khối giữ y như thư viện. seat_z=None → tỉ lệ thật/đoạn."""
+def _abut_zmap(layers, z_betop, seat_z, H_tru, than):
+    """Trả HÀM zmap(w, sec_wmin) → cao độ z. seat_z cho → NEO ĐỈNH BỆ = z_betop
+    (=ĐTN−0.5, bệ CHÌM dưới đất) và VAI KÊ = seat_z (đáy dầm); BỆ giữ tỉ lệ thật
+    (tụt xuống dưới đỉnh bệ), chỉ THÂN TƯỜNG co giãn, tường đỉnh giữ tỉ lệ thật →
+    đúng hình thư viện + bệ dưới ĐTN. seat_z=None → tỉ lệ thật theo từng đoạn."""
     if seat_z is not None:
-        seat_w, w_bot = _abut_seat_w(layers)   # w_bot = đáy BỆ THÂN CHÍNH
+        seat_w, w_bot = _abut_seat_w(layers)
+        ftop = _abut_footing_top_w(layers, seat_w, w_bot) if (seat_w and w_bot) else None
+        if seat_w is not None and ftop is not None and (seat_w - ftop) > 1e-6:
+            _wall = seat_w - ftop
+            def zmap(w, _swm):
+                if w >= seat_w:                      # TƯỜNG ĐỈNH: tỉ lệ thật
+                    return seat_z + (w - seat_w) * MM
+                if w >= ftop:                        # THÂN TƯỜNG: co giãn
+                    return z_betop + (w - ftop) / _wall * (seat_z - z_betop)
+                return z_betop + (w - ftop) * MM     # BỆ: tỉ lệ thật, CHÌM xuống dưới
+            return zmap
+        # Không tách được bệ → co giãn đều, neo vai kê=seat_z, đỉnh = z_betop.
         if seat_w is not None and w_bot is not None and (seat_w - w_bot) * MM > 1e-6:
-            # Neo BỆ = z_base (ĐTN−0.5), VAI KÊ = đáy dầm. Co giãn đều 1 mốc chung;
-            # ĐÁY BỆ KẸP PHẲNG CÙNG CẤP z_base cho MỌI đoạn (thân + cánh) → tường
-            # cánh & thân mố cùng cao độ đáy bệ (mố là 1 khối, đáy bệ 1 cấp).
-            vsc = (seat_z - z_base) / ((seat_w - w_bot) * MM)
-            return lambda w, _swm: max(z_base, z_base + (w - w_bot) * MM * vsc)
+            vsc = (seat_z - z_betop) / ((seat_w - w_bot) * MM)
+            return lambda w, _swm: z_betop + (w - w_bot) * MM * vsc
     raw_h = _abut_body_raw_h(layers) if layers else 5.0
     body_h = _abut_body_height_m(than, H_tru)
     vsc = (body_h / raw_h) if raw_h > 1e-6 else 1.0
-    return lambda w, sec_wmin: z_base + (w - sec_wmin) * MM * vsc
+    return lambda w, sec_wmin: z_betop + (w - sec_wmin) * MM * vsc
 
 
 def build_abutment_mesh_traces(mo: dict, H_tru: float = None, x_face: float = 0.0,
