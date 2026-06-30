@@ -2317,12 +2317,8 @@ def _render_topbar(d: dict, cur_tab: str) -> None:
         f"color:#007acc;white-space:nowrap;border-right:1px solid #1e1e2e;"
         f"height:44px;display:flex;align-items:center'>🏗️ UTH</div>"
         f"<div class='uth-tabs'>{_tabs_h}</div>"
-        f"<div class='uth-info' style='border-left:1px solid #1e1e2e;padding:0 12px;"
-        f"font-size:10px;color:#666;white-space:nowrap;"
-        f"max-width:260px;overflow:hidden;text-overflow:ellipsis'>{_info}</div>"
-        f"<div style='border-left:1px solid #1e1e2e;padding:0 12px;"
-        f"font-size:11px;color:#aaa;white-space:nowrap'>"
-        f"{_crown} {_uname}</div>"
+        # Đã BỎ cụm "L=… · Super-T" và "👤 Administrator" ở góc phải topbar vì
+        # đè lên cụm icon GitHub của Streamlit. (Chỉ bỏ 2 cụm này, giữ ribbon.)
         f"</div>",
         unsafe_allow_html=True,
     )
