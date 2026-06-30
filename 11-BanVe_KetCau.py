@@ -319,8 +319,11 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
 
     lc = rails.get("lan_can")
     if lc and lc.get("outer"):
-        prof = _prof_m(lc); w = float(lc.get("rong_mm", 0) or 0) / 1000.0
-        y_edge = bc / 2 - max(w, 0.0) / 2
+        prof = _prof_m(lc)
+        # Neo MẶT NGOÀI lan can (mép y lớn nhất) ngay TẠI mép cầu (±bc/2). Profile
+        # KHÔNG đối xứng quanh 0 nên không thể dùng nửa bề rộng → dùng ymax.
+        _ymax = max((p[0] for p in prof), default=0.0)
+        y_edge = bc / 2 - _ymax
         for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
             _m = _sweep_profile_curve_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir, vn_func=vn_func,
@@ -350,11 +353,12 @@ def _railing_traces_3d(d, x_start, x_end, bc, z_deck):
     def _prof_m(rec):
         return [[p[0] / 1000.0, p[1] / 1000.0] for p in (rec.get("outer") or [])]
 
-    # ── Lan can: đặt ở 2 mép cầu, mặt ngoài ~ ±bc/2 ──────────────────────
+    # ── Lan can: đặt ở 2 mép cầu, MẶT NGOÀI tại ±bc/2 ──────────────────────
     lc = rails.get("lan_can")
     if lc and lc.get("outer"):
-        prof = _prof_m(lc); w = float(lc.get("rong_mm", 0) or 0) / 1000.0
-        y_edge = bc / 2 - max(w, 0.0) / 2          # tâm MCN nằm trong mép
+        prof = _prof_m(lc)
+        _ymax = max((p[0] for p in prof), default=0.0)   # neo mặt ngoài tại mép cầu
+        y_edge = bc / 2 - _ymax
         for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
             _m = _sweep_profile_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir,
@@ -1537,18 +1541,33 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
     def _off(x):          # độ hạ cao độ mặt theo dốc ngang (đỉnh tại tim x=0)
         return -abs(x) * _i_ng
 
-    # ── Lớp phủ mặt cầu ──────────────────────────────────────────────────
-    # Lớp BTN (bê tông nhựa chặt) — dày đều, mặt dốc ngang
+    # ── Lớp phủ mặt cầu — CHỈ phủ trong mép TRONG lan can; tách 2 dải nếu có dải
+    #    phân cách giữa (lan can & dải PC đặt TRỰC TIẾP trên bản mặt cầu, lớp phủ
+    #    ngừng tại đó). y_in = mép trong lan can; y_med = nửa bề rộng dải PC. ──
+    _rails2d = _resolve_railings(d)
+    _y_in, _y_med = _railing_inner_y(d, bc)
     t_btn = min(t_phu * 0.7, 0.07)
-    _poly(fig, [-_xe, 0, _xe, _xe, 0, -_xe],
-          [t_phu + _off(-_xe), t_phu, t_phu + _off(_xe),
-           t_phu - t_btn + _off(_xe), t_phu - t_btn, t_phu - t_btn + _off(-_xe)],
-          "#2c3e50", "#1a252f", "BTN mặt đường", lw=1)
-    # Lớp dính bám + phòng nước (đáy = mặt bản, cũng dốc ngang)
-    _poly(fig, [-_xe, 0, _xe, _xe, 0, -_xe],
-          [t_phu - t_btn + _off(-_xe), t_phu - t_btn, t_phu - t_btn + _off(_xe),
-           _off(_xe), 0.0, _off(-_xe)],
-          "#7f8c8d", "#566573", "Lớp dính bám + phòng nước", lw=0.8, opacity=0.7)
+
+    def _phu_strip(a, b, sl):
+        if b - a <= 1e-3:
+            return
+        xt = [a] + ([0.0] if a < 0 < b else []) + [b]   # thêm điểm tim (crown)
+        _poly(fig, xt + xt[::-1],
+              [t_phu + _off(x) for x in xt] +
+              [t_phu - t_btn + _off(x) for x in xt[::-1]],
+              "#2c3e50", "#1a252f", "BTN mặt đường" if sl else "", lw=1,
+              showlegend=sl)
+        _poly(fig, xt + xt[::-1],
+              [t_phu - t_btn + _off(x) for x in xt] + [_off(x) for x in xt[::-1]],
+              "#7f8c8d", "#566573",
+              "Lớp dính bám + phòng nước" if sl else "", lw=0.8, opacity=0.7,
+              showlegend=sl)
+
+    if _y_med > 0:                       # có dải phân cách giữa → 2 dải lớp phủ
+        _phu_strip(-_y_in, -_y_med, True)
+        _phu_strip(_y_med, _y_in, False)
+    else:
+        _phu_strip(-_y_in, _y_in, True)
 
     # ── Bản mặt cầu BTCT ── mặt TRÊN và ĐÁY cùng dốc ngang 2% → BỀ DÀY KHÔNG ĐỔI
     #    (≥ t_ban mọi vùng). Đáy bản dốc nên dầm đặt thấp dần ra mép theo độ dốc.
@@ -1564,20 +1583,31 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
     # ── Dầm chính: biên dạng do người dùng dựng (tab Chi tiết dầm) được chèn
     #    ở 00-Interface qua get_mcn_overlay_traces — KHÔNG vẽ dầm AI tại đây nữa.
 
-    # ── Lan can ───────────────────────────────────────────────────────────
-    for side in [-1, 1]:
-        xb = side * _xe
-        xi = xb - side * W_lc
-        _e = _off(xb)                    # hạ theo dốc ngang tại mép cầu
-        _poly(fig, [xi, xb, xb, xi],
-              [t_phu + _e, t_phu + _e, t_phu + _e + H_lc, t_phu + _e + H_lc],
-              _C["lan_can"], "#2c3e50",
-              "Lan can / dải an toàn" if side == -1 else "",
-              showlegend=(side == -1))
-        # Chân lan can
-        _poly(fig, [xi, xb, xb, xi],
-              [0 + _e, 0 + _e, t_phu + _e, t_phu + _e],
-              "#95a5a6", "#7f8c8d", "", showlegend=False, lw=0.5)
+    # ── Lan can (mặt cắt thư viện) — ĐẶT TRÊN BẢN MẶT CẦU, mặt ngoài tại ±bc/2 ──
+    _lc2 = (_rails2d or {}).get("lan_can")
+    if _lc2 and _lc2.get("outer"):
+        _profm = [[p[0] / 1000.0, p[1] / 1000.0] for p in _lc2["outer"]]
+        _ymax_l = max(p[0] for p in _profm)
+        for side in (-1, 1):
+            xb = side * _xe
+            _zb = _off(xb)               # đỉnh bản tại mép (đáy lan can)
+            xs = [side * (yy + _xe - _ymax_l) for yy, _ in _profm]
+            zs = [_zb + zz for _, zz in _profm]
+            _poly(fig, xs, zs, _C["lan_can"], "#2c3e50",
+                  "Lan can" if side == -1 else "", showlegend=(side == -1))
+    else:
+        for side in [-1, 1]:            # fallback: hộp tham số cũ
+            xb = side * _xe; xi = xb - side * W_lc; _e = _off(xb)
+            _poly(fig, [xi, xb, xb, xi],
+                  [_e, _e, _e + H_lc, _e + H_lc], _C["lan_can"], "#2c3e50",
+                  "Lan can" if side == -1 else "", showlegend=(side == -1))
+
+    # ── Giải phân cách giữa (nếu tiêu chuẩn yêu cầu) — đặt tim, trên bản mặt cầu ─
+    _gpc2 = (_rails2d or {}).get("giai_phan_cach")
+    if _gpc2 and _gpc2.get("outer"):
+        _pg = [[p[0] / 1000.0, p[1] / 1000.0] for p in _gpc2["outer"]]
+        _poly(fig, [yy for yy, _ in _pg], [zz for _, zz in _pg],
+              _C["lan_can"], "#2c3e50", "Giải phân cách", showlegend=True)
 
     # ── Đường tim cầu ────────────────────────────────────────────────────
     fig.add_shape(type="line", x0=0, y0=-t_ban - H_dam - 0.3, x1=0, y1=t_phu + H_lc + 0.1,
