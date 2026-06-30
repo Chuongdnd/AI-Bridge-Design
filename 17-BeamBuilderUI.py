@@ -2533,6 +2533,80 @@ def _beam_edge_trace(vx, vy, vz, M, Np, name="", color="#3a3a3a", width=1.4):
                         name=name, showlegend=bool(name), hoverinfo="skip")
 
 
+# ── DẦM SPT: ĐẦU KHẤC THEO GỐI ĐỠ (mố/trụ) ──────────────────────────────────
+def _spt_support_notch(i_span: int, n_span: int):
+    """Đầu dầm SPT có KHẤC hay không theo loại gối đỡ từng đầu nhịp i_span.
+    Trụ → khấc; Mố → không khấc. Gối ngoài cùng (đầu/cuối cầu) là MỐ, còn lại TRỤ.
+    Trả (khac_trai, khac_phai)."""
+    if n_span <= 1:
+        return (False, False)              # 1 nhịp: 2 đầu đều lên mố → 0 khấc
+    return (i_span != 0, i_span != n_span - 1)
+
+
+def _build_notch_rings(base_m, L_mm: float, fill_sec: str, N: int = 28):
+    """Tiền tính ring cho 4 cấu hình khấc {(khac_trai,khac_phai): rings} từ mô hình
+    dầm gốc, bằng cách thay đoạn ĐẦU KHẤC (mặt cắt đầu) ở đầu KÊ LÊN MỐ bằng mặt
+    cắt giữa nhịp (fill) — đầu trơn. Trả None nếu dầm không có đoạn đầu khấc riêng
+    (mặt cắt đầu trùng mặt cắt giữa) → caller dùng hành vi cũ."""
+    if base_m is None:
+        return None
+    bb = _get_bb()
+    try:
+        full = [dict(s) for s in bb._resolve_segments(base_m)]
+    except Exception:
+        return None
+    if not full:
+        return None
+    end_sec = full[0].get("section")
+    if not end_sec or end_sec == fill_sec:
+        return None                        # không có đoạn đầu khấc riêng → bỏ
+    out = {}
+    for kl in (True, False):
+        for kr in (True, False):
+            segs = [dict(s) for s in full]
+            if not kl:                     # đầu TRÁI lên mố → bỏ khấc (về fill)
+                i = 0
+                while (i < len(segs) and segs[i].get("type") == "constant"
+                       and segs[i].get("section") == end_sec):
+                    segs[i]["section"] = fill_sec; i += 1
+            if not kr:                     # đầu PHẢI lên mố → bỏ khấc
+                i = len(segs) - 1
+                while (i >= 0 and segs[i].get("type") == "constant"
+                       and segs[i].get("section") == end_sec):
+                    segs[i]["section"] = fill_sec; i -= 1
+            m2 = bb.BeamModel(length=float(L_mm), mirror=False)
+            m2.sections = {k: v for k, v in base_m.sections.items()}
+            segl = []
+            for s in segs:
+                if s.get("type") == "loft":
+                    segl.append(bb.Segment("loft", from_sec=s["from_sec"],
+                                           to_sec=s["to_sec"], length=s["length"]))
+                else:
+                    segl.append(bb.Segment("constant", section=s["section"],
+                                           length=s["length"]))
+            m2.segments = segl
+            try:
+                out[(kl, kr)] = _beam_rings(m2, N)
+            except Exception:
+                return None
+    return out
+
+
+def _spt_notch_ringmap(d: dict, pfx: str, L_mm: float, N: int = 28):
+    """{(khac_trai,khac_phai): rings} cho dầm SPT của phương án, hoặc None nếu
+    không phải SPT / không dựng được."""
+    kcn = d.get("kcn_result") or d.get("ai_result", {})
+    loai = str(kcn.get("loai_dam", "") or "").lower()
+    if not ("super" in loai or "spt" in loai or pfx == "spt"):
+        return None
+    try:
+        base_m = _beam_model_from_pfx(pfx, L_mm)
+        _, fill = _resolve_beam_sections(pfx)
+        return _build_notch_rings(base_m, L_mm, fill, N)
+    except Exception:
+        return None
+
+
 def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     """go.Mesh3d (solid) dầm cho 3D toàn cầu — QUÉT mặt cắt biến thiên dọc nhịp
     (thể hiện 2 đầu/haunch khác nhau), theo VAI TRÒ từng cây (biên/giữa × nhịp biên/giữa)."""
@@ -2554,6 +2628,7 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
     _spans  = _beam_span_list(d)
     n_span  = len(_spans)
     main_idx = _main_span_idx(d, _spans)
+    _notch = _spt_notch_ringmap(d, pfx, L_mm)   # SPT: đầu khấc theo gối (mố/trụ)
 
     # Dầm RIÊNG cho nhịp chính (nếu có) → precompute rings của pfx chính
     sl       = (d or {}).get("span_layout") or {}
@@ -2577,6 +2652,10 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
             else:
                 rings, mir = _cell_rings(pfx, active, ringmap,
                                          i_span, n_span, i_dam, n_dam)
+            if _notch is not None:                  # SPT: ép đầu khấc theo gối
+                _nr = _notch.get(_spt_support_notch(i_span, n_span))
+                if _nr and len(_nr) >= 2:
+                    rings = _nr
             if not rings or len(rings) < 2:
                 continue
             _sgn = -1.0 if mir else 1.0
@@ -3280,6 +3359,7 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
     spans   = _beam_span_list(d)
     n_span  = len(spans)
     main_idx = _main_span_idx(d, spans)
+    _notch = _spt_notch_ringmap(d, pfx, L_mm)   # SPT: đầu khấc theo gối (mố/trụ)
 
     # Dầm RIÊNG cho nhịp chính (nếu có)
     sl       = (d or {}).get("span_layout") or {}
@@ -3303,6 +3383,10 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
             else:
                 rings, mir = _cell_rings(pfx, active, ringmap,
                                          i_span, n_span, i_dam, n_dam)
+            if _notch is not None:                  # SPT: ép đầu khấc theo gối
+                _nr = _notch.get(_spt_support_notch(i_span, n_span))
+                if _nr and len(_nr) >= 2:
+                    rings = _nr
             if not rings or len(rings) < 2:
                 continue
             _sgn = -1.0 if mir else 1.0
