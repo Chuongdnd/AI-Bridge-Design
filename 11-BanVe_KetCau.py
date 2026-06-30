@@ -324,6 +324,20 @@ def _rail_geom(prof, bc):
     return bc / 2.0 - y_out, bc / 2.0 - (y_out - y_min), base_z
 
 
+def _rail_place(prof, bc):
+    """Trả (prof2, y_edge, base_z): prof2 = biên dạng đã DỊCH phần THÒ XUỐNG
+    (z<base_z) ra ngoài để cạnh đứng phía trong của nó trùng MÉP BẢN (không thò
+    vào trong phạm vi bản). Phần trên giữ nguyên."""
+    y_edge, _, base_z = _rail_geom(prof, bc)
+    y_out = bc / 2.0 - y_edge                         # mép bản theo toạ độ profile
+    drape_inner = min((p[0] for p in prof if p[1] < base_z - 1e-6), default=None)
+    if drape_inner is None:
+        return prof, y_edge, base_z
+    sh = y_out - drape_inner                          # đẩy cạnh trong drape ra mép bản
+    prof2 = [[p[0] + (sh if p[1] < base_z - 1e-6 else 0.0), p[1]] for p in prof]
+    return prof2, y_edge, base_z
+
+
 def _railing_inner_y(d, bc):
     """Mép TRONG lan can (m, +) + NỬA bề rộng dải phân cách (m) để cắt lớp phủ."""
     rails = _resolve_railings(d)
@@ -346,10 +360,8 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
 
     lc = rails.get("lan_can")
     if lc and lc.get("outer"):
-        prof = _prof_m(lc)
-        # MOVE CẢ KHỐI: chân (mép trong) ngồi đỉnh bản (z_base − base_z), mép ngoài
-        # tại cao độ chân trùng mép cầu; phần dưới chân rủ xuống mép bản.
-        y_edge, _, base_z = _rail_geom(prof, bc)
+        prof, y_edge, base_z = _rail_place(_prof_m(lc), bc)
+        # MOVE CẢ KHỐI: chân ngồi đỉnh bản; phần thò xuống dịch ra mép bản.
         for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
             _m = _sweep_profile_curve_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir, vn_func=vn_func,
@@ -382,8 +394,7 @@ def _railing_traces_3d(d, x_start, x_end, bc, z_deck):
     # ── Lan can: đặt ở 2 mép cầu, MẶT NGOÀI tại ±bc/2 ──────────────────────
     lc = rails.get("lan_can")
     if lc and lc.get("outer"):
-        prof = _prof_m(lc)
-        y_edge, _, base_z = _rail_geom(prof, bc)  # move cả khối: chân ngồi đỉnh bản
+        prof, y_edge, base_z = _rail_place(_prof_m(lc), bc)  # move khối + drape ra mép
         for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
             _m = _sweep_profile_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir,
@@ -1612,8 +1623,8 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
     # ── Lan can (mặt cắt thư viện) — ĐẶT TRÊN BẢN MẶT CẦU, mặt ngoài tại ±bc/2 ──
     _lc2 = (_rails2d or {}).get("lan_can")
     if _lc2 and _lc2.get("outer"):
-        _profm = [[p[0] / 1000.0, p[1] / 1000.0] for p in _lc2["outer"]]
-        _yedge_l, _, _basez_l = _rail_geom(_profm, bc)   # move cả khối: chân→đỉnh bản
+        _profm0 = [[p[0] / 1000.0, p[1] / 1000.0] for p in _lc2["outer"]]
+        _profm, _yedge_l, _basez_l = _rail_place(_profm0, bc)  # move khối + drape ra mép
         for side in (-1, 1):
             xb = side * _xe
             _zb = _off(xb)               # đỉnh bản tại mép (chân lan can ngồi đây)
