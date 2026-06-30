@@ -1253,9 +1253,9 @@ def _abut_zmap(layers, z_base, seat_z, H_tru, than):
         if seat_w is not None and w_bot is not None and (seat_w - w_bot) * MM > 1e-6:
             ftop = _abut_footing_top_w(layers, seat_w, w_bot)
             if ftop is None or not (w_bot < ftop < seat_w):
-                # Không tách được bệ → co giãn đều toàn thân.
+                # Không tách được bệ → co giãn đều toàn thân; ĐÁY bệ KẸP phẳng z_base.
                 vsc = (seat_z - z_base) / ((seat_w - w_bot) * MM)
-                return lambda w, _swm: z_base + (w - w_bot) * MM * vsc
+                return lambda w, _swm: max(z_base, z_base + (w - w_bot) * MM * vsc)
             z_ftop = z_base + (ftop - w_bot) * MM        # đỉnh bệ (bệ giữ tỉ lệ thật)
             _wall = (seat_w - ftop)
             def zmap(w, _swm):
@@ -1263,7 +1263,9 @@ def _abut_zmap(layers, z_base, seat_z, H_tru, than):
                     return seat_z + (w - seat_w) * MM
                 if w >= ftop:                            # THÂN TƯỜNG: co giãn
                     return z_ftop + (w - ftop) / _wall * (seat_z - z_ftop)
-                return z_base + (w - w_bot) * MM         # BỆ: tỉ lệ thật
+                # BỆ: tỉ lệ thật, ĐÁY KẸP PHẲNG cùng cấp z_base (mố là 1 khối, bệ
+                # liền 1 cấp — tường cánh vẽ sâu hơn không thòng xuống dưới bệ).
+                return max(z_base, z_base + (w - w_bot) * MM)
             return zmap
     raw_h = _abut_body_raw_h(layers) if layers else 5.0
     body_h = _abut_body_height_m(than, H_tru)
