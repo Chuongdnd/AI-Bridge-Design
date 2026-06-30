@@ -3002,18 +3002,17 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             # MCN cắt theo MỐ THƯ VIỆN: vai kê = đáy dầm, đáy bệ = ĐTN−0.5.
             _PBa = _get_PB()
             _z_base_mo = h_tn - 0.5
-            _seen_mo = set()
-            for _pl in _PBa.abutment_mcn_polys(
-                    abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo,
-                    target_width=bc):       # co bề rộng mố theo bề rộng cầu
-                _hid = _pl.get("hidden")
-                _nm = ("Mố (nét khuất)" if _hid else "Thân mố (nét thấy)")
-                _sl = _nm not in _seen_mo; _seen_mo.add(_nm)
-                _poly(fig, _pl["ys"], _pl["zs"],
-                      ("rgba(0,0,0,0)" if _hid else _pl["color"]),
-                      (_C.get("be_dk", "#1f9ed1") if not _hid else "#1f9ed1"),
-                      _nm if _sl else "", showlegend=_sl,
-                      dash=("dash" if _hid else None))
+            # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn (thân + cánh) cùng nét THẤY,
+            # cùng 1 chú giải "Mố" (vẽ cánh trước, thân sau → thân nổi trên).
+            _mcn_pl = _PBa.abutment_mcn_polys(
+                abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo,
+                target_width=bc)            # co bề rộng mố theo bề rộng cầu
+            _mcn_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
+            _seen_mo = False
+            for _pl in _mcn_pl:
+                _poly(fig, _pl["ys"], _pl["zs"], _pl["color"], _C["be_dk"],
+                      ("Mố" if not _seen_mo else ""), showlegend=(not _seen_mo))
+                _seen_mo = True
             _piles_mo_vt = _layout_piles(d, vi_tri)
             if _piles_mo_vt:
                 _draw_piles_section(
@@ -3490,18 +3489,17 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
         # MỐ THƯ VIỆN: mặt cắt DỌC thật (vai kê = đáy dầm, đáy bệ = ĐTN−0.5).
         _PBa = _get_PB()
         _zb_mo = h_tn - 0.5
-        _seen = set()
-        for _pl in _PBa.abutment_elevation_polys(
-                abutment_assembly, x_face=0.0, out_dir=1.0, z_base=_zb_mo,
-                seat_z=g["cao_dd"]):
-            _hid = _pl.get("hidden")
-            _nm = ("Mố (nét khuất)" if _hid else "Thân mố (nét thấy)")
-            _sl = _nm not in _seen; _seen.add(_nm)
-            _poly(fig, _pl["xs"], _pl["zs"],
-                  ("rgba(0,0,0,0)" if _hid else _pl["color"]),
-                  ("#1f9ed1" if _hid else _C["be_dk"]),
-                  _nm if _sl else "", showlegend=_sl,
-                  dash=("dash" if _hid else None))
+        # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn cùng nét THẤY, 1 chú giải "Mố"
+        # (cánh trước, thân sau → thân nổi trên, dầm kê đúng vai kê thân).
+        _el_pl = _PBa.abutment_elevation_polys(
+            abutment_assembly, x_face=0.0, out_dir=1.0, z_base=_zb_mo,
+            seat_z=g["cao_dd"])
+        _el_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
+        _seen = False
+        for _pl in _el_pl:
+            _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
+                  ("Mố" if not _seen else ""), showlegend=(not _seen))
+            _seen = True
         z_top_pile = _zb_mo
     elif g["is_mo"]:
         # Thân mố + tường cánh (mặt cắt dọc) — generic (chưa có mố thư viện)
