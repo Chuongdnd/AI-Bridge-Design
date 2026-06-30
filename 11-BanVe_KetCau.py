@@ -3149,16 +3149,42 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                       ("#1f9ed1" if _hid else _C["be_dk"]),
                       _nm if _sl else "", showlegend=_sl,
                       dash=("dash" if _hid else None))
-            # NÉT phụ trợ: vai kê (đáy dầm) + vai kê bản quá độ.
+            # ── NÉT VAI KÊ DẦM: bệ đỡ đáy dầm tại đỉnh thân mố + đá kê gối từng
+            # dầm. Trước mố = NÉT THẤY (mặt kê quay ra sông); sau mố = NÉT KHUẤT.
             _mw = bc / 2.0
-            for _zl, _lab, _cl in [
-                (cao_dd, "Vai kê (đáy dầm)", "#e67e22"),
-                (cao_dd + 1.0, "Vai kê bản quá độ", "#9b59b6"),
-            ]:
-                fig.add_trace(go.Scatter(
-                    x=[-_mw, _mw], y=[_zl, _zl], mode="lines",
-                    line=dict(color=_cl, width=1.2, dash="dot"),
-                    name=_lab, showlegend=True))
+            # Bề rộng thân mố (đoạn rộng nhất) = vùng kê dầm (giữa 2 tường cánh).
+            _body_yr = max(((min(p["ys"]), max(p["ys"])) for p in _mcn_pl),
+                           key=lambda r: r[1] - r[0], default=(-_mw, _mw))
+            _seat_dash = "dash" if _is_back else None
+            _seat_col  = "#e67e22"
+            # Đường vai kê (đáy dầm) chạy suốt bề rộng kê
+            fig.add_trace(go.Scatter(
+                x=[_body_yr[0], _body_yr[1]], y=[cao_dd, cao_dd], mode="lines",
+                line=dict(color=_seat_col, width=2.2, dash=_seat_dash),
+                name="Vai kê dầm (đáy dầm)", showlegend=True))
+            # Đá kê gối tại từng vị trí dầm (gối kê đầu dầm)
+            _n_dam = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5) or 5)
+            _kc_d  = float(kcn.get("khoang_cach_dam", 2.2) or 2.2)
+            _h_g   = max(0.12, _h_goi(d))     # chiều cao đá kê gối
+            _w_g   = 0.50                      # bề rộng đá kê gối (ngang)
+            _g0    = -(_n_dam - 1) * _kc_d / 2.0
+            _shown_g = False
+            for _ig in range(_n_dam):
+                _xg = _g0 + _ig * _kc_d
+                if not (_body_yr[0] + 0.05 <= _xg <= _body_yr[1] - 0.05):
+                    continue
+                _poly(fig, [_xg - _w_g/2, _xg + _w_g/2, _xg + _w_g/2, _xg - _w_g/2],
+                      [cao_dd, cao_dd, cao_dd + _h_g, cao_dd + _h_g],
+                      ("rgba(0,0,0,0)" if _is_back else "#7f8c8d"),
+                      ("#1f9ed1" if _is_back else "#2c3e50"),
+                      "Đá kê gối" if not _shown_g else "", showlegend=(not _shown_g),
+                      dash=("dash" if _is_back else None), lw=1.2)
+                _shown_g = True
+            # Vai kê bản quá độ (mặt sau mố) — nét chỉ dẫn
+            fig.add_trace(go.Scatter(
+                x=[-_mw, _mw], y=[cao_dd + 1.0, cao_dd + 1.0], mode="lines",
+                line=dict(color="#9b59b6", width=1.2, dash="dot"),
+                name="Vai kê bản quá độ", showlegend=True))
             _zbe_bot = min((z for p in _mcn_pl for z in p["zs"]), default=_z_base_mo)
             _piles_mo_vt = _layout_piles(d, vi_tri)
             if _piles_mo_vt:
