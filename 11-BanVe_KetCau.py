@@ -122,11 +122,25 @@ def _hline(fig, y, x0, x1, label, color, dash="dot", lw=1.5):
         fig.add_annotation(x=x0 + (x1-x0)*0.05, y=y, text=f" {label}", showarrow=False,
                            font=dict(size=8, color=color), yanchor="bottom", xanchor="left")
 
+def _rec_dim(fig, kind, a, b, off, text):
+    """Ghi dữ liệu KÍCH THƯỚC lên fig.layout.meta để xuất DIM thật ra DXF
+    (kind 'h'/'v', a,b = 2 mép, off = vị trí đường dim, text = nhãn)."""
+    try:
+        _m = fig.layout.meta
+        _m = dict(_m) if isinstance(_m, dict) else {}
+        _m["cau_dims"] = list(_m.get("cau_dims", [])) + \
+            [[kind, float(a), float(b), float(off), str(text)]]
+        fig.layout.meta = _m
+    except Exception:
+        pass
+
+
 def _dim_h(fig, y, x0, x1, text, color=None, dy=0):
     """Đường kích thước NGANG — nét DIM xanh nhạt + 2 mũi tên closed filled
     (theo bảng KÍCH THƯỚC trong quy tắc thể hiện bản vẽ)."""
     color = color or _C["dim"]
     ya = y + dy
+    _rec_dim(fig, "h", x0, x1, ya, text)
     # đường dim + mũi tên 2 đầu (head ở x0 và x1, hướng ra ngoài)
     for xh, xt in ((x0, x1), (x1, x0)):
         fig.add_annotation(x=xh, y=ya, ax=xt, ay=ya, xref="x", yref="y",
@@ -140,6 +154,7 @@ def _dim_v(fig, x, y0, y1, text, color=None, dx=0.4):
     """Đường kích thước ĐỨNG — nét DIM xanh nhạt + 2 mũi tên closed filled."""
     color = color or _C["dim"]
     xa = x + dx
+    _rec_dim(fig, "v", y0, y1, xa, text)
     for yh, yt in ((y0, y1), (y1, y0)):
         fig.add_annotation(x=xa, y=yh, ax=xa, ay=yt, xref="x", yref="y",
                            axref="x", ayref="y", showarrow=True, arrowhead=3,
