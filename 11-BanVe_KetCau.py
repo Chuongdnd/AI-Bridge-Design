@@ -1113,12 +1113,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         z_terr_mo = _tz(xm)                      # cao độ địa hình tại mố
         z_mo_bot  = min(z_be_b, z_terr_mo - 1.5) # bệ cọc ngầm dưới đất
 
-        # Phần ngầm (bệ cọc, cọc) — nét đứt, mờ
-        _poly(fig,
-            [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
-            [z_mo_bot, z_mo_bot, z_terr_mo, z_terr_mo],
-            "rgba(192,160,107,0.3)", _C["be_dk"],
-            "", showlegend=False, lw=1)
+        # Phần ngầm (bệ cọc generic) — CHỈ vẽ khi KHÔNG có mố thư viện. Mố thư
+        # viện đã GỒM bệ (đùn xuống ĐTN−0.5) → bỏ hẳn khối bệ cũ.
+        if not abutment_assembly:
+            _poly(fig,
+                [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
+                [z_mo_bot, z_mo_bot, z_terr_mo, z_terr_mo],
+                "rgba(192,160,107,0.3)", _C["be_dk"],
+                "", showlegend=False, lw=1)
 
         # Phần nổi trên mặt đất (thân mố từ terrain → deck)
         if abutment_assembly:
@@ -2878,11 +2880,12 @@ def ve_binh_do_2d(d, df_tim_line=None):
 # 8. MẶT CẮT NGANG TẠI VỊ TRÍ MỐ / TRỤ
 # ===========================================================================
 def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
-                  x_half=None):
+                  x_half=None, abutment_assembly=None):
     """
     MCN cắt vuông góc tim cầu tại vị trí mố hoặc trụ cụ thể.
     vi_tri: 'mo_trai' | 'mo_phai' | 'tru_1' | 'tru_2' | ...
     df_geology: DataFrame với cột Lý trình, Offset, Z (từ file .NTD)
+    abutment_assembly: mố lắp ghép thư viện → cắt MCN theo mố mới (thay mố cũ).
     """
     kcn   = d.get("kcn_result") or d.get("ai_result", {})
     geo   = d.get("geo_logic", {})
@@ -2979,23 +2982,39 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     z_deck = cao_dd + H_dam + t_ban
 
     if is_mo:
-        mo_dep = 3.5
-        _poly(fig, [-bc/2 - 0.5, bc/2 + 0.5, bc/2 + 0.5, -bc/2 - 0.5],
-              [h_tn, h_tn, z_deck, z_deck],
-              _C["moc"], _C["be_dk"], "Thân mố")
-        for sy in [-1, 1]:
-            xw0 = sy * (bc/2 + 0.5)
-            xw1 = sy * (bc/2 + 0.5 + mo_dep)
-            _poly(fig, [xw0, xw1, xw1, xw0],
-                  [z_min, z_min, h_tn, h_tn],
-                  "rgba(192,160,107,0.35)", _C["be_dk"],
-                  "Tường cánh" if sy == -1 else "", showlegend=(sy == -1))
-        # Cọc khai báo từ DXF (nếu có) — đỉnh cọc tại đáy thân mố
-        _piles_mo_vt = _layout_piles(d, vi_tri)
-        if _piles_mo_vt:
-            _draw_piles_section(
-                fig, _piles_mo_vt, x_center=0.0, z_top=h_tn,
-                color="#7d5a32", legend_name=f"Cọc ({len(_piles_mo_vt)} cọc)")
+        if abutment_assembly:
+            # MCN cắt theo MỐ THƯ VIỆN: vai kê = đáy dầm, đáy bệ = ĐTN−0.5.
+            _PBa = _get_PB()
+            _z_base_mo = h_tn - 0.5
+            _seen_mo = set()
+            for _pl in _PBa.abutment_mcn_polys(
+                    abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo):
+                _nm = _pl["name"]; _sl = _nm not in _seen_mo; _seen_mo.add(_nm)
+                _poly(fig, _pl["ys"], _pl["zs"], _pl["color"], _C["be_dk"],
+                      _nm if _sl else "", showlegend=_sl)
+            _piles_mo_vt = _layout_piles(d, vi_tri)
+            if _piles_mo_vt:
+                _draw_piles_section(
+                    fig, _piles_mo_vt, x_center=0.0, z_top=_z_base_mo,
+                    color="#7d5a32", legend_name=f"Cọc ({len(_piles_mo_vt)} cọc)")
+        else:
+            mo_dep = 3.5
+            _poly(fig, [-bc/2 - 0.5, bc/2 + 0.5, bc/2 + 0.5, -bc/2 - 0.5],
+                  [h_tn, h_tn, z_deck, z_deck],
+                  _C["moc"], _C["be_dk"], "Thân mố")
+            for sy in [-1, 1]:
+                xw0 = sy * (bc/2 + 0.5)
+                xw1 = sy * (bc/2 + 0.5 + mo_dep)
+                _poly(fig, [xw0, xw1, xw1, xw0],
+                      [z_min, z_min, h_tn, h_tn],
+                      "rgba(192,160,107,0.35)", _C["be_dk"],
+                      "Tường cánh" if sy == -1 else "", showlegend=(sy == -1))
+            # Cọc khai báo từ DXF (nếu có) — đỉnh cọc tại đáy thân mố
+            _piles_mo_vt = _layout_piles(d, vi_tri)
+            if _piles_mo_vt:
+                _draw_piles_section(
+                    fig, _piles_mo_vt, x_center=0.0, z_top=h_tn,
+                    color="#7d5a32", legend_name=f"Cọc ({len(_piles_mo_vt)} cọc)")
     else:
         # Bệ cọc
         cap_H  = 0.80; be_H = 1.50

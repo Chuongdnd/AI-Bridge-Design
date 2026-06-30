@@ -6944,7 +6944,8 @@ with _col_main:
                     try:
                         _f_mcnvt = BVK.ve_mcn_vi_tri(
                             d, vi_tri=_selected_vt, df_geology=_df_geo,
-                            pier_assembly=_pa_tru, x_half=_xh)
+                            pier_assembly=_pa_tru, x_half=_xh,
+                            abutment_assembly=_resolve_assembly(d, "mo"))
                         PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
                         st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,

@@ -1186,6 +1186,34 @@ def abutment_elevation_polys(mo: dict, H_tru: float = None, x_face: float = 0.0,
     return polys
 
 
+def abutment_mcn_polys(mo: dict, z_seat: float, z_base: float,
+                       labels: dict = None) -> list:
+    """MẶT CẮT NGANG cầu của mố (ngang y × cao z) → list {name,color,ys,zs}.
+    Mỗi ĐOẠN (tường cánh/thân) = 1 chữ nhật theo bề rộng NGANG B, cao theo
+    w-range mặt cắt đoạn (neo vai kê = z_seat, đáy bệ = z_base, mốc w chung)."""
+    L = labels or _MO_LABEL
+    p = migrate_abutment(mo)
+    than = p["parts"]["than"]
+    layers = abut_body_layers(than)
+    if not layers:
+        return []
+    z_body0, vsc, w_ref = _abut_vmap(layers, z_base, z_seat, None, than)
+    total_B = abut_body_total_B(layers)
+    y = -total_B / 2.0
+    out = []
+    for lay in layers:
+        B = float(lay.get("B", 8.0) or 8.0)
+        ws = [w for (_u, w) in lay["section"]["outer"]]
+        wmn = w_ref if w_ref is not None else min(ws)
+        z_lo = z_body0 + (min(ws) - wmn) * MM * vsc
+        z_hi = z_body0 + (max(ws) - wmn) * MM * vsc
+        out.append({"name": L["than"], "color": _COL["than"],
+                    "ys": [y, y + B, y + B, y],
+                    "zs": [z_lo, z_lo, z_hi, z_hi]})
+        y += B
+    return out
+
+
 def build_abutment_preview_fig(mo: dict, H_tru: float = None,
                                labels: dict = None) -> go.Figure:
     """Figure 3D xem trước 1 mố (panel thư viện)."""
