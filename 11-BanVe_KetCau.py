@@ -3321,18 +3321,57 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             _dim_v(fig, cap_W + 0.6, z_shb, z_capb, f"H_trụ={H_tru:.1f}m", dx=0.2)
             _dim_h(fig, z_beb - 0.5, -be_W, be_W, f"B_bệ={be_W*2:.1f}m", dy=0)
 
+    # ── Dầm chủ (mặt cắt ngang) — vẽ tại từng vị trí dầm dưới bản mặt cầu ──
+    _ndam_v = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5) or 5)
+    _kcd_v  = float(kcn.get("khoang_cach_dam", 2.2) or 2.2)
+    _oh_v   = float(kcn.get("overhang", 0.5) or 0.5)
+    if _ndam_v >= 1:
+        # Tim dầm đầu tiên cách mép cầu một đoạn hẫng; nếu khoảng cách không phủ
+        # hết bề rộng thì căn đều theo bề rộng cầu.
+        _xf_v = -bc/2 + _oh_v
+        if _ndam_v >= 2 and (_xf_v + (_ndam_v - 1) * _kcd_v) > bc/2:
+            _xf_v = -(_ndam_v - 1) * _kcd_v / 2.0
+        _wb_v = max(0.30, min(_kcd_v * 0.55, 0.90))   # bề rộng quy ước thân dầm
+        _zb_b = cao_dd                 # đáy dầm
+        _zb_t = cao_dd + H_dam         # đỉnh dầm (sát đáy bản)
+        for _id in range(_ndam_v):
+            _xc = _xf_v + _id * _kcd_v
+            _poly(fig, [_xc - _wb_v/2, _xc + _wb_v/2, _xc + _wb_v/2, _xc - _wb_v/2],
+                  [_zb_b, _zb_b, _zb_t, _zb_t],
+                  _C["dam"], _C["dam_dk"],
+                  "Dầm chủ" if _id == 0 else "", showlegend=(_id == 0))
+
     # Bản mặt cầu
     _poly(fig, [-bc/2, bc/2, bc/2, -bc/2],
           [cao_dd + H_dam, cao_dd + H_dam, z_deck, z_deck],
           _C["ban"], _C["btong_dk"], "Bản mặt cầu")
 
-    # Lan can (ký hiệu)
-    for sy in [-1, 1]:
-        _poly(fig,
-              [sy * bc/2 - sy*0.3, sy * bc/2, sy * bc/2, sy * bc/2 - sy*0.3],
-              [z_deck, z_deck, z_deck + 1.1, z_deck + 1.1],
-              _C["lan_can"], "#2c3e50",
-              "Lan can" if sy == -1 else "", showlegend=(sy == -1))
+    # ── Lan can (mặt cắt thư viện) — ĐẶT TRÊN BẢN MẶT CẦU, mặt ngoài tại ±bc/2 ──
+    _rails_vt = _resolve_railings(d)
+    _lc_vt = (_rails_vt or {}).get("lan_can")
+    if _lc_vt and _lc_vt.get("outer"):
+        _pm0 = [[p[0] / 1000.0, p[1] / 1000.0] for p in _lc_vt["outer"]]
+        _pm, _ye_vt, _bz_vt = _rail_place(_pm0, bc)   # move khối + drape ra mép
+        for sy in (-1, 1):
+            xs = [sy * (yy + _ye_vt) for yy, _ in _pm]
+            zs = [z_deck + zz - _bz_vt for _, zz in _pm]
+            _poly(fig, xs, zs, _C["lan_can"], "#2c3e50",
+                  "Lan can" if sy == -1 else "", showlegend=(sy == -1))
+    else:
+        for sy in [-1, 1]:            # fallback: ký hiệu hộp tham số cũ
+            _poly(fig,
+                  [sy * bc/2 - sy*0.3, sy * bc/2, sy * bc/2, sy * bc/2 - sy*0.3],
+                  [z_deck, z_deck, z_deck + 1.1, z_deck + 1.1],
+                  _C["lan_can"], "#2c3e50",
+                  "Lan can" if sy == -1 else "", showlegend=(sy == -1))
+
+    # ── Giải phân cách giữa (nếu tiêu chuẩn yêu cầu) — đặt tim, trên bản mặt cầu ─
+    _gpc_vt = (_rails_vt or {}).get("giai_phan_cach")
+    if _gpc_vt and _gpc_vt.get("outer"):
+        _pg_vt = [[p[0] / 1000.0, p[1] / 1000.0] for p in _gpc_vt["outer"]]
+        _zg = min(z for _, z in _pg_vt)
+        _poly(fig, [yy for yy, _ in _pg_vt], [z_deck + zz - _zg for _, zz in _pg_vt],
+              _C["lan_can"], "#2c3e50", "Giải phân cách", showlegend=True)
 
     # Dimensions chung
     _dim_h(fig, z_deck + 1.5, -bc/2, bc/2, f"B_cầu = {bc:.1f} m", dy=0)
