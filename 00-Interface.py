@@ -7024,11 +7024,16 @@ with _col_main:
                     _is_mo_vt = _selected_vt in ("mo_trai", "mo_phai")
                     _bc_vt    = float(d.get("bc", 12.0))   # bề rộng cầu → co xà mũ/mố
                     if _is_mo_vt:
-                        # KHỚP mố trong 3D toàn cầu: cùng model + co bề rộng theo cầu
+                        # KHỚP mố thực của cầu: cùng model + co bề rộng theo cầu +
+                        # NEO vai kê=đáy dầm, đỉnh bệ=ĐTN−0.5 (như MCN 2D) → 3D
+                        # đồng bộ chiều cao & vị trí với mố trên cầu.
                         _asm_vt  = d.get("_mo_model") or _resolve_assembly(d, "mo")
                         _Hmo_vt  = float(d.get("H_tru_est") or 0) or None
+                        _cao_dd_vt = float(d.get("cao_day_dam", (_Hmo_vt or 5.0) + 5.0))
+                        _zbase_vt  = float(d.get("h_tn_tb", 2.0)) - 0.5
                         _fig3d_vt = (PB.build_abutment_preview_fig(
-                                        _asm_vt, H_tru=_Hmo_vt, target_width=_bc_vt)
+                                        _asm_vt, H_tru=_Hmo_vt, target_width=_bc_vt,
+                                        seat_z=_cao_dd_vt, z_base=_zbase_vt)
                                      if _asm_vt else None)
                     else:
                         # KHỚP trụ trong 3D toàn cầu: cùng _pier_model, H_total = H_trụ
