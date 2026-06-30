@@ -1251,11 +1251,11 @@ def _abut_zmap(layers, z_base, seat_z, H_tru, than):
     if seat_z is not None:
         seat_w, w_bot = _abut_seat_w(layers)   # w_bot = đáy BỆ THÂN CHÍNH
         if seat_w is not None and w_bot is not None and (seat_w - w_bot) * MM > 1e-6:
-            # Neo BỆ THÂN CHÍNH (phần chính/hatch) = z_base (ĐTN−0.5); vai kê = đáy
-            # dầm. CO GIÃN ĐỀU 1 mốc chung → giữ đúng tương quan khối như thư viện
-            # (tường cánh vẽ sâu hơn sẽ xuống dưới bệ thân, đúng hình gốc).
+            # Neo BỆ = z_base (ĐTN−0.5), VAI KÊ = đáy dầm. Co giãn đều 1 mốc chung;
+            # ĐÁY BỆ KẸP PHẲNG CÙNG CẤP z_base cho MỌI đoạn (thân + cánh) → tường
+            # cánh & thân mố cùng cao độ đáy bệ (mố là 1 khối, đáy bệ 1 cấp).
             vsc = (seat_z - z_base) / ((seat_w - w_bot) * MM)
-            return lambda w, _swm: z_base + (w - w_bot) * MM * vsc
+            return lambda w, _swm: max(z_base, z_base + (w - w_bot) * MM * vsc)
     raw_h = _abut_body_raw_h(layers) if layers else 5.0
     body_h = _abut_body_height_m(than, H_tru)
     vsc = (body_h / raw_h) if raw_h > 1e-6 else 1.0

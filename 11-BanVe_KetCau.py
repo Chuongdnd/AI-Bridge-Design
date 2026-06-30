@@ -3066,6 +3066,16 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                 _poly(fig, _pl["ys"], _pl["zs"], _pl["color"], _C["be_dk"],
                       ("Mố" if not _seen_mo else ""), showlegend=(not _seen_mo))
                 _seen_mo = True
+            # NÉT phụ trợ: vai kê (đáy dầm) + vai kê bản quá độ — hiển thị thêm.
+            _mw = bc / 2.0
+            for _zl, _lab, _cl in [
+                (cao_dd, "Vai kê (đáy dầm)", "#e67e22"),
+                (cao_dd + 1.0, "Vai kê bản quá độ", "#9b59b6"),
+            ]:
+                fig.add_trace(go.Scatter(
+                    x=[-_mw, _mw], y=[_zl, _zl], mode="lines",
+                    line=dict(color=_cl, width=1.2, dash="dot"),
+                    name=_lab, showlegend=True))
             _piles_mo_vt = _layout_piles(d, vi_tri)
             if _piles_mo_vt:
                 _draw_piles_section(
