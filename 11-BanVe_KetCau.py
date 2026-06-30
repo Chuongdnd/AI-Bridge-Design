@@ -68,13 +68,15 @@ _DIM_TXT = 9
 _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None, lw=1.5):
+def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None,
+          lw=1.5, dash=None):
     sl = (name != "") if showlegend is None else showlegend
     xs = list(xs); ys = list(ys)
+    # dash → NÉT KHUẤT (đường đứt), không tô nền (chỉ vẽ biên).
     fig.add_trace(go.Scatter(
         x=xs + [xs[0]], y=ys + [ys[0]],
-        fill="toself", fillcolor=fill, opacity=opacity,
-        line=dict(color=line_c, width=lw),
+        fill=(None if dash else "toself"), fillcolor=fill, opacity=opacity,
+        line=dict(color=line_c, width=lw, dash=dash),
         mode="lines", name=name, showlegend=sl,
         hovertemplate=(f"<b>{name}</b><extra></extra>" if name else None),
     ))
@@ -260,10 +262,55 @@ def _sweep_profile_curve_mesh(profile_yz, y_off, mirror, vn_func, s0, s1,
     )
 
 
+def _median_required(d):
+    """Tiêu chuẩn CÓ yêu cầu dải phân cách giữa? True khi w_dpc>0 trong cấu hình
+    mặt cắt ngang đường (mcn_oto_override) — do hệ thống tra theo TCVN."""
+    mcn = (d or {}).get("mcn_oto_override") or {}
+    try:
+        return float(mcn.get("w_dpc", 0) or 0) > 0
+    except Exception:
+        return False
+
+
+def _resolve_railings(d):
+    """{'lan_can':rec, 'giai_phan_cach':rec|None}: ưu tiên lựa chọn d['railings'];
+    thiếu → lấy MẶC ĐỊNH từ thư viện. Giải phân cách CHỈ thêm khi tiêu chuẩn yêu
+    cầu (w_dpc>0) hoặc người dùng đã chọn sẵn."""
+    rails = dict((d or {}).get("railings") or {}) if isinstance((d or {}).get("railings"), dict) else {}
+    need_med = _median_required(d)
+    if rails.get("lan_can") and (rails.get("giai_phan_cach") or not need_med):
+        return rails
+    try:
+        import utils.component_library as _CL
+        lib = _CL.load_railings()
+    except Exception:
+        lib = []
+    if not rails.get("lan_can"):
+        lc = next((r for r in lib if r.get("loai") == "lan_can"), None)
+        if lc:
+            rails["lan_can"] = lc
+    if not rails.get("giai_phan_cach") and need_med:
+        gpc = next((r for r in lib if r.get("loai") == "giai_phan_cach"), None)
+        if gpc:
+            rails["giai_phan_cach"] = gpc
+    return rails
+
+
+def _railing_inner_y(d, bc):
+    """Mép TRONG của lan can (m, +) và NỬA bề rộng dải phân cách (m). Dùng để cắt
+    lớp phủ: lớp phủ chỉ phủ trong khoảng (−y_in … +y_in), trừ dải giữa nếu có."""
+    rails = _resolve_railings(d)
+    lc = rails.get("lan_can"); gpc = rails.get("giai_phan_cach")
+    w_lc = float((lc or {}).get("rong_mm", 0) or 0) / 1000.0
+    y_in = (bc / 2.0 - w_lc) if w_lc > 0 else bc / 2.0
+    w_gpc = float((gpc or {}).get("rong_mm", 0) or 0) / 1000.0 if gpc else 0.0
+    return y_in, w_gpc / 2.0
+
+
 def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
     """Lan can (2 mép) + giải phân cách (tim) BÁM đường cong tim tuyến VN-2000."""
     out = []
-    rails = (d or {}).get("railings") or {}
+    rails = _resolve_railings(d)
     if not isinstance(rails, dict):
         return out
 
@@ -272,8 +319,11 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
 
     lc = rails.get("lan_can")
     if lc and lc.get("outer"):
-        prof = _prof_m(lc); w = float(lc.get("rong_mm", 0) or 0) / 1000.0
-        y_edge = bc / 2 - max(w, 0.0) / 2
+        prof = _prof_m(lc)
+        # Neo MẶT NGOÀI lan can (mép y lớn nhất) ngay TẠI mép cầu (±bc/2). Profile
+        # KHÔNG đối xứng quanh 0 nên không thể dùng nửa bề rộng → dùng ymax.
+        _ymax = max((p[0] for p in prof), default=0.0)
+        y_edge = bc / 2 - _ymax
         for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
             _m = _sweep_profile_curve_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir, vn_func=vn_func,
@@ -294,20 +344,21 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
 
 def _railing_traces_3d(d, x_start, x_end, bc, z_deck):
     """Trả về list Mesh3d lan can (2 mép cầu) + giải phân cách (tim) đã chọn
-    cho phương án — đọc từ d['railings'] = {'lan_can': rec, 'giai_phan_cach': rec}."""
+    cho phương án — d['railings'] (thiếu → mặc định thư viện, dải PC theo tiêu chuẩn)."""
     out = []
-    rails = (d or {}).get("railings") or {}
+    rails = _resolve_railings(d)
     if not isinstance(rails, dict):
         return out
 
     def _prof_m(rec):
         return [[p[0] / 1000.0, p[1] / 1000.0] for p in (rec.get("outer") or [])]
 
-    # ── Lan can: đặt ở 2 mép cầu, mặt ngoài ~ ±bc/2 ──────────────────────
+    # ── Lan can: đặt ở 2 mép cầu, MẶT NGOÀI tại ±bc/2 ──────────────────────
     lc = rails.get("lan_can")
     if lc and lc.get("outer"):
-        prof = _prof_m(lc); w = float(lc.get("rong_mm", 0) or 0) / 1000.0
-        y_edge = bc / 2 - max(w, 0.0) / 2          # tâm MCN nằm trong mép
+        prof = _prof_m(lc)
+        _ymax = max((p[0] for p in prof), default=0.0)   # neo mặt ngoài tại mép cầu
+        y_edge = bc / 2 - _ymax
         for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
             _m = _sweep_profile_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir,
@@ -1113,27 +1164,40 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         z_terr_mo = _tz(xm)                      # cao độ địa hình tại mố
         z_mo_bot  = min(z_be_b, z_terr_mo - 1.5) # bệ cọc ngầm dưới đất
 
-        # Phần ngầm (bệ cọc, cọc) — nét đứt, mờ
-        _poly(fig,
-            [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
-            [z_mo_bot, z_mo_bot, z_terr_mo, z_terr_mo],
-            "rgba(192,160,107,0.3)", _C["be_dk"],
-            "", showlegend=False, lw=1)
+        # Phần ngầm (bệ cọc generic) — CHỈ vẽ khi KHÔNG có mố thư viện. Mố thư
+        # viện đã GỒM bệ (đùn xuống ĐTN−0.5) → bỏ hẳn khối bệ cũ.
+        if not abutment_assembly:
+            _poly(fig,
+                [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
+                [z_mo_bot, z_mo_bot, z_terr_mo, z_terr_mo],
+                "rgba(192,160,107,0.3)", _C["be_dk"],
+                "", showlegend=False, lw=1)
 
         # Phần nổi trên mặt đất (thân mố từ terrain → deck)
+        _pile_ztop = z_mo_bot          # đỉnh cọc (mặc định generic)
+        _pile_xc   = xm                # tâm nhóm cọc
+        _pile_span = abs(W_mo)         # bề rộng bố trí cọc
         if abutment_assembly:
             _PB = _get_PB()
             # Đỉnh mố (vai kê gối) = ĐÁY DẦM (z_cap_t). ĐÁY mố (bệ) chôn 0.5m
             # dưới ĐƯỜNG TỰ NHIÊN tại mố (giống quy ước bệ trụ). out_dir=sign:
             # MẶT TRƯỚC mố (phía nhịp, u>0) quay VÀO NHỊP, lưng (u<0) ra mái dốc.
             _z_base_mo = z_terr_mo - 0.5
+            # Căn VAI KÊ về đúng GỐI (đầu dầm tại xm): dịch x_face theo u-tâm vai kê.
+            _xf_mo = xm - sign * _PB.abut_seat_u_m(abutment_assembly)
+            _mo_allx = []
             for _pl in _PB.abutment_elevation_polys(
                     abutment_assembly, H_tru=(z_cap_t - _z_base_mo),
-                    x_face=xm, out_dir=sign, z_base=_z_base_mo,
+                    x_face=_xf_mo, out_dir=sign, z_base=_z_base_mo,
                     seat_z=z_dam_b):       # vai kê = đáy dầm; bệ = ĐTN−0.5
                 _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
                       (_pl["name"] if side == "Trái" else ""),
                       showlegend=(side == "Trái"))
+                _mo_allx += list(_pl["xs"])
+            if _mo_allx:                  # cọc ĐI THEO BỆ mố mới
+                _pile_xc   = (min(_mo_allx) + max(_mo_allx)) / 2.0
+                _pile_span = max(_mo_allx) - min(_mo_allx)
+            _pile_ztop = _z_base_mo       # cọc bắt đầu từ ĐÁY BỆ mố
         else:
             _poly(fig,
                 [xm, xm+sign*W_mo, xm+sign*W_mo, xm],
@@ -1152,17 +1216,18 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         _mo_key = "mo_trai" if side == "Trái" else "mo_phai"
         _piles_mo = _layout_piles(d, _mo_key)
         if _piles_mo:
-            # Sơ đồ cọc khai báo từ DXF → vẽ theo tọa độ thật (đỉnh cọc = đáy bệ)
+            # Sơ đồ cọc khai báo từ DXF → vẽ theo tọa độ thật (đỉnh cọc = đáy bệ mố)
             _draw_piles_elevation(
-                fig, _piles_mo, x_center=xm, z_top=z_mo_bot,
+                fig, _piles_mo, x_center=_pile_xc, z_top=_pile_ztop,
                 color="rgba(120,90,50,0.75)",
                 legend_name=(f"Cọc mố ({len(_piles_mo)} cọc)" if side == "Trái" else None))
         else:
             n_mo = max(2, min(3, n_coc_row))
-            coc_xs_mo = np.linspace(xm + sign*W_mo*0.2, xm + sign*W_mo*0.8, n_mo)
+            coc_xs_mo = np.linspace(_pile_xc - _pile_span*0.3,
+                                    _pile_xc + _pile_span*0.3, n_mo)
             for j, xc in enumerate(coc_xs_mo):
                 fig.add_trace(go.Scatter(
-                    x=[xc, xc], y=[z_mo_bot, z_mo_bot - L_coc],
+                    x=[xc, xc], y=[_pile_ztop, _pile_ztop - L_coc],
                     mode="lines",
                     line=dict(color="rgba(120,90,50,0.65)", width=max(2, int(D_coc_m * 12))),
                     name=f"Cọc mố Ø{int(D_coc_m*1000)}mm, L≈{L_coc:.0f}m"
@@ -1170,7 +1235,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                     showlegend=(side == "Trái" and j == 0),
                 ))
             fig.add_trace(go.Scatter(
-                x=list(coc_xs_mo), y=[z_mo_bot - L_coc] * n_mo,
+                x=list(coc_xs_mo), y=[_pile_ztop - L_coc] * n_mo,
                 mode="markers",
                 marker=dict(symbol="triangle-down", size=5, color="rgba(120,90,50,0.8)"),
                 showlegend=False, hoverinfo="skip",
@@ -1476,18 +1541,33 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
     def _off(x):          # độ hạ cao độ mặt theo dốc ngang (đỉnh tại tim x=0)
         return -abs(x) * _i_ng
 
-    # ── Lớp phủ mặt cầu ──────────────────────────────────────────────────
-    # Lớp BTN (bê tông nhựa chặt) — dày đều, mặt dốc ngang
+    # ── Lớp phủ mặt cầu — CHỈ phủ trong mép TRONG lan can; tách 2 dải nếu có dải
+    #    phân cách giữa (lan can & dải PC đặt TRỰC TIẾP trên bản mặt cầu, lớp phủ
+    #    ngừng tại đó). y_in = mép trong lan can; y_med = nửa bề rộng dải PC. ──
+    _rails2d = _resolve_railings(d)
+    _y_in, _y_med = _railing_inner_y(d, bc)
     t_btn = min(t_phu * 0.7, 0.07)
-    _poly(fig, [-_xe, 0, _xe, _xe, 0, -_xe],
-          [t_phu + _off(-_xe), t_phu, t_phu + _off(_xe),
-           t_phu - t_btn + _off(_xe), t_phu - t_btn, t_phu - t_btn + _off(-_xe)],
-          "#2c3e50", "#1a252f", "BTN mặt đường", lw=1)
-    # Lớp dính bám + phòng nước (đáy = mặt bản, cũng dốc ngang)
-    _poly(fig, [-_xe, 0, _xe, _xe, 0, -_xe],
-          [t_phu - t_btn + _off(-_xe), t_phu - t_btn, t_phu - t_btn + _off(_xe),
-           _off(_xe), 0.0, _off(-_xe)],
-          "#7f8c8d", "#566573", "Lớp dính bám + phòng nước", lw=0.8, opacity=0.7)
+
+    def _phu_strip(a, b, sl):
+        if b - a <= 1e-3:
+            return
+        xt = [a] + ([0.0] if a < 0 < b else []) + [b]   # thêm điểm tim (crown)
+        _poly(fig, xt + xt[::-1],
+              [t_phu + _off(x) for x in xt] +
+              [t_phu - t_btn + _off(x) for x in xt[::-1]],
+              "#2c3e50", "#1a252f", "BTN mặt đường" if sl else "", lw=1,
+              showlegend=sl)
+        _poly(fig, xt + xt[::-1],
+              [t_phu - t_btn + _off(x) for x in xt] + [_off(x) for x in xt[::-1]],
+              "#7f8c8d", "#566573",
+              "Lớp dính bám + phòng nước" if sl else "", lw=0.8, opacity=0.7,
+              showlegend=sl)
+
+    if _y_med > 0:                       # có dải phân cách giữa → 2 dải lớp phủ
+        _phu_strip(-_y_in, -_y_med, True)
+        _phu_strip(_y_med, _y_in, False)
+    else:
+        _phu_strip(-_y_in, _y_in, True)
 
     # ── Bản mặt cầu BTCT ── mặt TRÊN và ĐÁY cùng dốc ngang 2% → BỀ DÀY KHÔNG ĐỔI
     #    (≥ t_ban mọi vùng). Đáy bản dốc nên dầm đặt thấp dần ra mép theo độ dốc.
@@ -1503,20 +1583,31 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
     # ── Dầm chính: biên dạng do người dùng dựng (tab Chi tiết dầm) được chèn
     #    ở 00-Interface qua get_mcn_overlay_traces — KHÔNG vẽ dầm AI tại đây nữa.
 
-    # ── Lan can ───────────────────────────────────────────────────────────
-    for side in [-1, 1]:
-        xb = side * _xe
-        xi = xb - side * W_lc
-        _e = _off(xb)                    # hạ theo dốc ngang tại mép cầu
-        _poly(fig, [xi, xb, xb, xi],
-              [t_phu + _e, t_phu + _e, t_phu + _e + H_lc, t_phu + _e + H_lc],
-              _C["lan_can"], "#2c3e50",
-              "Lan can / dải an toàn" if side == -1 else "",
-              showlegend=(side == -1))
-        # Chân lan can
-        _poly(fig, [xi, xb, xb, xi],
-              [0 + _e, 0 + _e, t_phu + _e, t_phu + _e],
-              "#95a5a6", "#7f8c8d", "", showlegend=False, lw=0.5)
+    # ── Lan can (mặt cắt thư viện) — ĐẶT TRÊN BẢN MẶT CẦU, mặt ngoài tại ±bc/2 ──
+    _lc2 = (_rails2d or {}).get("lan_can")
+    if _lc2 and _lc2.get("outer"):
+        _profm = [[p[0] / 1000.0, p[1] / 1000.0] for p in _lc2["outer"]]
+        _ymax_l = max(p[0] for p in _profm)
+        for side in (-1, 1):
+            xb = side * _xe
+            _zb = _off(xb)               # đỉnh bản tại mép (đáy lan can)
+            xs = [side * (yy + _xe - _ymax_l) for yy, _ in _profm]
+            zs = [_zb + zz for _, zz in _profm]
+            _poly(fig, xs, zs, _C["lan_can"], "#2c3e50",
+                  "Lan can" if side == -1 else "", showlegend=(side == -1))
+    else:
+        for side in [-1, 1]:            # fallback: hộp tham số cũ
+            xb = side * _xe; xi = xb - side * W_lc; _e = _off(xb)
+            _poly(fig, [xi, xb, xb, xi],
+                  [_e, _e, _e + H_lc, _e + H_lc], _C["lan_can"], "#2c3e50",
+                  "Lan can" if side == -1 else "", showlegend=(side == -1))
+
+    # ── Giải phân cách giữa (nếu tiêu chuẩn yêu cầu) — đặt tim, trên bản mặt cầu ─
+    _gpc2 = (_rails2d or {}).get("giai_phan_cach")
+    if _gpc2 and _gpc2.get("outer"):
+        _pg = [[p[0] / 1000.0, p[1] / 1000.0] for p in _gpc2["outer"]]
+        _poly(fig, [yy for yy, _ in _pg], [zz for _, zz in _pg],
+              _C["lan_can"], "#2c3e50", "Giải phân cách", showlegend=True)
 
     # ── Đường tim cầu ────────────────────────────────────────────────────
     fig.add_shape(type="line", x0=0, y0=-t_ban - H_dam - 0.3, x1=0, y1=t_phu + H_lc + 0.1,
@@ -2440,18 +2531,26 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # LỚP 3 — KẾT CẤU NHỊP (Mesh3d KHỐI 3D)
         # =========================================================
 
-        # Lớp phủ BTN + Bản mặt cầu — QUÉT dọc tim tuyến (bám đường cong),
-        # KHÔNG vẽ hộp thẳng nối đầu–cuối.
+        # Bản mặt cầu (full bề rộng) + Lớp phủ BTN. Lớp phủ CHỈ phủ trong khoảng
+        # mép TRONG lan can; nếu có dải phân cách giữa thì tách 2 dải (lan can &
+        # dải PC đặt TRỰC TIẾP trên bản mặt cầu, lớp phủ ngừng tại đó).
         _grp_state["g"] = "Mặt cầu"
         _ag(_aswept(x0, x_end, -bc/2, bc/2,
-                              z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
-        _ag(_aswept(x0, x_end, -bc/2, bc/2,
                               z_bant, z_deck, "#d5d8dc", 0.82, "Bản mặt cầu"))
+        _y_in, _y_med = _railing_inner_y(d, bc)
+        if _y_med > 0:                     # có dải phân cách giữa → lớp phủ 2 bên
+            _ag(_aswept(x0, x_end, -_y_in, -_y_med,
+                                  z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
+            _ag(_aswept(x0, x_end, _y_med, _y_in,
+                                  z_deck, z_phu, "#2c3e50", 0.92, ""))
+        else:
+            _ag(_aswept(x0, x_end, -_y_in, _y_in,
+                                  z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
 
-        # Lan can / Giải phân cách — kéo MCN bám đường cong tim tuyến
+        # Lan can / Giải phân cách — ĐẶT TRÊN BẢN MẶT CẦU (z_deck), không trên lớp phủ
         _grp_state["g"] = "Lan can"
         try:
-            for _rt in _railing_curve_traces(d, _vn, x0, x_end, bc, z_phu):
+            for _rt in _railing_curve_traces(d, _vn, x0, x_end, bc, z_deck):
                 _ag(_rt)
         except Exception as _e:
             print(f"[add_all] lan can lỗi: {_e}")
@@ -2562,10 +2661,12 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 _zt_mo    = float(np.interp(xm, lt_v, vz_v))   # ĐTN tại mố
                 _zbase_mo = _zt_mo - 0.5
                 _Htru_mo  = max(0.5, cao_dd - _zbase_mo)        # đỉnh mố = đáy dầm
+                _xf_mo3d  = xm - sgn * _PBm2.abut_seat_u_m(_mo_model)  # vai kê tại gối
                 try:
                     _mtr = _PBm2.build_abutment_mesh_traces(
-                        _mo_model, H_tru=_Htru_mo, x_face=xm,
-                        out_dir=sgn, z_base=_zbase_mo, seat_z=cao_dd)
+                        _mo_model, H_tru=_Htru_mo, x_face=_xf_mo3d,
+                        out_dir=sgn, z_base=_zbase_mo, seat_z=cao_dd,
+                        target_width=bc)       # co bề rộng mố theo bề rộng cầu
                 except Exception as _me:
                     print(f"[add_all] mố lỗi: {_me}"); _mtr = []
                 for _tr in _mtr:
@@ -2878,11 +2979,12 @@ def ve_binh_do_2d(d, df_tim_line=None):
 # 8. MẶT CẮT NGANG TẠI VỊ TRÍ MỐ / TRỤ
 # ===========================================================================
 def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
-                  x_half=None):
+                  x_half=None, abutment_assembly=None):
     """
     MCN cắt vuông góc tim cầu tại vị trí mố hoặc trụ cụ thể.
     vi_tri: 'mo_trai' | 'mo_phai' | 'tru_1' | 'tru_2' | ...
     df_geology: DataFrame với cột Lý trình, Offset, Z (từ file .NTD)
+    abutment_assembly: mố lắp ghép thư viện → cắt MCN theo mố mới (thay mố cũ).
     """
     kcn   = d.get("kcn_result") or d.get("ai_result", {})
     geo   = d.get("geo_logic", {})
@@ -2914,9 +3016,9 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     be_W   = cap_W + 0.8
 
     if vi_tri == 'mo_trai':
-        x_cut = x0;   title_vt = "MỐ TRÁI"
+        x_cut = x0;   title_vt = "MỐ M1"
     elif vi_tri == 'mo_phai':
-        x_cut = x_end; title_vt = "MỐ PHẢI"
+        x_cut = x_end; title_vt = "MỐ M2"
     else:
         idx = int(vi_tri.replace('tru_', '')) - 1
         x_cut = piers[idx] if idx < len(piers) else x_tim
@@ -2979,23 +3081,59 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     z_deck = cao_dd + H_dam + t_ban
 
     if is_mo:
-        mo_dep = 3.5
-        _poly(fig, [-bc/2 - 0.5, bc/2 + 0.5, bc/2 + 0.5, -bc/2 - 0.5],
-              [h_tn, h_tn, z_deck, z_deck],
-              _C["moc"], _C["be_dk"], "Thân mố")
-        for sy in [-1, 1]:
-            xw0 = sy * (bc/2 + 0.5)
-            xw1 = sy * (bc/2 + 0.5 + mo_dep)
-            _poly(fig, [xw0, xw1, xw1, xw0],
-                  [z_min, z_min, h_tn, h_tn],
-                  "rgba(192,160,107,0.35)", _C["be_dk"],
-                  "Tường cánh" if sy == -1 else "", showlegend=(sy == -1))
-        # Cọc khai báo từ DXF (nếu có) — đỉnh cọc tại đáy thân mố
-        _piles_mo_vt = _layout_piles(d, vi_tri)
-        if _piles_mo_vt:
-            _draw_piles_section(
-                fig, _piles_mo_vt, x_center=0.0, z_top=h_tn,
-                color="#7d5a32", legend_name=f"Cọc ({len(_piles_mo_vt)} cọc)")
+        if abutment_assembly:
+            # MCN cắt theo MỐ THƯ VIỆN: vai kê = đáy dầm, đáy bệ = ĐTN−0.5.
+            _PBa = _get_PB()
+            _z_base_mo = h_tn - 0.5
+            # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn (thân + cánh) cùng nét THẤY,
+            # cùng 1 chú giải "Mố" (vẽ cánh trước, thân sau → thân nổi trên).
+            _mcn_pl = _PBa.abutment_mcn_polys(
+                abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo,
+                target_width=bc)            # co bề rộng mố theo bề rộng cầu
+            # Vẽ SAU mố (nét khuất) trước → THÂN/BỆ (nét thấy) đè lên trên.
+            _mcn_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
+            _seen_mo = set()
+            for _pl in _mcn_pl:
+                _hid = _pl.get("hidden"); _nm = _pl["name"]
+                _sl = _nm not in _seen_mo; _seen_mo.add(_nm)
+                _poly(fig, _pl["ys"], _pl["zs"],
+                      ("rgba(0,0,0,0)" if _hid else _pl["color"]),
+                      ("#1f9ed1" if _hid else _C["be_dk"]),
+                      _nm if _sl else "", showlegend=_sl,
+                      dash=("dash" if _hid else None))
+            # NÉT phụ trợ: vai kê (đáy dầm) + vai kê bản quá độ.
+            _mw = bc / 2.0
+            for _zl, _lab, _cl in [
+                (cao_dd, "Vai kê (đáy dầm)", "#e67e22"),
+                (cao_dd + 1.0, "Vai kê bản quá độ", "#9b59b6"),
+            ]:
+                fig.add_trace(go.Scatter(
+                    x=[-_mw, _mw], y=[_zl, _zl], mode="lines",
+                    line=dict(color=_cl, width=1.2, dash="dot"),
+                    name=_lab, showlegend=True))
+            _piles_mo_vt = _layout_piles(d, vi_tri)
+            if _piles_mo_vt:
+                _draw_piles_section(
+                    fig, _piles_mo_vt, x_center=0.0, z_top=_z_base_mo,
+                    color="#7d5a32", legend_name=f"Cọc ({len(_piles_mo_vt)} cọc)")
+        else:
+            mo_dep = 3.5
+            _poly(fig, [-bc/2 - 0.5, bc/2 + 0.5, bc/2 + 0.5, -bc/2 - 0.5],
+                  [h_tn, h_tn, z_deck, z_deck],
+                  _C["moc"], _C["be_dk"], "Thân mố")
+            for sy in [-1, 1]:
+                xw0 = sy * (bc/2 + 0.5)
+                xw1 = sy * (bc/2 + 0.5 + mo_dep)
+                _poly(fig, [xw0, xw1, xw1, xw0],
+                      [z_min, z_min, h_tn, h_tn],
+                      "rgba(192,160,107,0.35)", _C["be_dk"],
+                      "Tường cánh" if sy == -1 else "", showlegend=(sy == -1))
+            # Cọc khai báo từ DXF (nếu có) — đỉnh cọc tại đáy thân mố
+            _piles_mo_vt = _layout_piles(d, vi_tri)
+            if _piles_mo_vt:
+                _draw_piles_section(
+                    fig, _piles_mo_vt, x_center=0.0, z_top=h_tn,
+                    color="#7d5a32", legend_name=f"Cọc ({len(_piles_mo_vt)} cọc)")
     else:
         # Bệ cọc
         cap_H  = 0.80; be_H = 1.50
@@ -3171,9 +3309,9 @@ def _pos_geometry(d, vi_tri, pier_assembly=None):
 
     is_mo = str(vi_tri).startswith("mo")
     if vi_tri == "mo_trai":
-        x_cut = x0;   title_vt = "MỐ TRÁI"
+        x_cut = x0;   title_vt = "MỐ M1"
     elif vi_tri == "mo_phai":
-        x_cut = x_end; title_vt = "MỐ PHẢI"
+        x_cut = x_end; title_vt = "MỐ M2"
     else:
         idx = int(str(vi_tri).replace("tru_", "")) - 1
         x_cut = piers[idx] if idx < len(piers) else x_tim
@@ -3312,13 +3450,16 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
     return fig
 
 
-def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
-    """MẶT BẰNG KẾT CẤU MỐ/TRỤ — nhìn từ trên: x = ngang cầu, y = dọc cầu."""
+def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
+                       abutment_assembly=None):
+    """MẶT BẰNG KẾT CẤU MỐ/TRỤ — nhìn từ trên: x = ngang cầu, y = dọc cầu.
+    abutment_assembly: mố lắp ghép → vẽ footprint mố thực (thân + 2 cánh)."""
     g = _pos_geometry(d, vi_tri, pier_assembly)
     fig = go.Figure()
     bhn, bhd = g["be_half_ngang"], g["be_half_doc"]
     bc = g["bc"]
     _use_asm = bool(pier_assembly) and not g["is_mo"]
+    _use_mo  = bool(abutment_assembly) and g["is_mo"]
 
     if _use_asm:
         # TRỤ LẮP GHÉP: vẽ footprint thật (bệ/thân/xà mũ, kể cả nhiều khối).
@@ -3335,13 +3476,28 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
             bhn = max(bhn, abs(min(_allx)), abs(max(_allx)))
         if _ally:
             bhd = max(bhd, abs(min(_ally)), abs(max(_ally)))
+    elif _use_mo:
+        # MỐ THƯ VIỆN: footprint thật (thân + 2 cánh), co bề rộng theo cầu.
+        _PBa = _get_PB()
+        _mpolys = _PBa.abutment_plan_polys(abutment_assembly, target_width=bc)
+        _seen = set()
+        for _pl in _mpolys:
+            _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
+            _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["be_dk"],
+                  _nm if _sl else "", showlegend=_sl, lw=1.6)
+        _allx = [x for pl in _mpolys for x in pl["xs"]]
+        _ally = [y for pl in _mpolys for y in pl["ys"]]
+        if _allx:
+            bhn = max(bhn, abs(min(_allx)), abs(max(_allx)))
+        if _ally:
+            bhd = max(bhd, abs(min(_ally)), abs(max(_ally)))
     else:
         # Bệ cọc (chung)
         _poly(fig, [-bhn, bhn, bhn, -bhn], [-bhd, -bhd, bhd, bhd],
               "rgba(170,183,184,0.30)", _C["be_dk"], "Bệ cọc", lw=1.8)
 
-    if _use_asm:
-        pass  # đã vẽ footprint trụ ở trên
+    if _use_asm or _use_mo:
+        pass  # đã vẽ footprint trụ/mố ở trên
     elif g["is_mo"]:
         # Thân mố (tường thân) + tường cánh kéo về phía sau (dọc cầu)
         body_ng = bc / 2 + 0.5
@@ -3397,8 +3553,10 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
     return fig
 
 
-def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
-    """MẶT CẮT DỌC tại vị trí — cắt dọc tim cầu qua mố/trụ: x = dọc cầu, y = cao độ."""
+def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
+                          abutment_assembly=None):
+    """MẶT CẮT DỌC tại vị trí — cắt dọc tim cầu qua mố/trụ: x = dọc cầu, y = cao độ.
+    abutment_assembly: mố lắp ghép → vẽ mặt cắt dọc theo mố thực (nét thấy/khuất)."""
     g = _pos_geometry(d, vi_tri, pier_assembly)
     fig = go.Figure()
     bhd = g["be_half_doc"]
@@ -3425,8 +3583,24 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
             _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["be_dk"],
                   _nm if _sl else "", showlegend=_sl)
         z_top_pile = g["z_beb"]
+    elif g["is_mo"] and abutment_assembly:
+        # MỐ THƯ VIỆN: mặt cắt DỌC thật (vai kê = đáy dầm, đáy bệ = ĐTN−0.5).
+        _PBa = _get_PB()
+        _zb_mo = h_tn - 0.5
+        # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn cùng nét THẤY, 1 chú giải "Mố"
+        # (cánh trước, thân sau → thân nổi trên, dầm kê đúng vai kê thân).
+        _el_pl = _PBa.abutment_elevation_polys(
+            abutment_assembly, x_face=0.0, out_dir=1.0, z_base=_zb_mo,
+            seat_z=g["cao_dd"])
+        _el_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
+        _seen = False
+        for _pl in _el_pl:
+            _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
+                  ("Mố" if not _seen else ""), showlegend=(not _seen))
+            _seen = True
+        z_top_pile = _zb_mo
     elif g["is_mo"]:
-        # Thân mố + tường cánh (mặt cắt dọc)
+        # Thân mố + tường cánh (mặt cắt dọc) — generic (chưa có mố thư viện)
         body_dc = max(0.8, bhd * 0.35)
         _poly(fig, [-body_dc, body_dc, body_dc, -body_dc],
               [h_tn, h_tn, g["z_deck"], g["z_deck"]],
