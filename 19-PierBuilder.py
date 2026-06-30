@@ -1326,6 +1326,33 @@ def abutment_mcn_polys(mo: dict, z_seat: float, z_base: float,
     return out
 
 
+def abutment_plan_polys(mo: dict, target_width: float = None,
+                        labels: dict = None) -> list:
+    """MẶT BẰNG (footprint) mố → list {name,color,xs(ngang),ys(dọc)}. Mỗi đoạn =
+    1 chữ nhật: ngang = bề rộng B (đã co theo cầu), dọc = khoảng u mặt cắt. Tạo
+    hình chữ U/T (thân rộng + 2 cánh dài về sau). Căn dọc theo VAI KÊ (gối)."""
+    L = labels or _MO_LABEL
+    p = migrate_abutment(mo)
+    than = p["parts"]["than"]
+    layers = abut_body_layers(than)
+    if not layers:
+        return []
+    total_B = abut_body_total_B(layers)
+    _fB = (float(target_width) / total_B) if (target_width and total_B > 1e-6) else 1.0
+    su = abut_seat_u_m(mo)                      # dịch dọc → vai kê về 0
+    y = -total_B * _fB / 2.0
+    out = []
+    for lay in layers:
+        B = float(lay.get("B", 8.0) or 8.0) * _fB
+        us = [u for (u, _w) in lay["section"]["outer"]]
+        d0, d1 = min(us) * MM - su, max(us) * MM - su
+        out.append({"name": L["than"], "color": _COL["than"],
+                    "xs": [y, y + B, y + B, y],
+                    "ys": [d0, d0, d1, d1]})
+        y += B
+    return out
+
+
 def build_abutment_preview_fig(mo: dict, H_tru: float = None,
                                labels: dict = None) -> go.Figure:
     """Figure 3D xem trước 1 mố (panel thư viện)."""

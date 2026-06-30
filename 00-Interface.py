@@ -6974,7 +6974,8 @@ with _col_main:
                     try:
                         _f_mbmt = BVK.ve_mat_bang_mo_tru(
                             d, vi_tri=_selected_vt,
-                            pier_assembly=_pa_tru, x_half=_xh)
+                            pier_assembly=_pa_tru, x_half=_xh,
+                            abutment_assembly=_resolve_assembly(d, "mo"))
                         PLOT.aspect_control(_f_mbmt, "mb_motru")
                         st.plotly_chart(_f_mbmt,
                                         use_container_width=True,

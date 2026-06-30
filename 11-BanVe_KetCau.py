@@ -3353,13 +3353,16 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
     return fig
 
 
-def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
-    """MẶT BẰNG KẾT CẤU MỐ/TRỤ — nhìn từ trên: x = ngang cầu, y = dọc cầu."""
+def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
+                       abutment_assembly=None):
+    """MẶT BẰNG KẾT CẤU MỐ/TRỤ — nhìn từ trên: x = ngang cầu, y = dọc cầu.
+    abutment_assembly: mố lắp ghép → vẽ footprint mố thực (thân + 2 cánh)."""
     g = _pos_geometry(d, vi_tri, pier_assembly)
     fig = go.Figure()
     bhn, bhd = g["be_half_ngang"], g["be_half_doc"]
     bc = g["bc"]
     _use_asm = bool(pier_assembly) and not g["is_mo"]
+    _use_mo  = bool(abutment_assembly) and g["is_mo"]
 
     if _use_asm:
         # TRỤ LẮP GHÉP: vẽ footprint thật (bệ/thân/xà mũ, kể cả nhiều khối).
@@ -3376,13 +3379,28 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
             bhn = max(bhn, abs(min(_allx)), abs(max(_allx)))
         if _ally:
             bhd = max(bhd, abs(min(_ally)), abs(max(_ally)))
+    elif _use_mo:
+        # MỐ THƯ VIỆN: footprint thật (thân + 2 cánh), co bề rộng theo cầu.
+        _PBa = _get_PB()
+        _mpolys = _PBa.abutment_plan_polys(abutment_assembly, target_width=bc)
+        _seen = set()
+        for _pl in _mpolys:
+            _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
+            _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["be_dk"],
+                  _nm if _sl else "", showlegend=_sl, lw=1.6)
+        _allx = [x for pl in _mpolys for x in pl["xs"]]
+        _ally = [y for pl in _mpolys for y in pl["ys"]]
+        if _allx:
+            bhn = max(bhn, abs(min(_allx)), abs(max(_allx)))
+        if _ally:
+            bhd = max(bhd, abs(min(_ally)), abs(max(_ally)))
     else:
         # Bệ cọc (chung)
         _poly(fig, [-bhn, bhn, bhn, -bhn], [-bhd, -bhd, bhd, bhd],
               "rgba(170,183,184,0.30)", _C["be_dk"], "Bệ cọc", lw=1.8)
 
-    if _use_asm:
-        pass  # đã vẽ footprint trụ ở trên
+    if _use_asm or _use_mo:
+        pass  # đã vẽ footprint trụ/mố ở trên
     elif g["is_mo"]:
         # Thân mố (tường thân) + tường cánh kéo về phía sau (dọc cầu)
         body_ng = bc / 2 + 0.5
