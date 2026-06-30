@@ -6463,9 +6463,8 @@ with _col_main:
                                         _fig_t.add_trace(_spt_t)
                                 except Exception:
                                     pass
-                                # Biến dạng XIÊN kết cấu theo góc giao (giữ nguyên
-                                # địa hình đã vẽ trước đó → start_index=_n_before).
-                                BVK.apply_skew_3d(_fig_t, d, start_index=_n_before)
+                                # Góc xiên ĐÃ nướng vào hình học (qua _vn theo tim
+                                # tuyến) → KHÔNG hậu xử lý trượt toạ độ tuyệt đối.
                                 BVK.apply_render_mode(_fig_t, render_mode_3d)
                                 # Ẩn cấu kiện theo lựa chọn "Tùy chỉnh hiển thị"
                                 _hide3d = [g for g in _COMP_GROUPS3D
@@ -7329,7 +7328,7 @@ with _col_main:
                                         d, _df_geo, 1.0, pfx=_pfx3) or []):
                                     _tb.legendgroup = "Dầm"
                                     _tmp.add_trace(_tb)
-                                BVK.apply_skew_3d(_tmp, d)
+                                # Góc xiên đã nướng vào _vn (add_all + builder dầm).
                                 _trs = list(_tmp.data)
                             except Exception:
                                 _trs = []
