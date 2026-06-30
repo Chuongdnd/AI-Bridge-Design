@@ -6906,9 +6906,9 @@ with _col_main:
                 _n_tru_vt  = len(_piers_vt)
                 _vi_tri_options = ["mo_trai"] + [f"tru_{i+1}" for i in range(_n_tru_vt)] + ["mo_phai"]
                 _vi_tri_labels  = (
-                    ["Mố trái"] +
+                    ["Mố M1"] +
                     [f"Trụ T{i+1}" for i in range(_n_tru_vt)] +
-                    ["Mố phải"]
+                    ["Mố M2"]
                 )
                 _sel_col1, _sel_col2 = st.columns([2, 3])
                 with _sel_col1:
@@ -7003,7 +7003,8 @@ with _col_main:
                         st.error(f"Lỗi vẽ mặt bằng cọc: {_e}")
                     try:
                         _f_mcd = BVK.ve_mat_cat_doc_vi_tri(
-                            d, vi_tri=_selected_vt, pier_assembly=_pa_tru)
+                            d, vi_tri=_selected_vt, pier_assembly=_pa_tru,
+                            abutment_assembly=_resolve_assembly(d, "mo"))
                         PLOT.aspect_control(_f_mcd, "mc_doc_vitri")
                         st.plotly_chart(_f_mcd,
                                         use_container_width=True,

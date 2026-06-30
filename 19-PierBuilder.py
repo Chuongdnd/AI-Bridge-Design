@@ -1277,15 +1277,19 @@ def abutment_elevation_polys(mo: dict, H_tru: float = None, x_face: float = 0.0,
     layers = abut_body_layers(than)
     z_body0, vsc, w_ref = _abut_vmap(layers, z_base, seat_z, H_tru, than)
 
+    # Đoạn THÂN CHÍNH (B lớn nhất) = NÉT THẤY (vết cắt tim cầu); tường cánh ở 2
+    # biên ngang → NÉT KHUẤT (đứng sau/trước mặt phẳng cắt).
+    _bi = (max(range(len(layers)), key=lambda i: float(layers[i].get("B", 0) or 0))
+           if layers else -1)
     polys = []
-    # Tường thân (gồm bệ): mỗi đoạn = đúng đa giác mặt cắt dọc (chồng lên nhau)
-    for lay in layers:
+    for i, lay in enumerate(layers):
         sec = lay["section"]
         _, _, _wm, _ = _bbox_ab(sec["outer"])
         wmin = w_ref if w_ref is not None else _wm
         polys.append({"name": L["than"], "color": _COL["than"],
                       "xs": [x_face + out_dir * u * MM for (u, w) in sec["outer"]],
-                      "zs": [z_body0 + (w - wmin) * MM * vsc for (u, w) in sec["outer"]]})
+                      "zs": [z_body0 + (w - wmin) * MM * vsc for (u, w) in sec["outer"]],
+                      "hidden": (i != _bi)})
     return polys
 
 
@@ -1304,9 +1308,11 @@ def abutment_mcn_polys(mo: dict, z_seat: float, z_base: float,
     z_body0, vsc, w_ref = _abut_vmap(layers, z_base, z_seat, None, than)
     total_B = abut_body_total_B(layers)
     _fB = (float(target_width) / total_B) if (target_width and total_B > 1e-6) else 1.0
+    # Đoạn THÂN CHÍNH (B lớn nhất) = NÉT THẤY (đỡ dầm); tường cánh = NÉT KHUẤT.
+    _bi = max(range(len(layers)), key=lambda i: float(layers[i].get("B", 0) or 0))
     y = -total_B * _fB / 2.0
     out = []
-    for lay in layers:
+    for i, lay in enumerate(layers):
         B = float(lay.get("B", 8.0) or 8.0) * _fB
         ws = [w for (_u, w) in lay["section"]["outer"]]
         wmn = w_ref if w_ref is not None else min(ws)
@@ -1314,7 +1320,8 @@ def abutment_mcn_polys(mo: dict, z_seat: float, z_base: float,
         z_hi = z_body0 + (max(ws) - wmn) * MM * vsc
         out.append({"name": L["than"], "color": _COL["than"],
                     "ys": [y, y + B, y + B, y],
-                    "zs": [z_lo, z_lo, z_hi, z_hi]})
+                    "zs": [z_lo, z_lo, z_hi, z_hi],
+                    "hidden": (i != _bi)})
         y += B
     return out
 

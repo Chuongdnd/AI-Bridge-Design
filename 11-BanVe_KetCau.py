@@ -68,13 +68,15 @@ _DIM_TXT = 9
 _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
-def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None, lw=1.5):
+def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None,
+          lw=1.5, dash=None):
     sl = (name != "") if showlegend is None else showlegend
     xs = list(xs); ys = list(ys)
+    # dash → NÉT KHUẤT (đường đứt), không tô nền (chỉ vẽ biên).
     fig.add_trace(go.Scatter(
         x=xs + [xs[0]], y=ys + [ys[0]],
-        fill="toself", fillcolor=fill, opacity=opacity,
-        line=dict(color=line_c, width=lw),
+        fill=(None if dash else "toself"), fillcolor=fill, opacity=opacity,
+        line=dict(color=line_c, width=lw, dash=dash),
         mode="lines", name=name, showlegend=sl,
         hovertemplate=(f"<b>{name}</b><extra></extra>" if name else None),
     ))
@@ -2931,9 +2933,9 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     be_W   = cap_W + 0.8
 
     if vi_tri == 'mo_trai':
-        x_cut = x0;   title_vt = "MỐ TRÁI"
+        x_cut = x0;   title_vt = "MỐ M1"
     elif vi_tri == 'mo_phai':
-        x_cut = x_end; title_vt = "MỐ PHẢI"
+        x_cut = x_end; title_vt = "MỐ M2"
     else:
         idx = int(vi_tri.replace('tru_', '')) - 1
         x_cut = piers[idx] if idx < len(piers) else x_tim
@@ -3004,9 +3006,14 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             for _pl in _PBa.abutment_mcn_polys(
                     abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo,
                     target_width=bc):       # co bề rộng mố theo bề rộng cầu
-                _nm = _pl["name"]; _sl = _nm not in _seen_mo; _seen_mo.add(_nm)
-                _poly(fig, _pl["ys"], _pl["zs"], _pl["color"], _C["be_dk"],
-                      _nm if _sl else "", showlegend=_sl)
+                _hid = _pl.get("hidden")
+                _nm = ("Mố (nét khuất)" if _hid else "Thân mố (nét thấy)")
+                _sl = _nm not in _seen_mo; _seen_mo.add(_nm)
+                _poly(fig, _pl["ys"], _pl["zs"],
+                      ("rgba(0,0,0,0)" if _hid else _pl["color"]),
+                      (_C.get("be_dk", "#1f9ed1") if not _hid else "#1f9ed1"),
+                      _nm if _sl else "", showlegend=_sl,
+                      dash=("dash" if _hid else None))
             _piles_mo_vt = _layout_piles(d, vi_tri)
             if _piles_mo_vt:
                 _draw_piles_section(
@@ -3205,9 +3212,9 @@ def _pos_geometry(d, vi_tri, pier_assembly=None):
 
     is_mo = str(vi_tri).startswith("mo")
     if vi_tri == "mo_trai":
-        x_cut = x0;   title_vt = "MỐ TRÁI"
+        x_cut = x0;   title_vt = "MỐ M1"
     elif vi_tri == "mo_phai":
-        x_cut = x_end; title_vt = "MỐ PHẢI"
+        x_cut = x_end; title_vt = "MỐ M2"
     else:
         idx = int(str(vi_tri).replace("tru_", "")) - 1
         x_cut = piers[idx] if idx < len(piers) else x_tim
@@ -3431,8 +3438,10 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None):
     return fig
 
 
-def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
-    """MẶT CẮT DỌC tại vị trí — cắt dọc tim cầu qua mố/trụ: x = dọc cầu, y = cao độ."""
+def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
+                          abutment_assembly=None):
+    """MẶT CẮT DỌC tại vị trí — cắt dọc tim cầu qua mố/trụ: x = dọc cầu, y = cao độ.
+    abutment_assembly: mố lắp ghép → vẽ mặt cắt dọc theo mố thực (nét thấy/khuất)."""
     g = _pos_geometry(d, vi_tri, pier_assembly)
     fig = go.Figure()
     bhd = g["be_half_doc"]
@@ -3459,8 +3468,25 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None):
             _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["be_dk"],
                   _nm if _sl else "", showlegend=_sl)
         z_top_pile = g["z_beb"]
+    elif g["is_mo"] and abutment_assembly:
+        # MỐ THƯ VIỆN: mặt cắt DỌC thật (vai kê = đáy dầm, đáy bệ = ĐTN−0.5).
+        _PBa = _get_PB()
+        _zb_mo = h_tn - 0.5
+        _seen = set()
+        for _pl in _PBa.abutment_elevation_polys(
+                abutment_assembly, x_face=0.0, out_dir=1.0, z_base=_zb_mo,
+                seat_z=g["cao_dd"]):
+            _hid = _pl.get("hidden")
+            _nm = ("Mố (nét khuất)" if _hid else "Thân mố (nét thấy)")
+            _sl = _nm not in _seen; _seen.add(_nm)
+            _poly(fig, _pl["xs"], _pl["zs"],
+                  ("rgba(0,0,0,0)" if _hid else _pl["color"]),
+                  ("#1f9ed1" if _hid else _C["be_dk"]),
+                  _nm if _sl else "", showlegend=_sl,
+                  dash=("dash" if _hid else None))
+        z_top_pile = _zb_mo
     elif g["is_mo"]:
-        # Thân mố + tường cánh (mặt cắt dọc)
+        # Thân mố + tường cánh (mặt cắt dọc) — generic (chưa có mố thư viện)
         body_dc = max(0.8, bhd * 0.35)
         _poly(fig, [-body_dc, body_dc, body_dc, -body_dc],
               [h_tn, h_tn, g["z_deck"], g["z_deck"]],
