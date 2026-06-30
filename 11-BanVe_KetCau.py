@@ -3022,12 +3022,14 @@ def ve_binh_do_2d(d, df_tim_line=None):
 # 8. MẶT CẮT NGANG TẠI VỊ TRÍ MỐ / TRỤ
 # ===========================================================================
 def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
-                  x_half=None, abutment_assembly=None):
+                  x_half=None, abutment_assembly=None, mo_view='truoc'):
     """
     MCN cắt vuông góc tim cầu tại vị trí mố hoặc trụ cụ thể.
     vi_tri: 'mo_trai' | 'mo_phai' | 'tru_1' | 'tru_2' | ...
     df_geology: DataFrame với cột Lý trình, Offset, Z (từ file .NTD)
     abutment_assembly: mố lắp ghép thư viện → cắt MCN theo mố mới (thay mố cũ).
+    mo_view: 'truoc' = MCN TRƯỚC mố (nhìn từ sông) | 'sau' = MCN SAU mố (nhìn từ
+             tuyến về sông) — đổi nét thấy/khuất + tiêu đề tương ứng.
     """
     kcn   = d.get("kcn_result") or d.get("ai_result", {})
     geo   = d.get("geo_logic", {})
@@ -3058,10 +3060,12 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     cap_W  = max(2.0, bc * 0.18 + 1.0)
     be_W   = cap_W + 0.8
 
+    _mo_suffix = (" — SAU MỐ (nhìn từ tuyến)" if mo_view == 'sau'
+                  else " — TRƯỚC MỐ (nhìn từ sông)")
     if vi_tri == 'mo_trai':
-        x_cut = x0;   title_vt = "MỐ M1"
+        x_cut = x0;   title_vt = "MỐ M1" + _mo_suffix
     elif vi_tri == 'mo_phai':
-        x_cut = x_end; title_vt = "MỐ M2"
+        x_cut = x_end; title_vt = "MỐ M2" + _mo_suffix
     else:
         idx = int(vi_tri.replace('tru_', '')) - 1
         x_cut = piers[idx] if idx < len(piers) else x_tim
@@ -3128,11 +3132,12 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             # MCN cắt theo MỐ THƯ VIỆN: vai kê = đáy dầm, đáy bệ = ĐTN−0.5.
             _PBa = _get_PB()
             _z_base_mo = h_tn - 0.5
-            # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn (thân + cánh) cùng nét THẤY,
-            # cùng 1 chú giải "Mố" (vẽ cánh trước, thân sau → thân nổi trên).
+            _is_back = (mo_view == 'sau')
+            # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn (thân + cánh); nét thấy/khuất
+            # đảo theo hướng nhìn (trước = từ sông, sau = từ tuyến về sông).
             _mcn_pl = _PBa.abutment_mcn_polys(
                 abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo,
-                target_width=bc)            # co bề rộng mố theo bề rộng cầu
+                target_width=bc, back=_is_back)  # co bề rộng mố theo bề rộng cầu
             # Vẽ SAU mố (nét khuất) trước → THÂN/BỆ (nét thấy) đè lên trên.
             _mcn_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
             _seen_mo = set()

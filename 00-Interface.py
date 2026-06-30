@@ -6990,13 +6990,28 @@ with _col_main:
                         _f_mcnvt = BVK.ve_mcn_vi_tri(
                             d, vi_tri=_selected_vt, df_geology=_df_geo,
                             pier_assembly=_pa_tru, x_half=_xh,
-                            abutment_assembly=_resolve_assembly(d, "mo"))
+                            abutment_assembly=_resolve_assembly(d, "mo"),
+                            mo_view='truoc')
                         PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
                         st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt cắt ngang: {_e}")
+                    # Với MỐ: bổ sung MCN SAU MỐ (nhìn từ tuyến về sông).
+                    if _selected_vt in ("mo_trai", "mo_phai"):
+                        try:
+                            _f_mcnvt_s = BVK.ve_mcn_vi_tri(
+                                d, vi_tri=_selected_vt, df_geology=_df_geo,
+                                pier_assembly=_pa_tru, x_half=_xh,
+                                abutment_assembly=_resolve_assembly(d, "mo"),
+                                mo_view='sau')
+                            PLOT.aspect_control(_f_mcnvt_s, "mcn_vitri_sau")
+                            st.plotly_chart(_f_mcnvt_s,
+                                            use_container_width=True,
+                                            config={"scrollZoom": True, "displayModeBar": True})
+                        except Exception as _e:
+                            st.error(f"Lỗi vẽ MCN sau mố: {_e}")
                 with _colR:
                     try:
                         _f_mbc = BVK.ve_mat_bang_coc(d, vi_tri=_selected_vt)

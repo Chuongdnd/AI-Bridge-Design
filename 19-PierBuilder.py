@@ -1449,12 +1449,16 @@ def abutment_elevation_polys(mo: dict, H_tru: float = None, x_face: float = 0.0,
 
 
 def abutment_mcn_polys(mo: dict, z_seat: float, z_base: float,
-                       labels: dict = None, target_width: float = None) -> list:
+                       labels: dict = None, target_width: float = None,
+                       back: bool = False) -> list:
     """MẶT CẮT NGANG cầu của mố (ngang y × cao z) → list {name,color,ys,zs,hidden}.
     Mỗi đoạn (tường cánh/thân) tách 3 dải theo cao độ → thể hiện đầy đủ:
       • BỆ (đáy → đỉnh bệ) — khối bệ.
-      • THÂN TRƯỚC vai kê (đỉnh bệ → vai kê=đáy dầm) — NÉT THẤY (mặt trước mố).
-      • SAU vai kê (vai kê → đỉnh tường đỉnh) — NÉT KHUẤT (phần sau mố).
+      • THÂN TRƯỚC vai kê (đỉnh bệ → vai kê=đáy dầm).
+      • SAU vai kê (vai kê → đỉnh tường đỉnh) — tường đỉnh.
+    back=False → MCN TRƯỚC MỐ (nhìn từ phía sông): mặt trước mố NÉT THẤY, tường
+    đỉnh phía sau NÉT KHUẤT. back=True → MCN SAU MỐ (nhìn từ tuyến): tường đỉnh
+    (back wall) NÉT THẤY, mặt trước mố thành NÉT KHUẤT.
     target_width: co/giãn tổng bề rộng ngang = bề rộng cầu."""
     p = migrate_abutment(mo)
     than = p["parts"]["than"]
@@ -1478,8 +1482,15 @@ def abutment_mcn_polys(mo: dict, z_seat: float, z_base: float,
                 out.append({"name": name, "color": color, "hidden": hidden,
                             "ys": [y, y1, y1, y], "zs": [za, za, zb, zb]})
         _rect(z_lo, min(z_betop, z_hi), "Bệ mố", _COL["be"], False)
-        _rect(max(z_betop, z_lo), min(z_seat, z_hi), "Thân mố (trước)", _COL["than"], False)
-        _rect(max(z_seat, z_lo), z_hi, "Sau mố (khuất)", _COL["than"], True)
+        if back:
+            # NHÌN TỪ TUYẾN: mặt sau mố là 1 KHỐI TƯỜNG ĐẶC liền (không có khấc
+            # vai kê — khấc nằm ở mặt trước) → toàn bộ thân + tường đỉnh NÉT THẤY.
+            _rect(max(z_betop, z_lo), z_hi, "Tường thân (sau)", _COL["than"], False)
+        else:
+            # NHÌN TỪ SÔNG: mặt trước mố NÉT THẤY; tường đỉnh sau NÉT KHUẤT.
+            _rect(max(z_betop, z_lo), min(z_seat, z_hi), "Thân mố (trước)",
+                  _COL["than"], False)
+            _rect(max(z_seat, z_lo), z_hi, "Sau mố (khuất)", _COL["than"], True)
         y = y1
     return out
 
