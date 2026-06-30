@@ -7516,20 +7516,25 @@ with _col_main:
                 _kcn_s  = d.get("kcn_result") or d.get("ai_result") or {}
                 _geo_s  = d.get("geo_logic") or {}
                 _mong_s = d.get("mong_result") or {}
+                # Chiều dài & bề rộng LẤY THẲNG từ kết quả phương án (không nhập tay):
+                #   L cầu = geo_logic.L_cau ;  bề rộng = bc/b_cau (KHÔNG dùng 'B' —
+                #   'B' là bề rộng đối tượng vượt, không phải bề rộng mặt cầu).
                 _L_cau   = float(_geo_s.get("L_cau", 0) or 0)
-                _w_def   = float(d.get("bc") or d.get("B") or 0) or 12.0
+                _wid     = float(d.get("bc") or d.get("b_cau") or 0)
                 _L_nhip  = float(_kcn_s.get("chieu_dai", 0) or 0)
                 _loai_dam  = _kcn_s.get("loai_dam", "")
                 _loai_mong = _mong_s.get("loai_mong", "")
-
-                _c1, _c2 = st.columns(2)
-                _len = _c1.number_input(
-                    "Chiều dài cầu L (m)", 1.0, 5000.0,
-                    float(_L_cau or 100.0), 1.0, key=f"sdt_len_{selected_ribbon}")
-                _wid = _c2.number_input(
-                    "Bề rộng cầu B (m)", 1.0, 100.0,
-                    float(_w_def), 0.5, key=f"sdt_wid_{selected_ribbon}")
+                _len = _L_cau
                 _area = SDT.deck_area(_len, _wid)
+
+                if _len <= 0 or _wid <= 0:
+                    st.warning("⚠️ Phương án chưa có **chiều dài cầu** hoặc **bề rộng** "
+                               "— hãy chạy AI / điền thông số ở **⚙️ OPTIONS** rồi quay lại.")
+                _i1, _i2, _i3 = st.columns(3)
+                _i1.metric("Chiều dài cầu L (theo PA)", f"{_len:,.1f} m")
+                _i2.metric("Bề rộng cầu B (theo PA)", f"{_wid:,.1f} m")
+                _i3.metric("Diện tích mặt cầu", f"{_area:,.0f} m²",
+                           help=f"{_len:.1f} m × {_wid:.1f} m")
 
                 _boh = st.checkbox("Cầu bộ hành (dầm dàn thép)", value=False,
                                    key=f"sdt_boh_{selected_ribbon}")
@@ -7548,11 +7553,9 @@ with _col_main:
                 d["suat_code"] = _sel_code
 
                 _r = SDT.compute(_area, _sel_code)
-                _m1, _m2, _m3 = st.columns(3)
-                _m1.metric("Diện tích mặt cầu", f"{_area:,.0f} m²",
-                           help=f"{_len:.1f} m × {_wid:.1f} m")
-                _m2.metric("Suất vốn đầu tư", f"{_r['suat']:.3f} tr/m²")
-                _m3.metric("💵 Giá trị công trình", f"{_r['gia_tri']/1000:,.2f} tỷ đ",
+                _m1, _m2 = st.columns(2)
+                _m1.metric("Suất vốn đầu tư", f"{_r['suat']:.3f} tr/m²")
+                _m2.metric("💵 Giá trị công trình", f"{_r['gia_tri']/1000:,.2f} tỷ đ",
                            help=f"{_r['gia_tri']:,.1f} triệu đồng")
                 _b1, _b2 = st.columns(2)
                 _b1.metric("• Trong đó chi phí xây dựng",
