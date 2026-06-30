@@ -772,248 +772,6 @@ def make_parametric_section(loai_dam: str, H_mm: float,
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
-# 9b. MẶT CẮT THAM SỐ THEO DIM CÓ TÊN — form khai báo thông số trực tiếp
-# ═══════════════════════════════════════════════════════════════════════════════
-# Người dùng khai các DIM có tên (chiều cao, bề rộng cánh, dày sườn…) → sinh bộ
-# mặt cắt {A-A: giữa nhịp, B-B: đầu dầm đặc} + cấu hình đoạn (đầu đặc → vuốt →
-# giữa) để mọi view (MCN, 3D, trắc dọc) và khối lượng toàn cầu cập nhật theo.
-
-def normalize_beam_type(loai_dam: str) -> str:
-    """Chuẩn hoá tên loại dầm → khoá nội bộ: supert | dam_i | t_nguoc | ban_rong."""
-    s = (loai_dam or "").strip().lower()
-    if "super" in s or "spt" in s:
-        return "supert"
-    if "ngược" in s or "nguoc" in s:
-        return "t_nguoc"
-    if "rỗng" in s or "rong" in s or "bản" in s or "ban" in s:
-        return "ban_rong"
-    return "dam_i"
-
-
-# Đặc tả DIM cho form (đơn vị mm, trừ n_hole). default lấy theo dầm điển hình.
-# sym = ký hiệu hiển thị TRÊN mặt cắt (khớp nhãn ô nhập) để biết dim ở đoạn nào.
-PARAM_SPECS = {
-    "supert": [
-        dict(key="H",        sym="H",  label="Chiều cao dầm",               default=1750, min=600,  max=2500, step=10, group="Kích thước"),
-        dict(key="W_top",    sym="B",  label="Bề rộng cánh trên (mép–mép)", default=2200, min=800,  max=2600, step=10, group="Cánh trên"),
-        dict(key="t_flange", sym="t₁", label="Dày mép cánh trên",           default=75,   min=40,   max=300,  step=5,  group="Cánh trên"),
-        dict(key="W_web",    sym="b",  label="Bề rộng 2 sườn (mép ngoài)",  default=1020, min=500,  max=1700, step=10, group="Sườn"),
-        dict(key="t_web",    sym="t",  label="Dày sườn (mỗi bên)",          default=215,  min=120,  max=450,  step=5,  group="Sườn"),
-    ],
-    "dam_i": [
-        dict(key="H",     sym="H",  label="Chiều cao dầm",      default=1650, min=600, max=2500, step=10, group="Kích thước"),
-        dict(key="w_top", sym="B₁", label="Bề rộng cánh trên",  default=820,  min=300, max=1400, step=10, group="Cánh trên"),
-        dict(key="t_top", sym="t₁", label="Dày cánh trên",      default=200,  min=80,  max=500,  step=5,  group="Cánh trên"),
-        dict(key="w_bot", sym="B₂", label="Bề rộng cánh dưới",  default=900,  min=300, max=1400, step=10, group="Cánh dưới"),
-        dict(key="t_bot", sym="t₂", label="Dày cánh dưới",      default=240,  min=80,  max=600,  step=5,  group="Cánh dưới"),
-        dict(key="t_web", sym="tw", label="Dày sườn",           default=200,  min=120, max=400,  step=5,  group="Sườn"),
-    ],
-    "t_nguoc": [
-        dict(key="H",         sym="H",  label="Chiều cao dầm",     default=1200, min=500, max=2200, step=10, group="Kích thước"),
-        dict(key="w_flange",  sym="B",  label="Bề rộng bầu dưới",   default=980,  min=400, max=1500, step=10, group="Bầu dưới"),
-        dict(key="t_flange",  sym="tf", label="Chiều cao bầu dưới", default=500,  min=150, max=1000, step=10, group="Bầu dưới"),
-        dict(key="w_web",     sym="bw", label="Bề rộng sườn",       default=220,  min=120, max=500,  step=5,  group="Sườn"),
-    ],
-    "ban_rong": [
-        dict(key="H",      sym="H", label="Chiều cao bản",          default=990,  min=400, max=1600, step=10, group="Kích thước"),
-        dict(key="W",      sym="B", label="Bề rộng bản",            default=990,  min=500, max=1600, step=10, group="Kích thước"),
-        dict(key="d_hole", sym="Ø", label="Đường kính khoang rỗng", default=560,  min=0,   max=1200, step=10, group="Khoang rỗng"),
-        dict(key="n_hole", sym="n", label="Số khoang rỗng",         default=2,    min=0,   max=4,    step=1,  group="Khoang rỗng"),
-    ],
-}
-
-
-def make_dim_figure(loai_dam: str, P: dict):
-    """Vẽ MẶT CẮT MẪU + ký hiệu DIM (theo sym của PARAM_SPECS) → người dùng biết
-    mỗi thông số ứng với đoạn nào trên mặt cắt. Trả về go.Figure (mm)."""
-    t   = normalize_beam_type(loai_dam)
-    P   = {**param_defaults(loai_dam), **(P or {})}
-    sec = _named_mid_section(loai_dam, P)
-    H   = max(300.0, float(P.get("H", 1750)))
-    xs  = [p[0] for p in sec.outer] or [0.0]
-    xm  = max(abs(min(xs)), abs(max(xs))) or H * 0.5
-
-    fig = go.Figure()
-    ox = [p[0] for p in sec.outer] + [sec.outer[0][0]]
-    oz = [p[1] for p in sec.outer] + [sec.outer[0][1]]
-    fig.add_trace(go.Scatter(x=ox, y=oz, fill="toself",
-        fillcolor="rgba(46,204,113,0.18)", line=dict(color="#27ae60", width=2),
-        mode="lines", hoverinfo="skip", showlegend=False))
-    for h in (sec.holes or []):
-        hx = [p[0] for p in h] + [h[0][0]]; hz = [p[1] for p in h] + [h[0][1]]
-        fig.add_trace(go.Scatter(x=hx, y=hz, fill="toself",
-            fillcolor="rgba(255,255,255,0.92)", line=dict(color="#27ae60", width=1),
-            mode="lines", hoverinfo="skip", showlegend=False))
-
-    DC = "#c0392b"; e = max(40.0, 0.02 * H)        # nửa chiều dài tick
-    def _ln(x0, z0, x1, z1):
-        fig.add_trace(go.Scatter(x=[x0, x1], y=[z0, z1], mode="lines",
-            line=dict(color=DC, width=1), hoverinfo="skip", showlegend=False))
-    def _tx(x, z, s):
-        fig.add_annotation(x=x, y=z, text=f"<b>{s}</b>", showarrow=False,
-            font=dict(color=DC, size=14), bgcolor="rgba(255,255,255,0.75)")
-    def hdim(x0, x1, z, s):
-        _ln(x0, z, x1, z); _ln(x0, z + e, x0, z - e); _ln(x1, z + e, x1, z - e)
-        _tx((x0 + x1) / 2.0, z + (e * 2 if z >= 0 else -e * 2), s)
-    def vdim(z0, z1, x, s):
-        _ln(x, z0, x, z1); _ln(x - e, z0, x + e, z0); _ln(x - e, z1, x + e, z1)
-        _tx(x - e * 2.6, (z0 + z1) / 2.0, s)
-
-    g = max(110.0, 0.08 * H)
-    if t == "supert":
-        Wt = float(P["W_top"]); Ww = float(P["W_web"]); tw = float(P["t_web"]); tf = float(P["t_flange"])
-        ht = Wt / 2.0; hwe = min(Ww / 2.0, ht - 20.0); htr = max(60.0, hwe - tw)
-        z_tr = -0.671 * H; hb = max(40.0, hwe - 20.0)
-        vdim(0, -H, -ht - g, "H")
-        hdim(-ht, ht, g, "B")
-        hdim(-hb, hb, -H - g, "b")
-        vdim(0, -tf, ht + g, "t₁")
-        hdim(htr, hwe, z_tr - g, "t")
-    elif t == "dam_i":
-        wt = float(P["w_top"]); tt = float(P["t_top"]); wb = float(P["w_bot"]); tb = float(P["t_bot"]); ww = float(P["t_web"])
-        ht, hb, hw = wt / 2.0, wb / 2.0, ww / 2.0
-        z_t = -min(tt, 0.45 * H); z_b = -(H - min(tb, 0.45 * H))
-        vdim(0, -H, -max(ht, hb) - g, "H")
-        hdim(-ht, ht, g, "B₁")
-        hdim(-hb, hb, -H - g, "B₂")
-        vdim(0, z_t, ht + g, "t₁")
-        vdim(-H, z_b, hb + g, "t₂")
-        hdim(-hw, hw, (z_t + z_b) / 2.0, "tw")
-    elif t == "t_nguoc":
-        wf = float(P["w_flange"]); tf = float(P["t_flange"]); ww = float(P["w_web"])
-        hwf, hww = wf / 2.0, ww / 2.0; z_b = -(H - min(tf, 0.85 * H))
-        vdim(0, -H, -hwf - g, "H")
-        hdim(-hwf, hwf, -H - g, "B")
-        vdim(-H, z_b, hwf + g, "tf")
-        hdim(-hww, hww, g, "bw")
-    else:  # ban_rong
-        W = float(P["W"]); d = float(P.get("d_hole", 0)); hw = W / 2.0
-        vdim(0, -H, -hw - g, "H")
-        hdim(-hw, hw, g, "B")
-        if sec.holes:
-            _hx = [p[0] for p in sec.holes[0]]
-            cx = (min(_hx) + max(_hx)) / 2.0; r = (max(_hx) - min(_hx)) / 2.0
-            hdim(cx - r, cx + r, -H / 2.0, "Ø")
-
-    fig.update_layout(
-        margin=dict(l=8, r=8, t=8, b=8), height=320,
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        xaxis=dict(visible=False, scaleanchor="y", scaleratio=1.0),
-        yaxis=dict(visible=False), showlegend=False)
-    return fig
-
-
-def param_defaults(loai_dam: str) -> dict:
-    """Dict giá trị mặc định cho 1 loại dầm (theo PARAM_SPECS)."""
-    t = normalize_beam_type(loai_dam)
-    return {sp["key"]: float(sp["default"]) for sp in PARAM_SPECS.get(t, [])}
-
-
-def _supert_section(P) -> CrossSection:
-    """Super-T (máng hở) từ DIM có tên. Tham số gốc tái lập đúng preset A-A."""
-    H  = max(400.0, float(P.get("H", 1750)))
-    Wt = float(P.get("W_top", 2200)); Ww = float(P.get("W_web", 1020))
-    tw = float(P.get("t_web", 215));  tf = float(P.get("t_flange", 75))
-    ht  = Wt / 2.0
-    hwe = min(Ww / 2.0, ht - 20.0)            # mép sườn không vượt mép cánh
-    htr = max(60.0, hwe - tw)                  # nửa bề rộng đáy máng (trong)
-    z_th = -0.157 * H                          # đáy throat (sườn bắt đầu thẳng)
-    z_tr = -0.671 * H                          # đáy máng (khoang hở)
-    z_h2 = -(tf + 0.043 * H)                    # mặt dưới cánh phía trong
-    dx   = 0.045 * Wt                           # nhô mặt dưới cánh vào trong
-    z_bb = -(H - 20.0); hb = max(40.0, hwe - 20.0)
-    outer = [
-        [-ht, 0.0], [-hwe, 0.0], [-hwe, z_th], [-htr, z_tr],
-        [htr, z_tr], [hwe, z_th], [hwe, 0.0], [ht, 0.0],
-        [ht, -tf], [hwe + dx, z_h2], [hwe, z_tr], [hwe, z_bb],
-        [hb, -H], [-hb, -H], [-hwe, z_bb], [-hwe, z_tr],
-        [-(hwe + dx), z_h2], [-ht, -tf],
-    ]
-    return CrossSection(name="A-A", outer=outer, holes=[], open=True)
-
-
-def _dam_i_section(P) -> CrossSection:
-    H  = max(400.0, float(P.get("H", 1650)))
-    wt = float(P.get("w_top", 820)); tt = float(P.get("t_top", 200))
-    wb = float(P.get("w_bot", 900)); tb = float(P.get("t_bot", 240))
-    ww = float(P.get("t_web", 200))
-    ht, hb, hw = wt / 2.0, wb / 2.0, ww / 2.0
-    z_t = -min(tt, 0.45 * H); z_b = -(H - min(tb, 0.45 * H))
-    outer = [
-        [-ht, 0.0], [ht, 0.0], [ht, z_t], [hw, z_t],
-        [hw, z_b], [hb, z_b], [hb, -H], [-hb, -H],
-        [-hb, z_b], [-hw, z_b], [-hw, z_t], [-ht, z_t],
-    ]
-    return CrossSection(name="A-A", outer=outer, holes=[], open=False)
-
-
-def _t_nguoc_section(P) -> CrossSection:
-    H  = max(400.0, float(P.get("H", 1200)))
-    wf = float(P.get("w_flange", 980)); tf = float(P.get("t_flange", 500))
-    ww = float(P.get("w_web", 220))
-    hwf, hww = wf / 2.0, ww / 2.0
-    z_b = -(H - min(tf, 0.85 * H))
-    outer = [
-        [-hww, 0.0], [hww, 0.0], [hww, z_b], [hwf, z_b],
-        [hwf, -H], [-hwf, -H], [-hwf, z_b], [-hww, z_b],
-    ]
-    return CrossSection(name="A-A", outer=outer, holes=[], open=False)
-
-
-def _ban_rong_section(P) -> CrossSection:
-    H = max(300.0, float(P.get("H", 990)))
-    W = float(P.get("W", 990)); d = float(P.get("d_hole", 560))
-    n = int(round(float(P.get("n_hole", 2))))
-    hw = W / 2.0
-    outer = [[-hw, 0.0], [hw, 0.0], [hw, -H], [-hw, -H]]
-    holes = []
-    r = min(d / 2.0, 0.42 * H, 0.42 * W)
-    if r > 30 and n > 0:
-        if n == 1:
-            cxs = [0.0]
-        else:
-            span = W - 2 * (r + 60.0)
-            cxs = [(-span / 2.0 + i * span / (n - 1)) for i in range(n)] if span > 0 \
-                  else [0.0] * n
-        cz = -H / 2.0
-        for cx in cxs:
-            holes.append([[cx + r * math.cos(t), cz + r * math.sin(t)]
-                          for t in (i * 2 * math.pi / 28 for i in range(28))])
-    return CrossSection(name="A-A", outer=outer, holes=holes, open=False)
-
-
-def _named_mid_section(loai_dam: str, P) -> CrossSection:
-    t = normalize_beam_type(loai_dam)
-    if t == "supert":
-        return _supert_section(P)
-    if t == "t_nguoc":
-        return _t_nguoc_section(P)
-    if t == "ban_rong":
-        return _ban_rong_section(P)
-    return _dam_i_section(P)
-
-
-def build_param_sections(loai_dam: str, P: dict):
-    """Từ DIM có tên → (sections {A-A,B-B}, seg_dicts, fill_sec).
-
-    A-A = mặt cắt GIỮA nhịp (điển hình theo loại); B-B = ĐẦU DẦM đặc (chữ nhật
-    rộng bằng mặt cắt × H, bịt khoang rỗng). Đoạn: đầu đặc B-B → vuốt sang A-A →
-    A-A bù phần còn lại (fill). Khớp định dạng segs của Segment Editor."""
-    H   = max(300.0, float((P or {}).get("H", 1750)))
-    mid = _named_mid_section(loai_dam, P or {})
-    ht  = max((abs(x) for (x, _z) in mid.outer), default=H * 0.5) if mid.outer else H * 0.5
-    end = CrossSection(name="B-B",
-                       outer=[[-ht, 0.0], [ht, 0.0], [ht, -H], [-ht, -H]],
-                       holes=[], open=False)
-    secs = {"A-A": mid, "B-B": end}
-    segs = [
-        {"type": "constant", "sec": "B-B", "length": 800.0},
-        {"type": "loft", "from_sec": "B-B", "to_sec": "A-A", "length": 1000.0},
-    ]
-    return secs, segs, "A-A"
-
-
-# ═══════════════════════════════════════════════════════════════════════════════
 # 10. CAD COMMAND INTERPRETER
 # ═══════════════════════════════════════════════════════════════════════════════
 
@@ -1417,20 +1175,31 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
     line_objs: list = []   # (start, end, layer, linetype, color) — dò tim dầm
 
     def _ent_style(ent):
-        """Lấy (layer, linetype, color ACI), tự giải ByLayer."""
+        """Lấy (layer, linetype, color ACI, rgb true-color), tự giải ByLayer."""
         lay = str(getattr(ent.dxf, "layer", "") or "")
         lt  = str(getattr(ent.dxf, "linetype", "") or "")
         col = int(getattr(ent.dxf, "color", 256) or 256)
+        rgb = None
         try:
-            if lt.upper() in ("", "BYLAYER") or col == 256:
-                _lo = doc.layers.get(lay)
+            rgb = ent.rgb            # (r,g,b) nếu true-color; None nếu dùng ACI
+        except Exception:
+            rgb = None
+        try:
+            _lo = doc.layers.get(lay) if (lt.upper() in ("", "BYLAYER")
+                                          or col == 256 or rgb is None) else None
+            if _lo is not None:
                 if lt.upper() in ("", "BYLAYER"):
                     lt = str(_lo.dxf.linetype or "")
                 if col == 256:
                     col = int(_lo.dxf.color or 7)
+                if rgb is None:
+                    try:
+                        rgb = _lo.rgb
+                    except Exception:
+                        pass
         except Exception:
             pass
-        return lay, lt, col
+        return lay, lt, col, rgb
 
     for entity in msp:
         etype = entity.dxftype()
@@ -1529,6 +1298,14 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
         if not pts or len(pts) < 2:
             continue
 
+        # POLYLINE 2 điểm hở = ĐOẠN THẲNG (vd đường TIM vẽ bằng PLINE, layer
+        # CENTER/màu hồng) → đưa vào line_objs để dò tim, KHÔNG coi là biên kín.
+        if (etype in ("LWPOLYLINE", "POLYLINE") and not closed
+                and len(pts) == 2):
+            raw_lines.append((pts[0], pts[1]))
+            line_objs.append((pts[0], pts[1], *_ent_style(entity)))
+            continue
+
         # Force-close nếu flag closed hoặc đầu/cuối gần nhau (< 0.5 mm)
         if pts[0] != pts[-1]:
             gap = ((pts[0][0] - pts[-1][0]) ** 2 +
@@ -1619,11 +1396,26 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
 
     # ── Ưu tiên TIM DẦM do người dùng vẽ trong CAD ──────────────────────────
     #   (đường thẳng đứng, linetype CENTER/DASHDOT hoặc layer/màu quy ước).
+    def _is_magenta(col, rgb):
+        """Đường TIM màu HỒNG/MAGENTA: ACI 6, hoặc true-color hồng (R&B cao, G thấp)."""
+        try:
+            if int(col) == 6:
+                return True
+        except Exception:
+            pass
+        if rgb:
+            try:
+                r, g, b = rgb
+                return r > 110 and b > 110 and g < 0.65 * min(r, b)
+            except Exception:
+                return False
+        return False
+
     def _detect_tim_line():
         h = max(ymax - ymin, 1e-6)
         w = max(xmax - xmin, 1e-6)
         cands = []
-        for _s, _e, _lay, _lt, _col in line_objs:
+        for _s, _e, _lay, _lt, _col, _rgb in line_objs:
             _dx = abs(_e[0] - _s[0])
             _dy = abs(_e[1] - _s[1])
             if _dy < 0.25 * h:                 # đủ dài theo phương đứng
@@ -1631,20 +1423,23 @@ def parse_dxf_bytes(dxf_bytes: bytes) -> dict:
             if _dx > max(2.0, 0.03 * w):       # gần như thẳng đứng
                 continue
             _xl = (_s[0] + _e[0]) / 2.0
-            if _xl < xmin - 0.5 * w or _xl > xmax + 0.5 * w:
+            _mag = _is_magenta(_col, _rgb)
+            # Đường HỒNG/MAGENTA = quy ước TIM → KHÔNG lọc theo bbox (mặt cắt có
+            # thể vẽ LỆCH khỏi tim, vd tường cánh). Đường khác mới lọc theo bbox.
+            if not _mag and (_xl < xmin - 0.5 * w or _xl > xmax + 0.5 * w):
                 continue
             _U = (str(_lay) + " " + str(_lt)).upper()
             _score = 0
             if any(k in _U for k in ("TIM", "CENTER", "AXIS", "DASHDOT", "DASH")):
                 _score += 3
-            if int(_col) == 6:                 # magenta — màu tim quy ước
-                _score += 2
+            if _mag:                           # màu hồng/magenta = tim ưu tiên cao nhất
+                _score += 5
             cands.append((_score, _xl))
         if not cands:
             return None
         _best = max(s for s, _ in cands)
         _mid = (xmin + xmax) / 2.0
-        if _best >= 2:                         # có dấu hiệu rõ → chọn ứng viên tốt nhất
+        if _best >= 2:                         # có dấu hiệu rõ (gồm magenta) → chọn ứng viên tốt nhất
             return min((c for c in cands if c[0] == _best),
                        key=lambda c: abs(c[1] - _mid))[1]
         if len(cands) == 1:                    # chỉ 1 đường đứng → coi là tim

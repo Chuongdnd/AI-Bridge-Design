@@ -1123,11 +1123,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         # Phần nổi trên mặt đất (thân mố từ terrain → deck)
         if abutment_assembly:
             _PB = _get_PB()
-            # Đỉnh mố (vai kê gối) = ĐÁY DẦM (z_cap_t); thân co theo chiều
-            # cao cầu để chạm đáy dầm.
+            # Đỉnh mố (vai kê gối) = ĐÁY DẦM (z_cap_t). ĐÁY mố (bệ) chôn 0.5m
+            # dưới ĐƯỜNG TỰ NHIÊN tại mố (giống quy ước bệ trụ). out_dir=sign:
+            # MẶT TRƯỚC mố (phía nhịp, u>0) quay VÀO NHỊP, lưng (u<0) ra mái dốc.
+            _z_base_mo = z_terr_mo - 0.5
             for _pl in _PB.abutment_elevation_polys(
-                    abutment_assembly, H_tru=(z_cap_t - z_be_b),
-                    x_face=xm, out_dir=-sign, z_base=z_be_b):
+                    abutment_assembly, H_tru=(z_cap_t - _z_base_mo),
+                    x_face=xm, out_dir=sign, z_base=_z_base_mo,
+                    seat_z=z_dam_b):       # vai kê = đáy dầm; bệ = ĐTN−0.5
                 _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
                       (_pl["name"] if side == "Trái" else ""),
                       showlegend=(side == "Trái"))
@@ -2547,12 +2550,40 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # LỚP 6 — MỐ HAI ĐẦU (Mesh3d KHỐI 3D)
         # =========================================================
 
+        # MỐ LẮP GHÉP thật (mặc định "Mố chữ U" từ d["_mo_model"]) — thay khối mố
+        # hộp cũ. Đáy mố chôn 0.5m dưới ĐTN tại mố; đỉnh = đáy dầm; out_dir=±1
+        # để mặt trước quay vào nhịp. Nắn về hệ địa hình qua _vn + nhân hz.
         _grp_state["g"] = "Mố"
-        for xm, nm in [(x0, "Mố trái"), (x_end, "Mố phải")]:
+        _mo_model = d.get("_mo_model")
+        _PBm2 = _get_PB()
+        for xm, nm, sgn in [(x0, "Mố trái", 1), (x_end, "Mố phải", -1)]:
             sl = (nm == "Mố trái")
-            sign = 1 if xm == x0 else -1
-            _ag(_abox(xm, xm + sign*mo_L, -bc/2-0.5, bc/2+0.5,
-                                z_beb, z_deck, "#c0a06b", 0.85, nm, sl=sl))
+            if _mo_model:
+                _zt_mo    = float(np.interp(xm, lt_v, vz_v))   # ĐTN tại mố
+                _zbase_mo = _zt_mo - 0.5
+                _Htru_mo  = max(0.5, cao_dd - _zbase_mo)        # đỉnh mố = đáy dầm
+                try:
+                    _mtr = _PBm2.build_abutment_mesh_traces(
+                        _mo_model, H_tru=_Htru_mo, x_face=xm,
+                        out_dir=sgn, z_base=_zbase_mo, seat_z=cao_dd)
+                except Exception as _me:
+                    print(f"[add_all] mố lỗi: {_me}"); _mtr = []
+                for _tr in _mtr:
+                    try:
+                        _nx, _ny = [], []
+                        for _vx, _vy in zip(list(_tr.x), list(_tr.y)):
+                            _gx, _gy = _vn(_vx, _vy); _nx.append(_gx); _ny.append(_gy)
+                        _tr.x = _nx; _tr.y = _ny
+                        _tr.z = [_vz * hz for _vz in list(_tr.z)]
+                        _tr.legendgroup = "Mố"
+                        _tr.name = nm if sl else ""
+                        _tr.showlegend = bool(sl)
+                    except Exception:
+                        pass
+                    fig.add_trace(_tr)
+            else:
+                _ag(_abox(xm, xm + sgn*mo_L, -bc/2-0.5, bc/2+0.5,
+                                    z_beb, z_deck, "#c0a06b", 0.85, nm, sl=sl))
 
         # ── ĐƯỜNG ĐẦU CẦU: nền đắp + mặt đường vươn 50m mỗi bên ──────────────
         # Extrapolate tim tuyến beyond survey range (np.interp would clamp).

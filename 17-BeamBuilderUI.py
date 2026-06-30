@@ -1072,6 +1072,7 @@ def _dxf_upload_card(pfx: str, bb, secs: dict, cad_state: dict,
                 sec.outer = _res["outer"]
                 sec.holes = _res["holes"]
                 cad_state[_fp_key] = _fp
+                cad_state[f"_tim_src_{sec_name}"] = _res.get("tim_source")
                 _w = _res.get("width_mm", 0)
                 _h = _res.get("height_mm", 0)
                 _tim = ("tim CAD" if _res.get("tim_source") == "cad_line"
@@ -1093,6 +1094,15 @@ def _dxf_upload_card(pfx: str, bb, secs: dict, cad_state: dict,
     else:
         if not has_data:
             st.caption("Chưa có DXF")
+
+    # Chỉ báo TIM: cho biết mặt cắt được căn theo đường hồng (CAD) hay trọng tâm.
+    if has_data:
+        _ts = cad_state.get(f"_tim_src_{sec_name}")
+        if _ts == "cad_line":
+            st.caption("🎯 Căn theo **tim hồng** (CAD) — u=0 tại đường hồng.")
+        elif _ts == "centroid":
+            st.caption("⚠️ **Không thấy tim hồng** → căn theo trọng tâm (dễ lệch). "
+                       "Vẽ 1 đường **THẲNG ĐỨNG màu hồng** trùm mặt cắt làm tim.")
 
 
 def render_ifc_export_card(
@@ -1314,98 +1324,6 @@ def _segdicts_to_segments(bb, seg_dicts, has_fn, avail, reverse=False):
             elif avail:
                 out.append(bb.Segment("constant", section=next(iter(avail)), length=slen))
     return out
-
-
-def render_param_declare(d: dict, base_pfx: str = "spt") -> bool:
-    """Form KHAI BÁO THÔNG SỐ DẦM theo DIM có tên → sinh mặt cắt + đoạn, ghi vào
-    session của pfx → MCN/3D/trắc dọc + khối lượng TOÀN CẦU cập nhật theo, đồng
-    thời cập nhật kcn_result (chiều cao/chiều dài/số dầm/khoảng cách).
-
-    Trả True nếu vừa áp dụng (đã st.rerun)."""
-    bb   = _get_bb()
-    kcn  = dict(d.get("kcn_result") or d.get("ai_result") or {})
-    loai = (st.session_state.get(f"{base_pfx}_beam_type")
-            or kcn.get("loai_dam") or "Super-T")
-    t    = bb.normalize_beam_type(loai)
-    spec = bb.PARAM_SPECS.get(t, [])
-    if not spec:
-        st.info("Loại dầm chưa hỗ trợ tham số hóa.")
-        return False
-
-    pfx   = effective_pfx(base_pfx, loai)
-    pkey  = f"_param_{pfx}"
-    saved = st.session_state.get(pkey) or bb.param_defaults(loai)
-
-    st.caption(f"Loại dầm: **{loai}** — gõ giá trị (mm) vào BẢNG dưới (cột Giá trị). "
-               "Ký hiệu khớp với DIM trên các bản vẽ mặt cắt 2D ở mục ① bên dưới.")
-
-    with st.form(f"paramform_{pfx}"):
-        vals: dict = {}
-        cur_group = None
-        # Bảng: Thông số | Ký hiệu | Giá trị (đầu mục theo nhóm cánh/sườn/bầu…)
-        _hh = st.columns([3, 1, 2])
-        _hh[0].markdown("**Thông số**")
-        _hh[1].markdown("**Ký hiệu**")
-        _hh[2].markdown("**Giá trị (mm)**")
-        for sp in spec:
-            if sp["group"] != cur_group:
-                cur_group = sp["group"]
-                st.markdown(f"*{cur_group}*")
-            rc = st.columns([3, 1, 2])
-            rc[0].markdown(sp["label"])
-            rc[1].markdown(f"**{sp.get('sym', sp['key'])}**")
-            with rc[2]:
-                vals[sp["key"]] = st.number_input(
-                    sp["label"], value=float(saved.get(sp["key"], sp["default"])),
-                    min_value=float(sp["min"]), max_value=float(sp["max"]),
-                    step=float(sp["step"]), key=f"{pkey}_{sp['key']}",
-                    label_visibility="collapsed")
-        st.markdown("*Bố trí dầm trên mặt cắt cầu*")
-        gc = st.columns(3)
-        with gc[0]:
-            L_m = st.number_input("Chiều dài dầm L (m)",
-                                  value=float(kcn.get("chieu_dai", 38.2) or 38.2),
-                                  min_value=5.0, max_value=80.0, step=0.1,
-                                  key=f"{pkey}_L")
-        with gc[1]:
-            n_dam = st.number_input("Số dầm / MCN",
-                                    value=int(kcn.get("so_luong_dam")
-                                              or kcn.get("so_luong_dam_mcn", 5)),
-                                    min_value=2, max_value=20, step=1,
-                                    key=f"{pkey}_ndam")
-        with gc[2]:
-            kc = st.number_input("Khoảng cách dầm (m)",
-                                 value=float(kcn.get("khoang_cach_dam", 2.2) or 2.2),
-                                 min_value=0.5, max_value=5.0, step=0.05,
-                                 key=f"{pkey}_kc")
-        applied = st.form_submit_button(
-            "🔄 Áp dụng thông số → cập nhật toàn cầu",
-            type="primary", use_container_width=True)
-
-    if applied:
-        secs, segs, fill = bb.build_param_sections(loai, vals)
-        st.session_state[_cad_key(pfx, "sections")] = secs
-        cs = st.session_state.get(_cad_key(pfx, "state")) or {}
-        cs["segs"] = segs
-        cs["fill_sec"] = fill
-        cs["asym"] = False
-        st.session_state[_cad_key(pfx, "state")] = cs
-        st.session_state[pkey] = vals
-        st.session_state[f"{base_pfx}_beam_type"] = loai
-        # Cập nhật kcn_result (toàn cầu): cao dầm/chiều dài/số dầm/khoảng cách.
-        kcn["loai_dam"]      = loai
-        kcn["chieu_cao_dam"] = float(vals.get("H", 1750)) / 1000.0
-        kcn["chieu_cao"]     = kcn["chieu_cao_dam"]
-        kcn["chieu_dai"]     = float(L_m)
-        kcn["so_luong_dam"]  = int(n_dam)
-        kcn["khoang_cach_dam"] = float(kc)
-        d["kcn_result"] = kcn
-        if d.get("ai_result") is not None:
-            d["ai_result"] = kcn
-        st.success("✅ Đã áp dụng thông số — mặt cắt, 3D và khối lượng toàn cầu "
-                   "sẽ cập nhật.")
-        st.rerun()
-    return False
 
 
 def render_cad_spt_tab(d: dict, pfx: str = "spt", show_type: bool = True):
@@ -1959,14 +1877,53 @@ def _pa_kcn_for_pfx(pfx: str):
     return loai, H * 1000.0
 
 
+def _load_lib_beams():
+    """Danh sách dầm thư viện: ưu tiên cache session, fallback đọc file."""
+    beams = st.session_state.get("dam_beams")
+    if beams:
+        return beams
+    try:
+        import importlib.util as _iu
+        _spec = _iu.spec_from_file_location(
+            "component_library",
+            pathlib.Path(__file__).parent / "utils" / "component_library.py")
+        _cl = _iu.module_from_spec(_spec)
+        _spec.loader.exec_module(_cl)
+        return _cl.load_beams() or []
+    except Exception:
+        return []
+
+
+def _pick_library_beam_for_pfx(pfx: str):
+    """Chọn dầm THƯ VIỆN (có 'sections' thực) khớp loại dự đoán + chiều dài gần
+    nhất cho 1 pfx. Trả bản ghi dầm (dict) hoặc None nếu thư viện chưa có dầm."""
+    beams = [b for b in (_load_lib_beams() or [])
+             if isinstance(b, dict) and b.get("sections")
+             and any((s or {}).get("outer") for s in b["sections"].values())]
+    if not beams:
+        return None
+    loai, _Hmm = _pa_kcn_for_pfx(pfx)
+    dd  = st.session_state.get("design_data") or {}
+    kcn = dd.get("kcn_result") or dd.get("ai_result") or {}
+    L   = float(kcn.get("chieu_dai") or 0)
+    _c  = str(loai or "").strip().lower()
+
+    def _same(b):
+        a = str(b.get("loai_dam", "")).strip().lower()
+        return bool(a) and (a == _c or a in _c or _c in a)
+
+    same = [b for b in beams if _same(b)]
+    pool = same or beams                       # không cùng loại → lấy gần L nhất
+    return min(pool, key=lambda b: abs(float(b.get("chieu_dai") or 0) - L))
+
+
 def _resolve_beam_sections(pfx: str = "spt"):
-    """Bộ mặt cắt dầm + tên mặt cắt giữa nhịp (fill_sec), theo thứ tự ưu tiên:
-    1) mặt cắt người dùng đang khai báo trong session,
-    2) dầm mặc định đã lưu (spt_sections_saved.json),
-    3) THEO NHỊP/LOẠI của phương án: Super-T → preset máng; loại khác → SINH mặt
-       cắt tham số đúng loại + chiều cao (để mọi view có dầm phù hợp dù chưa khai
-       báo, không còn luôn hiển thị Super-T).
-    Đảm bảo mọi view luôn có dầm để vẽ kể cả khi chưa mở tab Chi tiết dầm."""
+    """Bộ mặt cắt dầm + tên mặt cắt giữa nhịp (fill_sec) — CHỈ dùng dầm THỰC từ
+    THƯ VIỆN (có 'sections'), KHÔNG sinh mặt cắt tham số/preset 'dầm cũ' (tiết
+    diện & kích thước không đúng thực tế):
+    1) mặt cắt người dùng đang khai báo trong session (đã nạp từ dầm thư viện),
+    2) nếu trống → chọn dầm THƯ VIỆN khớp loại + chiều dài gần nhất.
+    Trả ({}, fill) nếu thư viện chưa có dầm nào → view hiển thị thông báo."""
     bb = _get_bb()
     pfx = _resolve_storage_pfx(pfx)   # dò pfx thực (kèm hậu tố loại dầm)
     secs      = st.session_state.get(_cad_key(pfx, "sections"))
@@ -1974,18 +1931,15 @@ def _resolve_beam_sections(pfx: str = "spt"):
     fill_sec  = cad_state.get("fill_sec")
     _has_outer = bool(secs) and any(getattr(s, "outer", None) for s in secs.values())
     if not _has_outer:
-        saved = _load_defaults(bb)
-        if saved:
-            secs     = saved["secs"]
-            fill_sec = fill_sec or saved.get("fill_sec")
+        rec = _pick_library_beam_for_pfx(pfx)
+        if rec and rec.get("sections"):
+            secs = {k: bb.CrossSection(name=k, outer=list(v.get("outer", [])),
+                                       holes=[list(h) for h in v.get("holes", [])],
+                                       open=False)
+                    for k, v in rec["sections"].items() if (v or {}).get("outer")}
+            fill_sec = fill_sec or rec.get("fill_sec") or "B-B"
         else:
-            _loai, _Hmm = _pa_kcn_for_pfx(pfx)
-            if (not _loai) or ("super" in _loai.lower()):
-                secs     = {sn: getattr(bb, fn)() for sn, (fn, _) in _SEC_PRESETS.items()}
-                fill_sec = fill_sec or "B-B"
-            else:
-                secs     = {"MC": bb.make_parametric_section(_loai, _Hmm)}
-                fill_sec = "MC"
+            return {}, (fill_sec or "B-B")     # thư viện trống → không vẽ dầm cũ
     return secs, (fill_sec or "B-B")
 
 
@@ -2775,10 +2729,8 @@ def _order_sec_names(names):
     return sorted(names, key=_key)
 
 
-def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b",
-                  sym_w="B", sym_h="H"):
-    """Đường kích thước (dim) bề rộng + chiều cao cho 1 mặt cắt (toạ độ mm).
-    Nhãn dim dạng "KÝ HIỆU = GIÁ TRỊ" (vd B = 2200, H = 1750)."""
+def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b"):
+    """Đường kích thước (dim) bề rộng + chiều cao cho 1 mặt cắt, toạ độ dữ liệu mm."""
     xL, xR = x_ctr - w / 2.0, x_ctr + w / 2.0
     H = vmax - vmin
     off = max(90.0, 0.06 * max(w, H))        # khoảng đẩy đường dim ra ngoài
@@ -2792,7 +2744,7 @@ def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b",
         fig.add_trace(go.Scatter(
             x=[xe, xe], y=[vmin, y_d - tk * 0.3], mode="lines",
             line=dict(color=color, width=0.8), showlegend=False, hoverinfo="skip"))
-    fig.add_annotation(x=x_ctr, y=y_d, text=f"{sym_w} = {w:.0f}", showarrow=False,
+    fig.add_annotation(x=x_ctr, y=y_d, text=f"{w:.0f}", showarrow=False,
                        yshift=-9, font=dict(size=9, color=color),
                        bgcolor="rgba(255,255,255,0.85)")
     # ── Dim CHIỀU CAO (bên trái mặt cắt) ──────────────────────────────────
@@ -2804,7 +2756,7 @@ def _add_mcn_dims(fig, x_ctr, w, vmin, vmax, color="#c0392b",
         fig.add_trace(go.Scatter(
             x=[xL, x_d - tk * 0.3], y=[ye, ye], mode="lines",
             line=dict(color=color, width=0.8), showlegend=False, hoverinfo="skip"))
-    fig.add_annotation(x=x_d, y=(vmin + vmax) / 2.0, text=f"{sym_h} = {H:.0f}",
+    fig.add_annotation(x=x_d, y=(vmin + vmax) / 2.0, text=f"{H:.0f}",
                        showarrow=False, xshift=-10, textangle=-90,
                        font=dict(size=9, color=color),
                        bgcolor="rgba(255,255,255,0.85)")

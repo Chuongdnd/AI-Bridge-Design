@@ -3546,11 +3546,15 @@ def _auto_apply_lib_beam_for_pa(d: dict, ribbon: str, pfx: str) -> None:
     pred     = str(kcn.get("loai_dam", "") or "")
     pred_lib = KCN._CATALOG_TO_LIB_TYPE.get(pred, pred)
     L        = float(kcn.get("chieu_dai") or 0)
-    same = [b for b in (st.session_state.get("dam_beams") or CLIB.load_beams())
-            if _beam_has_sections(b)
-            and str(b.get("loai_dam", "")).strip() == pred_lib]
-    target = (min(same, key=lambda b: abs(float(b.get("chieu_dai") or 0) - L))
-              if same else None)
+    _beams_all = [b for b in (st.session_state.get("dam_beams") or CLIB.load_beams())
+                  if _beam_has_sections(b)]
+    same = [b for b in _beams_all
+            if str(b.get("loai_dam", "")).strip() == pred_lib]
+    # CHỈ dùng dầm THƯ VIỆN thực: cùng loại trước, không có thì lấy dầm thực gần
+    # chiều dài nhất (không sinh mặt cắt tham số 'dầm cũ' nữa).
+    _pool  = same or _beams_all
+    target = (min(_pool, key=lambda b: abs(float(b.get("chieu_dai") or 0) - L))
+              if _pool else None)
     sig = (pred_lib, (target or {}).get("id"))
     if st.session_state.get(f"_auto_sig_{pfx}") == sig:
         return                                   # đã xử lý đúng cho loại+dầm này
@@ -3877,16 +3881,12 @@ def _asm_cfg(kind: str) -> dict:
             "default": PB.default_abutment, "migrate": PB.migrate_abutment,
             "preview": PB.build_abutment_preview_fig, "total_h": PB.abutment_total_height,
             "parts": [
-                {"role": "than", "label": "Tường thân",
-                 "hint": "Vẽ NHIỀU mặt cắt DỌC cầu (hình bên: tường thân + vai "
-                         "kê gối); hệ thống xếp nối tiếp theo NGANG cầu và LOFT "
-                         "(vuốt) giữa các mặt cắt kề nhau.",
+                {"role": "than", "label": "Tường thân (gồm bệ)",
+                 "hint": "Vẽ NHIỀU mặt cắt DỌC cầu (tường thân ĐÃ GỒM cả bệ); "
+                         "hệ thống xếp nối tiếp theo NGANG cầu và LOFT (vuốt) "
+                         "giữa các mặt cắt kề nhau.",
                  "param": "B", "plabel": "Bề rộng ngang cầu B (m)",
                  "pmin": 1.0, "pmax": 40.0, "pdef": 8.0, "flex": True},
-                {"role": "be", "label": "Bệ mố",
-                 "hint": "Mặt cắt = MẶT BẰNG (ngang × dọc) — đùn theo chiều cao.",
-                 "param": "H", "plabel": "Chiều cao H (m)",
-                 "pmin": 0.3, "pmax": 10.0, "pdef": 1.5, "flex": False},
             ],
         }
     return {
@@ -4223,12 +4223,18 @@ def _render_asm_edit_panel(cfg: dict) -> None:
     _nm = st.text_input(f"Tên {lab.lower()}", value=cur.get("ten", ""),
                         placeholder=cfg["name_ph"], key=f"_lib_{kind}_name")
 
-    # Khai báo mặt cắt từng bộ phận (full-width, hình mặt cắt nhỏ gọn)
-    _ptabs = st.tabs([f"🧱 {pt['label']}" for pt in cfg["parts"]])
-    for _tab, spec in zip(_ptabs, cfg["parts"]):
-        with _tab:
-            parts[spec["role"]] = _render_asm_part_editor(
-                kind, spec, parts.get(spec["role"], {}))
+    # Khai báo mặt cắt từng bộ phận (full-width, hình mặt cắt nhỏ gọn).
+    # 1 bộ phận → KHÔNG chia tab; nhiều bộ phận → mỗi bộ phận 1 tab.
+    if len(cfg["parts"]) == 1:
+        spec = cfg["parts"][0]
+        parts[spec["role"]] = _render_asm_part_editor(
+            kind, spec, parts.get(spec["role"], {}))
+    else:
+        _ptabs = st.tabs([f"🧱 {pt['label']}" for pt in cfg["parts"]])
+        for _tab, spec in zip(_ptabs, cfg["parts"]):
+            with _tab:
+                parts[spec["role"]] = _render_asm_part_editor(
+                    kind, spec, parts.get(spec["role"], {}))
 
     rec = {"id": editing_id or "", "ten": _nm, "loai": kind, "parts": parts}
     rec["H_ref"] = cfg["total_h"](rec)
@@ -4419,11 +4425,14 @@ def _resolve_assembly(d, kind: str) -> dict:
             if cap or stem or foot:
                 return PB.build_pier_from_parts(cap, stem, foot,
                                                 ten=pp.get("ten", "Trụ lắp ghép"))
+    items = st.session_state.get(cfg["ss"]) or cfg["load"]()
     rid = (d or {}).get(cfg["id_key"])
     if not rid:
+        # MỐ MẶC ĐỊNH = mố THƯ VIỆN đầu tiên (vd "Mố chữ U") thay khối mố generic cũ.
+        if kind == "mo" and items:
+            return items[0]
         return None
-    items = st.session_state.get(cfg["ss"]) or cfg["load"]()
-    return cfg["get"](items, rid)
+    return cfg["get"](items, rid) or (items[0] if kind == "mo" and items else None)
 
 
 def _sync_beam_height(d, ribbon):
@@ -7008,10 +7017,9 @@ with _col_main:
                                 BBUI.effective_pfx(_spt_pfx, _bm.get("loai_dam")), _bm)
                             st.session_state[f"_loaded_beam_{_spt_pfx}"] = _applied_id
 
-                    st.markdown("##### 🔩 Chi tiết dầm")
-                    st.caption("Khai báo THÔNG SỐ dầm (tham số hóa) ở mục ③ bên dưới "
-                               "để cập nhật toàn cầu, hoặc dựng chi tiết ở "
-                               "**📚 Thư viện → Dầm**.")
+                    st.markdown("##### 🔩 Chi tiết dầm — Kết quả")
+                    st.caption("Tab này HIỂN THỊ kết quả chi tiết dầm của phương án "
+                               "(việc dựng/khai báo dầm làm ở **📚 Thư viện → Dầm**).")
 
                     # ① Mặt bằng bố trí dầm theo từng nhịp
                     st.markdown("**① Mặt bằng bố trí dầm theo nhịp**")
@@ -7103,32 +7111,18 @@ with _col_main:
                             if _brec.get("so_luong_dam"):
                                 _kcn_r["so_luong_dam"] = int(_brec["so_luong_dam"])
                         _d_role = {**d, "kcn_result": _kcn_r, "ai_result": _kcn_r}
-                        # 2D + 3D: ƯU TIÊN mặt cắt ĐÃ KHAI BÁO trong SESSION (form
-                        # tham số / CAD) → đồng bộ với bố trí chung & 3D toàn cầu.
-                        # Chỉ khi session trống mới dùng bản ghi thư viện _brec.
-                        _eff_role = BBUI.effective_pfx(_spt_pfx, _loai_r)
-                        _rec_src = None
-                        if st.session_state.get(BBUI._cad_key(_eff_role, "sections")):
-                            _rec_src = BBUI.export_beam_state(_eff_role)
-                            _rec_src["chieu_dai"] = _Lval
-                            _rec_src["loai_dam"]  = _loai_r
-                        elif _brec and _brec.get("sections"):
-                            _rec_src = _brec
+                        # 2D + 3D từ MÔ HÌNH DẦM THƯ VIỆN (thay hình tham số cũ)
                         _bfigs = {}
-                        if _rec_src and _rec_src.get("sections"):
+                        if _brec and (_brec.get("sections")):
                             try:
-                                _bfigs = BBUI.beam_record_figs(_rec_src)
+                                _bfigs = BBUI.beam_record_figs(_brec)
                             except Exception:
                                 _bfigs = {}
-                        # Form khai báo thông số (tham số hóa) chỉ gắn 1 LẦN (loại
-                        # đầu hiển thị) → ghi global, tránh trùng key form.
-                        _declare_cb = ((lambda: BBUI.render_param_declare(d, base_pfx=_spt_pfx))
-                                       if _shown == 0 else None)
                         try:
                             CTD.render_chi_tiet_loai(
                                 _d_role, st, _loai_r,
                                 key_prefix=f"ctd_{selected_ribbon}_{_ri}",
-                                beam_figs=_bfigs, declare=_declare_cb)
+                                beam_figs=_bfigs)
                             _shown += 1
                         except Exception as _er:
                             st.error(f"Lỗi chi tiết {_lbl}: {_er}")
