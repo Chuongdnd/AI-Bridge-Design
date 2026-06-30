@@ -3060,13 +3060,18 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             _mcn_pl = _PBa.abutment_mcn_polys(
                 abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo,
                 target_width=bc)            # co bề rộng mố theo bề rộng cầu
+            # Vẽ SAU mố (nét khuất) trước → THÂN/BỆ (nét thấy) đè lên trên.
             _mcn_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
-            _seen_mo = False
+            _seen_mo = set()
             for _pl in _mcn_pl:
-                _poly(fig, _pl["ys"], _pl["zs"], _pl["color"], _C["be_dk"],
-                      ("Mố" if not _seen_mo else ""), showlegend=(not _seen_mo))
-                _seen_mo = True
-            # NÉT phụ trợ: vai kê (đáy dầm) + vai kê bản quá độ — hiển thị thêm.
+                _hid = _pl.get("hidden"); _nm = _pl["name"]
+                _sl = _nm not in _seen_mo; _seen_mo.add(_nm)
+                _poly(fig, _pl["ys"], _pl["zs"],
+                      ("rgba(0,0,0,0)" if _hid else _pl["color"]),
+                      ("#1f9ed1" if _hid else _C["be_dk"]),
+                      _nm if _sl else "", showlegend=_sl,
+                      dash=("dash" if _hid else None))
+            # NÉT phụ trợ: vai kê (đáy dầm) + vai kê bản quá độ.
             _mw = bc / 2.0
             for _zl, _lab, _cl in [
                 (cao_dd, "Vai kê (đáy dầm)", "#e67e22"),

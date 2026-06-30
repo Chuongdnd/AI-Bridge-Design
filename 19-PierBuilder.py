@@ -1309,33 +1309,37 @@ def abutment_elevation_polys(mo: dict, H_tru: float = None, x_face: float = 0.0,
 
 def abutment_mcn_polys(mo: dict, z_seat: float, z_base: float,
                        labels: dict = None, target_width: float = None) -> list:
-    """MẶT CẮT NGANG cầu của mố (ngang y × cao z) → list {name,color,ys,zs}.
-    Mỗi ĐOẠN (tường cánh/thân) = 1 chữ nhật theo bề rộng NGANG B, cao theo
-    w-range mặt cắt đoạn (neo vai kê = z_seat, đáy bệ = z_base, mốc w chung).
+    """MẶT CẮT NGANG cầu của mố (ngang y × cao z) → list {name,color,ys,zs,hidden}.
+    Mỗi đoạn (tường cánh/thân) tách 3 dải theo cao độ → thể hiện đầy đủ:
+      • BỆ (đáy → đỉnh bệ) — khối bệ.
+      • THÂN TRƯỚC vai kê (đỉnh bệ → vai kê=đáy dầm) — NÉT THẤY (mặt trước mố).
+      • SAU vai kê (vai kê → đỉnh tường đỉnh) — NÉT KHUẤT (phần sau mố).
     target_width: co/giãn tổng bề rộng ngang = bề rộng cầu."""
-    L = labels or _MO_LABEL
     p = migrate_abutment(mo)
     than = p["parts"]["than"]
     layers = abut_body_layers(than)
     if not layers:
         return []
     zmap = _abut_zmap(layers, z_base, z_seat, None, than)
+    seat_w, w_bot = _abut_seat_w(layers)
+    ftop = _abut_footing_top_w(layers, seat_w, w_bot) if (seat_w and w_bot) else None
+    z_betop = zmap(ftop, w_bot) if ftop is not None else (z_base + 0.8)
     total_B = abut_body_total_B(layers)
     _fB = (float(target_width) / total_B) if (target_width and total_B > 1e-6) else 1.0
-    # Đoạn THÂN CHÍNH (B lớn nhất) = NÉT THẤY (đỡ dầm); tường cánh = NÉT KHUẤT.
-    _bi = max(range(len(layers)), key=lambda i: float(layers[i].get("B", 0) or 0))
     y = -total_B * _fB / 2.0
     out = []
-    for i, lay in enumerate(layers):
+    for lay in layers:
         B = float(lay.get("B", 8.0) or 8.0) * _fB
-        ws = [w for (_u, w) in lay["section"]["outer"]]
-        _wm = min(ws)
-        z_lo = zmap(min(ws), _wm); z_hi = zmap(max(ws), _wm)
-        out.append({"name": L["than"], "color": _COL["than"],
-                    "ys": [y, y + B, y + B, y],
-                    "zs": [z_lo, z_lo, z_hi, z_hi],
-                    "hidden": (i != _bi)})
-        y += B
+        ws = [w for (_u, w) in lay["section"]["outer"]]; _wm = min(ws)
+        z_lo = zmap(min(ws), _wm); z_hi = zmap(max(ws), _wm); y1 = y + B
+        def _rect(za, zb, name, color, hidden):
+            if zb - za > 1e-6:
+                out.append({"name": name, "color": color, "hidden": hidden,
+                            "ys": [y, y1, y1, y], "zs": [za, za, zb, zb]})
+        _rect(z_lo, min(z_betop, z_hi), "Bệ mố", _COL["be"], False)
+        _rect(max(z_betop, z_lo), min(z_seat, z_hi), "Thân mố (trước)", _COL["than"], False)
+        _rect(max(z_seat, z_lo), z_hi, "Sau mố (khuất)", _COL["than"], True)
+        y = y1
     return out
 
 
