@@ -7015,14 +7015,21 @@ with _col_main:
                 st.markdown(f"**🧊 Mô hình 3D — {_vt_label_cur}** (kéo xoay)")
                 try:
                     _is_mo_vt = _selected_vt in ("mo_trai", "mo_phai")
-                    _Htru_vt  = float(d.get("H_tru_est") or 0) or None
+                    _bc_vt    = float(d.get("bc", 12.0))   # bề rộng cầu → co xà mũ/mố
                     if _is_mo_vt:
-                        _asm_vt  = _resolve_assembly(d, "mo")
-                        _fig3d_vt = (PB.build_abutment_preview_fig(_asm_vt, H_tru=_Htru_vt)
+                        # KHỚP mố trong 3D toàn cầu: cùng model + co bề rộng theo cầu
+                        _asm_vt  = d.get("_mo_model") or _resolve_assembly(d, "mo")
+                        _Hmo_vt  = float(d.get("H_tru_est") or 0) or None
+                        _fig3d_vt = (PB.build_abutment_preview_fig(
+                                        _asm_vt, H_tru=_Hmo_vt, target_width=_bc_vt)
                                      if _asm_vt else None)
                     else:
-                        _asm_vt  = _pa_tru
-                        _fig3d_vt = (PB.build_pier_preview_fig(_asm_vt, H_tru=_Htru_vt)
+                        # KHỚP trụ trong 3D toàn cầu: cùng _pier_model, H_total = H_trụ
+                        # + 2.30 (đáy bệ→đỉnh xà mũ), cap_width = bề rộng cầu.
+                        _asm_vt  = d.get("_pier_model") or _pa_tru
+                        _Hpier_vt = float(d.get("H_tru_est", 5.0)) + 2.30
+                        _fig3d_vt = (PB.build_pier_preview_fig(
+                                        _asm_vt, H_tru=_Hpier_vt, cap_width=_bc_vt)
                                      if _asm_vt else None)
                     if _fig3d_vt is not None:
                         PLOT.to_concrete_3d(_fig3d_vt)   # khối đặc theo mã màu hạng mục

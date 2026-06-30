@@ -697,10 +697,12 @@ def _part_scene_layout(fig):
 
 
 def build_pier_preview_fig(pier: dict, H_tru: float = None,
-                           labels: dict = None) -> go.Figure:
-    """Figure 3D xem trước 1 trụ/mố (panel thư viện)."""
+                           labels: dict = None, cap_width: float = None) -> go.Figure:
+    """Figure 3D xem trước 1 trụ/mố (panel thư viện).
+    cap_width: co bề rộng xà mũ theo bề rộng cầu (để KHỚP trụ trong 3D toàn cầu)."""
     return _part_scene_layout(
-        go.Figure(build_pier_mesh_traces(pier, H_tru=H_tru, labels=labels)))
+        go.Figure(build_pier_mesh_traces(pier, H_tru=H_tru, labels=labels,
+                                         cap_width=cap_width)))
 
 
 def build_plan_part_fig(section: dict, H: float, color: str = "#5d8aa8",
@@ -1421,9 +1423,11 @@ def abutment_plan_polys(mo: dict, target_width: float = None,
 
 
 def build_abutment_preview_fig(mo: dict, H_tru: float = None,
-                               labels: dict = None) -> go.Figure:
-    """Figure 3D xem trước 1 mố (panel thư viện)."""
-    fig = go.Figure(build_abutment_mesh_traces(mo, H_tru=H_tru, labels=labels))
+                               labels: dict = None, target_width: float = None) -> go.Figure:
+    """Figure 3D xem trước 1 mố (panel thư viện).
+    target_width: co bề rộng mố theo bề rộng cầu (để KHỚP mố trong 3D toàn cầu)."""
+    fig = go.Figure(build_abutment_mesh_traces(mo, H_tru=H_tru, labels=labels,
+                                               target_width=target_width))
     fig.update_layout(
         scene=dict(xaxis_title="Dọc cầu (m)", yaxis_title="Ngang cầu (m)",
                    zaxis_title="Cao độ (m)", aspectmode="data"),
