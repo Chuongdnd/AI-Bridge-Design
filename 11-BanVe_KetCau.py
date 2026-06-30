@@ -66,6 +66,7 @@ _C = {
 # Cỡ chữ kích thước theo chuẩn (1.8mm) — quy đổi xấp xỉ sang px màn hình
 _DIM_TXT = 9
 _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
+KHO_HO_DAM_MO = 0.10  # m — khoảng hở (khe co giãn) đầu dầm ↔ mặt trước tường đỉnh mố
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None,
@@ -1221,8 +1222,10 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             # dưới ĐƯỜNG TỰ NHIÊN tại mố (giống quy ước bệ trụ). out_dir=sign:
             # MẶT TRƯỚC mố (phía nhịp, u>0) quay VÀO NHỊP, lưng (u<0) ra mái dốc.
             _z_base_mo = z_terr_mo - 0.5
-            # Căn VAI KÊ về đúng GỐI (đầu dầm tại xm): dịch x_face theo u-tâm vai kê.
-            _xf_mo = xm - sign * _PB.abut_seat_u_m(abutment_assembly)
+            # CĂN theo KHOẢNG HỞ đầu dầm ↔ mố = 100mm: mặt trước tường đỉnh đặt
+            # lùi 0.10m sau đầu dầm (đầu dầm tại xm) → khe co giãn 100mm.
+            _u_bw = _PB.abut_backwall_u_m(abutment_assembly)
+            _xf_mo = xm - sign * (KHO_HO_DAM_MO + _u_bw)
             _mo_allx = []; _mo_allz = []
             for _pl in _PB.abutment_elevation_polys(
                     abutment_assembly, H_tru=(z_cap_t - _z_base_mo),
@@ -2700,7 +2703,8 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 _zt_mo    = float(np.interp(xm, lt_v, vz_v))   # ĐTN tại mố
                 _zbase_mo = _zt_mo - 0.5
                 _Htru_mo  = max(0.5, cao_dd - _zbase_mo)        # đỉnh mố = đáy dầm
-                _xf_mo3d  = xm - sgn * _PBm2.abut_seat_u_m(_mo_model)  # vai kê tại gối
+                _xf_mo3d  = xm - sgn * (KHO_HO_DAM_MO
+                                        + _PBm2.abut_backwall_u_m(_mo_model))  # hở 100mm
                 try:
                     _mtr = _PBm2.build_abutment_mesh_traces(
                         _mo_model, H_tru=_Htru_mo, x_face=_xf_mo3d,

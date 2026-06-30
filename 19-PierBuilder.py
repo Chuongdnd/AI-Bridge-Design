@@ -1320,6 +1320,32 @@ def abut_seat_u_m(mo: dict) -> float:
     return (best_us[0] + best_us[1]) / 2.0 * MM
 
 
+def abut_backwall_u_m(mo: dict) -> float:
+    """u (m) MẶT TRƯỚC TƯỜNG ĐỈNH (tường tai) = mép vai kê phía có tường DÂNG LÊN
+    tới đỉnh — ĐẦU DẦM kê sát mặt này. Dùng để chừa KHOẢNG HỞ đầu dầm ↔ mố.
+    0.0 nếu không xác định."""
+    p = migrate_abutment(mo)
+    lays = [l for l in abut_body_layers(p["parts"]["than"])
+            if (l.get("section") or {}).get("outer")]
+    if not lays:
+        return 0.0
+    body = max(lays, key=lambda l: float(l.get("B", 0) or 0))
+    pts = body["section"]["outer"]
+    w_top = max(w for (_u, w) in pts); n = len(pts)
+    best_w, seg = None, None
+    for i in range(n):
+        u0, w0 = pts[i]; u1, w1 = pts[(i + 1) % n]
+        if (abs(w1 - w0) < 5.0 and abs(u1 - u0) > 300.0
+                and w0 < w_top - 200.0 and (best_w is None or w0 > best_w)):
+            best_w, seg = w0, (i, (i + 1) % n)
+    if seg is None:
+        return 0.0
+    # Endpoint nào có cạnh kề DÂNG LÊN cao hơn (về tường đỉnh) = back wall.
+    _rise = lambda idx: max(pts[(idx - 1) % n][1], pts[(idx + 1) % n][1])
+    ia, ib = seg
+    return (pts[ia][0] if _rise(ia) >= _rise(ib) else pts[ib][0]) * MM
+
+
 def _abut_footing_top_w(layers, seat_w, w_bot):
     """w (đơn vị mặt cắt) của ĐỈNH BỆ = ledge ngang cao nhất NẰM GIỮA đáy bệ và
     vai kê (nơi bệ bè rộng ra). None nếu thân thẳng (không có bệ riêng)."""
