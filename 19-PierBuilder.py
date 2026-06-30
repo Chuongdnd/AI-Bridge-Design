@@ -1251,8 +1251,10 @@ def abut_body_traces(layers, zmap, x_face, out_dir, color,
                 # cấp, gờ bệ phẳng (bỏ bậc lẻ của tường cánh trong vùng bệ).
                 _fp = [p for p in s["outer"] if p[1] <= ftop_w + 1e-6]
                 if _fp:
-                    _fu = [p[0] for p in s["outer"]]
-                    _wm = min(p[1] for p in s["outer"])
+                    # u-extent CHỈ theo vùng bệ (≤ đỉnh bệ) — KHÔNG lấy cả mặt vát
+                    # tường cánh nhô về trước (gây "khối thừa" dưới chân bệ).
+                    _fu = [p[0] for p in _fp]
+                    _wm = min(p[1] for p in _fp)
                     fmin, fmax = min(_fu), max(_fu)
                     out.append(_abut_body_straight_mesh(
                         {"outer": [[fmin, _wm], [fmax, _wm],
