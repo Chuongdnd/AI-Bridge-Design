@@ -262,10 +262,55 @@ def _sweep_profile_curve_mesh(profile_yz, y_off, mirror, vn_func, s0, s1,
     )
 
 
+def _median_required(d):
+    """Tiêu chuẩn CÓ yêu cầu dải phân cách giữa? True khi w_dpc>0 trong cấu hình
+    mặt cắt ngang đường (mcn_oto_override) — do hệ thống tra theo TCVN."""
+    mcn = (d or {}).get("mcn_oto_override") or {}
+    try:
+        return float(mcn.get("w_dpc", 0) or 0) > 0
+    except Exception:
+        return False
+
+
+def _resolve_railings(d):
+    """{'lan_can':rec, 'giai_phan_cach':rec|None}: ưu tiên lựa chọn d['railings'];
+    thiếu → lấy MẶC ĐỊNH từ thư viện. Giải phân cách CHỈ thêm khi tiêu chuẩn yêu
+    cầu (w_dpc>0) hoặc người dùng đã chọn sẵn."""
+    rails = dict((d or {}).get("railings") or {}) if isinstance((d or {}).get("railings"), dict) else {}
+    need_med = _median_required(d)
+    if rails.get("lan_can") and (rails.get("giai_phan_cach") or not need_med):
+        return rails
+    try:
+        import utils.component_library as _CL
+        lib = _CL.load_railings()
+    except Exception:
+        lib = []
+    if not rails.get("lan_can"):
+        lc = next((r for r in lib if r.get("loai") == "lan_can"), None)
+        if lc:
+            rails["lan_can"] = lc
+    if not rails.get("giai_phan_cach") and need_med:
+        gpc = next((r for r in lib if r.get("loai") == "giai_phan_cach"), None)
+        if gpc:
+            rails["giai_phan_cach"] = gpc
+    return rails
+
+
+def _railing_inner_y(d, bc):
+    """Mép TRONG của lan can (m, +) và NỬA bề rộng dải phân cách (m). Dùng để cắt
+    lớp phủ: lớp phủ chỉ phủ trong khoảng (−y_in … +y_in), trừ dải giữa nếu có."""
+    rails = _resolve_railings(d)
+    lc = rails.get("lan_can"); gpc = rails.get("giai_phan_cach")
+    w_lc = float((lc or {}).get("rong_mm", 0) or 0) / 1000.0
+    y_in = (bc / 2.0 - w_lc) if w_lc > 0 else bc / 2.0
+    w_gpc = float((gpc or {}).get("rong_mm", 0) or 0) / 1000.0 if gpc else 0.0
+    return y_in, w_gpc / 2.0
+
+
 def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
     """Lan can (2 mép) + giải phân cách (tim) BÁM đường cong tim tuyến VN-2000."""
     out = []
-    rails = (d or {}).get("railings") or {}
+    rails = _resolve_railings(d)
     if not isinstance(rails, dict):
         return out
 
@@ -296,9 +341,9 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
 
 def _railing_traces_3d(d, x_start, x_end, bc, z_deck):
     """Trả về list Mesh3d lan can (2 mép cầu) + giải phân cách (tim) đã chọn
-    cho phương án — đọc từ d['railings'] = {'lan_can': rec, 'giai_phan_cach': rec}."""
+    cho phương án — d['railings'] (thiếu → mặc định thư viện, dải PC theo tiêu chuẩn)."""
     out = []
-    rails = (d or {}).get("railings") or {}
+    rails = _resolve_railings(d)
     if not isinstance(rails, dict):
         return out
 
@@ -2456,18 +2501,26 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # LỚP 3 — KẾT CẤU NHỊP (Mesh3d KHỐI 3D)
         # =========================================================
 
-        # Lớp phủ BTN + Bản mặt cầu — QUÉT dọc tim tuyến (bám đường cong),
-        # KHÔNG vẽ hộp thẳng nối đầu–cuối.
+        # Bản mặt cầu (full bề rộng) + Lớp phủ BTN. Lớp phủ CHỈ phủ trong khoảng
+        # mép TRONG lan can; nếu có dải phân cách giữa thì tách 2 dải (lan can &
+        # dải PC đặt TRỰC TIẾP trên bản mặt cầu, lớp phủ ngừng tại đó).
         _grp_state["g"] = "Mặt cầu"
         _ag(_aswept(x0, x_end, -bc/2, bc/2,
-                              z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
-        _ag(_aswept(x0, x_end, -bc/2, bc/2,
                               z_bant, z_deck, "#d5d8dc", 0.82, "Bản mặt cầu"))
+        _y_in, _y_med = _railing_inner_y(d, bc)
+        if _y_med > 0:                     # có dải phân cách giữa → lớp phủ 2 bên
+            _ag(_aswept(x0, x_end, -_y_in, -_y_med,
+                                  z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
+            _ag(_aswept(x0, x_end, _y_med, _y_in,
+                                  z_deck, z_phu, "#2c3e50", 0.92, ""))
+        else:
+            _ag(_aswept(x0, x_end, -_y_in, _y_in,
+                                  z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
 
-        # Lan can / Giải phân cách — kéo MCN bám đường cong tim tuyến
+        # Lan can / Giải phân cách — ĐẶT TRÊN BẢN MẶT CẦU (z_deck), không trên lớp phủ
         _grp_state["g"] = "Lan can"
         try:
-            for _rt in _railing_curve_traces(d, _vn, x0, x_end, bc, z_phu):
+            for _rt in _railing_curve_traces(d, _vn, x0, x_end, bc, z_deck):
                 _ag(_rt)
         except Exception as _e:
             print(f"[add_all] lan can lỗi: {_e}")
