@@ -351,6 +351,24 @@ def _railing_inner_y(d, bc):
     return y_in, w_gpc / 2.0
 
 
+def _abut_long_depth_m(abut):
+    """Chiều dài DỌC (theo lý trình) của mố/TƯỜNG CÁNH (m) — để kéo dài lan can ra
+    hết tường cánh mố. Lấy từ khẩu độ dọc mặt cắt thân mố; fallback 3.5m."""
+    if not abut:
+        return 3.5
+    try:
+        PB = _get_PB()
+        p = PB.migrate_abutment(abut)
+        us = [u for l in PB.abut_body_layers(p["parts"]["than"])
+              if (l.get("section") or {}).get("outer")
+              for (u, _w) in l["section"]["outer"]]
+        if us:
+            return max((max(us) - min(us)) / 1000.0, 1.0)
+    except Exception:
+        pass
+    return 3.5
+
+
 def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
     """Lan can (2 mép) + giải phân cách (tim) BÁM đường cong tim tuyến VN-2000."""
     out = []
@@ -2058,9 +2076,10 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
                              color="#e8eaf0", opacity=0.55,
                              name="Bản mặt cầu" if sl else "", sl=sl), "Bản mặt cầu"))
 
-    # ── Lan can / Giải phân cách — kéo MCN chạy dọc toàn cầu ──────────────
+    # ── Lan can / Giải phân cách — kéo MCN chạy dọc toàn cầu + ra hết tường cánh mố ─
     try:
-        traces.extend(_g(_railing_traces_3d(d, x0, x_end, bc, z_deck), "Lan can"))
+        _wd = _abut_long_depth_m(abutment_assembly)
+        traces.extend(_g(_railing_traces_3d(d, x0 - _wd, x_end + _wd, bc, z_deck), "Lan can"))
     except Exception as _e:
         print(f"[ve_cau_3d] lan can lỗi: {_e}")
 
@@ -2589,10 +2608,12 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             _ag(_aswept(x0, x_end, -_y_in, _y_in,
                                   z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
 
-        # Lan can / Giải phân cách — ĐẶT TRÊN BẢN MẶT CẦU (z_deck), không trên lớp phủ
+        # Lan can / Giải phân cách — ĐẶT TRÊN BẢN MẶT CẦU (z_deck), không trên lớp
+        # phủ. KÉO DÀI ra hết tường cánh mố 2 đầu (theo chiều dọc mố).
         _grp_state["g"] = "Lan can"
+        _wd = _abut_long_depth_m(d.get("_mo_model"))
         try:
-            for _rt in _railing_curve_traces(d, _vn, x0, x_end, bc, z_deck):
+            for _rt in _railing_curve_traces(d, _vn, x0 - _wd, x_end + _wd, bc, z_deck):
                 _ag(_rt)
         except Exception as _e:
             print(f"[add_all] lan can lỗi: {_e}")
