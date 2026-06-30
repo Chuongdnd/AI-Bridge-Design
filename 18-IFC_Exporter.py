@@ -183,6 +183,73 @@ def _placement(ifc_file, x=0.0, y=0.0, z=0.0,
     return ifc_file.createIfcLocalPlacement(None, ax2)
 
 
+def mesh_traces_to_ifc(traces, project_name: str = "Cầu AI",
+                       author: str = "UTH Bridge AI", z_scale: float = 1.0) -> bytes:
+    """Ghi danh sách trace go.Mesh3d (toạ độ MÉT) → IFC2X3 bytes (mm).
+
+    Mỗi Mesh3d → 1 IfcBuildingElementProxy (FacetedBrep) giữ ĐÚNG hình như hệ
+    thống (vì dùng chính lưới 3D mà webapp dựng). Bỏ qua trace không phải mesh."""
+    if not HAS_IFC:
+        raise ImportError("ifcopenshell chưa được cài. Chạy: pip install ifcopenshell")
+
+    f = ifcopenshell.file(schema="IFC2X3")
+    person  = f.createIfcPerson(None, "UTH", "Bridge AI", None, None, None, None, None)
+    org     = f.createIfcOrganization(None, "UTH", "University of Transport HCMC", None, None)
+    p_o     = f.createIfcPersonAndOrganization(person, org, None)
+    appl    = f.createIfcApplication(org, "1.0", "UTH Bridge AI System", "UTH-AI")
+    oh      = f.createIfcOwnerHistory(p_o, appl, "READWRITE", "ADDED",
+                                      None, None, None, int(time.time()))
+    mm  = f.createIfcSIUnit(None, "LENGTHUNIT", "MILLI", "METRE")
+    rad = f.createIfcSIUnit(None, "PLANEANGLEUNIT", None, "RADIAN")
+    ua  = f.createIfcUnitAssignment([mm, rad])
+    o   = f.createIfcCartesianPoint([0.0, 0.0, 0.0])
+    ax  = f.createIfcAxis2Placement3D(o, f.createIfcDirection([0.0, 0.0, 1.0]),
+                                      f.createIfcDirection([1.0, 0.0, 0.0]))
+    ctx = f.createIfcGeometricRepresentationContext("Model", "Model", 3, 1.0e-5, ax, None)
+    body = f.createIfcGeometricRepresentationSubContext(
+        "Body", "Model", None, None, None, None, ctx, None, "MODEL_VIEW", None)
+    proj = f.createIfcProject(_new_guid(), oh, project_name, None, None, None, None, [ctx], ua)
+    site = f.createIfcSite(_new_guid(), oh, "Site", None, None, _placement(f),
+                           None, None, "ELEMENT", None, None, None, None, None)
+    f.createIfcRelAggregates(_new_guid(), oh, None, None, proj, [site])
+    bldg = f.createIfcBuilding(_new_guid(), oh, project_name, None, None, _placement(f),
+                               None, None, "ELEMENT", None, None, None)
+    f.createIfcRelAggregates(_new_guid(), oh, None, None, site, [bldg])
+    storey = f.createIfcBuildingStorey(_new_guid(), oh, "Cao độ", None, None,
+                                       _placement(f), None, None, "ELEMENT", 0.0)
+    f.createIfcRelAggregates(_new_guid(), oh, None, None, bldg, [storey])
+
+    elems = []
+    for tr in (traces or []):
+        if getattr(tr, "type", "") != "mesh3d":
+            continue
+        try:
+            xs, ys, zs = list(tr.x), list(tr.y), list(tr.z)
+            ii, jj, kk = list(tr.i), list(tr.j), list(tr.k)
+        except Exception:
+            continue
+        if not (xs and ii):
+            continue
+        verts = [(float(x) * 1000.0, float(y) * 1000.0, float(z) * 1000.0 * z_scale)
+                 for x, y, z in zip(xs, ys, zs)]
+        faces = [[int(a), int(b), int(c)] for a, b, c in zip(ii, jj, kk)]
+        try:
+            brep = _make_faceted_brep(f, verts, faces, body)
+        except Exception:
+            brep = None
+        if brep is None:
+            continue
+        shape = f.createIfcShapeRepresentation(body, "Body", "Brep", [brep])
+        pdef  = f.createIfcProductDefinitionShape(None, None, [shape])
+        nm    = str(getattr(tr, "name", "") or "Cấu kiện")
+        elems.append(f.createIfcBuildingElementProxy(
+            _new_guid(), oh, nm, None, None, _placement(f), pdef, None, None))
+    if elems:
+        f.createIfcRelContainedInSpatialStructure(
+            _new_guid(), oh, None, None, elems, storey)
+    return f.to_string().encode("utf-8")
+
+
 # ══════════════════════════════════════════════════════════
 # MAIN EXPORT FUNCTION
 # ══════════════════════════════════════════════════════════

@@ -1009,10 +1009,57 @@ def default_abutment(ten: str = "Mố mẫu") -> dict:
 
 
 # ── Đoạn tường thân (xếp theo NGANG cầu) ─────────────────────────────────────
+def _layer_seat_w(pts):
+    """w của ledge NGANG cao nhất nằm dưới mép trên 1 mặt cắt = VAI KÊ của đoạn."""
+    if not pts:
+        return None
+    w_top = max(w for (_u, w) in pts)
+    n = len(pts); best = None
+    for i in range(n):
+        u0, w0 = pts[i]; u1, w1 = pts[(i + 1) % n]
+        if (abs(w1 - w0) < 5.0 and abs(u1 - u0) > 300.0
+                and w0 < w_top - 200.0 and (best is None or w0 > best)):
+            best = w0
+    return best
+
+
+def _shift_section_w(sec, dw):
+    """Dịch toàn bộ mặt cắt theo phương cao (w += dw); giữ nguyên nếu dw≈0."""
+    if abs(dw) < 1e-6:
+        return sec
+    _sh = lambda poly: [[u, w + dw] for (u, w) in poly]
+    ns = {"outer": _sh(sec.get("outer", [])),
+          "holes": [_sh(h) for h in sec.get("holes", [])]}
+    if sec.get("solids"):
+        ns["solids"] = [{"outer": _sh(s.get("outer", [])),
+                         "holes": [_sh(h) for h in s.get("holes", [])]}
+                        for s in sec["solids"]]
+    return ns
+
+
+def _abut_align_layers(layers):
+    """CĂN các đoạn (tường cánh/thân) theo VAI KÊ: dịch w mỗi đoạn để ledge vai kê
+    của nó trùng vai kê đoạn THÂN CHÍNH (B lớn nhất). Thư viện thường vẽ tường
+    cánh thấp hơn thân (~0.56m) → sau khi căn thì VAI KÊ và ĐÁY BỆ phẳng đều cho
+    cả mố. Trả layers mới (không sửa bản gốc)."""
+    if not layers or len(layers) < 2:
+        return layers
+    body = max(layers, key=lambda l: float(l.get("B", 0) or 0))
+    ref = _layer_seat_w(body["section"]["outer"])
+    if ref is None:
+        return layers
+    out = []
+    for lay in layers:
+        sw = _layer_seat_w(lay["section"]["outer"])
+        dw = (ref - sw) if sw is not None else 0.0
+        out.append({**lay, "section": _shift_section_w(lay["section"], dw)})
+    return out
+
+
 def abut_body_layers(than: dict) -> list:
     """Danh sách ĐOẠN tường thân [{section, B, loft}] xếp theo NGANG cầu —
     hỗ trợ cả định dạng cũ {section, B}=1 đoạn lẫn mới {layers:[...]}.
-    loft=True → vuốt sang mặt cắt đoạn kế."""
+    loft=True → vuốt sang mặt cắt đoạn kế. Các đoạn được CĂN theo vai kê."""
     than = than or {}
     if than.get("layers"):
         out = []
@@ -1022,7 +1069,7 @@ def abut_body_layers(than: dict) -> list:
                             "B": float(lay.get("B", 8.0) or 8.0),
                             "loft": bool(lay.get("loft"))})
         if out:
-            return out
+            return _abut_align_layers(out)
     if (than.get("section") or {}).get("outer"):
         return [{"section": than["section"],
                  "B": float(than.get("B", 8.0) or 8.0), "loft": False}]
@@ -1204,8 +1251,10 @@ def abut_body_traces(layers, zmap, x_face, out_dir, color,
                 # cấp, gờ bệ phẳng (bỏ bậc lẻ của tường cánh trong vùng bệ).
                 _fp = [p for p in s["outer"] if p[1] <= ftop_w + 1e-6]
                 if _fp:
-                    _fu = [p[0] for p in s["outer"]]
-                    _wm = min(p[1] for p in s["outer"])
+                    # u-extent CHỈ theo vùng bệ (≤ đỉnh bệ) — KHÔNG lấy cả mặt vát
+                    # tường cánh nhô về trước (gây "khối thừa" dưới chân bệ).
+                    _fu = [p[0] for p in _fp]
+                    _wm = min(p[1] for p in _fp)
                     fmin, fmax = min(_fu), max(_fu)
                     out.append(_abut_body_straight_mesh(
                         {"outer": [[fmin, _wm], [fmax, _wm],
@@ -1269,6 +1318,32 @@ def abut_seat_u_m(mo: dict) -> float:
     if best_us is None:
         return 0.0
     return (best_us[0] + best_us[1]) / 2.0 * MM
+
+
+def abut_backwall_u_m(mo: dict) -> float:
+    """u (m) MẶT TRƯỚC TƯỜNG ĐỈNH (tường tai) = mép vai kê phía có tường DÂNG LÊN
+    tới đỉnh — ĐẦU DẦM kê sát mặt này. Dùng để chừa KHOẢNG HỞ đầu dầm ↔ mố.
+    0.0 nếu không xác định."""
+    p = migrate_abutment(mo)
+    lays = [l for l in abut_body_layers(p["parts"]["than"])
+            if (l.get("section") or {}).get("outer")]
+    if not lays:
+        return 0.0
+    body = max(lays, key=lambda l: float(l.get("B", 0) or 0))
+    pts = body["section"]["outer"]
+    w_top = max(w for (_u, w) in pts); n = len(pts)
+    best_w, seg = None, None
+    for i in range(n):
+        u0, w0 = pts[i]; u1, w1 = pts[(i + 1) % n]
+        if (abs(w1 - w0) < 5.0 and abs(u1 - u0) > 300.0
+                and w0 < w_top - 200.0 and (best_w is None or w0 > best_w)):
+            best_w, seg = w0, (i, (i + 1) % n)
+    if seg is None:
+        return 0.0
+    # Endpoint nào có cạnh kề DÂNG LÊN cao hơn (về tường đỉnh) = back wall.
+    _rise = lambda idx: max(pts[(idx - 1) % n][1], pts[(idx + 1) % n][1])
+    ia, ib = seg
+    return (pts[ia][0] if _rise(ia) >= _rise(ib) else pts[ib][0]) * MM
 
 
 def _abut_footing_top_w(layers, seat_w, w_bot):
@@ -1374,12 +1449,16 @@ def abutment_elevation_polys(mo: dict, H_tru: float = None, x_face: float = 0.0,
 
 
 def abutment_mcn_polys(mo: dict, z_seat: float, z_base: float,
-                       labels: dict = None, target_width: float = None) -> list:
+                       labels: dict = None, target_width: float = None,
+                       back: bool = False) -> list:
     """MẶT CẮT NGANG cầu của mố (ngang y × cao z) → list {name,color,ys,zs,hidden}.
     Mỗi đoạn (tường cánh/thân) tách 3 dải theo cao độ → thể hiện đầy đủ:
       • BỆ (đáy → đỉnh bệ) — khối bệ.
-      • THÂN TRƯỚC vai kê (đỉnh bệ → vai kê=đáy dầm) — NÉT THẤY (mặt trước mố).
-      • SAU vai kê (vai kê → đỉnh tường đỉnh) — NÉT KHUẤT (phần sau mố).
+      • THÂN TRƯỚC vai kê (đỉnh bệ → vai kê=đáy dầm).
+      • SAU vai kê (vai kê → đỉnh tường đỉnh) — tường đỉnh.
+    back=False → MCN TRƯỚC MỐ (nhìn từ phía sông): mặt trước mố NÉT THẤY, tường
+    đỉnh phía sau NÉT KHUẤT. back=True → MCN SAU MỐ (nhìn từ tuyến): tường đỉnh
+    (back wall) NÉT THẤY, mặt trước mố thành NÉT KHUẤT.
     target_width: co/giãn tổng bề rộng ngang = bề rộng cầu."""
     p = migrate_abutment(mo)
     than = p["parts"]["than"]
@@ -1403,8 +1482,15 @@ def abutment_mcn_polys(mo: dict, z_seat: float, z_base: float,
                 out.append({"name": name, "color": color, "hidden": hidden,
                             "ys": [y, y1, y1, y], "zs": [za, za, zb, zb]})
         _rect(z_lo, min(z_betop, z_hi), "Bệ mố", _COL["be"], False)
-        _rect(max(z_betop, z_lo), min(z_seat, z_hi), "Thân mố (trước)", _COL["than"], False)
-        _rect(max(z_seat, z_lo), z_hi, "Sau mố (khuất)", _COL["than"], True)
+        if back:
+            # NHÌN TỪ TUYẾN: mặt sau mố là 1 KHỐI TƯỜNG ĐẶC liền (không có khấc
+            # vai kê — khấc nằm ở mặt trước) → toàn bộ thân + tường đỉnh NÉT THẤY.
+            _rect(max(z_betop, z_lo), z_hi, "Tường thân (sau)", _COL["than"], False)
+        else:
+            # NHÌN TỪ SÔNG: mặt trước mố NÉT THẤY; tường đỉnh sau NÉT KHUẤT.
+            _rect(max(z_betop, z_lo), min(z_seat, z_hi), "Thân mố (trước)",
+                  _COL["than"], False)
+            _rect(max(z_seat, z_lo), z_hi, "Sau mố (khuất)", _COL["than"], True)
         y = y1
     return out
 
@@ -1437,11 +1523,15 @@ def abutment_plan_polys(mo: dict, target_width: float = None,
 
 
 def build_abutment_preview_fig(mo: dict, H_tru: float = None,
-                               labels: dict = None, target_width: float = None) -> go.Figure:
+                               labels: dict = None, target_width: float = None,
+                               seat_z: float = None, z_base: float = 0.0) -> go.Figure:
     """Figure 3D xem trước 1 mố (panel thư viện).
-    target_width: co bề rộng mố theo bề rộng cầu (để KHỚP mố trong 3D toàn cầu)."""
+    target_width: co bề rộng mố theo bề rộng cầu (để KHỚP mố trong 3D toàn cầu).
+    seat_z/z_base: nếu cho → NEO vai kê=seat_z, đỉnh bệ=z_base như mố trên CẦU
+    (đồng bộ chiều cao 3D với mố thực tế của cầu)."""
     fig = go.Figure(build_abutment_mesh_traces(mo, H_tru=H_tru, labels=labels,
-                                               target_width=target_width))
+                                               target_width=target_width,
+                                               seat_z=seat_z, z_base=z_base))
     fig.update_layout(
         scene=dict(xaxis_title="Dọc cầu (m)", yaxis_title="Ngang cầu (m)",
                    zaxis_title="Cao độ (m)", aspectmode="data"),

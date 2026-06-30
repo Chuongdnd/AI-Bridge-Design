@@ -256,6 +256,7 @@ try:
     MOT  = importlib.import_module("07-AI_MoTru")       # AI Mố – Trụ v2
     MONG = importlib.import_module("08-AI_Mong")        # Móng (rule-based)
     EXP  = importlib.import_module("09-Export_CAD_IFC") # Export DXF / IFC
+    IFCX = importlib.import_module("18-IFC_Exporter")   # IFC từ lưới 3D thực
     PLOT = importlib.import_module("00-Drawing_Utils")
     TV   = importlib.import_module("00-Terrain_Viewer")
     LPC  = importlib.import_module("10-LopPhu_MatCau")  # Lớp phủ mặt cầu
@@ -6990,13 +6991,28 @@ with _col_main:
                         _f_mcnvt = BVK.ve_mcn_vi_tri(
                             d, vi_tri=_selected_vt, df_geology=_df_geo,
                             pier_assembly=_pa_tru, x_half=_xh,
-                            abutment_assembly=_resolve_assembly(d, "mo"))
+                            abutment_assembly=_resolve_assembly(d, "mo"),
+                            mo_view='truoc')
                         PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
                         st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt cắt ngang: {_e}")
+                    # Với MỐ: bổ sung MCN SAU MỐ (nhìn từ tuyến về sông).
+                    if _selected_vt in ("mo_trai", "mo_phai"):
+                        try:
+                            _f_mcnvt_s = BVK.ve_mcn_vi_tri(
+                                d, vi_tri=_selected_vt, df_geology=_df_geo,
+                                pier_assembly=_pa_tru, x_half=_xh,
+                                abutment_assembly=_resolve_assembly(d, "mo"),
+                                mo_view='sau')
+                            PLOT.aspect_control(_f_mcnvt_s, "mcn_vitri_sau")
+                            st.plotly_chart(_f_mcnvt_s,
+                                            use_container_width=True,
+                                            config={"scrollZoom": True, "displayModeBar": True})
+                        except Exception as _e:
+                            st.error(f"Lỗi vẽ MCN sau mố: {_e}")
                 with _colR:
                     try:
                         _f_mbc = BVK.ve_mat_bang_coc(d, vi_tri=_selected_vt)
@@ -7024,16 +7040,29 @@ with _col_main:
                     _is_mo_vt = _selected_vt in ("mo_trai", "mo_phai")
                     _bc_vt    = float(d.get("bc", 12.0))   # bề rộng cầu → co xà mũ/mố
                     if _is_mo_vt:
-                        # KHỚP mố trong 3D toàn cầu: cùng model + co bề rộng theo cầu
+                        # KHỚP mố thực của cầu: cùng model + co bề rộng theo cầu +
+                        # NEO vai kê=đáy dầm, đỉnh bệ=ĐTN−0.5 (như MCN 2D) → 3D
+                        # đồng bộ chiều cao & vị trí với mố trên cầu.
                         _asm_vt  = d.get("_mo_model") or _resolve_assembly(d, "mo")
                         _Hmo_vt  = float(d.get("H_tru_est") or 0) or None
+                        _cao_dd_vt0 = float(d.get("cao_day_dam", (_Hmo_vt or 5.0) + 5.0))
+                        # Đáy dầm PHÍA MỐ = đáy dầm − độ sâu khấc (đầu dầm lên mố đầu trơn)
+                        try:
+                            _nd_vt = PB.cap_seat_notch_depth_m(_pa_tru) if _pa_tru else 0.0
+                        except Exception:
+                            _nd_vt = 0.0
+                        _cao_dd_vt = _cao_dd_vt0 - float(_nd_vt or 0.0)
+                        _zbase_vt  = float(d.get("h_tn_tb", 2.0)) - 0.5
                         _fig3d_vt = (PB.build_abutment_preview_fig(
-                                        _asm_vt, H_tru=_Hmo_vt, target_width=_bc_vt)
+                                        _asm_vt, H_tru=_Hmo_vt, target_width=_bc_vt,
+                                        seat_z=_cao_dd_vt, z_base=_zbase_vt)
                                      if _asm_vt else None)
                     else:
-                        # KHỚP trụ trong 3D toàn cầu: cùng _pier_model, H_total = H_trụ
-                        # + 2.30 (đáy bệ→đỉnh xà mũ), cap_width = bề rộng cầu.
-                        _asm_vt  = d.get("_pier_model") or _pa_tru
+                        # KHỚP trụ: dùng _pa_tru VỪA dựng lại (đã áp khoảng cách cột/
+                        # bề rộng trụ mới) — KHÔNG dùng d["_pier_model"] (cache cũ từ
+                        # lúc tính, chưa có thông số vừa nhập → 3D không cập nhật).
+                        # H_total = H_trụ + 2.30 (đáy bệ→đỉnh xà mũ); cap_width = b.rộng cầu.
+                        _asm_vt  = _pa_tru or d.get("_pier_model")
                         _Hpier_vt = float(d.get("H_tru_est", 5.0)) + 2.30
                         _fig3d_vt = (PB.build_pier_preview_fig(
                                         _asm_vt, H_tru=_Hpier_vt, cap_width=_bc_vt)
@@ -7260,29 +7289,99 @@ with _col_main:
                                 return _fh.read()
                         return None
 
+                    def _bridge_ifc_bytes():
+                        # IFC khớp ĐÚNG 3D Tổng hợp mới nhất: dùng CÙNG builder hệ
+                        # VN-2000 (add_all_to_terrain_fig + dầm _vn2000) với he_so_z=1
+                        # (hình học THỰC). Có địa hình → bám tuyến; không có → fallback
+                        # ve_cau_3d (hệ lý trình).
+                        _pfx3 = _PA_SPT_PFX.get(selected_ribbon, "spt")
+                        _trs = []
+                        if _df_geo is not None and not getattr(_df_geo, "empty", True):
+                            try:
+                                _tmp = go.Figure()
+                                BVK.add_all_to_terrain_fig(_tmp, d, _df_geo, he_so_z=1.0)
+                                _trs = list(_tmp.data)
+                                _trs += list(BBUI.get_beam_model_mesh_traces_vn2000(
+                                    d, _df_geo, 1.0, pfx=_pfx3) or [])
+                            except Exception:
+                                _trs = []
+                        if not _trs:
+                            _fig3 = BVK.ve_cau_3d(
+                                d, pier_assembly=_resolve_assembly(d, "tru"),
+                                abutment_assembly=_resolve_assembly(d, "mo"))
+                            _trs = list(_fig3.data)
+                            try:
+                                _trs += list(BBUI.get_beam_model_mesh_traces(d, pfx=_pfx3) or [])
+                            except Exception:
+                                pass
+                        return IFCX.mesh_traces_to_ifc(_trs,
+                                                       project_name=f"Cau {selected_ribbon}")
+
+                    def _pier_ifc_bytes():
+                        # IFC trụ khớp 3D toàn cầu (cùng _pier_model + H_total + cap_width)
+                        _pm = d.get("_pier_model") or _resolve_assembly(d, "tru")
+                        if not _pm:
+                            return EXP.export_pier_ifc(d)
+                        _Ht = float(d.get("H_tru_est", 5.0)) + 2.30
+                        _trs = PB.build_pier_mesh_traces(
+                            _pm, H_tru=_Ht, cap_width=float(d.get("bc", 12.0)))
+                        return IFCX.mesh_traces_to_ifc(_trs,
+                                                       project_name=f"Tru {selected_ribbon}")
+
+                    # ── DXF 2D khớp hệ thống: vẽ lại figure 2D thực rồi convert ──
+                    def _pfx_exp():
+                        return _PA_SPT_PFX.get(selected_ribbon, "spt")
+
+                    def _mcn_dxf_bytes():
+                        _fig = BVK.ve_mat_cat_ngang_2d(
+                            d, pier_assembly=_resolve_assembly(d, "tru"))
+                        try:
+                            for _t in (BBUI.get_mcn_overlay_traces(d, pfx=_pfx_exp()) or []):
+                                _fig.add_trace(_t)
+                        except Exception:
+                            pass
+                        return EXP.fig_to_dxf_bytes(_fig, "MAT CAT NGANG DIEN HINH")
+
+                    def _td_dxf_bytes():
+                        _fig = BVK.ve_so_do_nhip_2d(
+                            d, pier_assembly=_resolve_assembly(d, "tru"),
+                            abutment_assembly=_resolve_assembly(d, "mo"))
+                        try:
+                            for _t in (BBUI.get_elevation_profile_traces(d, pfx=_pfx_exp()) or []):
+                                _fig.add_trace(_t)
+                        except Exception:
+                            pass
+                        return EXP.fig_to_dxf_bytes(_fig, "TRAC DOC / SO DO NHIP")
+
+                    def _tru_dxf_bytes():
+                        _fig = BVK.ve_mcn_vi_tri(
+                            d, vi_tri="tru_1",
+                            pier_assembly=_resolve_assembly(d, "tru"))
+                        return EXP.fig_to_dxf_bytes(_fig, "TRU - MAT CAT NGANG")
+
                     # Cây xuất 3 cấp: (thư mục, dir, [ (cấu kiện, sub_dir,
                     #   [ (id, định dạng, tệp, producer) ]) ]). Quy ước: 2D→DXF, 3D→IFC.
                     _exp_tree = [
                         ("🌉 Kết cấu cầu", "KetCauCau", [
                             ("Mặt cắt ngang", "MatCatNgang", [
                                 ("mcn2d", "2D — DXF",            "mat_cat_ngang.dxf",
-                                 lambda: EXP.export_mcn_dxf(d)),
+                                 _mcn_dxf_bytes),
                                 ("mcn3d", "3D — IFC (kéo dọc cầu)", "mat_cat_ngang_3d.ifc",
-                                 lambda: EXP.export_bridge_ifc(d)),
+                                 _bridge_ifc_bytes),
                             ]),
                             ("Trắc dọc", "TracDoc", [
                                 ("td2d", "2D — DXF", "trac_doc.dxf",
-                                 lambda: EXP.export_trac_doc_dxf(d)),
+                                 _td_dxf_bytes),
                             ]),
                             ("Trụ cầu", "Tru", [
                                 ("tru2d", "2D — DXF", "tru.dxf",
-                                 lambda: EXP.export_tru_dxf(d)),
+                                 _tru_dxf_bytes),
                                 ("tru3d", "3D — IFC", "tru.ifc",
-                                 lambda: EXP.export_pier_ifc(d)),
+                                 _pier_ifc_bytes),
                             ]),
                             ("Kết cấu toàn cầu", "ToanCau", [
                                 ("cau3d", "3D — IFC", "ket_cau_cau.ifc",
-                                 lambda: EXP.export_bridge_ifc(d)),
+                                 _bridge_ifc_bytes),
                             ]),
                         ]),
                         ("🗺️ Địa hình", "DiaHinh", [

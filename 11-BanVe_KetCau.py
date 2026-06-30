@@ -66,6 +66,20 @@ _C = {
 # Cỡ chữ kích thước theo chuẩn (1.8mm) — quy đổi xấp xỉ sang px màn hình
 _DIM_TXT = 9
 _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
+KHO_HO_DAM_MO = 0.10  # m — khoảng hở (khe co giãn) đầu dầm ↔ mặt trước tường đỉnh mố
+
+
+def _abut_seat_z(cao_dd, pier_assembly):
+    """Cao độ VAI KÊ (đáy dầm) PHÍA MỐ. Dầm SPT lên mố là ĐẦU TRƠN (không khấc)
+    nên đáy dầm phía mố HẠ THẤP so với phía trụ đúng bằng ĐỘ SÂU KHẤC xà mũ →
+    tường thân phần kê dầm thấp lại (đúng cấu tạo, không bị cao như phía trụ).
+    pier_assembly=None (không có khấc) → giữ nguyên = cao_dd."""
+    try:
+        nd = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
+              if pier_assembly else 0.0)
+    except Exception:
+        nd = 0.0
+    return float(cao_dd) - float(nd or 0.0)
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None,
@@ -296,29 +310,76 @@ def _resolve_railings(d):
     return rails
 
 
+def _profile_outer_at_z(prof, zc):
+    """Mép NGOÀI (y lớn nhất) của biên dạng tại cao độ zc — nội suy giao điểm."""
+    ys = []
+    n = len(prof)
+    for i in range(n):
+        a = prof[i]; b = prof[(i + 1) % n]
+        if a[1] != b[1] and (a[1] - zc) * (b[1] - zc) <= 0:
+            t = (zc - a[1]) / (b[1] - a[1])
+            ys.append(a[0] + t * (b[0] - a[0]))
+    return max(ys) if ys else max((p[0] for p in prof), default=0.0)
+
+
 def _rail_geom(prof, bc):
-    """Hình học đặt lan can theo CHÂN ĐẾ (đáy):
-      • y_edge: offset đặt sao cho mép NGOÀI CHÂN ĐẾ (đáy) trùng mép cầu ±bc/2
-        → đáy lan can ngồi ĐÚNG góc mép bản (không treo theo phần thân phình).
-      • y_in  : mép TRONG chân đế (m, +) — vị trí lớp phủ ngừng.
-    prof = [[y_m, z_m]] (z=0 ở đáy). Chân đế = các điểm sát đáy (≤ zmin+30mm)."""
+    """Đặt lan can theo CHÂN THẬT (mép trong cùng = phía đường), MOVE CẢ KHỐI:
+      • base_z: cao độ chân (điểm y NHỎ NHẤT) → đặt ngang ĐỈNH BẢN; cả khối dịch
+        xuống nguyên khối (giữ hình), phần dưới base_z (mũi) rủ xuống mép bản.
+      • y_edge: offset để mép NGOÀI tại cao độ base_z trùng mép cầu ±bc/2.
+      • y_in  : mép TRONG (phía đường) — vị trí lớp phủ ngừng.
+    prof = [[y_m, z_m]]."""
     if not prof:
-        return bc / 2.0, bc / 2.0
-    zmin = min(p[1] for p in prof)
-    base = [p for p in prof if p[1] <= zmin + 0.03] or prof
-    y_out = max(p[0] for p in base)        # mép ngoài chân đế
-    y_in_b = min(p[0] for p in base)       # mép trong chân đế
-    return bc / 2.0 - y_out, bc / 2.0 - (y_out - y_in_b)
+        return bc / 2.0, bc / 2.0, 0.0
+    y_min = min(p[0] for p in prof)
+    inner = [p for p in prof if abs(p[0] - y_min) < 0.05] or prof
+    base_z = min(p[1] for p in inner)               # cao độ chân thật
+    y_out = _profile_outer_at_z(prof, base_z)        # mép ngoài tại cao độ chân
+    return bc / 2.0 - y_out, bc / 2.0 - (y_out - y_min), base_z
+
+
+def _rail_place(prof, bc):
+    """Trả (prof, y_edge, base_z): KÉO CẢ KHỐI (giữ nguyên hình) ra ngoài sao cho
+    cạnh đứng PHÍA TRONG của phần THÒ XUỐNG (z<base_z) trùng MÉP BẢN ±bc/2 — phần
+    thò xuống ốp đúng mép bản, cả khối dịch theo (không kéo riêng cạnh nào)."""
+    y_edge, _, base_z = _rail_geom(prof, bc)
+    drape_inner = min((p[0] for p in prof if p[1] < base_z - 1e-6), default=None)
+    if drape_inner is None:
+        return prof, y_edge, base_z
+    return prof, bc / 2.0 - drape_inner, base_z       # neo cạnh trong drape tại mép
 
 
 def _railing_inner_y(d, bc):
-    """Mép TRONG lan can (m, +) + NỬA bề rộng dải phân cách (m) để cắt lớp phủ."""
+    """Mép TRONG lan can (m, +) + NỬA bề rộng dải phân cách (m) để cắt lớp phủ.
+    Lớp phủ ngừng tại mặt trong chân (phía đường) SAU khi kéo cả khối ra mép."""
     rails = _resolve_railings(d)
     lc = rails.get("lan_can"); gpc = rails.get("giai_phan_cach")
     prof = [[p[0] / 1000.0, p[1] / 1000.0] for p in ((lc or {}).get("outer") or [])]
-    _, y_in = _rail_geom(prof, bc) if prof else (bc / 2.0, bc / 2.0)
+    if prof:
+        _, y_edge, _ = _rail_place(prof, bc)
+        y_in = min(p[0] for p in prof) + y_edge       # mặt trong chân sau khi neo
+    else:
+        y_in = bc / 2.0
     w_gpc = float((gpc or {}).get("rong_mm", 0) or 0) / 1000.0 if gpc else 0.0
     return y_in, w_gpc / 2.0
+
+
+def _abut_long_depth_m(abut):
+    """Chiều dài DỌC (theo lý trình) của mố/TƯỜNG CÁNH (m) — để kéo dài lan can ra
+    hết tường cánh mố. Lấy từ khẩu độ dọc mặt cắt thân mố; fallback 3.5m."""
+    if not abut:
+        return 3.5
+    try:
+        PB = _get_PB()
+        p = PB.migrate_abutment(abut)
+        us = [u for l in PB.abut_body_layers(p["parts"]["than"])
+              if (l.get("section") or {}).get("outer")
+              for (u, _w) in l["section"]["outer"]]
+        if us:
+            return max((max(us) - min(us)) / 1000.0, 1.0)
+    except Exception:
+        pass
+    return 3.5
 
 
 def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
@@ -333,14 +394,12 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
 
     lc = rails.get("lan_can")
     if lc and lc.get("outer"):
-        prof = _prof_m(lc)
-        # Neo theo CHÂN ĐẾ: mép ngoài đáy lan can trùng mép cầu (đáy ngồi đúng góc
-        # mép bản, không treo theo phần thân phình ra).
-        y_edge, _ = _rail_geom(prof, bc)
+        prof, y_edge, base_z = _rail_place(_prof_m(lc), bc)
+        # MOVE CẢ KHỐI: chân ngồi đỉnh bản; phần thò xuống dịch ra mép bản.
         for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
             _m = _sweep_profile_curve_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir, vn_func=vn_func,
-                s0=s0, s1=s1, z_base=z_base, color="#bfc4c9",
+                s0=s0, s1=s1, z_base=z_base - base_z, color="#bfc4c9",
                 name=f"Lan can ({lc.get('ten','')})" if _sl else "", sl=_sl)
             if _m is not None:
                 out.append(_m)
@@ -369,12 +428,11 @@ def _railing_traces_3d(d, x_start, x_end, bc, z_deck):
     # ── Lan can: đặt ở 2 mép cầu, MẶT NGOÀI tại ±bc/2 ──────────────────────
     lc = rails.get("lan_can")
     if lc and lc.get("outer"):
-        prof = _prof_m(lc)
-        y_edge, _ = _rail_geom(prof, bc)          # neo mép ngoài CHÂN ĐẾ tại mép cầu
+        prof, y_edge, base_z = _rail_place(_prof_m(lc), bc)  # move khối + drape ra mép
         for _side, _mir, _sl in ((1.0, False, True), (-1.0, True, False)):
             _m = _sweep_profile_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir,
-                x_start=x_start, x_end=x_end, z_base=z_deck, color="#bfc4c9",
+                x_start=x_start, x_end=x_end, z_base=z_deck - base_z, color="#bfc4c9",
                 name=f"Lan can ({lc.get('ten','')})" if _sl else "", sl=_sl)
             if _m is not None:
                 out.append(_m)
@@ -1195,13 +1253,17 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             # dưới ĐƯỜNG TỰ NHIÊN tại mố (giống quy ước bệ trụ). out_dir=sign:
             # MẶT TRƯỚC mố (phía nhịp, u>0) quay VÀO NHỊP, lưng (u<0) ra mái dốc.
             _z_base_mo = z_terr_mo - 0.5
-            # Căn VAI KÊ về đúng GỐI (đầu dầm tại xm): dịch x_face theo u-tâm vai kê.
-            _xf_mo = xm - sign * _PB.abut_seat_u_m(abutment_assembly)
+            # CĂN theo KHOẢNG HỞ đầu dầm ↔ mố = 100mm: mặt trước tường đỉnh đặt
+            # lùi 0.10m sau đầu dầm (đầu dầm tại xm) → khe co giãn 100mm.
+            _u_bw = _PB.abut_backwall_u_m(abutment_assembly)
+            _xf_mo = xm - sign * (KHO_HO_DAM_MO + _u_bw)
+            # Đáy dầm PHÍA MỐ = đáy dầm trụ − độ sâu khấc (đầu dầm lên mố là đầu trơn).
+            _seat_mo = _abut_seat_z(z_dam_b, pier_assembly)
             _mo_allx = []; _mo_allz = []
             for _pl in _PB.abutment_elevation_polys(
-                    abutment_assembly, H_tru=(z_cap_t - _z_base_mo),
+                    abutment_assembly, H_tru=(_seat_mo - _z_base_mo),
                     x_face=_xf_mo, out_dir=sign, z_base=_z_base_mo,
-                    seat_z=z_dam_b):       # vai kê = đáy dầm; ĐỈNH bệ = ĐTN−0.5
+                    seat_z=_seat_mo):      # vai kê = đáy dầm MỐ; ĐỈNH bệ = ĐTN−0.5
                 _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
                       (_pl["name"] if side == "Trái" else ""),
                       showlegend=(side == "Trái"))
@@ -1599,13 +1661,13 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
     # ── Lan can (mặt cắt thư viện) — ĐẶT TRÊN BẢN MẶT CẦU, mặt ngoài tại ±bc/2 ──
     _lc2 = (_rails2d or {}).get("lan_can")
     if _lc2 and _lc2.get("outer"):
-        _profm = [[p[0] / 1000.0, p[1] / 1000.0] for p in _lc2["outer"]]
-        _yedge_l, _ = _rail_geom(_profm, bc)   # mép ngoài chân đế → mép cầu
+        _profm0 = [[p[0] / 1000.0, p[1] / 1000.0] for p in _lc2["outer"]]
+        _profm, _yedge_l, _basez_l = _rail_place(_profm0, bc)  # move khối + drape ra mép
         for side in (-1, 1):
             xb = side * _xe
-            _zb = _off(xb)               # đỉnh bản tại mép (đáy lan can ngồi đây)
+            _zb = _off(xb)               # đỉnh bản tại mép (chân lan can ngồi đây)
             xs = [side * (yy + _yedge_l) for yy, _ in _profm]
-            zs = [_zb + zz for _, zz in _profm]
+            zs = [_zb + zz - _basez_l for _, zz in _profm]
             _poly(fig, xs, zs, _C["lan_can"], "#2c3e50",
                   "Lan can" if side == -1 else "", showlegend=(side == -1))
     else:
@@ -2029,9 +2091,10 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
                              color="#e8eaf0", opacity=0.55,
                              name="Bản mặt cầu" if sl else "", sl=sl), "Bản mặt cầu"))
 
-    # ── Lan can / Giải phân cách — kéo MCN chạy dọc toàn cầu ──────────────
+    # ── Lan can / Giải phân cách — kéo MCN chạy dọc toàn cầu + ra hết tường cánh mố ─
     try:
-        traces.extend(_g(_railing_traces_3d(d, x0, x_end, bc, z_deck), "Lan can"))
+        _wd = _abut_long_depth_m(abutment_assembly)
+        traces.extend(_g(_railing_traces_3d(d, x0 - _wd, x_end + _wd, bc, z_deck), "Lan can"))
     except Exception as _e:
         print(f"[ve_cau_3d] lan can lỗi: {_e}")
 
@@ -2560,10 +2623,12 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             _ag(_aswept(x0, x_end, -_y_in, _y_in,
                                   z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
 
-        # Lan can / Giải phân cách — ĐẶT TRÊN BẢN MẶT CẦU (z_deck), không trên lớp phủ
+        # Lan can / Giải phân cách — ĐẶT TRÊN BẢN MẶT CẦU (z_deck), không trên lớp
+        # phủ. KÉO DÀI ra hết tường cánh mố 2 đầu (theo chiều dọc mố).
         _grp_state["g"] = "Lan can"
+        _wd = _abut_long_depth_m(d.get("_mo_model"))
         try:
-            for _rt in _railing_curve_traces(d, _vn, x0, x_end, bc, z_deck):
+            for _rt in _railing_curve_traces(d, _vn, x0 - _wd, x_end + _wd, bc, z_deck):
                 _ag(_rt)
         except Exception as _e:
             print(f"[add_all] lan can lỗi: {_e}")
@@ -2673,12 +2738,15 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             if _mo_model:
                 _zt_mo    = float(np.interp(xm, lt_v, vz_v))   # ĐTN tại mố
                 _zbase_mo = _zt_mo - 0.5
-                _Htru_mo  = max(0.5, cao_dd - _zbase_mo)        # đỉnh mố = đáy dầm
-                _xf_mo3d  = xm - sgn * _PBm2.abut_seat_u_m(_mo_model)  # vai kê tại gối
+                # Đáy dầm PHÍA MỐ = đáy dầm − độ sâu khấc (đầu dầm lên mố đầu trơn).
+                _seat_mo3d = _abut_seat_z(cao_dd, d.get("_pier_model"))
+                _Htru_mo  = max(0.5, _seat_mo3d - _zbase_mo)    # đỉnh mố = đáy dầm mố
+                _xf_mo3d  = xm - sgn * (KHO_HO_DAM_MO
+                                        + _PBm2.abut_backwall_u_m(_mo_model))  # hở 100mm
                 try:
                     _mtr = _PBm2.build_abutment_mesh_traces(
                         _mo_model, H_tru=_Htru_mo, x_face=_xf_mo3d,
-                        out_dir=sgn, z_base=_zbase_mo, seat_z=cao_dd,
+                        out_dir=sgn, z_base=_zbase_mo, seat_z=_seat_mo3d,
                         target_width=bc)       # co bề rộng mố theo bề rộng cầu
                 except Exception as _me:
                     print(f"[add_all] mố lỗi: {_me}"); _mtr = []
@@ -2992,12 +3060,14 @@ def ve_binh_do_2d(d, df_tim_line=None):
 # 8. MẶT CẮT NGANG TẠI VỊ TRÍ MỐ / TRỤ
 # ===========================================================================
 def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
-                  x_half=None, abutment_assembly=None):
+                  x_half=None, abutment_assembly=None, mo_view='truoc'):
     """
     MCN cắt vuông góc tim cầu tại vị trí mố hoặc trụ cụ thể.
     vi_tri: 'mo_trai' | 'mo_phai' | 'tru_1' | 'tru_2' | ...
     df_geology: DataFrame với cột Lý trình, Offset, Z (từ file .NTD)
     abutment_assembly: mố lắp ghép thư viện → cắt MCN theo mố mới (thay mố cũ).
+    mo_view: 'truoc' = MCN TRƯỚC mố (nhìn từ sông) | 'sau' = MCN SAU mố (nhìn từ
+             tuyến về sông) — đổi nét thấy/khuất + tiêu đề tương ứng.
     """
     kcn   = d.get("kcn_result") or d.get("ai_result", {})
     geo   = d.get("geo_logic", {})
@@ -3028,10 +3098,12 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     cap_W  = max(2.0, bc * 0.18 + 1.0)
     be_W   = cap_W + 0.8
 
+    _mo_suffix = (" — SAU MỐ (nhìn từ tuyến)" if mo_view == 'sau'
+                  else " — TRƯỚC MỐ (nhìn từ sông)")
     if vi_tri == 'mo_trai':
-        x_cut = x0;   title_vt = "MỐ M1"
+        x_cut = x0;   title_vt = "MỐ M1" + _mo_suffix
     elif vi_tri == 'mo_phai':
-        x_cut = x_end; title_vt = "MỐ M2"
+        x_cut = x_end; title_vt = "MỐ M2" + _mo_suffix
     else:
         idx = int(vi_tri.replace('tru_', '')) - 1
         x_cut = piers[idx] if idx < len(piers) else x_tim
@@ -3098,11 +3170,14 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             # MCN cắt theo MỐ THƯ VIỆN: vai kê = đáy dầm, đáy bệ = ĐTN−0.5.
             _PBa = _get_PB()
             _z_base_mo = h_tn - 0.5
-            # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn (thân + cánh) cùng nét THẤY,
-            # cùng 1 chú giải "Mố" (vẽ cánh trước, thân sau → thân nổi trên).
+            _is_back = (mo_view == 'sau')
+            # Đáy dầm PHÍA MỐ = đáy dầm − độ sâu khấc (đầu dầm lên mố là đầu trơn).
+            _seat_mo = _abut_seat_z(cao_dd, pier_assembly)
+            # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn (thân + cánh); nét thấy/khuất
+            # đảo theo hướng nhìn (trước = từ sông, sau = từ tuyến về sông).
             _mcn_pl = _PBa.abutment_mcn_polys(
-                abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo,
-                target_width=bc)            # co bề rộng mố theo bề rộng cầu
+                abutment_assembly, z_seat=_seat_mo, z_base=_z_base_mo,
+                target_width=bc, back=_is_back)  # co bề rộng mố theo bề rộng cầu
             # Vẽ SAU mố (nét khuất) trước → THÂN/BỆ (nét thấy) đè lên trên.
             _mcn_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
             _seen_mo = set()
@@ -3114,16 +3189,42 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                       ("#1f9ed1" if _hid else _C["be_dk"]),
                       _nm if _sl else "", showlegend=_sl,
                       dash=("dash" if _hid else None))
-            # NÉT phụ trợ: vai kê (đáy dầm) + vai kê bản quá độ.
+            # ── NÉT VAI KÊ DẦM: bệ đỡ đáy dầm tại đỉnh thân mố + đá kê gối từng
+            # dầm. Trước mố = NÉT THẤY (mặt kê quay ra sông); sau mố = NÉT KHUẤT.
             _mw = bc / 2.0
-            for _zl, _lab, _cl in [
-                (cao_dd, "Vai kê (đáy dầm)", "#e67e22"),
-                (cao_dd + 1.0, "Vai kê bản quá độ", "#9b59b6"),
-            ]:
-                fig.add_trace(go.Scatter(
-                    x=[-_mw, _mw], y=[_zl, _zl], mode="lines",
-                    line=dict(color=_cl, width=1.2, dash="dot"),
-                    name=_lab, showlegend=True))
+            # Bề rộng thân mố (đoạn rộng nhất) = vùng kê dầm (giữa 2 tường cánh).
+            _body_yr = max(((min(p["ys"]), max(p["ys"])) for p in _mcn_pl),
+                           key=lambda r: r[1] - r[0], default=(-_mw, _mw))
+            _seat_dash = "dash" if _is_back else None
+            _seat_col  = "#e67e22"
+            # Đường vai kê (đáy dầm MỐ = đáy dầm trụ − khấc) chạy suốt bề rộng kê
+            fig.add_trace(go.Scatter(
+                x=[_body_yr[0], _body_yr[1]], y=[_seat_mo, _seat_mo], mode="lines",
+                line=dict(color=_seat_col, width=2.2, dash=_seat_dash),
+                name="Vai kê dầm (đáy dầm)", showlegend=True))
+            # Đá kê gối tại từng vị trí dầm (gối kê đầu dầm)
+            _n_dam = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5) or 5)
+            _kc_d  = float(kcn.get("khoang_cach_dam", 2.2) or 2.2)
+            _h_g   = max(0.12, _h_goi(d))     # chiều cao đá kê gối
+            _w_g   = 0.50                      # bề rộng đá kê gối (ngang)
+            _g0    = -(_n_dam - 1) * _kc_d / 2.0
+            _shown_g = False
+            for _ig in range(_n_dam):
+                _xg = _g0 + _ig * _kc_d
+                if not (_body_yr[0] + 0.05 <= _xg <= _body_yr[1] - 0.05):
+                    continue
+                _poly(fig, [_xg - _w_g/2, _xg + _w_g/2, _xg + _w_g/2, _xg - _w_g/2],
+                      [_seat_mo, _seat_mo, _seat_mo + _h_g, _seat_mo + _h_g],
+                      ("rgba(0,0,0,0)" if _is_back else "#7f8c8d"),
+                      ("#1f9ed1" if _is_back else "#2c3e50"),
+                      "Đá kê gối" if not _shown_g else "", showlegend=(not _shown_g),
+                      dash=("dash" if _is_back else None), lw=1.2)
+                _shown_g = True
+            # Vai kê bản quá độ (mặt sau mố) — nét chỉ dẫn
+            fig.add_trace(go.Scatter(
+                x=[-_mw, _mw], y=[cao_dd + 1.0, cao_dd + 1.0], mode="lines",
+                line=dict(color="#9b59b6", width=1.2, dash="dot"),
+                name="Vai kê bản quá độ", showlegend=True))
             _zbe_bot = min((z for p in _mcn_pl for z in p["zs"]), default=_z_base_mo)
             _piles_mo_vt = _layout_piles(d, vi_tri)
             if _piles_mo_vt:
@@ -3239,18 +3340,57 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             _dim_v(fig, cap_W + 0.6, z_shb, z_capb, f"H_trụ={H_tru:.1f}m", dx=0.2)
             _dim_h(fig, z_beb - 0.5, -be_W, be_W, f"B_bệ={be_W*2:.1f}m", dy=0)
 
+    # ── Dầm chủ (mặt cắt ngang) — vẽ tại từng vị trí dầm dưới bản mặt cầu ──
+    _ndam_v = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5) or 5)
+    _kcd_v  = float(kcn.get("khoang_cach_dam", 2.2) or 2.2)
+    _oh_v   = float(kcn.get("overhang", 0.5) or 0.5)
+    if _ndam_v >= 1:
+        # Tim dầm đầu tiên cách mép cầu một đoạn hẫng; nếu khoảng cách không phủ
+        # hết bề rộng thì căn đều theo bề rộng cầu.
+        _xf_v = -bc/2 + _oh_v
+        if _ndam_v >= 2 and (_xf_v + (_ndam_v - 1) * _kcd_v) > bc/2:
+            _xf_v = -(_ndam_v - 1) * _kcd_v / 2.0
+        _wb_v = max(0.30, min(_kcd_v * 0.55, 0.90))   # bề rộng quy ước thân dầm
+        _zb_b = cao_dd                 # đáy dầm
+        _zb_t = cao_dd + H_dam         # đỉnh dầm (sát đáy bản)
+        for _id in range(_ndam_v):
+            _xc = _xf_v + _id * _kcd_v
+            _poly(fig, [_xc - _wb_v/2, _xc + _wb_v/2, _xc + _wb_v/2, _xc - _wb_v/2],
+                  [_zb_b, _zb_b, _zb_t, _zb_t],
+                  _C["dam"], _C["dam_dk"],
+                  "Dầm chủ" if _id == 0 else "", showlegend=(_id == 0))
+
     # Bản mặt cầu
     _poly(fig, [-bc/2, bc/2, bc/2, -bc/2],
           [cao_dd + H_dam, cao_dd + H_dam, z_deck, z_deck],
           _C["ban"], _C["btong_dk"], "Bản mặt cầu")
 
-    # Lan can (ký hiệu)
-    for sy in [-1, 1]:
-        _poly(fig,
-              [sy * bc/2 - sy*0.3, sy * bc/2, sy * bc/2, sy * bc/2 - sy*0.3],
-              [z_deck, z_deck, z_deck + 1.1, z_deck + 1.1],
-              _C["lan_can"], "#2c3e50",
-              "Lan can" if sy == -1 else "", showlegend=(sy == -1))
+    # ── Lan can (mặt cắt thư viện) — ĐẶT TRÊN BẢN MẶT CẦU, mặt ngoài tại ±bc/2 ──
+    _rails_vt = _resolve_railings(d)
+    _lc_vt = (_rails_vt or {}).get("lan_can")
+    if _lc_vt and _lc_vt.get("outer"):
+        _pm0 = [[p[0] / 1000.0, p[1] / 1000.0] for p in _lc_vt["outer"]]
+        _pm, _ye_vt, _bz_vt = _rail_place(_pm0, bc)   # move khối + drape ra mép
+        for sy in (-1, 1):
+            xs = [sy * (yy + _ye_vt) for yy, _ in _pm]
+            zs = [z_deck + zz - _bz_vt for _, zz in _pm]
+            _poly(fig, xs, zs, _C["lan_can"], "#2c3e50",
+                  "Lan can" if sy == -1 else "", showlegend=(sy == -1))
+    else:
+        for sy in [-1, 1]:            # fallback: ký hiệu hộp tham số cũ
+            _poly(fig,
+                  [sy * bc/2 - sy*0.3, sy * bc/2, sy * bc/2, sy * bc/2 - sy*0.3],
+                  [z_deck, z_deck, z_deck + 1.1, z_deck + 1.1],
+                  _C["lan_can"], "#2c3e50",
+                  "Lan can" if sy == -1 else "", showlegend=(sy == -1))
+
+    # ── Giải phân cách giữa (nếu tiêu chuẩn yêu cầu) — đặt tim, trên bản mặt cầu ─
+    _gpc_vt = (_rails_vt or {}).get("giai_phan_cach")
+    if _gpc_vt and _gpc_vt.get("outer"):
+        _pg_vt = [[p[0] / 1000.0, p[1] / 1000.0] for p in _gpc_vt["outer"]]
+        _zg = min(z for _, z in _pg_vt)
+        _poly(fig, [yy for yy, _ in _pg_vt], [z_deck + zz - _zg for _, zz in _pg_vt],
+              _C["lan_can"], "#2c3e50", "Giải phân cách", showlegend=True)
 
     # Dimensions chung
     _dim_h(fig, z_deck + 1.5, -bc/2, bc/2, f"B_cầu = {bc:.1f} m", dy=0)
@@ -3601,11 +3741,13 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
         # MỐ THƯ VIỆN: mặt cắt DỌC thật (vai kê = đáy dầm, đáy bệ = ĐTN−0.5).
         _PBa = _get_PB()
         _zb_mo = h_tn - 0.5
+        # Đáy dầm PHÍA MỐ = đáy dầm − độ sâu khấc (đầu dầm lên mố là đầu trơn).
+        _seat_mo = _abut_seat_z(g["cao_dd"], pier_assembly)
         # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn cùng nét THẤY, 1 chú giải "Mố"
         # (cánh trước, thân sau → thân nổi trên, dầm kê đúng vai kê thân).
         _el_pl = _PBa.abutment_elevation_polys(
             abutment_assembly, x_face=0.0, out_dir=1.0, z_base=_zb_mo,
-            seat_z=g["cao_dd"])
+            seat_z=_seat_mo)
         _el_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
         _seen = False
         for _pl in _el_pl:
