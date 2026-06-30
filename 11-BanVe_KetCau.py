@@ -68,6 +68,19 @@ _DIM_TXT = 9
 _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 KHO_HO_DAM_MO = 0.10  # m — khoảng hở (khe co giãn) đầu dầm ↔ mặt trước tường đỉnh mố
 
+
+def _abut_seat_z(cao_dd, pier_assembly):
+    """Cao độ VAI KÊ (đáy dầm) PHÍA MỐ. Dầm SPT lên mố là ĐẦU TRƠN (không khấc)
+    nên đáy dầm phía mố HẠ THẤP so với phía trụ đúng bằng ĐỘ SÂU KHẤC xà mũ →
+    tường thân phần kê dầm thấp lại (đúng cấu tạo, không bị cao như phía trụ).
+    pier_assembly=None (không có khấc) → giữ nguyên = cao_dd."""
+    try:
+        nd = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
+              if pier_assembly else 0.0)
+    except Exception:
+        nd = 0.0
+    return float(cao_dd) - float(nd or 0.0)
+
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None,
           lw=1.5, dash=None):
@@ -1244,11 +1257,13 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             # lùi 0.10m sau đầu dầm (đầu dầm tại xm) → khe co giãn 100mm.
             _u_bw = _PB.abut_backwall_u_m(abutment_assembly)
             _xf_mo = xm - sign * (KHO_HO_DAM_MO + _u_bw)
+            # Đáy dầm PHÍA MỐ = đáy dầm trụ − độ sâu khấc (đầu dầm lên mố là đầu trơn).
+            _seat_mo = _abut_seat_z(z_dam_b, pier_assembly)
             _mo_allx = []; _mo_allz = []
             for _pl in _PB.abutment_elevation_polys(
-                    abutment_assembly, H_tru=(z_cap_t - _z_base_mo),
+                    abutment_assembly, H_tru=(_seat_mo - _z_base_mo),
                     x_face=_xf_mo, out_dir=sign, z_base=_z_base_mo,
-                    seat_z=z_dam_b):       # vai kê = đáy dầm; ĐỈNH bệ = ĐTN−0.5
+                    seat_z=_seat_mo):      # vai kê = đáy dầm MỐ; ĐỈNH bệ = ĐTN−0.5
                 _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["be_dk"],
                       (_pl["name"] if side == "Trái" else ""),
                       showlegend=(side == "Trái"))
@@ -2723,13 +2738,15 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             if _mo_model:
                 _zt_mo    = float(np.interp(xm, lt_v, vz_v))   # ĐTN tại mố
                 _zbase_mo = _zt_mo - 0.5
-                _Htru_mo  = max(0.5, cao_dd - _zbase_mo)        # đỉnh mố = đáy dầm
+                # Đáy dầm PHÍA MỐ = đáy dầm − độ sâu khấc (đầu dầm lên mố đầu trơn).
+                _seat_mo3d = _abut_seat_z(cao_dd, d.get("_pier_model"))
+                _Htru_mo  = max(0.5, _seat_mo3d - _zbase_mo)    # đỉnh mố = đáy dầm mố
                 _xf_mo3d  = xm - sgn * (KHO_HO_DAM_MO
                                         + _PBm2.abut_backwall_u_m(_mo_model))  # hở 100mm
                 try:
                     _mtr = _PBm2.build_abutment_mesh_traces(
                         _mo_model, H_tru=_Htru_mo, x_face=_xf_mo3d,
-                        out_dir=sgn, z_base=_zbase_mo, seat_z=cao_dd,
+                        out_dir=sgn, z_base=_zbase_mo, seat_z=_seat_mo3d,
                         target_width=bc)       # co bề rộng mố theo bề rộng cầu
                 except Exception as _me:
                     print(f"[add_all] mố lỗi: {_me}"); _mtr = []
@@ -3154,10 +3171,12 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             _PBa = _get_PB()
             _z_base_mo = h_tn - 0.5
             _is_back = (mo_view == 'sau')
+            # Đáy dầm PHÍA MỐ = đáy dầm − độ sâu khấc (đầu dầm lên mố là đầu trơn).
+            _seat_mo = _abut_seat_z(cao_dd, pier_assembly)
             # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn (thân + cánh); nét thấy/khuất
             # đảo theo hướng nhìn (trước = từ sông, sau = từ tuyến về sông).
             _mcn_pl = _PBa.abutment_mcn_polys(
-                abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo,
+                abutment_assembly, z_seat=_seat_mo, z_base=_z_base_mo,
                 target_width=bc, back=_is_back)  # co bề rộng mố theo bề rộng cầu
             # Vẽ SAU mố (nét khuất) trước → THÂN/BỆ (nét thấy) đè lên trên.
             _mcn_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
@@ -3178,9 +3197,9 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                            key=lambda r: r[1] - r[0], default=(-_mw, _mw))
             _seat_dash = "dash" if _is_back else None
             _seat_col  = "#e67e22"
-            # Đường vai kê (đáy dầm) chạy suốt bề rộng kê
+            # Đường vai kê (đáy dầm MỐ = đáy dầm trụ − khấc) chạy suốt bề rộng kê
             fig.add_trace(go.Scatter(
-                x=[_body_yr[0], _body_yr[1]], y=[cao_dd, cao_dd], mode="lines",
+                x=[_body_yr[0], _body_yr[1]], y=[_seat_mo, _seat_mo], mode="lines",
                 line=dict(color=_seat_col, width=2.2, dash=_seat_dash),
                 name="Vai kê dầm (đáy dầm)", showlegend=True))
             # Đá kê gối tại từng vị trí dầm (gối kê đầu dầm)
@@ -3195,7 +3214,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                 if not (_body_yr[0] + 0.05 <= _xg <= _body_yr[1] - 0.05):
                     continue
                 _poly(fig, [_xg - _w_g/2, _xg + _w_g/2, _xg + _w_g/2, _xg - _w_g/2],
-                      [cao_dd, cao_dd, cao_dd + _h_g, cao_dd + _h_g],
+                      [_seat_mo, _seat_mo, _seat_mo + _h_g, _seat_mo + _h_g],
                       ("rgba(0,0,0,0)" if _is_back else "#7f8c8d"),
                       ("#1f9ed1" if _is_back else "#2c3e50"),
                       "Đá kê gối" if not _shown_g else "", showlegend=(not _shown_g),
@@ -3722,11 +3741,13 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
         # MỐ THƯ VIỆN: mặt cắt DỌC thật (vai kê = đáy dầm, đáy bệ = ĐTN−0.5).
         _PBa = _get_PB()
         _zb_mo = h_tn - 0.5
+        # Đáy dầm PHÍA MỐ = đáy dầm − độ sâu khấc (đầu dầm lên mố là đầu trơn).
+        _seat_mo = _abut_seat_z(g["cao_dd"], pier_assembly)
         # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn cùng nét THẤY, 1 chú giải "Mố"
         # (cánh trước, thân sau → thân nổi trên, dầm kê đúng vai kê thân).
         _el_pl = _PBa.abutment_elevation_polys(
             abutment_assembly, x_face=0.0, out_dir=1.0, z_base=_zb_mo,
-            seat_z=g["cao_dd"])
+            seat_z=_seat_mo)
         _el_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
         _seen = False
         for _pl in _el_pl:
