@@ -1154,14 +1154,37 @@ def _abut_body_loft_mesh(secA, secB, y0, B, x_face, out_dir, zmap,
                      hovertemplate=f"{name}<extra></extra>")
 
 
+def _clip_poly_w(poly, wc, keep_below):
+    """Cắt đa giác (list [u,w]) tại đường ngang w=wc. keep_below=True → giữ phần
+    w<=wc (BỆ); False → giữ phần w>=wc (TƯỜNG). Thêm điểm giao tại cạnh cắt qua."""
+    if not poly:
+        return []
+    pts = poly[:-1] if poly[0] == poly[-1] else poly
+    n = len(pts)
+    inside = (lambda w: w <= wc + 1e-9) if keep_below else (lambda w: w >= wc - 1e-9)
+    out = []
+    for i in range(n):
+        a = pts[i]; b = pts[(i + 1) % n]
+        ai, bi = inside(a[1]), inside(b[1])
+        if ai:
+            out.append([a[0], a[1]])
+        if ai != bi and abs(b[1] - a[1]) > 1e-9:
+            t = (wc - a[1]) / (b[1] - a[1])
+            out.append([a[0] + t * (b[0] - a[0]), wc])
+    return out
+
+
 def abut_body_traces(layers, zmap, x_face, out_dir, color,
-                     name="Tường thân", target_width=None):
+                     name="Tường thân", target_width=None, ftop_w=None,
+                     be_color=None, be_name="Bệ mố"):
     """Render tường thân: list đoạn [{section,B,loft}] xếp NGANG cầu (căn giữa
-    tim cầu y=0), đoạn loft vuốt sang đoạn sau; còn lại đùn thẳng.
-    zmap(w, sec_wmin)→z. target_width: CO/GIÃN tổng bề rộng ngang = bề rộng cầu."""
+    tim cầu y=0), đoạn loft vuốt sang đoạn sau; còn lại đùn thẳng. zmap(w,wmin)→z.
+    ftop_w (đỉnh bệ) cho → TÁCH mỗi đoạn thành BỆ (dưới) + TƯỜNG (trên) để nhận
+    diện bệ mố. target_width: co/giãn tổng bề rộng ngang = bề rộng cầu."""
     layers = [l for l in (layers or []) if (l.get("section") or {}).get("outer")]
     if not layers:
         return []
+    be_color = be_color or _COL["be"]
     total_B = abut_body_total_B(layers)
     _fB = (float(target_width) / total_B) if (target_width and total_B > 1e-6) else 1.0
     y = -total_B * _fB / 2.0
@@ -1171,7 +1194,21 @@ def abut_body_traces(layers, zmap, x_face, out_dir, color,
         _B = float(lay.get("B", 8.0) or 8.0) * _fB
         secA = lay["section"]
         nm = f"{name} #{i + 1}" if multi else name
-        if lay.get("loft") and i + 1 < len(layers):
+        _is_loft = bool(lay.get("loft")) and i + 1 < len(layers)
+        if ftop_w is not None and not _is_loft:
+            # TÁCH bệ (dưới ftop) + tường (trên ftop) → nhận diện BỆ MỐ riêng.
+            for s in _section_solids(secA):
+                foot = _clip_poly_w(s["outer"], ftop_w, True)
+                wall = _clip_poly_w(s["outer"], ftop_w, False)
+                if len(foot) >= 3:
+                    out.append(_abut_body_straight_mesh(
+                        {"outer": foot, "holes": []}, y, _B, x_face, out_dir,
+                        zmap, be_color, be_name))
+                if len(wall) >= 3:
+                    out.append(_abut_body_straight_mesh(
+                        {"outer": wall, "holes": []}, y, _B, x_face, out_dir,
+                        zmap, color, nm))
+        elif _is_loft:
             secB = layers[i + 1]["section"]
             out.append(_abut_body_loft_mesh(secA, secB, y, _B, x_face, out_dir,
                                             zmap, color, nm))
@@ -1274,11 +1311,24 @@ def build_abutment_mesh_traces(mo: dict, H_tru: float = None, x_face: float = 0.
     than = p["parts"]["than"]
     layers = abut_body_layers(than)
     zmap = _abut_zmap(layers, z_base, seat_z, H_tru, than)
+    # Nhận diện ĐỈNH BỆ → tách khối BỆ MỐ riêng trong 3D (đáy mố là 1 bệ liền).
+    _sw, _wb = _abut_seat_w(layers)
+    _ftop = _abut_footing_top_w(layers, _sw, _wb) if (_sw and _wb) else None
 
-    # TƯỜNG THÂN (gồm bệ): các đoạn mặt cắt dọc xếp theo NGANG cầu, loft vuốt mượt.
+    # TƯỜNG THÂN + BỆ: các đoạn mặt cắt dọc xếp theo NGANG cầu, loft vuốt mượt.
     traces = abut_body_traces(layers, zmap, x_face, out_dir,
-                              _COL["than"], L["than"], target_width=target_width)
-    return [t for t in traces if t is not None]
+                              _COL["than"], L["than"], target_width=target_width,
+                              ftop_w=_ftop, be_color=_COL["be"], be_name=L["be"])
+    traces = [t for t in traces if t is not None]
+    _seen = set()                       # gộp chú giải trùng (Bệ mố / Tường thân)
+    for t in traces:
+        _n = getattr(t, "name", "") or ""
+        try:
+            t.showlegend = bool(_n) and (_n not in _seen)
+        except Exception:
+            pass
+        _seen.add(_n)
+    return traces
 
 
 def abutment_elevation_polys(mo: dict, H_tru: float = None, x_face: float = 0.0,
