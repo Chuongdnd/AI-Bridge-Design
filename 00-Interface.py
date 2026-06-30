@@ -324,6 +324,12 @@ try:
     KL = _iutil.module_from_spec(_kl_spec)
     _kl_spec.loader.exec_module(KL)
 
+    # ── Suất vốn đầu tư cầu (Bảng 76) → ước giá trị công trình ──────────────
+    _sdt_spec = _iutil.spec_from_file_location(
+        "suat_dau_tu", os.path.join(_bb_dir, "utils", "suat_dau_tu.py"))
+    SDT = _iutil.module_from_spec(_sdt_spec)
+    _sdt_spec.loader.exec_module(SDT)
+
 except Exception as e:
     st.error(f"Lỗi kết nối Module: {e}")
     st.stop()
@@ -6369,13 +6375,14 @@ with _col_main:
             # ── Sub-tabs ────────────────────────────────────────────────────
             (tab_3d, tab_btc, tab_mcn_vt,
              tab_spt, tab_thkl, tab_dutoan,
-             tab_export) = st.tabs([
+             tab_suat, tab_export) = st.tabs([
                 "🏗️ 3D Tổng hợp"  + (" 🗺️" if has_terr else " (sơ đồ)"),
                 "📋 Bố trí chung",
                 "✂️ MCN Mố/Trụ",
                 "🔩 Chi tiết dầm",
                 "📊 THKL",
                 "💰 Dự toán",
+                "💵 Suất đầu tư",
                 "📤 Xuất hồ sơ",
             ])
     
@@ -6984,13 +6991,28 @@ with _col_main:
                         _f_mcnvt = BVK.ve_mcn_vi_tri(
                             d, vi_tri=_selected_vt, df_geology=_df_geo,
                             pier_assembly=_pa_tru, x_half=_xh,
-                            abutment_assembly=_resolve_assembly(d, "mo"))
+                            abutment_assembly=_resolve_assembly(d, "mo"),
+                            mo_view='truoc')
                         PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
                         st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt cắt ngang: {_e}")
+                    # Với MỐ: bổ sung MCN SAU MỐ (nhìn từ tuyến về sông).
+                    if _selected_vt in ("mo_trai", "mo_phai"):
+                        try:
+                            _f_mcnvt_s = BVK.ve_mcn_vi_tri(
+                                d, vi_tri=_selected_vt, df_geology=_df_geo,
+                                pier_assembly=_pa_tru, x_half=_xh,
+                                abutment_assembly=_resolve_assembly(d, "mo"),
+                                mo_view='sau')
+                            PLOT.aspect_control(_f_mcnvt_s, "mcn_vitri_sau")
+                            st.plotly_chart(_f_mcnvt_s,
+                                            use_container_width=True,
+                                            config={"scrollZoom": True, "displayModeBar": True})
+                        except Exception as _e:
+                            st.error(f"Lỗi vẽ MCN sau mố: {_e}")
                 with _colR:
                     try:
                         _f_mbc = BVK.ve_mat_bang_coc(d, vi_tri=_selected_vt)
@@ -7018,16 +7040,23 @@ with _col_main:
                     _is_mo_vt = _selected_vt in ("mo_trai", "mo_phai")
                     _bc_vt    = float(d.get("bc", 12.0))   # bề rộng cầu → co xà mũ/mố
                     if _is_mo_vt:
-                        # KHỚP mố trong 3D toàn cầu: cùng model + co bề rộng theo cầu
+                        # KHỚP mố thực của cầu: cùng model + co bề rộng theo cầu +
+                        # NEO vai kê=đáy dầm, đỉnh bệ=ĐTN−0.5 (như MCN 2D) → 3D
+                        # đồng bộ chiều cao & vị trí với mố trên cầu.
                         _asm_vt  = d.get("_mo_model") or _resolve_assembly(d, "mo")
                         _Hmo_vt  = float(d.get("H_tru_est") or 0) or None
+                        _cao_dd_vt = float(d.get("cao_day_dam", (_Hmo_vt or 5.0) + 5.0))
+                        _zbase_vt  = float(d.get("h_tn_tb", 2.0)) - 0.5
                         _fig3d_vt = (PB.build_abutment_preview_fig(
-                                        _asm_vt, H_tru=_Hmo_vt, target_width=_bc_vt)
+                                        _asm_vt, H_tru=_Hmo_vt, target_width=_bc_vt,
+                                        seat_z=_cao_dd_vt, z_base=_zbase_vt)
                                      if _asm_vt else None)
                     else:
-                        # KHỚP trụ trong 3D toàn cầu: cùng _pier_model, H_total = H_trụ
-                        # + 2.30 (đáy bệ→đỉnh xà mũ), cap_width = bề rộng cầu.
-                        _asm_vt  = d.get("_pier_model") or _pa_tru
+                        # KHỚP trụ: dùng _pa_tru VỪA dựng lại (đã áp khoảng cách cột/
+                        # bề rộng trụ mới) — KHÔNG dùng d["_pier_model"] (cache cũ từ
+                        # lúc tính, chưa có thông số vừa nhập → 3D không cập nhật).
+                        # H_total = H_trụ + 2.30 (đáy bệ→đỉnh xà mũ); cap_width = b.rộng cầu.
+                        _asm_vt  = _pa_tru or d.get("_pier_model")
                         _Hpier_vt = float(d.get("H_tru_est", 5.0)) + 2.30
                         _fig3d_vt = (PB.build_pier_preview_fig(
                                         _asm_vt, H_tru=_Hpier_vt, cap_width=_bc_vt)
@@ -7427,6 +7456,76 @@ with _col_main:
                                f"(chưa gồm phụ trợ, thiết bị, các hệ số chi phí).")
                 except Exception as _edt:
                     st.error(f"Lỗi dự toán: {_edt}")
+
+            # ── TAB: Giá trị theo SUẤT VỐN ĐẦU TƯ ─────────────────────────
+            with tab_suat:
+                st.markdown("##### 💵 Giá trị công trình theo SUẤT VỐN ĐẦU TƯ — "
+                            + selected_ribbon)
+                st.caption("Ước nhanh giá trị cầu = **suất vốn đầu tư** (Bảng 76 — "
+                           "suất vốn đầu tư công trình cầu đường bộ) × **diện tích "
+                           "mặt cầu**. Dùng cho tổng mức đầu tư SƠ BỘ / tham khảo.")
+                _kcn_s  = d.get("kcn_result") or d.get("ai_result") or {}
+                _geo_s  = d.get("geo_logic") or {}
+                _mong_s = d.get("mong_result") or {}
+                _L_cau   = float(_geo_s.get("L_cau", 0) or 0)
+                _w_def   = float(d.get("bc") or d.get("B") or 0) or 12.0
+                _L_nhip  = float(_kcn_s.get("chieu_dai", 0) or 0)
+                _loai_dam  = _kcn_s.get("loai_dam", "")
+                _loai_mong = _mong_s.get("loai_mong", "")
+
+                _c1, _c2 = st.columns(2)
+                _len = _c1.number_input(
+                    "Chiều dài cầu L (m)", 1.0, 5000.0,
+                    float(_L_cau or 100.0), 1.0, key=f"sdt_len_{selected_ribbon}")
+                _wid = _c2.number_input(
+                    "Bề rộng cầu B (m)", 1.0, 100.0,
+                    float(_w_def), 0.5, key=f"sdt_wid_{selected_ribbon}")
+                _area = SDT.deck_area(_len, _wid)
+
+                _boh = st.checkbox("Cầu bộ hành (dầm dàn thép)", value=False,
+                                   key=f"sdt_boh_{selected_ribbon}")
+                _sug = SDT.suggest(_loai_dam, _loai_mong, _L_nhip, bo_hanh=_boh)
+                _codes = [r["code"] for r in SDT.SUAT_DAU_TU]
+                _fmt = {r["code"]: f"{r['code']} · {r['nhom']} · {r['ten']} "
+                                   f"({r['suat']:.3f} tr/m²)" for r in SDT.SUAT_DAU_TU}
+                st.caption(f"🤖 Tự khớp theo phương án: dầm **{_loai_dam or '?'}**, "
+                           f"móng **{_loai_mong or '?'}**, nhịp **{_L_nhip or '?'}m** "
+                           f"→ đề xuất **{_sug}**. Có thể đổi bên dưới.")
+                _cur = d.get("suat_code") or _sug
+                _idx = _codes.index(_cur) if _cur in _codes else _codes.index(_sug)
+                _sel_code = st.selectbox(
+                    "Loại kết cấu cầu (mã suất)", _codes, index=_idx,
+                    format_func=lambda c: _fmt[c], key=f"sdt_code_{selected_ribbon}")
+                d["suat_code"] = _sel_code
+
+                _r = SDT.compute(_area, _sel_code)
+                _m1, _m2, _m3 = st.columns(3)
+                _m1.metric("Diện tích mặt cầu", f"{_area:,.0f} m²",
+                           help=f"{_len:.1f} m × {_wid:.1f} m")
+                _m2.metric("Suất vốn đầu tư", f"{_r['suat']:.3f} tr/m²")
+                _m3.metric("💵 Giá trị công trình", f"{_r['gia_tri']/1000:,.2f} tỷ đ",
+                           help=f"{_r['gia_tri']:,.1f} triệu đồng")
+                _b1, _b2 = st.columns(2)
+                _b1.metric("• Trong đó chi phí xây dựng",
+                           f"{_r['gia_tri_xd']/1000:,.2f} tỷ đ",
+                           help=f"suất XD {_r['cp_xd']:.3f} tr/m²")
+                _b2.metric("• Trong đó chi phí thiết bị",
+                           (f"{_r['gia_tri_tb']/1000:,.2f} tỷ đ" if _r['cp_tb'] else "—"),
+                           help="Bảng 76 không tách chi phí thiết bị cho cầu đường bộ.")
+                st.success(
+                    f"**{_r['ten']}** → **{_r['gia_tri']:,.1f} triệu đồng "
+                    f"≈ {_r['gia_tri']/1000:,.2f} tỷ đồng** "
+                    f"(suất {_r['suat']:.3f} tr/m² × {_area:,.0f} m²).")
+                st.caption("Đơn vị suất gốc bảng: 1.000 đ/m² (= triệu đồng/m²). Đây là "
+                           "tổng mức ĐẦU TƯ SƠ BỘ tham khảo, chưa gồm các hệ số/khoản "
+                           "mục riêng của dự án (GPMB, dự phòng, trượt giá…).")
+                with st.expander("📋 Bảng 76 — suất vốn đầu tư cầu (tham khảo)"):
+                    st.dataframe(pd.DataFrame([{
+                        "Mã": r["code"], "Nhóm nhịp": r["nhom"], "Kết cấu": r["ten"],
+                        "Suất (tr/m²)": r["suat"],
+                        "CP xây dựng (tr/m²)": r["cp_xd"],
+                    } for r in SDT.SUAT_DAU_TU]), use_container_width=True,
+                        hide_index=True, key=f"sdt_tbl_{selected_ribbon}")
 
     # =========================================================================
     # SO SÁNH PHƯƠNG ÁN
