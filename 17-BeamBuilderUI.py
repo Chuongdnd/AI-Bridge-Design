@@ -2413,6 +2413,17 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     if base_pts is None:
         return []
 
+    # SPT: profil đầu khấc theo gối (mố/trụ) — đầu lên mố thành đầu trơn (cao đủ)
+    _notch_prof = None
+    _loai_b = str(kcn.get("loai_dam", "") or "").lower()
+    if "super" in _loai_b or "spt" in _loai_b or pfx == "spt":
+        try:
+            _bm = _beam_model_from_pfx(pfx, L_m)
+            _, _fillb = _resolve_beam_sections(pfx)
+            _notch_prof = _build_notch_profiles(_bm, _fillb)
+        except Exception:
+            _notch_prof = None
+
     # Dầm RIÊNG cho nhịp chính (nếu khai báo dầm chính khác nhịp dẫn)
     sl       = (d or {}).get("span_layout") or {}
     main_pfx = f"{pfx}_main"
@@ -2443,6 +2454,10 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     for i_nhip, (span_x0, span_x1) in enumerate(spans):
         full_pts = (main_pts if (main_pts is not None and i_nhip == main_idx)
                     else base_pts)
+        if _notch_prof is not None:                            # SPT: đầu khấc theo gối
+            _np = _notch_prof.get(_spt_support_notch(i_nhip, _ns))
+            if _np:
+                full_pts = _np
         _off0 = _cap_gap / 2.0 if i_nhip > 0 else 0.0          # gối trái là trụ?
         _off1 = _cap_gap / 2.0 if i_nhip < _ns - 1 else 0.0    # gối phải là trụ?
         span_x0 = span_x0 + _off0
@@ -2589,6 +2604,60 @@ def _build_notch_rings(base_m, L_mm: float, fill_sec: str, N: int = 28):
                 out[(kl, kr)] = _beam_rings(m2, N)
             except Exception:
                 return None
+    return out
+
+
+def _build_notch_profiles(base_m, fill_sec: str):
+    """{(khac_trai,khac_phai): [(x_mm,h_mm)]} profil CHIỀU CAO dầm theo cấu hình
+    khấc (cho trắc dọc 2D), suy từ mô hình gốc giống _build_notch_rings. None nếu
+    dầm không có đoạn đầu khấc riêng."""
+    if base_m is None:
+        return None
+    bb = _get_bb()
+    try:
+        full = [dict(s) for s in bb._resolve_segments(base_m)]
+    except Exception:
+        return None
+    if not full:
+        return None
+    end_sec = full[0].get("section")
+    if not end_sec or end_sec == fill_sec:
+        return None
+
+    def _h(name):
+        s = base_m.sections.get(name)
+        if not s or not getattr(s, "outer", None):
+            return None
+        zs = [p[1] for p in s.outer]
+        return abs(min(zs)) if zs else None
+
+    out = {}
+    for kl in (True, False):
+        for kr in (True, False):
+            segs = [dict(s) for s in full]
+            if not kl:
+                i = 0
+                while (i < len(segs) and segs[i].get("type") == "constant"
+                       and segs[i].get("section") == end_sec):
+                    segs[i]["section"] = fill_sec; i += 1
+            if not kr:
+                i = len(segs) - 1
+                while (i >= 0 and segs[i].get("type") == "constant"
+                       and segs[i].get("section") == end_sec):
+                    segs[i]["section"] = fill_sec; i -= 1
+            pts = []; x = 0.0
+            for s in segs:
+                slen = float(s.get("length", 0) or 0)
+                if slen <= 0:
+                    continue
+                if s.get("type") == "constant":
+                    h = _h(s.get("section")) or 0
+                    pts.append((x, h)); pts.append((x + slen, h))
+                else:
+                    hf = _h(s.get("from_sec")) or 0; ht = _h(s.get("to_sec")) or 0
+                    pts.append((x, hf)); pts.append((x + slen, ht))
+                x += slen
+            out[(kl, kr)] = pts
     return out
 
 
