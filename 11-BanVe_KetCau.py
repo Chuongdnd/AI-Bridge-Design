@@ -2580,7 +2580,8 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 try:
                     _mtr = _PBm2.build_abutment_mesh_traces(
                         _mo_model, H_tru=_Htru_mo, x_face=_xf_mo3d,
-                        out_dir=sgn, z_base=_zbase_mo, seat_z=cao_dd)
+                        out_dir=sgn, z_base=_zbase_mo, seat_z=cao_dd,
+                        target_width=bc)       # co bề rộng mố theo bề rộng cầu
                 except Exception as _me:
                     print(f"[add_all] mố lỗi: {_me}"); _mtr = []
                 for _tr in _mtr:
@@ -3001,7 +3002,8 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             _z_base_mo = h_tn - 0.5
             _seen_mo = set()
             for _pl in _PBa.abutment_mcn_polys(
-                    abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo):
+                    abutment_assembly, z_seat=cao_dd, z_base=_z_base_mo,
+                    target_width=bc):       # co bề rộng mố theo bề rộng cầu
                 _nm = _pl["name"]; _sl = _nm not in _seen_mo; _seen_mo.add(_nm)
                 _poly(fig, _pl["ys"], _pl["zs"], _pl["color"], _C["be_dk"],
                       _nm if _sl else "", showlegend=_sl)
