@@ -731,13 +731,15 @@ def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"
                            RepresentationContexts=[geo_ctx],
                            UnitsInContext=units)
 
-    # Placement của IfcSite: đặt tại tọa độ VN-2000 thực tế
-    sp_origin = f.create_entity("IfcCartesianPoint", Coordinates=[x_off, y_off, 0.0])
-    sp_ax     = f.create_entity("IfcAxis2Placement3D",
-                                 Location=sp_origin,
-                                 Axis=f.create_entity("IfcDirection", DirectionRatios=[0.0, 0.0, 1.0]),
-                                 RefDirection=f.create_entity("IfcDirection", DirectionRatios=[1.0, 0.0, 0.0]))
-    site_pl   = f.create_entity("IfcLocalPlacement", RelativePlacement=sp_ax)
+    # Placement tại GỐC (toạ độ đã căn giữa). KHÔNG đặt site ở VN-2000 tuyệt đối
+    # (≈590km) — sẽ nằm xa gốc khiến Revit không hiển thị.
+    def _id_axis():
+        return f.create_entity(
+            "IfcAxis2Placement3D",
+            Location=f.create_entity("IfcCartesianPoint", Coordinates=[0.0, 0.0, 0.0]),
+            Axis=f.create_entity("IfcDirection", DirectionRatios=[0.0, 0.0, 1.0]),
+            RefDirection=f.create_entity("IfcDirection", DirectionRatios=[1.0, 0.0, 0.0]))
+    site_pl = f.create_entity("IfcLocalPlacement", RelativePlacement=_id_axis())
 
     # Địa hình (IfcTriangulatedFaceSet)
     pt_list = f.create_entity("IfcCartesianPointList3D", CoordList=vertices)
@@ -753,20 +755,25 @@ def export_terrain_to_ifc(matrix_x, matrix_y, matrix_z, filepath, name="Terrain"
     prod_shape = f.create_entity("IfcProductDefinitionShape",
                                   Representations=[shape_rep])
 
-    # IfcSite chứa bề mặt địa hình
+    # IfcSite = vùng chứa (KHÔNG giữ shape — Revit thường không hiện geometry gắn
+    # thẳng IfcSite). Lưới đưa vào IfcBuildingElementProxy → Revit luôn hiển thị.
     site = f.create_entity("IfcSite",
                            GlobalId=ifc_guid.compress(_uuid_mod.uuid4().hex),
-                           OwnerHistory=oh,
-                           Name=name,
-                           ObjectPlacement=site_pl,
-                           Representation=prod_shape,
-                           CompositionType="ELEMENT")
-
+                           OwnerHistory=oh, Name="Site",
+                           ObjectPlacement=site_pl, CompositionType="ELEMENT")
     f.create_entity("IfcRelAggregates",
                     GlobalId=ifc_guid.compress(_uuid_mod.uuid4().hex),
-                    OwnerHistory=oh,
-                    RelatingObject=proj,
-                    RelatedObjects=[site])
+                    OwnerHistory=oh, RelatingObject=proj, RelatedObjects=[site])
+
+    terr_pl = f.create_entity("IfcLocalPlacement",
+                              PlacementRelTo=site_pl, RelativePlacement=_id_axis())
+    terr = f.create_entity("IfcBuildingElementProxy",
+                           GlobalId=ifc_guid.compress(_uuid_mod.uuid4().hex),
+                           OwnerHistory=oh, Name=name,
+                           ObjectPlacement=terr_pl, Representation=prod_shape)
+    f.create_entity("IfcRelContainedInSpatialStructure",
+                    GlobalId=ifc_guid.compress(_uuid_mod.uuid4().hex),
+                    OwnerHistory=oh, RelatingStructure=site, RelatedElements=[terr])
 
     f.write(filepath)
     return True

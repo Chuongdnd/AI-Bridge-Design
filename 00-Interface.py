@@ -28,22 +28,21 @@ for _tpl_name in ("plotly_white", "plotly_dark", "plotly", "none"):
         pass
 
 # --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
-st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Hệ thống thiết kế cầu - UTH", layout="wide", page_icon="🏗️")
 
 # ── Global CSS: ẩn toolbar + Engineering layout ──────────────────────────────
 st.markdown("""
 <style>
-/* ── Ẩn Streamlit toolbar/menu/footer ── */
-/* ── Ẩn cụm Share/GitHub/menu (stToolbar) + thu HEADER để KHÔNG che ribbon ── */
-[data-testid="stToolbar"]         { display: none !important; }
+/* ── Ẩn ký hiệu GitHub/Share/Deploy — GIỮ menu ☰ (#MainMenu) để vào
+   Settings → Theme đổi sáng/tối. Không ẩn stToolbar/stHeader để ☰ vẫn hiện. */
 [data-testid="stToolbarActions"]  { display: none !important; }
-[data-testid="stHeader"]          { height: 0 !important; min-height: 0 !important;
-    background: transparent !important; z-index: 0 !important; pointer-events: none !important; }
+.stDeployButton                   { display: none !important; }
 [data-testid="stDecoration"]      { display: none !important; }
 [data-testid="stStatusWidget"]    { display: none !important; }
-.stDeployButton                   { display: none !important; }
-#MainMenu                         { display: none !important; }
 footer                            { display: none !important; }
+/* Header trong suốt + cho click xuyên → KHÔNG che ribbon top; riêng ☰ vẫn bấm được */
+[data-testid="stHeader"]  { background: transparent !important; pointer-events: none !important; }
+[data-testid="stToolbar"] { pointer-events: auto !important; z-index: 600 !important; }
 /* Ẩn menu đa trang ở sidebar (Interface, Dia Chat, Du Toan…) — chỉ điều hướng
    bằng ribbon ở trên cùng */
 [data-testid="stSidebarNav"]      { display: none !important; }
@@ -197,6 +196,95 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
 
 </style>
 """, unsafe_allow_html=True)
+
+# ── LẬT MÀU HỘP/THẺ TỐI theo HỆ THỐNG (prefers-color-scheme) ────────────────
+# Khi hệ điều hành / Streamlit "Use system setting" ở chế độ SÁNG: các thành phần
+# tô màu tối cố định (metric, topbar, ds-card, card inline #1e1e2e/#141420/#0a1f35…,
+# dialog, chữ trắng) tự lật sang sáng. Thuần CSS @media (prefers-color-scheme:light)
+# — không nút, không JS dò → chạy chắc trên Streamlit Cloud.
+# Bắt màu theo CHỮ SỐ HEX ĐẦU (bền vững, không cần liệt kê từng mã):
+#  • Nền TỐI = background bắt đầu #0… hoặc #1… (đen/navy)  → lật SÁNG.
+#  • Chữ SÁNG/XÁM = color bắt đầu #6…–#f… (trắng, xám nhạt) → lật ĐẬM.
+#    Accent (xanh #0…, xanh lá #2…, tím #9…) giữ nguyên nếu là chữ số 0–5;
+#    #9,#a…#f là xám/trắng nên lật để đọc được.
+def _attr(prop, ch):
+    # khớp cả 'prop:#x' và 'prop: #x' (có/không dấu cách), hoa & thường
+    return (f'[style*="{prop}:#{ch}"],[style*="{prop}: #{ch}"],'
+            f'[style*="{prop}:#{ch.upper()}"],[style*="{prop}: #{ch.upper()}"]')
+
+_DARK_BG_FIRST  = ["0", "1"]                       # nền tối → sáng
+# chữ có mã đầu 4…f (trắng, xám, cyan nhạt #4fc3f7…) → lật ĐẬM; giữ 0–3
+# (xanh #007acc, xanh lá #2ecc71, xám đậm #333) vì vẫn đọc tốt trên nền sáng.
+_LT_TXT_FIRST   = ["4","5","6","7","8","9","a","b","c","d","e","f"]
+
+_LIGHT_ITEMS = [
+    ('[data-testid="stMetric"]', "background:#eef2f8 !important;border-color:#cdd5e0 !important"),
+    ('[data-testid="stMetricValue"]', "color:#1769aa !important"),
+    ('.uth-topbar', "background:#e8edf4 !important;border-bottom-color:#bcd0e8 !important"),
+    ('.ds-card', "background:#f4f6f9 !important;border-color:#cdd5e0 !important"),
+    ('[data-testid="stDialog"] > div', "background:#f4f6f9 !important"),
+    ('[data-testid="stForm"]', "background:#f4f6f9 !important;border-color:#cdd5e0 !important"),
+    ('div[data-testid="stExpander"] > details', "background:#f4f6f9 !important;border-color:#cdd5e0 !important"),
+    ('div[data-testid="stExpander"] summary', "color:#1a1f2b !important"),
+    # (1) NỀN tối #0…/#1… → sáng (cả border cùng mã)
+    (",".join(_attr("background", d) for d in _DARK_BG_FIRST),
+     "background:#eef2f8 !important;border-color:#cdd5e0 !important"),
+    # (2) tint ngữ nghĩa — đặt SAU nền chung để thắng
+    ('[style*="#1a2000"]', "background:#eafaf1 !important"),
+    ('[style*="#1f1600"]', "background:#fff8e1 !important"),
+    ('[style*="#2d0a0a"]', "background:#fdecea !important"),
+    ('[style*="#0d3d1f"]', "background:#eafaf1 !important"),
+    # (3) CHỮ sáng/xám → đậm (đặt CUỐI để thắng mọi rule nền ở trên)
+    (",".join(_attr("color", c) for c in _LT_TXT_FIRST), "color:#1a1f2b !important"),
+]
+
+def _light_css(pfx: str = "") -> str:
+    p = (pfx + " ") if pfx else ""
+    lines = []
+    for sels, decl in _LIGHT_ITEMS:
+        flat = ",".join(p + s.strip() for s in sels.split(","))
+        lines.append(f"{flat} {{{decl};}}")
+    return "\n".join(lines)
+
+# KÍCH HOẠT theo HAI đường (bù nhau):
+#  (A) @media (prefers-color-scheme: light) — khi OS/Streamlit "Use system" SÁNG.
+#  (B) class html.cau-light — JS đọc NỀN THỰC của .stApp rồi gắn class → bám đúng
+#      lựa chọn ☰ Theme của Streamlit KỂ CẢ khi OS đang Tối (trường hợp ☰=Light,
+#      Windows=Dark). Dùng !important nên thắng style inline tối.
+st.markdown(
+    "<style>\n"
+    "@media (prefers-color-scheme: light){\n" + _light_css("") + "\n}\n"
+    + _light_css("html.cau-light") + "\n"
+    "</style>",
+    unsafe_allow_html=True,
+)
+import streamlit.components.v1 as _cc_theme
+_cc_theme.html(
+    """<script>
+    (function(){
+      function isLight(d){
+        var els=[d.querySelector('[data-testid="stApp"]'),
+                 d.querySelector('.stApp'),
+                 d.querySelector('[data-testid="stMain"]'), d.body];
+        for(var i=0;i<els.length;i++){ if(!els[i]) continue;
+          var m=(getComputedStyle(els[i]).backgroundColor||'').match(/[\\d.]+/g);
+          if(m&&m.length>=3&&(m.length<4||parseFloat(m[3])>0.1)){
+            var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2]; return L>140; } }
+        return null;
+      }
+      function apply(){ try{
+        var d=window.parent.document, lt=isLight(d); if(lt===null) return;
+        d.documentElement.classList.toggle('cau-light', lt);
+        d.documentElement.classList.toggle('cau-dark', !lt);
+      }catch(e){} }
+      apply();
+      [120,300,700,1500,3000,6000].forEach(function(t){setTimeout(apply,t);});
+      try{ new MutationObserver(apply).observe(
+             window.parent.document.documentElement,
+             {attributes:true, attributeFilter:['style','class']}); }catch(e){}
+      try{ setInterval(apply, 2500); }catch(e){}
+    })();
+    </script>""", height=0)
 
 
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
@@ -1819,13 +1907,17 @@ def dialog_step3():
             "🤖 Pipeline AI: TK → Hình học → KCN → Trụ → Móng → Lớp phủ → Bản vẽ → So sánh PA</p>",
             unsafe_allow_html=True,
         )
-        submitted = st.button(
+        # on_click callback: bắt cú nhấn TIN CẬY ngay cả khi vừa sửa ô nhập
+        # (tránh phải nhấn nhiều lần). Streamlit commit mọi widget rồi mới gọi cb.
+        st.button(
             "🚀 CHẠY TÍNH TOÁN AI",
             use_container_width=True,
             type="primary",
             key="d3_submit",
+            on_click=lambda: st.session_state.update(_d3_run=True),
         )
 
+    submitted = st.session_state.pop("_d3_run", False)
     if submitted:
         d = st.session_state.wizard_draft
         mien             = d['mien']
@@ -2155,15 +2247,23 @@ def dialog_step3():
                 f"LoaiTru={res.get('tru_result',{}).get('loai_tru','?')} | "
                 f"LoaiMong={res.get('mong_result',{}).get('loai_mong','?')}"
             )
-            time.sleep(1.2)
             if n_errors == 0:
-                st.success("✅ Pipeline hoàn tất — chuyển sang Bản vẽ kỹ thuật")
+                st.success("✅ Hoàn thành khai báo & tính toán AI — chuyển sang Bản vẽ.")
+                # toast tồn tại qua rerun → người dùng thấy báo sau khi đóng hộp thoại
+                try:
+                    st.toast("✅ Hoàn thành khai báo & tính toán AI!", icon="🎉")
+                except Exception:
+                    pass
             else:
                 st.warning(
-                    f"⚠️ Pipeline hoàn tất với {n_errors} bước có cảnh báo. "
+                    f"⚠️ Hoàn thành với {n_errors} bước có cảnh báo. "
                     "Kết quả vẫn được lưu — xem chi tiết ở trên."
                 )
-            time.sleep(0.8)
+                try:
+                    st.toast(f"⚠️ Hoàn thành ({n_errors} cảnh báo).", icon="⚠️")
+                except Exception:
+                    pass
+            time.sleep(0.6)
             st.session_state.open_dialog = None
             st.session_state.wizard_draft = {}
             st.session_state.current_tab = "Phương án 1"
@@ -5703,7 +5803,7 @@ with _col_main:
             st.markdown("""
     <div style='text-align:center; padding: 32px 0 16px'>
       <div style='font-size:48px'>🏗️</div>
-      <h2 style='color:#f0f0f0; margin:8px 0 4px'>Chào mừng đến Hệ thống Thiết kế Cầu AI</h2>
+      <h2 style='color:#007acc; margin:8px 0 4px'>Chào mừng đến Hệ thống thiết kế cầu</h2>
       <p style='color:#888; font-size:14px'>UTH — Tích hợp AI và BIM tự động hóa thiết kế cầu đường bộ</p>
     </div>
     """, unsafe_allow_html=True)
@@ -6463,6 +6563,8 @@ with _col_main:
                                         _fig_t.add_trace(_spt_t)
                                 except Exception:
                                     pass
+                                # Góc xiên ĐÃ nướng vào hình học (qua _vn theo tim
+                                # tuyến) → KHÔNG hậu xử lý trượt toạ độ tuyệt đối.
                                 BVK.apply_render_mode(_fig_t, render_mode_3d)
                                 # Ẩn cấu kiện theo lựa chọn "Tùy chỉnh hiển thị"
                                 _hide3d = [g for g in _COMP_GROUPS3D
@@ -6505,8 +6607,24 @@ with _col_main:
                                     xaxis=dict(title="Lý trình (m)"),
                                     yaxis=dict(title="Ngang cầu (m)"),
                                     zaxis=dict(title="Cao độ (m)"),
+                                    # nền scene trong suốt → hiện nền trang (tự theo
+                                    # theme sáng/tối của hệ thống)
+                                    bgcolor="rgba(0,0,0,0)",
                                 ),
+                                # chữ trục xám trung tính → đọc được trên cả sáng lẫn tối
+                                font=dict(color="#8a90a0"),
                             )
+
+                            # Lưu LƯỚI cầu (mesh) đã dựng để XUẤT IFC khớp ĐÚNG 3D
+                            # đang xem (kèm he_so_z để khôi phục cao độ thực khi xuất).
+                            try:
+                                st.session_state[f"_bridge3d_{selected_ribbon}"] = (
+                                    [t for t in _fig_t.data
+                                     if getattr(t, "type", "") == "mesh3d"],
+                                    float(he_so_z) or 1.0,
+                                )
+                            except Exception:
+                                pass
 
                             st.plotly_chart(_fig_t, use_container_width=True,
                                             config={"displayModeBar": True})
@@ -6546,6 +6664,9 @@ with _col_main:
                                 st.caption("🔩 Dầm thực tế từ mô hình thư viện")
                         except Exception:
                             pass
+                        # Biến dạng XIÊN kết cấu cầu theo góc giao (bỏ qua địa
+                        # hình/mặt nước/tĩnh không theo tên nhóm).
+                        BVK.apply_skew_3d(fig_3d, d)
                         BVK.apply_render_mode(fig_3d, _rm_no_terr)
                         st.plotly_chart(fig_3d, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True})
@@ -7044,7 +7165,9 @@ with _col_main:
                 st.markdown(f"**🧊 Mô hình 3D — {_vt_label_cur}** (kéo xoay)")
                 try:
                     _is_mo_vt = _selected_vt in ("mo_trai", "mo_phai")
-                    _bc_vt    = float(d.get("bc", 12.0))   # bề rộng cầu → co xà mũ/mố
+                    # Bề rộng THẬT dọc trục xiên = bc/sin(α) → 3D chi tiết mố/trụ
+                    # dài đúng theo góc xiên (khớp mặt cắt ngang vị trí).
+                    _bc_vt    = float(d.get("bc", 12.0)) * BVK._skew_widen(d)
                     if _is_mo_vt:
                         # KHỚP mố thực của cầu: cùng model + co bề rộng theo cầu +
                         # NEO vai kê=đáy dầm, đỉnh bệ=ĐTN−0.5 (như MCN 2D) → 3D
@@ -7296,30 +7419,44 @@ with _col_main:
                         return None
 
                     def _bridge_ifc_bytes():
-                        # IFC khớp ĐÚNG 3D Tổng hợp mới nhất: dùng CÙNG builder hệ
-                        # VN-2000 (add_all_to_terrain_fig + dầm _vn2000) với he_so_z=1
-                        # (hình học THỰC). Có địa hình → bám tuyến; không có → fallback
-                        # ve_cau_3d (hệ lý trình).
+                        # ƯU TIÊN: dùng CHÍNH lưới 3D Tổng hợp đang xem (đã lưu) →
+                        # IFC khớp đúng (mố đúng hướng, dầm gác xà mũ, ĐÃ XIÊN theo
+                        # góc giao vì cache lưu sau apply_skew_3d); z_scale khôi phục
+                        # cao độ thực (chia he_so_z hiển thị).
+                        _cache = st.session_state.get(f"_bridge3d_{selected_ribbon}")
+                        if _cache and _cache[0]:
+                            _ct, _chz = _cache
+                            return IFCX.mesh_traces_to_ifc(
+                                _ct, project_name=f"Cau {selected_ribbon}",
+                                z_scale=(1.0 / _chz if _chz else 1.0))
+                        # Fallback: dựng lại bằng builder VN-2000 / ve_cau_3d, rồi
+                        # biến dạng XIÊN theo góc giao cho khớp 3D hiển thị.
                         _pfx3 = _PA_SPT_PFX.get(selected_ribbon, "spt")
                         _trs = []
                         if _df_geo is not None and not getattr(_df_geo, "empty", True):
                             try:
                                 _tmp = go.Figure()
                                 BVK.add_all_to_terrain_fig(_tmp, d, _df_geo, he_so_z=1.0)
+                                for _tb in (BBUI.get_beam_model_mesh_traces_vn2000(
+                                        d, _df_geo, 1.0, pfx=_pfx3) or []):
+                                    _tb.legendgroup = "Dầm"
+                                    _tmp.add_trace(_tb)
+                                # Góc xiên đã nướng vào _vn (add_all + builder dầm).
                                 _trs = list(_tmp.data)
-                                _trs += list(BBUI.get_beam_model_mesh_traces_vn2000(
-                                    d, _df_geo, 1.0, pfx=_pfx3) or [])
                             except Exception:
                                 _trs = []
                         if not _trs:
                             _fig3 = BVK.ve_cau_3d(
                                 d, pier_assembly=_resolve_assembly(d, "tru"),
                                 abutment_assembly=_resolve_assembly(d, "mo"))
-                            _trs = list(_fig3.data)
                             try:
-                                _trs += list(BBUI.get_beam_model_mesh_traces(d, pfx=_pfx3) or [])
+                                for _tb in (BBUI.get_beam_model_mesh_traces(d, pfx=_pfx3) or []):
+                                    _tb.legendgroup = "Dầm"
+                                    _fig3.add_trace(_tb)
                             except Exception:
                                 pass
+                            BVK.apply_skew_3d(_fig3, d)
+                            _trs = list(_fig3.data)
                         return IFCX.mesh_traces_to_ifc(_trs,
                                                        project_name=f"Cau {selected_ribbon}")
 
@@ -7330,7 +7467,8 @@ with _col_main:
                             return EXP.export_pier_ifc(d)
                         _Ht = float(d.get("H_tru_est", 5.0)) + 2.30
                         _trs = PB.build_pier_mesh_traces(
-                            _pm, H_tru=_Ht, cap_width=float(d.get("bc", 12.0)))
+                            _pm, H_tru=_Ht,
+                            cap_width=float(d.get("bc", 12.0)) * BVK._skew_widen(d))
                         return IFCX.mesh_traces_to_ifc(_trs,
                                                        project_name=f"Tru {selected_ribbon}")
 

@@ -127,6 +127,58 @@ def fig_to_dxf_bytes(fig, title: str = "BAN VE") -> bytes:
     doc = _setup_doc(title)
     msp = doc.modelspace()
 
+    # ── Font chữ MẶC ĐỊNH = Arial + DIMSTYLE chuẩn CAD ──────────────────────
+    try:
+        if "ARIAL" not in doc.styles:
+            doc.styles.add("ARIAL", font="Arial.ttf")
+        try:
+            doc.styles.get("Standard").dxf.font = "Arial.ttf"
+        except Exception:
+            pass
+    except Exception:
+        pass
+    try:
+        if "CAU" not in doc.dimstyles:
+            _ds = doc.dimstyles.add("CAU")
+            _ds.dxf.dimtxsty = "ARIAL"   # font Arial cho chữ dim
+            _ds.dxf.dimtxt   = 0.25      # cao chữ (m)
+            _ds.dxf.dimasz   = 0.22      # cỡ mũi tên
+            _ds.dxf.dimexe   = 0.12      # đường gióng vượt
+            _ds.dxf.dimexo   = 0.10      # khoảng hở gốc gióng
+            _ds.dxf.dimgap   = 0.08
+            _ds.dxf.dimdec   = 2         # 2 chữ số thập phân
+            _ds.dxf.dimlunit = 2
+    except Exception:
+        pass
+
+    # ── DIM thật (linear dim) từ dữ liệu ghi ở fig.layout.meta["cau_dims"] ──
+    _dims = []
+    try:
+        _meta = fig.layout.meta
+        if isinstance(_meta, dict):
+            _dims = list(_meta.get("cau_dims", []) or [])
+    except Exception:
+        _dims = []
+    _dim_texts = set()
+    for _dm in _dims:
+        try:
+            _kind = str(_dm[0]); _a = float(_dm[1]); _b = float(_dm[2])
+            _off = float(_dm[3]); _txt = _strip_html(_dm[4])
+            _dim_texts.add(_txt)
+            if _kind == "h":
+                _d = msp.add_linear_dim(
+                    base=((_a + _b) / 2.0, _off), p1=(_a, _off), p2=(_b, _off),
+                    dimstyle="CAU", text=(_txt or "<>"),
+                    dxfattribs={"layer": "DIMS"})
+            else:
+                _d = msp.add_linear_dim(
+                    base=(_off, (_a + _b) / 2.0), p1=(_off, _a), p2=(_off, _b),
+                    angle=90, dimstyle="CAU", text=(_txt or "<>"),
+                    dxfattribs={"layer": "DIMS"})
+            _d.render()
+        except Exception:
+            pass
+
     for tr in getattr(fig, "data", []):
         if getattr(tr, "type", "") != "scatter":
             continue
@@ -161,9 +213,11 @@ def fig_to_dxf_bytes(fig, title: str = "BAN VE") -> bytes:
     for an in (getattr(fig.layout, "annotations", None) or []):
         try:
             _txt = _strip_html(an.text)
-            if _txt:
-                msp.add_text(_txt, dxfattribs={"layer": "TEXT", "height": 0.18}
-                             ).set_placement((float(an.x), float(an.y)))
+            if not _txt or _txt in _dim_texts:   # bỏ chữ trùng với DIM đã render
+                continue
+            msp.add_text(_txt, dxfattribs={"layer": "TEXT", "height": 0.18,
+                                           "style": "ARIAL"}
+                         ).set_placement((float(an.x), float(an.y)))
         except Exception:
             pass
 
