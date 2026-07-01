@@ -1435,11 +1435,12 @@ def dialog_step2():
             c_ct1, c_ct2 = st.columns(2)
             with c_ct1:
                 n_lan_ct = st.number_input(
-                    "Số làn xe mỗi chiều:",
+                    f"Số làn xe mỗi chiều — tối thiểu {tra_ct['n_lan_moi_chieu_min']} làn/chiều:",
                     min_value=int(tra_ct["n_lan_moi_chieu_min"]),
                     value=int(tra_ct["n_lan_moi_chieu_min"]),
                     step=1,
-                    help=f"Tối thiểu {tra_ct['n_lan_moi_chieu_min']} làn/chiều (Bảng 1). "
+                    help=f"Tối thiểu {tra_ct['n_lan_moi_chieu_min']} làn/chiều (Bảng 1, "
+                         "TCVN 5729:2012). Không được nhập ít hơn mức tối thiểu. "
                          f"Thêm 1 làn = +{tra_ct['w_lan_them']:g}m mặt đường (Điều 6.8)."
                 )
                 w_le_dat_ct = st.number_input(
@@ -1496,15 +1497,17 @@ def dialog_step2():
             c_mcn1, c_mcn2 = st.columns(2)
             with c_mcn1:
                 so_lan_oto = st.number_input(
-                    "Số làn xe thiết kế:",
+                    f"Số làn xe thiết kế — tối thiểu {tra_mcn['so_lan_min']:g} làn:",
                     min_value=int(tra_mcn["so_lan_min"]), value=int(tra_mcn["so_lan_min"]), step=1,
-                    help=f"Tối thiểu {tra_mcn['so_lan_min']:g} làn theo TCVN 4054:2005."
+                    help=f"Tối thiểu {tra_mcn['so_lan_min']:g} làn theo TCVN 4054:2005. "
+                         "Không được nhập ít hơn mức tối thiểu."
                 )
                 w_lan_oto = st.number_input(
-                    "Chiều rộng 1 làn xe (m):",
+                    f"Chiều rộng 1 làn xe (m) — tối thiểu {tra_mcn['w_lan_min']:g}m:",
                     min_value=float(tra_mcn["w_lan_min"]), value=float(tra_mcn["w_lan_min"]),
                     step=0.25, format="%.2f",
-                    help=f"Tối thiểu {tra_mcn['w_lan_min']:g}m theo TCVN 4054:2005."
+                    help=f"Tối thiểu {tra_mcn['w_lan_min']:g}m theo TCVN 4054:2005. "
+                         "Không được nhập nhỏ hơn mức tối thiểu."
                 )
             with c_mcn2:
                 w_le_oto = st.number_input(
@@ -1649,14 +1652,20 @@ def dialog_step2():
             _c1, _c2 = st.columns(2)
             with _c1:
                 n_lan_dt = st.number_input(
-                    "Số làn xe:",
+                    f"Số làn xe — tối thiểu {tra_dt['so_lan_toi_thieu']} làn "
+                    f"(mong muốn {tra_dt['so_lan_mong_muon']}):",
                     min_value=tra_dt["so_lan_toi_thieu"], value=tra_dt["so_lan_toi_thieu"],
                     step=2, key="d2_n_lan_dt",
+                    help=f"Tối thiểu {tra_dt['so_lan_toi_thieu']} làn, mong muốn "
+                         f"{tra_dt['so_lan_mong_muon']} làn theo Bảng 10 — TCVN 13592:2022. "
+                         "Không được nhập ít hơn mức tối thiểu.",
                 )
                 w_lan_dt = st.number_input(
-                    "Chiều rộng 1 làn xe (m):",
+                    f"Chiều rộng 1 làn xe (m) — tối thiểu {tra_dt['w_lan_min']:.2f}m:",
                     min_value=tra_dt["w_lan_min"], value=tra_dt["w_lan_min"],
                     step=0.25, format="%.2f", key="d2_w_lan_dt",
+                    help=f"Tối thiểu {tra_dt['w_lan_min']:.2f}m theo Bảng 10 — "
+                         "TCVN 13592:2022. Không được nhập nhỏ hơn mức tối thiểu.",
                 )
             with _c2:
                 w_le_dt = st.number_input(
