@@ -246,15 +246,45 @@ def _light_css(pfx: str = "") -> str:
         lines.append(f"{flat} {{{decl};}}")
     return "\n".join(lines)
 
-# KÍCH HOẠT TỰ ĐỘNG THEO HỆ THỐNG — không nút, không JS dò (chạy chắc trên Cloud).
-# Trình duyệt tự áp khi OS/Streamlit "Use system setting" ở chế độ SÁNG.
-# Bao selector phẳng trong @media (prefers-color-scheme: light).
+# KÍCH HOẠT theo HAI đường (bù nhau):
+#  (A) @media (prefers-color-scheme: light) — khi OS/Streamlit "Use system" SÁNG.
+#  (B) class html.cau-light — JS đọc NỀN THỰC của .stApp rồi gắn class → bám đúng
+#      lựa chọn ☰ Theme của Streamlit KỂ CẢ khi OS đang Tối (trường hợp ☰=Light,
+#      Windows=Dark). Dùng !important nên thắng style inline tối.
 st.markdown(
-    "<style>@media (prefers-color-scheme: light){\n"
-    + _light_css("")
-    + "\n}</style>",
+    "<style>\n"
+    "@media (prefers-color-scheme: light){\n" + _light_css("") + "\n}\n"
+    + _light_css("html.cau-light") + "\n"
+    "</style>",
     unsafe_allow_html=True,
 )
+import streamlit.components.v1 as _cc_theme
+_cc_theme.html(
+    """<script>
+    (function(){
+      function isLight(d){
+        var els=[d.querySelector('[data-testid="stApp"]'),
+                 d.querySelector('.stApp'),
+                 d.querySelector('[data-testid="stMain"]'), d.body];
+        for(var i=0;i<els.length;i++){ if(!els[i]) continue;
+          var m=(getComputedStyle(els[i]).backgroundColor||'').match(/[\\d.]+/g);
+          if(m&&m.length>=3&&(m.length<4||parseFloat(m[3])>0.1)){
+            var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2]; return L>140; } }
+        return null;
+      }
+      function apply(){ try{
+        var d=window.parent.document, lt=isLight(d); if(lt===null) return;
+        d.documentElement.classList.toggle('cau-light', lt);
+        d.documentElement.classList.toggle('cau-dark', !lt);
+      }catch(e){} }
+      apply();
+      [120,300,700,1500,3000,6000].forEach(function(t){setTimeout(apply,t);});
+      try{ new MutationObserver(apply).observe(
+             window.parent.document.documentElement,
+             {attributes:true, attributeFilter:['style','class']}); }catch(e){}
+      try{ setInterval(apply, 2500); }catch(e){}
+    })();
+    </script>""", height=0)
 
 
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
