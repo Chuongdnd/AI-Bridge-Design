@@ -28,7 +28,7 @@ for _tpl_name in ("plotly_white", "plotly_dark", "plotly", "none"):
         pass
 
 # --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
-st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout="wide", page_icon="🏗️")
+st.set_page_config(page_title="Hệ thống thiết kế cầu - UTH", layout="wide", page_icon="🏗️")
 
 # ── Global CSS: ẩn toolbar + Engineering layout ──────────────────────────────
 st.markdown("""
@@ -5803,7 +5803,7 @@ with _col_main:
             st.markdown("""
     <div style='text-align:center; padding: 32px 0 16px'>
       <div style='font-size:48px'>🏗️</div>
-      <h2 style='color:#f0f0f0; margin:8px 0 4px'>Chào mừng đến Hệ thống Thiết kế Cầu AI</h2>
+      <h2 style='color:#007acc; margin:8px 0 4px'>Chào mừng đến Hệ thống thiết kế cầu</h2>
       <p style='color:#888; font-size:14px'>UTH — Tích hợp AI và BIM tự động hóa thiết kế cầu đường bộ</p>
     </div>
     """, unsafe_allow_html=True)

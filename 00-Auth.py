@@ -277,8 +277,8 @@ footer                           { display: none !important; }
         _sub = ("Đăng nhập hoặc đăng ký để tiếp tục" if ALLOW_SELF_REGISTER
                 else "Vui lòng đăng nhập để tiếp tục")
         st.markdown(
-            "<h2 style='text-align:center;color:#f0f0f0;margin-bottom:4px'>🏗️ Hệ thống Thiết kế Cầu AI</h2>"
-            f"<p style='text-align:center;color:#888;font-size:13px;margin-bottom:24px'>"
+            "<h2 style='text-align:center;color:#007acc;font-weight:700;margin-bottom:4px'>🏗️ Hệ thống thiết kế cầu</h2>"
+            f"<p style='text-align:center;color:#6b7280;font-size:13px;margin-bottom:24px'>"
             f"UTH — {_sub}</p>",
             unsafe_allow_html=True,
         )
