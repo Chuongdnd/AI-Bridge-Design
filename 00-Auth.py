@@ -256,8 +256,7 @@ def show_login_page():
 #MainMenu                        { display: none !important; }
 footer                           { display: none !important; }
 
-/* Nen trang login */
-.stApp { background: #0f0f1a; }
+/* Nền login: KHÔNG ép → theo theme chọn trong ☰ Settings của Streamlit */
 
 /* Bo form Streamlit */
 [data-testid="stForm"] {
