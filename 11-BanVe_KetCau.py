@@ -2745,15 +2745,14 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         _PBp = _get_PB()
         if _pier_model:
             _H_total = H_tru + 2.30                   # đáy bệ → đỉnh xà mũ
-            # ĐÁY dầm ĐẦU KHẤC (tại trụ) = cao_dd + độ sâu khấc → phải KÊ trên VAI
-            # KÊ ở cao độ đó. build_pier_mesh_traces neo ĐỈNH ụ giữa = z_base+H_total,
-            # mà vai kê = đỉnh ụ − khấc → để VAI KÊ = cao_dd+khấc thì đỉnh ụ =
-            # cao_dd + 2·khấc. (Trước đây +1·khấc → dầm kê nhầm lên ụ giữa.)
+            # Dầm vẽ ĐẦY ĐỦ, đáy dầm = cao_dd kê trên VAI KÊ = cao_dd; build_pier
+            # neo ĐỈNH ụ giữa = z_base+H_total, vai kê = đỉnh ụ − khấc → để VAI KÊ
+            # = cao_dd thì đỉnh ụ giữa = cao_dd + khấc (ụ nhô lên đỡ bản).
             try:
                 _notch3d = _PBp.cap_seat_notch_depth_m(_pier_model) or 0.0
             except Exception:
                 _notch3d = 0.0
-            _z_base_pier = (cao_dd + 2.0 * _notch3d) - _H_total  # vai kê = cao_dd+khấc
+            _z_base_pier = (cao_dd + _notch3d) - _H_total   # vai kê = cao_dd (đáy dầm)
             for i_p, xt in enumerate(piers):
                 sl = (i_p == 0)
                 try:
@@ -3289,14 +3288,10 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         _H_sec = (max(_bz_h) - min(_bz_h)) / 1000.0
     else:
         _H_sec = H_dam
-    # TRỤ: cắt qua ĐẦU DẦM KHẤC → đáy dầm (đoạn kê) NHÔ LÊN 1 độ sâu khấc so với
-    # đáy dầm giữa nhịp = mức VAI KÊ xà mũ. MỐ: đầu trơn → đáy dầm = cao_dd.
-    try:
-        _notch_pier = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
-                       if (pier_assembly and not is_mo) else 0.0) or 0.0
-    except Exception:
-        _notch_pier = 0.0
-    _z_beam_soffit = cao_dd + _notch_pier   # đáy dầm tại MCN = mức vai kê (trụ: +khấc)
+    # ĐÁY dầm = đỉnh dầm (đáy bản) − chiều cao mặt cắt THẬT → dầm vẽ ĐẦY ĐỦ hình
+    # (KHÔNG bóp dẹt, KHÔNG cắt). Xà mũ tự có VAI KÊ (kê dầm) + Ụ GIỮA (nhô, đỡ
+    # bản) do model dựng khi neo vai kê = đáy dầm này.
+    _z_beam_soffit = z_ban_b - _H_sec        # đáy dầm = mức VAI KÊ (dầm đầy đủ)
     # ĐỘ DỐC NGANG mặt cầu (đồng bộ MCN điển hình & 3D): crown tại tim (x=0), hạ
     # dần ra mép. Bản/dầm/đá kê gối/lan can bám dốc; xà mũ/thân mố giữ ĐỈNH PHẲNG
     # (đá kê gối cao thấp khác nhau để tạo dốc — đúng cấu tạo).
@@ -3504,33 +3499,23 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     # trùng khớp. KHÔNG vẽ 'hộp' cũ.
     _bm_out = (beam_mcn_outer or {}).get("outer") if beam_mcn_outer else None
     if _bm_out:
-        # Mặt cắt thư viện: z 0 ở đỉnh, âm xuống đáy. GIỮ NGUYÊN hình (KHÔNG bóp
-        # dẹt): neo ĐỈNH dầm sát đáy bản. TRỤ (đầu dầm khấc) → CẮT bỏ phần dưới đáy
-        # khấc = _z_beam_soffit (đáy dầm tại trụ = đáy khấc). MỐ (đầu trơn) → giữ
-        # nguyên chiều cao thân dầm, đáy dầm = cao_dd.
+        # Mặt cắt thư viện: z 0 ở đỉnh, âm xuống đáy. Vẽ ĐẦY ĐỦ hình (KHÔNG co,
+        # KHÔNG cắt): neo ĐỈNH dầm sát đáy bản → đáy dầm = _z_beam_soffit (= vai kê).
         _bx   = [p[0] for p in _bm_out]; _bz = [p[1] for p in _bm_out]
         _bxc  = (min(_bx) + max(_bx)) / 2.0        # căn tim ngang
         _bzmax = max(_bz)                          # đỉnh dầm (z lớn nhất, ~0)
-        _clip  = (_notch_pier > 1e-3)              # trụ: cắt đáy khấc
         _holes = (beam_mcn_outer or {}).get("holes") or []
         for _id, _xc in enumerate(_beam_cx):
             _dz = _off(_xc)                        # dầm bám dốc ngang mặt cầu
-            _zclip = _z_beam_soffit + _dz          # đáy khấc (mức vai kê)
             _xs = [_xc + (px - _bxc) / 1000.0 for px in _bx]
             _zs = [z_ban_b + _dz + (pz - _bzmax) / 1000.0 for pz in _bz]  # đỉnh=đáy bản
-            if _clip:
-                _xs, _zs = _clip_poly_above(_xs, _zs, _zclip)
-            if len(_xs) >= 3:
-                _poly(fig, _xs, _zs, _C["dam"], _C["dam_dk"],
-                      "Dầm chủ (thư viện)" if _id == 0 else "", showlegend=(_id == 0))
+            _poly(fig, _xs, _zs, _C["dam"], _C["dam_dk"],
+                  "Dầm chủ (thư viện)" if _id == 0 else "", showlegend=(_id == 0))
             for _h in _holes:                      # lỗ rỗng (dầm hộp/Super-T)
                 _hx = [_xc + (q[0] - _bxc) / 1000.0 for q in _h]
                 _hz = [z_ban_b + _dz + (q[1] - _bzmax) / 1000.0 for q in _h]
-                if _clip:
-                    _hx, _hz = _clip_poly_above(_hx, _hz, _zclip)
-                if len(_hx) >= 3:
-                    _poly(fig, _hx, _hz, "rgba(0,0,0,0)", _C["dam_dk"], "",
-                          showlegend=False, lw=0.8)
+                _poly(fig, _hx, _hz, "rgba(0,0,0,0)", _C["dam_dk"], "",
+                      showlegend=False, lw=0.8)
     else:
         # Chưa có dầm thư viện → CHỈ vẽ ký hiệu tim dầm (không dựng dầm cũ).
         for _id, _xc in enumerate(_beam_cx):
