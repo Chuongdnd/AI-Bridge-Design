@@ -3227,10 +3227,16 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     # ── Kết cấu ─────────────────────────────────────────────────────────
     # THỨ TỰ CAO ĐỘ TỪ ĐƯỜNG ĐỎ XUỐNG: đường đỏ = đỉnh bản mặt cầu → bản mặt cầu
     # (dày t_ban) → dầm (H_dam) → đá kê gối (h_goi) → tường thân mố/xà mũ.
-    z_deck = cao_dd + H_dam + t_ban    # đỉnh bản mặt cầu = ĐƯỜNG ĐỎ
-    z_ban_b = cao_dd + H_dam           # đáy bản = đỉnh dầm
+    z_deck = cao_dd + H_dam + t_ban    # đỉnh bản mặt cầu = ĐƯỜNG ĐỎ (tại TIM)
+    z_ban_b = cao_dd + H_dam           # đáy bản = đỉnh dầm (tại TIM)
     _z_beam_soffit = cao_dd     # đáy dầm tại vị trí (mố hạ theo khấc bên dưới)
     h_goi_v = max(0.12, _h_goi(d))     # chiều cao đá kê gối (gối + đá kê)
+    # ĐỘ DỐC NGANG mặt cầu (đồng bộ MCN điển hình & 3D): crown tại tim (x=0), hạ
+    # dần ra mép. Bản/dầm/đá kê gối/lan can bám dốc; xà mũ/thân mố giữ ĐỈNH PHẲNG
+    # (đá kê gối cao thấp khác nhau để tạo dốc — đúng cấu tạo).
+    _i_ng = float(d.get("i_doc_ngang", 2.0)) / 100.0
+    def _off(x):
+        return -abs(x) * _i_ng
 
     # Bố trí dầm (ngang) — khớp mặt cắt dầm THẬT + nới theo góc xiên (×_wsk).
     _ndam_g = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5) or 5)
@@ -3242,14 +3248,17 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     _beam_cx = [_xf_g + i * _kcd_g for i in range(_ndam_g)]
 
     def _draw_da_ke_goi(z_seat_top, yr, hidden=False):
-        """Đá kê gối tại từng vị trí dầm: NẰM DƯỚI đáy dầm (z_seat_top), cao
-        h_goi_v; chỉ vẽ trong bề rộng đỡ dầm yr=(y0,y1). z_seat_top = đáy dầm."""
+        """Đá kê gối tại từng vị trí dầm: ĐÁY tại đỉnh xà mũ/thân mố (PHẲNG =
+        z_seat_top−h_goi_v), ĐỈNH bám đáy dầm dốc = z_seat_top+_off(x). z_seat_top
+        = đáy dầm tại TIM; chỉ vẽ trong bề rộng đỡ dầm yr=(y0,y1)."""
         _wg = 0.50; _sh = False
+        _z_bot = z_seat_top - h_goi_v          # đỉnh xà mũ/thân mố (phẳng)
         for _xc in _beam_cx:
             if not (yr[0] + 0.05 <= _xc <= yr[1] - 0.05):
                 continue
+            _z_top = z_seat_top + _off(_xc)     # đáy dầm (bám dốc ngang)
             _poly(fig, [_xc - _wg/2, _xc + _wg/2, _xc + _wg/2, _xc - _wg/2],
-                  [z_seat_top - h_goi_v, z_seat_top - h_goi_v, z_seat_top, z_seat_top],
+                  [_z_bot, _z_bot, _z_top, _z_top],
                   ("rgba(0,0,0,0)" if hidden else "#7f8c8d"),
                   ("#1f9ed1" if hidden else "#2c3e50"),
                   "Đá kê gối" if not _sh else "", showlegend=(not _sh),
@@ -3436,26 +3445,29 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         _bzmin = min(_bz)                          # đáy dầm (z âm nhất)
         _holes = (beam_mcn_outer or {}).get("holes") or []
         for _id, _xc in enumerate(_beam_cx):
+            _dz = _off(_xc)                        # dầm bám dốc ngang mặt cầu
             _xs = [_xc + (px - _bxc) / 1000.0 for px in _bx]
-            _zs = [_z_beam_soffit + (pz - _bzmin) / 1000.0 for pz in _bz]
+            _zs = [_z_beam_soffit + _dz + (pz - _bzmin) / 1000.0 for pz in _bz]
             _poly(fig, _xs, _zs, _C["dam"], _C["dam_dk"],
                   "Dầm chủ (thư viện)" if _id == 0 else "", showlegend=(_id == 0))
             for _h in _holes:                      # lỗ rỗng (dầm hộp/Super-T)
                 _hx = [_xc + (q[0] - _bxc) / 1000.0 for q in _h]
-                _hz = [_z_beam_soffit + (q[1] - _bzmin) / 1000.0 for q in _h]
+                _hz = [_z_beam_soffit + _dz + (q[1] - _bzmin) / 1000.0 for q in _h]
                 _poly(fig, _hx, _hz, "rgba(0,0,0,0)", _C["dam_dk"], "",
                       showlegend=False, lw=0.8)
     else:
         # Chưa có dầm thư viện → CHỈ vẽ ký hiệu tim dầm (không dựng dầm cũ).
         for _id, _xc in enumerate(_beam_cx):
+            _dz = _off(_xc)
             fig.add_trace(go.Scatter(
-                x=[_xc, _xc], y=[_z_beam_soffit, z_ban_b],
+                x=[_xc, _xc], y=[_z_beam_soffit + _dz, z_ban_b + _dz],
                 mode="lines", line=dict(color=_C["dam_dk"], width=1, dash="dot"),
                 name="Tim dầm" if _id == 0 else "", showlegend=(_id == 0)))
 
-    # Bản mặt cầu — theo ĐƯỜNG ĐỎ, dày t_ban
-    _poly(fig, [-bc/2, bc/2, bc/2, -bc/2],
-          [z_ban_b, z_ban_b, z_deck, z_deck],
+    # Bản mặt cầu — theo ĐƯỜNG ĐỎ, dày t_ban, BÁM ĐỘ DỐC NGANG (crown tại tim).
+    _poly(fig, [-bc/2, 0, bc/2, bc/2, 0, -bc/2],
+          [z_ban_b + _off(-bc/2), z_ban_b, z_ban_b + _off(bc/2),
+           z_deck + _off(bc/2), z_deck, z_deck + _off(-bc/2)],
           _C["ban"], _C["btong_dk"], "Bản mặt cầu")
 
     # ── Lan can (mặt cắt thư viện) — ĐẶT TRÊN BẢN MẶT CẦU, mặt ngoài tại ±bc/2 ──
@@ -3465,15 +3477,17 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         _pm0 = [[p[0] / 1000.0, p[1] / 1000.0] for p in _lc_vt["outer"]]
         _pm, _ye_vt, _bz_vt = _rail_place(_pm0, bc)   # move khối + drape ra mép
         for sy in (-1, 1):
+            _zed = z_deck + _off(sy * bc/2)           # đỉnh bản tại mép (dốc)
             xs = [sy * (yy + _ye_vt) for yy, _ in _pm]
-            zs = [z_deck + zz - _bz_vt for _, zz in _pm]
+            zs = [_zed + zz - _bz_vt for _, zz in _pm]
             _poly(fig, xs, zs, _C["lan_can"], "#2c3e50",
                   "Lan can" if sy == -1 else "", showlegend=(sy == -1))
     else:
         for sy in [-1, 1]:            # fallback: ký hiệu hộp tham số cũ
+            _zed = z_deck + _off(sy * bc/2)
             _poly(fig,
                   [sy * bc/2 - sy*0.3, sy * bc/2, sy * bc/2, sy * bc/2 - sy*0.3],
-                  [z_deck, z_deck, z_deck + 1.1, z_deck + 1.1],
+                  [_zed, _zed, _zed + 1.1, _zed + 1.1],
                   _C["lan_can"], "#2c3e50",
                   "Lan can" if sy == -1 else "", showlegend=(sy == -1))
 
