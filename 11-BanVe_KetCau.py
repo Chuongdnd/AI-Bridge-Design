@@ -2745,13 +2745,15 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         _PBp = _get_PB()
         if _pier_model:
             _H_total = H_tru + 2.30                   # đáy bệ → đỉnh xà mũ
-            # ĐỒNG BỘ trắc dọc: ĐỈNH xà mũ (tường tai) = đáy dầm + độ sâu khấc →
-            # vai kê (recess) đúng cao_dd = đáy dầm; dầm đầu khấc gác vào khấc.
+            # ĐÁY dầm ĐẦU KHẤC (tại trụ) = cao_dd + độ sâu khấc → phải KÊ trên VAI
+            # KÊ ở cao độ đó. build_pier_mesh_traces neo ĐỈNH ụ giữa = z_base+H_total,
+            # mà vai kê = đỉnh ụ − khấc → để VAI KÊ = cao_dd+khấc thì đỉnh ụ =
+            # cao_dd + 2·khấc. (Trước đây +1·khấc → dầm kê nhầm lên ụ giữa.)
             try:
                 _notch3d = _PBp.cap_seat_notch_depth_m(_pier_model) or 0.0
             except Exception:
                 _notch3d = 0.0
-            _z_base_pier = (cao_dd + _notch3d) - _H_total   # đỉnh xà mũ = cao_dd+khấc
+            _z_base_pier = (cao_dd + 2.0 * _notch3d) - _H_total  # vai kê = cao_dd+khấc
             for i_p, xt in enumerate(piers):
                 sl = (i_p == 0)
                 try:
