@@ -95,6 +95,24 @@ def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None,
         hovertemplate=(f"<b>{name}</b><extra></extra>" if name else None),
     ))
 
+def _clip_poly_above(xs, zs, z_min):
+    """Cắt đa giác GIỮ phần z ≥ z_min (Sutherland–Hodgman 1 cạnh ngang). Dùng thể
+    hiện ĐẦU DẦM KHẤC: bỏ phần dưới đáy khấc, GIỮ NGUYÊN hình (không bóp dẹt)."""
+    n = len(xs)
+    ox, oz = [], []
+    for i in range(n):
+        x1, z1 = xs[i], zs[i]
+        x2, z2 = xs[(i + 1) % n], zs[(i + 1) % n]
+        in1 = z1 >= z_min - 1e-9
+        in2 = z2 >= z_min - 1e-9
+        if in1:
+            ox.append(x1); oz.append(z1)
+        if in1 != in2 and abs(z2 - z1) > 1e-9:
+            t = (z_min - z1) / (z2 - z1)
+            ox.append(x1 + t * (x2 - x1)); oz.append(z_min)
+    return ox, oz
+
+
 def _skew_alpha_rad(d):
     """Góc giao (radian) đã clamp 30°–90°. 90° = không xiên."""
     try:
@@ -3484,28 +3502,33 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     # trùng khớp. KHÔNG vẽ 'hộp' cũ.
     _bm_out = (beam_mcn_outer or {}).get("outer") if beam_mcn_outer else None
     if _bm_out:
-        # Mặt cắt thư viện: z 0 ở đỉnh, âm xuống đáy. ĐÁY dầm đặt tại cao_dd, co
-        # chiều cao mặt cắt về H_dam (đỉnh = đáy bản) → dầm nằm gọn dưới bản, đáy
-        # đúng cao_dd (khớp trắc dọc/3D) dù mặt cắt thư viện cao/thấp hơn H_dam.
+        # Mặt cắt thư viện: z 0 ở đỉnh, âm xuống đáy. GIỮ NGUYÊN hình (KHÔNG bóp
+        # dẹt): neo ĐỈNH dầm sát đáy bản. TRỤ (đầu dầm khấc) → CẮT bỏ phần dưới đáy
+        # khấc = _z_beam_soffit (đáy dầm tại trụ = đáy khấc). MỐ (đầu trơn) → giữ
+        # nguyên chiều cao thân dầm, đáy dầm = cao_dd.
         _bx   = [p[0] for p in _bm_out]; _bz = [p[1] for p in _bm_out]
         _bxc  = (min(_bx) + max(_bx)) / 2.0        # căn tim ngang
-        _bzmin = min(_bz)                          # đáy dầm (z âm nhất)
-        # Co cao độ mặt cắt để ĐỈNH dầm sát đáy bản, ĐÁY tại vai kê (_z_beam_soffit)
-        # → trụ: cao (H_dam−khấc) như đầu dầm khấc; mố: cao H_dam như đầu trơn.
-        _hb    = z_ban_b - _z_beam_soffit
-        _vsc   = (_hb / _H_sec) if _H_sec > 1e-6 else 1.0
+        _bzmax = max(_bz)                          # đỉnh dầm (z lớn nhất, ~0)
+        _clip  = (_notch_pier > 1e-3)              # trụ: cắt đáy khấc
         _holes = (beam_mcn_outer or {}).get("holes") or []
         for _id, _xc in enumerate(_beam_cx):
             _dz = _off(_xc)                        # dầm bám dốc ngang mặt cầu
+            _zclip = _z_beam_soffit + _dz          # đáy khấc (mức vai kê)
             _xs = [_xc + (px - _bxc) / 1000.0 for px in _bx]
-            _zs = [_z_beam_soffit + _dz + (pz - _bzmin) / 1000.0 * _vsc for pz in _bz]
-            _poly(fig, _xs, _zs, _C["dam"], _C["dam_dk"],
-                  "Dầm chủ (thư viện)" if _id == 0 else "", showlegend=(_id == 0))
+            _zs = [z_ban_b + _dz + (pz - _bzmax) / 1000.0 for pz in _bz]  # đỉnh=đáy bản
+            if _clip:
+                _xs, _zs = _clip_poly_above(_xs, _zs, _zclip)
+            if len(_xs) >= 3:
+                _poly(fig, _xs, _zs, _C["dam"], _C["dam_dk"],
+                      "Dầm chủ (thư viện)" if _id == 0 else "", showlegend=(_id == 0))
             for _h in _holes:                      # lỗ rỗng (dầm hộp/Super-T)
                 _hx = [_xc + (q[0] - _bxc) / 1000.0 for q in _h]
-                _hz = [_z_beam_soffit + _dz + (q[1] - _bzmin) / 1000.0 * _vsc for q in _h]
-                _poly(fig, _hx, _hz, "rgba(0,0,0,0)", _C["dam_dk"], "",
-                      showlegend=False, lw=0.8)
+                _hz = [z_ban_b + _dz + (q[1] - _bzmax) / 1000.0 for q in _h]
+                if _clip:
+                    _hx, _hz = _clip_poly_above(_hx, _hz, _zclip)
+                if len(_hx) >= 3:
+                    _poly(fig, _hx, _hz, "rgba(0,0,0,0)", _C["dam_dk"], "",
+                          showlegend=False, lw=0.8)
     else:
         # Chưa có dầm thư viện → CHỈ vẽ ký hiệu tim dầm (không dựng dầm cũ).
         for _id, _xc in enumerate(_beam_cx):
