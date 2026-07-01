@@ -3369,9 +3369,16 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                     fig, _piles_mo_vt, x_center=0.0, z_top=h_tn,
                     color="#7d5a32", legend_name=f"Cọc ({len(_piles_mo_vt)} cọc)")
     else:
-        # Bệ cọc — ĐỈNH xà mũ nằm DƯỚI đáy dầm đúng chiều cao đá kê gối.
+        # TRỤ: dầm SPT ĐẦU KHẤC gác vào KHẤC xà mũ (giống trắc dọc/bố trí chung) →
+        # ĐỈNH xà mũ (tường tai) NHÔ CAO HƠN đáy dầm đúng ĐỘ SÂU KHẤC (dầm lọt vào
+        # khấc, KHÔNG đá kê gối riêng). Lấy độ sâu khấc từ xà mũ lắp ghép.
+        try:
+            _notch_v = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
+                        if pier_assembly else 0.0) or 0.0
+        except Exception:
+            _notch_v = 0.0
         cap_H  = 0.80; be_H = 1.50
-        z_cap_t = _z_beam_soffit - h_goi_v  # đỉnh xà mũ = đáy dầm − đá kê gối
+        z_cap_t = _z_beam_soffit + _notch_v  # đỉnh xà mũ = đáy dầm + độ sâu khấc
         z_capb = z_cap_t - cap_H
         z_shb  = z_capb - H_tru
         z_beb  = z_shb - be_H
@@ -3399,9 +3406,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             _ally = [y for pl in _polys for y in pl["ys"]]
             if _ally:
                 z_beb = min(_ally)
-            # Đá kê gối: NẰM DƯỚI đáy dầm (cao_dd), TRÊN đỉnh xà mũ (z_cap_t).
-            _cap_yr = ((min(_capx), max(_capx)) if _capx else (-cap_W, cap_W))
-            _draw_da_ke_goi(_z_beam_soffit, _cap_yr)
+            # (Dầm ĐẦU KHẤC lọt thẳng vào khấc xà mũ — KHÔNG vẽ đá kê gối riêng.)
             # KÍCH THƯỚC trụ lắp ghép: bề rộng & chiều cao từng bộ phận
             _xd = (max(_capx) if _capx else cap_W) + 0.9
             if _capx and _capy:
@@ -3434,12 +3439,10 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                       _C["btong"], _C["btong_dk"],
                       "Thân cột" if ic == 0 else "", showlegend=(ic == 0))
 
-            # Xà mũ (đỉnh = z_cap_t, dưới đá kê gối)
+            # Xà mũ (đỉnh = z_cap_t = đáy dầm + khấc; dầm lọt vào khấc)
             _poly(fig, [-cap_W, cap_W, cap_W, -cap_W],
                   [z_capb, z_capb, z_cap_t, z_cap_t],
                   _C["btong"], _C["dam_dk"], "Xà mũ")
-            # Đá kê gối: dưới đáy dầm (cao_dd), trên đỉnh xà mũ (z_cap_t)
-            _draw_da_ke_goi(_z_beam_soffit, (-cap_W, cap_W))
 
         # Cọc — ưu tiên sơ đồ cọc khai báo từ DXF (mặt cắt ngang: chiếu trục ngang)
         _piles_vt = _layout_piles(d, vi_tri)
@@ -3939,6 +3942,33 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
     if g.get("h_goi", 0) > 0:
         _goi_block_2d(fig, 0.0, g["z_cap_t"], g["h_goi"],
                       w=max(0.4, g["cap_half_doc"] * 0.5), name="Gối cầu", sl=True)
+
+    # ── DẦM chủ (mặt cắt DỌC — hình chiếu cạnh) kê trên gối, vươn vào nhịp; ứng
+    #    với bố trí chung toàn cầu. TRỤ: 2 đầu dầm 2 nhịp; MỐ: 1 đầu dầm vào nhịp.
+    #    TRỤ có khấc → ụ giữa (tường tai) nhô cao hơn đáy dầm đúng độ sâu khấc.
+    _z_sof = g["cao_dd"]                       # đáy dầm (kê trên gối)
+    _z_topd = g["cao_dd"] + g["H_dam"]         # đỉnh dầm = đáy bản
+    try:
+        _notch_d = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
+                    if (pier_assembly and not g["is_mo"]) else 0.0) or 0.0
+    except Exception:
+        _notch_d = 0.0
+    _gap_d = max(0.12, _notch_d * 0.6)         # khe co giãn giữa 2 đầu dầm
+    _sides = ([-1, 1] if not g["is_mo"] else [1])   # mố: dầm vào nhịp (+x)
+    _leg_d = True
+    for _sg in _sides:
+        _xn = _sg * _gap_d
+        _xf = _sg * (x_span - 0.05)
+        _poly(fig, [_xn, _xf, _xf, _xn],
+              [_z_sof, _z_sof, _z_topd, _z_topd],
+              _C["dam"], _C["dam_dk"],
+              "Dầm chủ" if _leg_d else "", showlegend=_leg_d)
+        _leg_d = False
+    # Ụ giữa / tường tai (khấc) giữa 2 đầu dầm ở TRỤ có khấc.
+    if not g["is_mo"] and _notch_d > 1e-3:
+        _poly(fig, [-_gap_d, _gap_d, _gap_d, -_gap_d],
+              [_z_sof, _z_sof, _z_sof + _notch_d, _z_sof + _notch_d],
+              _C["btong"], _C["dam_dk"], "Ụ giữa (khấc)", showlegend=True)
 
     # Cọc (chiếu lên mặt phẳng dọc, có độ xiên ix)
     _piles = g["piles"] or _auto_pile_grid(g)
