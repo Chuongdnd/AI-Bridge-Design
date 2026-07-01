@@ -202,39 +202,48 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
 # inline #1e1e2e/#141420/#0a1f35…, dialog, chữ trắng) được lật sang sáng. Kích
 # hoạt qua class html.cau-light do JS gắn khi đọc NỀN THỰC của .stApp (nền này đã
 # bám theo lựa chọn ☰ sau khi bỏ ép .stApp).
-_LIGHT_RULES = """
-[data-testid="stMetric"] { background:#eef2f8 !important; border-color:#cdd5e0 !important; }
-[data-testid="stMetricValue"] { color:#1769aa !important; }
-.uth-topbar { background:#e8edf4 !important; border-bottom-color:#bcd0e8 !important; }
-.ds-card { background:#f4f6f9 !important; border-color:#cdd5e0 !important; }
-[data-testid="stDialog"] > div { background:#f4f6f9 !important; }
-[data-testid="stForm"] { background:#f4f6f9 !important; border-color:#cdd5e0 !important; }
-div[data-testid="stExpander"] > details { background:#f4f6f9 !important; border-color:#cdd5e0 !important; }
-div[data-testid="stExpander"] summary { color:#1a1f2b !important; }
-[style*="#141420"],[style*="#0a1f35"],[style*="#1e1e2e"],[style*="#0a0a14"],
-[style*="#1a1a2a"],[style*="#12121c"],[style*="#0d0d1a"],[style*="#12202e"],
-[style*="#1a2330"],[style*="#0f0f1a"],[style*="#0e1117"],[style*="#0d1a10"],
-[style*="#141a20"],[style*="#12121e"]
-{ background:#eef2f8 !important; border-color:#cdd5e0 !important; }
-[style*="#1a2000"]{ background:#eafaf1 !important; }
-[style*="#1f1600"]{ background:#fff8e1 !important; }
-[style*="#2d0a0a"]{ background:#fdecea !important; }
-[style*="color:#fff"],[style*="color:#f0f0f0"],[style*="color:#dde3ea"],
-[style*="color:#ddd"],[style*="color:#e0e0e0"],[style*="color:#eee"]
-{ color:#1a1f2b !important; }
-[style*="color:#aaa"],[style*="color:#999"],[style*="color:#888"],
-[style*="color:#777"],[style*="color:#666"],[style*="color:#555"]
-{ color:#5a6270 !important; }
-"""
-st.markdown(f"<style>html.cau-light {{{_LIGHT_RULES}}}</style>", unsafe_allow_html=True)
-# Áp TRỰC TIẾP (không phụ thuộc JS/class) khi theme ☰ = Light → lật chắc chắn các
-# hộp/thẻ tối (JS iframe đôi khi không gắn được class trên Cloud).
+_DARK_BG_HEX = ["#141420","#0a1f35","#1e1e2e","#0a0a14","#1a1a2a","#12121c",
+                "#0d0d1a","#12202e","#1a2330","#0f0f1a","#0e1117","#0d1a10",
+                "#141a20","#12121e"]
+_LT_TXT_HEX  = ["#fff","#f0f0f0","#dde3ea","#ddd","#e0e0e0","#eee"]
+_GR_TXT_HEX  = ["#aaa","#999","#888","#777","#666","#555"]
+# (selectors, declarations) — mỗi selector sẽ được thêm TIỀN TỐ để tạo CSS PHẲNG
+# (không dùng nesting vì trình duyệt cũ có thể không áp cả khối).
+_LIGHT_ITEMS = [
+    ('[data-testid="stMetric"]', "background:#eef2f8 !important;border-color:#cdd5e0 !important"),
+    ('[data-testid="stMetricValue"]', "color:#1769aa !important"),
+    ('.uth-topbar', "background:#e8edf4 !important;border-bottom-color:#bcd0e8 !important"),
+    ('.ds-card', "background:#f4f6f9 !important;border-color:#cdd5e0 !important"),
+    ('[data-testid="stDialog"] > div', "background:#f4f6f9 !important"),
+    ('[data-testid="stForm"]', "background:#f4f6f9 !important;border-color:#cdd5e0 !important"),
+    ('div[data-testid="stExpander"] > details', "background:#f4f6f9 !important;border-color:#cdd5e0 !important"),
+    ('div[data-testid="stExpander"] summary', "color:#1a1f2b !important"),
+    (",".join(f'[style*="{c}"]' for c in _DARK_BG_HEX),
+     "background:#eef2f8 !important;border-color:#cdd5e0 !important"),
+    ('[style*="#1a2000"]', "background:#eafaf1 !important"),
+    ('[style*="#1f1600"]', "background:#fff8e1 !important"),
+    ('[style*="#2d0a0a"]', "background:#fdecea !important"),
+    (",".join(f'[style*="color:{c}"]' for c in _LT_TXT_HEX), "color:#1a1f2b !important"),
+    (",".join(f'[style*="color:{c}"]' for c in _GR_TXT_HEX), "color:#5a6270 !important"),
+]
+
+def _light_css(pfx: str = "") -> str:
+    p = (pfx + " ") if pfx else ""
+    lines = []
+    for sels, decl in _LIGHT_ITEMS:
+        flat = ",".join(p + s.strip() for s in sels.split(","))
+        lines.append(f"{flat} {{{decl};}}")
+    return "\n".join(lines)
+
+# (1) Kích hoạt qua class .cau-light (JS đọc nền thực) — selector PHẲNG
+st.markdown(f"<style>{_light_css('html.cau-light')}</style>", unsafe_allow_html=True)
+# (2) Áp TRỰC TIẾP khi st.context.theme = Light (không phụ thuộc JS)
 try:
     _stt = str(st.context.theme.type or "").lower()
 except Exception:
     _stt = ""
 if _stt == "light":
-    st.markdown(f"<style>{_LIGHT_RULES}</style>", unsafe_allow_html=True)
+    st.markdown(f"<style>{_light_css('')}</style>", unsafe_allow_html=True)
 import streamlit.components.v1 as _cc_theme
 _cc_theme.html(
     """<script>
