@@ -40,6 +40,9 @@ st.markdown("""
 [data-testid="stDecoration"]      { display: none !important; }
 [data-testid="stStatusWidget"]    { display: none !important; }
 footer                            { display: none !important; }
+/* Header trong suốt + cho click xuyên → KHÔNG che ribbon top; riêng ☰ vẫn bấm được */
+[data-testid="stHeader"]  { background: transparent !important; pointer-events: none !important; }
+[data-testid="stToolbar"] { pointer-events: auto !important; z-index: 600 !important; }
 /* Ẩn menu đa trang ở sidebar (Interface, Dia Chat, Du Toan…) — chỉ điều hướng
    bằng ribbon ở trên cùng */
 [data-testid="stSidebarNav"]      { display: none !important; }
@@ -221,6 +224,14 @@ _LIGHT_RULES = """
 { color:#5a6270 !important; }
 """
 st.markdown(f"<style>html.cau-light {{{_LIGHT_RULES}}}</style>", unsafe_allow_html=True)
+# Áp TRỰC TIẾP (không phụ thuộc JS/class) khi theme ☰ = Light → lật chắc chắn các
+# hộp/thẻ tối (JS iframe đôi khi không gắn được class trên Cloud).
+try:
+    _stt = str(st.context.theme.type or "").lower()
+except Exception:
+    _stt = ""
+if _stt == "light":
+    st.markdown(f"<style>{_LIGHT_RULES}</style>", unsafe_allow_html=True)
 import streamlit.components.v1 as _cc_theme
 _cc_theme.html(
     """<script>
