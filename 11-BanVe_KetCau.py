@@ -3464,10 +3464,22 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                       _C["btong"], _C["btong_dk"],
                       "Thân cột" if ic == 0 else "", showlegend=(ic == 0))
 
-            # Xà mũ (đỉnh = z_cap_t = đáy dầm + khấc; dầm lọt vào khấc)
+            # Xà mũ (đỉnh = z_cap_t = đáy dầm; dầm kê trên vai kê)
             _poly(fig, [-cap_W, cap_W, cap_W, -cap_W],
                   [z_capb, z_capb, z_cap_t, z_cap_t],
                   _C["btong"], _C["dam_dk"], "Xà mũ")
+
+        # ── Ụ GIỮA / VÁCH NGĂN tại trụ (nhìn từ mặt cắt dọc): khối bê tông GIỮA 2
+        #    đầu dầm, kê trên xà mũ (vai kê = đáy dầm) và VƯƠN LÊN đỡ BẢN mặt cầu.
+        #    Trong MCN = vách chạy suốt bề rộng nhóm dầm, ĐÁY bản. Vẽ TRƯỚC dầm →
+        #    dầm che phía trước, ụ giữa hiện ở KHE giữa các dầm.
+        if _beam_cx:
+            _ux0 = min(_beam_cx) - 0.15; _ux1 = max(_beam_cx) + 0.15
+            _tpx = [_ux0] + ([0.0] if _ux0 < 0 < _ux1 else []) + [_ux1]
+            _poly(fig, _tpx + _tpx[::-1],
+                  [z_ban_b + _off(x) for x in _tpx]
+                  + [_z_beam_soffit for _ in _tpx],
+                  _C["btong"], _C["btong_dk"], "Ụ giữa (đỡ bản)")
 
         # Cọc — ưu tiên sơ đồ cọc khai báo từ DXF (mặt cắt ngang: chiếu trục ngang)
         _piles_vt = _layout_piles(d, vi_tri)
