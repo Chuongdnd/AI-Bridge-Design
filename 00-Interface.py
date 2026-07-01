@@ -199,6 +199,57 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
 </style>
 """, unsafe_allow_html=True)
 
+# ── LẬT MÀU HỘP/THẺ TỐI theo THEME ☰ (Light/Dark của Streamlit, KHÔNG theo OS) ──
+# Khi theme SÁNG: các thành phần tô màu tối cố định (metric, topbar, ds-card, card
+# inline #1e1e2e/#141420/#0a1f35…, dialog, chữ trắng) được lật sang sáng. Kích
+# hoạt qua class html.cau-light do JS gắn khi đọc NỀN THỰC của .stApp (nền này đã
+# bám theo lựa chọn ☰ sau khi bỏ ép .stApp).
+_LIGHT_RULES = """
+[data-testid="stMetric"] { background:#eef2f8 !important; border-color:#cdd5e0 !important; }
+[data-testid="stMetricValue"] { color:#1769aa !important; }
+.uth-topbar { background:#e8edf4 !important; border-bottom-color:#bcd0e8 !important; }
+.ds-card { background:#f4f6f9 !important; border-color:#cdd5e0 !important; }
+[data-testid="stDialog"] > div { background:#f4f6f9 !important; }
+[style*="#141420"],[style*="#0a1f35"],[style*="#1e1e2e"],[style*="#0a0a14"],
+[style*="#1a1a2a"],[style*="#12121c"],[style*="#0d0d1a"],[style*="#12202e"],
+[style*="#1a2330"],[style*="#0f0f1a"],[style*="#0e1117"],[style*="#0d1a10"],
+[style*="#141a20"],[style*="#12121e"]
+{ background:#eef2f8 !important; border-color:#cdd5e0 !important; }
+[style*="#1a2000"]{ background:#eafaf1 !important; }
+[style*="#1f1600"]{ background:#fff8e1 !important; }
+[style*="#2d0a0a"]{ background:#fdecea !important; }
+[style*="color:#fff"],[style*="color:#f0f0f0"],[style*="color:#dde3ea"],
+[style*="color:#ddd"],[style*="color:#e0e0e0"],[style*="color:#eee"]
+{ color:#1a1f2b !important; }
+[style*="color:#aaa"],[style*="color:#999"],[style*="color:#888"],
+[style*="color:#777"],[style*="color:#666"],[style*="color:#555"]
+{ color:#5a6270 !important; }
+"""
+st.markdown(f"<style>html.cau-light {{{_LIGHT_RULES}}}</style>", unsafe_allow_html=True)
+import streamlit.components.v1 as _cc_theme
+_cc_theme.html(
+    """<script>
+    (function(){
+      function isLight(d){
+        var els=[d.querySelector('[data-testid="stApp"]'),
+                 d.querySelector('[data-testid="stMain"]'), d.body];
+        for(var i=0;i<els.length;i++){ if(!els[i]) continue;
+          var m=(getComputedStyle(els[i]).backgroundColor||'').match(/[\\d.]+/g);
+          if(m&&m.length>=3&&(m.length<4||parseFloat(m[3])>0.1)){
+            var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2]; return L>140; } }
+        return null;
+      }
+      function apply(){ try{
+        var d=window.parent.document, lt=isLight(d); if(lt===null) return;
+        d.documentElement.classList.toggle('cau-light', lt);
+        d.documentElement.classList.toggle('cau-dark', !lt);
+      }catch(e){} }
+      apply(); [150,400,900,1800,3500].forEach(function(t){setTimeout(apply,t);});
+      try{ new MutationObserver(apply).observe(window.parent.document.documentElement,
+          {attributes:true, attributeFilter:['style','class']}); }catch(e){}
+    })();
+    </script>""", height=0)
+
 
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
