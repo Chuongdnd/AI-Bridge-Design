@@ -33,8 +33,8 @@ st.set_page_config(page_title="Hệ thống Thiết kế Cầu AI - UTH", layout
 # ── Global CSS: ẩn toolbar + Engineering layout ──────────────────────────────
 st.markdown("""
 <style>
-/* ── Ẩn Streamlit toolbar/menu/footer ── */
-/* ── Ẩn cụm Share/GitHub/menu (stToolbar) + thu HEADER để KHÔNG che ribbon ── */
+/* ── TẠM BỎ ẨN: hiện lại header + menu ☰ (Settings → Theme) để kiểm tra ──
+   Khôi phục ẩn: bỏ dấu comment khối dưới.
 [data-testid="stToolbar"]         { display: none !important; }
 [data-testid="stToolbarActions"]  { display: none !important; }
 [data-testid="stHeader"]          { height: 0 !important; min-height: 0 !important;
@@ -44,6 +44,7 @@ st.markdown("""
 .stDeployButton                   { display: none !important; }
 #MainMenu                         { display: none !important; }
 footer                            { display: none !important; }
+*/
 /* Ẩn menu đa trang ở sidebar (Interface, Dia Chat, Du Toan…) — chỉ điều hướng
    bằng ribbon ở trên cùng */
 [data-testid="stSidebarNav"]      { display: none !important; }
