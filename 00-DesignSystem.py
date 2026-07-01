@@ -276,11 +276,9 @@ def mong_color(loai_mong: str) -> str:
 
 GLOBAL_CSS = f"""
 <style>
-/* ── Base ── */
-.stApp {{
-    background: {Color.BG_BASE};
-    color: {Color.TEXT_PRIMARY};
-}}
+/* ── Base ── KHÔNG ép nền/chữ .stApp → để Streamlit tự nhuộm theo THEME (☰ →
+   Settings → Theme: Light/Dark/System). Nền canvas + widget gốc + biểu đồ (nền
+   trong suốt) sẽ bám theme. */
 
 /* ── Utility cards ── */
 .ds-card {{
