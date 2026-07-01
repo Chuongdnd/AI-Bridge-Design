@@ -1954,6 +1954,23 @@ def _pick_beam_section(secs: dict, fill_sec: str):
     return None
 
 
+def get_beam_mcn_outer(d: dict = None, pfx: str = "spt"):
+    """Mặt cắt NGANG dầm THỰC (thư viện) để vẽ lên MCN cầu (mố/trụ) — thay cho
+    'dầm hộp' tham số cũ. Trả {"outer":[[x_mm,z_mm]], "holes":[[...]]} với z: 0 ở
+    ĐỈNH dầm, âm xuống ĐÁY; hoặc None nếu thư viện chưa có dầm (không vẽ dầm cũ).
+    Dùng mặt cắt fill (giữa nhịp) làm đại diện — đúng dầm cả hệ thống đang dùng."""
+    try:
+        secs, fill = _resolve_beam_sections(pfx)
+    except Exception:
+        return None
+    sec = _pick_beam_section(secs, fill)
+    if not sec or not getattr(sec, "outer", None):
+        return None
+    return {"outer": [[float(p[0]), float(p[1])] for p in sec.outer],
+            "holes": [[[float(q[0]), float(q[1])] for q in h]
+                      for h in (getattr(sec, "holes", None) or [])]}
+
+
 # ── DẦM BIẾN THỂ THEO VAI TRÒ (kế thừa đầy đủ — clone cây dầm theo từng vai trò) ──
 # Vai trò = (vị trí DỌC cầu) × (vị trí NGANG cầu):
 #   L = "B" nhịp biên (nhịp đầu/cuối, mố–trụ) | "G" nhịp giữa (trụ–trụ)

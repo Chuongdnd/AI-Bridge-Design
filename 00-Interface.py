@@ -7108,12 +7108,18 @@ with _col_main:
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt bằng kết cấu: {_e}")
+                    # Mặt cắt DẦM THỰC từ thư viện (dùng chung cả hệ thống) → vẽ đúng
+                    # dầm trên MCN mố/trụ thay 'dầm hộp' tham số cũ.
+                    try:
+                        _beam_mcn = BBUI.get_beam_mcn_outer(d, pfx="spt")
+                    except Exception:
+                        _beam_mcn = None
                     try:
                         _f_mcnvt = BVK.ve_mcn_vi_tri(
                             d, vi_tri=_selected_vt, df_geology=_df_geo,
                             pier_assembly=_pa_tru, x_half=_xh,
                             abutment_assembly=_resolve_assembly(d, "mo"),
-                            mo_view='truoc')
+                            mo_view='truoc', beam_mcn_outer=_beam_mcn)
                         PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
                         st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,
@@ -7127,7 +7133,7 @@ with _col_main:
                                 d, vi_tri=_selected_vt, df_geology=_df_geo,
                                 pier_assembly=_pa_tru, x_half=_xh,
                                 abutment_assembly=_resolve_assembly(d, "mo"),
-                                mo_view='sau')
+                                mo_view='sau', beam_mcn_outer=_beam_mcn)
                             PLOT.aspect_control(_f_mcnvt_s, "mcn_vitri_sau")
                             st.plotly_chart(_f_mcnvt_s,
                                             use_container_width=True,
@@ -7159,7 +7165,9 @@ with _col_main:
                 st.markdown(f"**🧊 Mô hình 3D — {_vt_label_cur}** (kéo xoay)")
                 try:
                     _is_mo_vt = _selected_vt in ("mo_trai", "mo_phai")
-                    _bc_vt    = float(d.get("bc", 12.0))   # bề rộng cầu → co xà mũ/mố
+                    # Bề rộng THẬT dọc trục xiên = bc/sin(α) → 3D chi tiết mố/trụ
+                    # dài đúng theo góc xiên (khớp mặt cắt ngang vị trí).
+                    _bc_vt    = float(d.get("bc", 12.0)) * BVK._skew_widen(d)
                     if _is_mo_vt:
                         # KHỚP mố thực của cầu: cùng model + co bề rộng theo cầu +
                         # NEO vai kê=đáy dầm, đỉnh bệ=ĐTN−0.5 (như MCN 2D) → 3D
@@ -7459,7 +7467,8 @@ with _col_main:
                             return EXP.export_pier_ifc(d)
                         _Ht = float(d.get("H_tru_est", 5.0)) + 2.30
                         _trs = PB.build_pier_mesh_traces(
-                            _pm, H_tru=_Ht, cap_width=float(d.get("bc", 12.0)))
+                            _pm, H_tru=_Ht,
+                            cap_width=float(d.get("bc", 12.0)) * BVK._skew_widen(d))
                         return IFCX.mesh_traces_to_ifc(_trs,
                                                        project_name=f"Tru {selected_ribbon}")
 
