@@ -2546,9 +2546,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             )
 
         def _aswept(s0, s1, oL, oR, zb, zt, color, opacity=0.88,
-                    name="", sl=True, step=5.0, skew=True):
+                    name="", sl=True, step=5.0, skew=True, zbR=None, ztR=None):
             """Tấm 3D (lớp phủ / bản mặt cầu) QUÉT dọc tim tuyến — chia nhỏ theo
-            lý trình để bám đúng đường cong, thay cho hộp thẳng nối đầu–cuối."""
+            lý trình để bám đúng đường cong, thay cho hộp thẳng nối đầu–cuối.
+            zbR/ztR: cao độ đáy/đỉnh tại mép PHẢI (oR) — khác mép trái để tạo DỐC
+            NGANG (crown); mặc định None = phẳng (= zb/zt)."""
+            _zbR = zb if zbR is None else zbR
+            _ztR = zt if ztR is None else ztR
             m  = max(2, int(abs(s1 - s0) / step))
             ss = np.linspace(s0, s1, m + 1)
             vx, vy, vz = [], [], []
@@ -2557,7 +2561,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 xR, yR = _vn(s, oR, skew)
                 vx += [xL, xR, xL, xR]
                 vy += [yL, yR, yL, yR]
-                vz += [zb, zb, zt, zt]      # 0=Lđáy 1=Rđáy 2=Lđỉnh 3=Rđỉnh
+                vz += [zb, _zbR, zt, _ztR]  # 0=Lđáy 1=Rđáy 2=Lđỉnh 3=Rđỉnh
             ii, jj, kk = [], [], []
             def _q(a, b, c, dd):
                 ii.append(a); jj.append(b); kk.append(c)
@@ -2668,24 +2672,43 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # mép TRONG lan can; nếu có dải phân cách giữa thì tách 2 dải (lan can &
         # dải PC đặt TRỰC TIẾP trên bản mặt cầu, lớp phủ ngừng tại đó).
         _grp_state["g"] = "Mặt cầu"
-        _ag(_aswept(x0, x_end, -bc/2, bc/2,
-                              z_bant, z_deck, "#d5d8dc", 0.82, "Bản mặt cầu"))
+        # ĐỘ DỐC NGANG (đồng bộ MCN): crown tại tim, hạ ra mép. _dz = độ hạ cao độ
+        # (đã ×hz) theo offset ngang. Bản & lớp phủ tách tại tim để tạo mái crown.
+        _i_ng3d = float(d.get("i_doc_ngang", 2.0)) / 100.0
+        def _dz(o):
+            return -abs(o) * _i_ng3d * hz
+        # Bản mặt cầu — 2 mái dốc từ tim ra 2 mép (crown).
+        _ag(_aswept(x0, x_end, -bc/2, 0.0,
+                    z_bant + _dz(-bc/2), z_deck + _dz(-bc/2), "#d5d8dc", 0.82,
+                    "Bản mặt cầu", zbR=z_bant, ztR=z_deck))
+        _ag(_aswept(x0, x_end, 0.0, bc/2,
+                    z_bant, z_deck, "#d5d8dc", 0.82, "", sl=False,
+                    zbR=z_bant + _dz(bc/2), ztR=z_deck + _dz(bc/2)))
         _y_in, _y_med = _railing_inner_y(d, bc)
         if _y_med > 0:                     # có dải phân cách giữa → lớp phủ 2 bên
             _ag(_aswept(x0, x_end, -_y_in, -_y_med,
-                                  z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
+                        z_deck + _dz(-_y_in), z_phu + _dz(-_y_in), "#2c3e50", 0.92,
+                        "Lớp phủ BTN", zbR=z_deck + _dz(-_y_med),
+                        ztR=z_phu + _dz(-_y_med)))
             _ag(_aswept(x0, x_end, _y_med, _y_in,
-                                  z_deck, z_phu, "#2c3e50", 0.92, ""))
-        else:
-            _ag(_aswept(x0, x_end, -_y_in, _y_in,
-                                  z_deck, z_phu, "#2c3e50", 0.92, "Lớp phủ BTN"))
+                        z_deck + _dz(_y_med), z_phu + _dz(_y_med), "#2c3e50", 0.92,
+                        "", sl=False, zbR=z_deck + _dz(_y_in),
+                        ztR=z_phu + _dz(_y_in)))
+        else:                              # phủ suốt → tách tại tim tạo crown
+            _ag(_aswept(x0, x_end, -_y_in, 0.0,
+                        z_deck + _dz(-_y_in), z_phu + _dz(-_y_in), "#2c3e50", 0.92,
+                        "Lớp phủ BTN", zbR=z_deck, ztR=z_phu))
+            _ag(_aswept(x0, x_end, 0.0, _y_in,
+                        z_deck, z_phu, "#2c3e50", 0.92, "", sl=False,
+                        zbR=z_deck + _dz(_y_in), ztR=z_phu + _dz(_y_in)))
 
         # Lan can / Giải phân cách — ĐẶT TRÊN BẢN MẶT CẦU (z_deck), không trên lớp
         # phủ. KÉO DÀI ra hết tường cánh mố 2 đầu (theo chiều dọc mố).
         _grp_state["g"] = "Lan can"
         _wd = _abut_long_depth_m(d.get("_mo_model"))
+        _z_edge = z_deck + _dz(bc/2)          # mép bản đã hạ theo dốc ngang
         try:
-            for _rt in _railing_curve_traces(d, _vn, x0 - _wd, x_end + _wd, bc, z_deck):
+            for _rt in _railing_curve_traces(d, _vn, x0 - _wd, x_end + _wd, bc, _z_edge):
                 _ag(_rt)
         except Exception as _e:
             print(f"[add_all] lan can lỗi: {_e}")
