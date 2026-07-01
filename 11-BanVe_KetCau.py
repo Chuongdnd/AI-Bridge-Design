@@ -2727,7 +2727,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         _PBp = _get_PB()
         if _pier_model:
             _H_total = H_tru + 2.30                   # đáy bệ → đỉnh xà mũ
-            _z_base_pier = cao_dd - _H_total           # cao độ đáy bệ (m thực)
+            # ĐỒNG BỘ trắc dọc: ĐỈNH xà mũ (tường tai) = đáy dầm + độ sâu khấc →
+            # vai kê (recess) đúng cao_dd = đáy dầm; dầm đầu khấc gác vào khấc.
+            try:
+                _notch3d = _PBp.cap_seat_notch_depth_m(_pier_model) or 0.0
+            except Exception:
+                _notch3d = 0.0
+            _z_base_pier = (cao_dd + _notch3d) - _H_total   # đỉnh xà mũ = cao_dd+khấc
             for i_p, xt in enumerate(piers):
                 sl = (i_p == 0)
                 try:
@@ -3254,15 +3260,16 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     z_deck = cao_dd + H_dam + t_ban    # đỉnh bản mặt cầu = ĐƯỜNG ĐỎ (tại TIM)
     z_ban_b = cao_dd + H_dam           # đáy bản = ĐỈNH dầm (tại TIM)
     h_goi_v = max(0.12, _h_goi(d))     # chiều cao đá kê gối (gối + đá kê)
-    # Chiều cao dầm THẬT (từ mặt cắt thư viện nếu có) → ĐÁY dầm để dầm nằm HẲN
-    # DƯỚI bản (đỉnh dầm = đáy bản), KHÔNG trồi lên bản mặt cầu.
+    # ĐÁY dầm = cao_dd (THIẾT KẾ) — ĐỒNG BỘ với TRẮC DỌC & 3D (không lấy chiều cao
+    # mặt cắt thư viện làm mốc, tránh lệch cao độ). Mặt cắt dầm co về chiều cao
+    # H_dam (từ đáy dầm cao_dd tới đáy bản) để nằm gọn dưới bản, không trồi lên.
     _bm_all = (beam_mcn_outer or {}).get("outer") if beam_mcn_outer else None
     if _bm_all:
         _bz_h = [p[1] for p in _bm_all]
         _H_sec = (max(_bz_h) - min(_bz_h)) / 1000.0
     else:
         _H_sec = H_dam
-    _z_beam_soffit = z_ban_b - _H_sec  # ĐÁY dầm tại TIM = đáy bản − chiều cao dầm
+    _z_beam_soffit = cao_dd            # ĐÁY dầm tại TIM = cao_dd (thiết kế)
     # ĐỘ DỐC NGANG mặt cầu (đồng bộ MCN điển hình & 3D): crown tại tim (x=0), hạ
     # dần ra mép. Bản/dầm/đá kê gối/lan can bám dốc; xà mũ/thân mố giữ ĐỈNH PHẲNG
     # (đá kê gối cao thấp khác nhau để tạo dốc — đúng cấu tạo).
@@ -3474,20 +3481,23 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     # trùng khớp. KHÔNG vẽ 'hộp' cũ.
     _bm_out = (beam_mcn_outer or {}).get("outer") if beam_mcn_outer else None
     if _bm_out:
-        # Mặt cắt thư viện: z 0 ở đỉnh, âm xuống đáy → đặt ĐÁY dầm tại vai kê.
+        # Mặt cắt thư viện: z 0 ở đỉnh, âm xuống đáy. ĐÁY dầm đặt tại cao_dd, co
+        # chiều cao mặt cắt về H_dam (đỉnh = đáy bản) → dầm nằm gọn dưới bản, đáy
+        # đúng cao_dd (khớp trắc dọc/3D) dù mặt cắt thư viện cao/thấp hơn H_dam.
         _bx   = [p[0] for p in _bm_out]; _bz = [p[1] for p in _bm_out]
         _bxc  = (min(_bx) + max(_bx)) / 2.0        # căn tim ngang
         _bzmin = min(_bz)                          # đáy dầm (z âm nhất)
+        _vsc   = (H_dam / _H_sec) if _H_sec > 1e-6 else 1.0   # co cao độ về H_dam
         _holes = (beam_mcn_outer or {}).get("holes") or []
         for _id, _xc in enumerate(_beam_cx):
             _dz = _off(_xc)                        # dầm bám dốc ngang mặt cầu
             _xs = [_xc + (px - _bxc) / 1000.0 for px in _bx]
-            _zs = [_z_beam_soffit + _dz + (pz - _bzmin) / 1000.0 for pz in _bz]
+            _zs = [_z_beam_soffit + _dz + (pz - _bzmin) / 1000.0 * _vsc for pz in _bz]
             _poly(fig, _xs, _zs, _C["dam"], _C["dam_dk"],
                   "Dầm chủ (thư viện)" if _id == 0 else "", showlegend=(_id == 0))
             for _h in _holes:                      # lỗ rỗng (dầm hộp/Super-T)
                 _hx = [_xc + (q[0] - _bxc) / 1000.0 for q in _h]
-                _hz = [_z_beam_soffit + _dz + (q[1] - _bzmin) / 1000.0 for q in _h]
+                _hz = [_z_beam_soffit + _dz + (q[1] - _bzmin) / 1000.0 * _vsc for q in _h]
                 _poly(fig, _hx, _hz, "rgba(0,0,0,0)", _C["dam_dk"], "",
                       showlegend=False, lw=0.8)
     else:
