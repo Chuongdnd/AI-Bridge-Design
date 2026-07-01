@@ -6987,12 +6987,18 @@ with _col_main:
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt bằng kết cấu: {_e}")
+                    # Mặt cắt DẦM THỰC từ thư viện (dùng chung cả hệ thống) → vẽ đúng
+                    # dầm trên MCN mố/trụ thay 'dầm hộp' tham số cũ.
+                    try:
+                        _beam_mcn = BBUI.get_beam_mcn_outer(d, pfx="spt")
+                    except Exception:
+                        _beam_mcn = None
                     try:
                         _f_mcnvt = BVK.ve_mcn_vi_tri(
                             d, vi_tri=_selected_vt, df_geology=_df_geo,
                             pier_assembly=_pa_tru, x_half=_xh,
                             abutment_assembly=_resolve_assembly(d, "mo"),
-                            mo_view='truoc')
+                            mo_view='truoc', beam_mcn_outer=_beam_mcn)
                         PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
                         st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,
@@ -7006,7 +7012,7 @@ with _col_main:
                                 d, vi_tri=_selected_vt, df_geology=_df_geo,
                                 pier_assembly=_pa_tru, x_half=_xh,
                                 abutment_assembly=_resolve_assembly(d, "mo"),
-                                mo_view='sau')
+                                mo_view='sau', beam_mcn_outer=_beam_mcn)
                             PLOT.aspect_control(_f_mcnvt_s, "mcn_vitri_sau")
                             st.plotly_chart(_f_mcnvt_s,
                                             use_container_width=True,
