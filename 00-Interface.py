@@ -3405,7 +3405,10 @@ def _chat_resize_js():
 """, height=0)
 
 
+@st.fragment
 def _render_floating_chat():
+    # Fragment → mở/thu/nhắn tin CHỈ chạy lại vùng chat, KHÔNG rerun toàn trang
+    # (nhờ vậy tab đang xem, vd không bị nhảy về "3D Tổng hợp").
     st.session_state.setdefault('chat_open', False)
     st.markdown("""
     <style>
@@ -3431,7 +3434,7 @@ def _render_floating_chat():
             if st.button("💬 Hỏi AI", key="chat_open_btn", type="primary",
                          use_container_width=True):
                 st.session_state.chat_open = True
-                st.rerun()
+                st.rerun(scope="fragment")
         return
 
     with st.container(key="floatchat_wrap"):
@@ -3441,7 +3444,7 @@ def _render_floating_chat():
             "🤖 Trợ lý AI cầu</div>", unsafe_allow_html=True)
         if _h2.button("–", key="chat_min_btn", help="Thu nhỏ"):
             st.session_state.chat_open = False
-            st.rerun()
+            st.rerun(scope="fragment")
 
         _box = st.container(height=320, key="chat_msgs")
         with _box:
@@ -3462,7 +3465,7 @@ def _render_floating_chat():
                     f"{_system_msg}\n\nCâu hỏi: {_prompt}")
                 st.session_state.messages.append(
                     {"role": "assistant", "content": _resp.text})
-                st.rerun()
+                st.rerun(scope="fragment")
             except Exception as _e:
                 st.error(f"Lỗi AI: {_e}")
 
