@@ -3615,10 +3615,19 @@ def _pos_geometry(d, vi_tri, pier_assembly=None):
         x_cut = piers[idx] if idx < len(piers) else x_tim
         title_vt = f"TRỤ T{idx + 1}"
 
-    h_goi  = _h_goi(d)               # chiều cao gối (đáy dầm → đỉnh xà mũ)
+    h_goi  = _h_goi(d)               # chiều cao gối/đá kê gối
     z_deck = cao_dd + H_dam + t_ban
-    z_dam_b = cao_dd                 # đáy dầm (kê trên gối)
-    z_cap_t = cao_dd - h_goi         # đỉnh xà mũ = đáy dầm − gối
+    z_dam_b = cao_dd                 # đáy dầm
+    # ĐỒNG BỘ với TRẮC DỌC & 3D (ve_so_do_nhip_2d): TRỤ dầm ĐẦU KHẤC lọt vào khấc
+    # → ĐỈNH xà mũ = đáy dầm + độ sâu khấc; MỐ đầu trơn kê đá kê gối → đỉnh thân
+    # mố = đáy dầm − đá kê gối. (Trước đây detail lấy cao_dd−h_goi cho cả hai nên
+    # LỆCH cao độ so với bố trí chung/3D.)
+    try:
+        _notch_pg = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
+                     if pier_assembly else 0.0) or 0.0
+    except Exception:
+        _notch_pg = 0.0
+    z_cap_t = (cao_dd - h_goi) if is_mo else (cao_dd + _notch_pg)
     z_capb = z_cap_t - cap_H
     z_shb  = z_capb - H_tru
     z_beb  = z_shb - be_H
@@ -3938,10 +3947,11 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
               _C["btong"], _C["dam_dk"], "Xà mũ")
         z_top_pile = g["z_beb"]
 
-    # ── GỐI cầu: đáy dầm kê trên gối, trên đỉnh xà mũ ──────────────────────
-    if g.get("h_goi", 0) > 0:
+    # ── ĐÁ KÊ GỐI: CHỈ ở MỐ (đầu dầm trơn kê gối). TRỤ: dầm đầu khấc lọt vào khấc
+    #    xà mũ (không gối riêng) — đồng bộ trắc dọc/3D. ──
+    if g["is_mo"] and g.get("h_goi", 0) > 0:
         _goi_block_2d(fig, 0.0, g["z_cap_t"], g["h_goi"],
-                      w=max(0.4, g["cap_half_doc"] * 0.5), name="Gối cầu", sl=True)
+                      w=max(0.4, g["cap_half_doc"] * 0.5), name="Đá kê gối", sl=True)
 
     # ── DẦM chủ (mặt cắt DỌC — hình chiếu cạnh) kê trên gối, vươn vào nhịp; ứng
     #    với bố trí chung toàn cầu. TRỤ: 2 đầu dầm 2 nhịp; MỐ: 1 đầu dầm vào nhịp.
