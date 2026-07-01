@@ -2727,7 +2727,11 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         _PBp = _get_PB()
         if _pier_model:
             _H_total = H_tru + 2.30                   # đáy bệ → đỉnh xà mũ
-            _z_base_pier = cao_dd - _H_total           # cao độ đáy bệ (m thực)
+            # ĐỈNH tường tai = ĐÁY DẦM + độ sâu KHẤC (recess kê dầm = đáy dầm) →
+            # dầm ngồi TRONG recess, ụ giữa nhô lên (khớp trắc dọc). Trước đây neo
+            # đỉnh = cao_dd → dầm ngồi TRÊN ụ giữa (sai).
+            _z_cap_top   = cao_dd + _PBp.cap_seat_notch_depth_m(_pier_model)
+            _z_base_pier = _z_cap_top - _H_total       # cao độ đáy bệ (m thực)
             for i_p, xt in enumerate(piers):
                 sl = (i_p == 0)
                 try:
