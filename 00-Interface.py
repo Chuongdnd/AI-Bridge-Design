@@ -208,6 +208,9 @@ _LIGHT_RULES = """
 .uth-topbar { background:#e8edf4 !important; border-bottom-color:#bcd0e8 !important; }
 .ds-card { background:#f4f6f9 !important; border-color:#cdd5e0 !important; }
 [data-testid="stDialog"] > div { background:#f4f6f9 !important; }
+[data-testid="stForm"] { background:#f4f6f9 !important; border-color:#cdd5e0 !important; }
+div[data-testid="stExpander"] > details { background:#f4f6f9 !important; border-color:#cdd5e0 !important; }
+div[data-testid="stExpander"] summary { color:#1a1f2b !important; }
 [style*="#141420"],[style*="#0a1f35"],[style*="#1e1e2e"],[style*="#0a0a14"],
 [style*="#1a1a2a"],[style*="#12121c"],[style*="#0d0d1a"],[style*="#12202e"],
 [style*="#1a2330"],[style*="#0f0f1a"],[style*="#0e1117"],[style*="#0d1a10"],
@@ -6577,7 +6580,11 @@ with _col_main:
                                     xaxis=dict(title="Lý trình (m)"),
                                     yaxis=dict(title="Ngang cầu (m)"),
                                     zaxis=dict(title="Cao độ (m)"),
+                                    # nền scene trong suốt → theo theme (sáng/tối) của trang
+                                    bgcolor="rgba(0,0,0,0)",
                                 ),
+                                # màu chữ trục theo theme (☰)
+                                font=dict(color=("#1a1f2b" if _stt == "light" else "#e6e6e6")),
                             )
 
                             # Lưu LƯỚI cầu (mesh) đã dựng để XUẤT IFC khớp ĐÚNG 3D
