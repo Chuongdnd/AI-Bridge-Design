@@ -202,13 +202,21 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
 # tô màu tối cố định (metric, topbar, ds-card, card inline #1e1e2e/#141420/#0a1f35…,
 # dialog, chữ trắng) tự lật sang sáng. Thuần CSS @media (prefers-color-scheme:light)
 # — không nút, không JS dò → chạy chắc trên Streamlit Cloud.
-_DARK_BG_HEX = ["#141420","#0a1f35","#1e1e2e","#0a0a14","#1a1a2a","#12121c",
-                "#0d0d1a","#12202e","#1a2330","#0f0f1a","#0e1117","#0d1a10",
-                "#141a20","#12121e"]
-_LT_TXT_HEX  = ["#fff","#f0f0f0","#dde3ea","#ddd","#e0e0e0","#eee"]
-_GR_TXT_HEX  = ["#aaa","#999","#888","#777","#666","#555"]
-# (selectors, declarations) — mỗi selector sẽ được thêm TIỀN TỐ để tạo CSS PHẲNG
-# (không dùng nesting vì trình duyệt cũ có thể không áp cả khối).
+# Bắt màu theo CHỮ SỐ HEX ĐẦU (bền vững, không cần liệt kê từng mã):
+#  • Nền TỐI = background bắt đầu #0… hoặc #1… (đen/navy)  → lật SÁNG.
+#  • Chữ SÁNG/XÁM = color bắt đầu #6…–#f… (trắng, xám nhạt) → lật ĐẬM.
+#    Accent (xanh #0…, xanh lá #2…, tím #9…) giữ nguyên nếu là chữ số 0–5;
+#    #9,#a…#f là xám/trắng nên lật để đọc được.
+def _attr(prop, ch):
+    # khớp cả 'prop:#x' và 'prop: #x' (có/không dấu cách), hoa & thường
+    return (f'[style*="{prop}:#{ch}"],[style*="{prop}: #{ch}"],'
+            f'[style*="{prop}:#{ch.upper()}"],[style*="{prop}: #{ch.upper()}"]')
+
+_DARK_BG_FIRST  = ["0", "1"]                       # nền tối → sáng
+# chữ có mã đầu 4…f (trắng, xám, cyan nhạt #4fc3f7…) → lật ĐẬM; giữ 0–3
+# (xanh #007acc, xanh lá #2ecc71, xám đậm #333) vì vẫn đọc tốt trên nền sáng.
+_LT_TXT_FIRST   = ["4","5","6","7","8","9","a","b","c","d","e","f"]
+
 _LIGHT_ITEMS = [
     ('[data-testid="stMetric"]', "background:#eef2f8 !important;border-color:#cdd5e0 !important"),
     ('[data-testid="stMetricValue"]', "color:#1769aa !important"),
@@ -218,13 +226,16 @@ _LIGHT_ITEMS = [
     ('[data-testid="stForm"]', "background:#f4f6f9 !important;border-color:#cdd5e0 !important"),
     ('div[data-testid="stExpander"] > details', "background:#f4f6f9 !important;border-color:#cdd5e0 !important"),
     ('div[data-testid="stExpander"] summary', "color:#1a1f2b !important"),
-    (",".join(f'[style*="{c}"]' for c in _DARK_BG_HEX),
+    # (1) NỀN tối #0…/#1… → sáng (cả border cùng mã)
+    (",".join(_attr("background", d) for d in _DARK_BG_FIRST),
      "background:#eef2f8 !important;border-color:#cdd5e0 !important"),
+    # (2) tint ngữ nghĩa — đặt SAU nền chung để thắng
     ('[style*="#1a2000"]', "background:#eafaf1 !important"),
     ('[style*="#1f1600"]', "background:#fff8e1 !important"),
     ('[style*="#2d0a0a"]', "background:#fdecea !important"),
-    (",".join(f'[style*="color:{c}"]' for c in _LT_TXT_HEX), "color:#1a1f2b !important"),
-    (",".join(f'[style*="color:{c}"]' for c in _GR_TXT_HEX), "color:#5a6270 !important"),
+    ('[style*="#0d3d1f"]', "background:#eafaf1 !important"),
+    # (3) CHỮ sáng/xám → đậm (đặt CUỐI để thắng mọi rule nền ở trên)
+    (",".join(_attr("color", c) for c in _LT_TXT_FIRST), "color:#1a1f2b !important"),
 ]
 
 def _light_css(pfx: str = "") -> str:
