@@ -197,11 +197,11 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
 </style>
 """, unsafe_allow_html=True)
 
-# ── LẬT MÀU HỘP/THẺ TỐI theo THEME ☰ (Light/Dark của Streamlit, KHÔNG theo OS) ──
-# Khi theme SÁNG: các thành phần tô màu tối cố định (metric, topbar, ds-card, card
-# inline #1e1e2e/#141420/#0a1f35…, dialog, chữ trắng) được lật sang sáng. Kích
-# hoạt qua class html.cau-light do JS gắn khi đọc NỀN THỰC của .stApp (nền này đã
-# bám theo lựa chọn ☰ sau khi bỏ ép .stApp).
+# ── LẬT MÀU HỘP/THẺ TỐI theo HỆ THỐNG (prefers-color-scheme) ────────────────
+# Khi hệ điều hành / Streamlit "Use system setting" ở chế độ SÁNG: các thành phần
+# tô màu tối cố định (metric, topbar, ds-card, card inline #1e1e2e/#141420/#0a1f35…,
+# dialog, chữ trắng) tự lật sang sáng. Thuần CSS @media (prefers-color-scheme:light)
+# — không nút, không JS dò → chạy chắc trên Streamlit Cloud.
 _DARK_BG_HEX = ["#141420","#0a1f35","#1e1e2e","#0a0a14","#1a1a2a","#12121c",
                 "#0d0d1a","#12202e","#1a2330","#0f0f1a","#0e1117","#0d1a10",
                 "#141a20","#12121e"]
@@ -235,39 +235,15 @@ def _light_css(pfx: str = "") -> str:
         lines.append(f"{flat} {{{decl};}}")
     return "\n".join(lines)
 
-# (1) Kích hoạt qua class .cau-light (JS đọc nền thực) — selector PHẲNG
-st.markdown(f"<style>{_light_css('html.cau-light')}</style>", unsafe_allow_html=True)
-# (2) NÚT SÁNG/TỐI THỦ CÔNG (chắc chắn, không phụ thuộc dò) — ưu tiên; auto phụ.
-try:
-    _stt = str(st.context.theme.type or "").lower()
-except Exception:
-    _stt = ""
-_ui_light = bool(st.session_state.get("ui_theme_light", False)) or (_stt == "light")
-if _ui_light:
-    st.markdown(f"<style>{_light_css('')}</style>", unsafe_allow_html=True)
-import streamlit.components.v1 as _cc_theme
-_cc_theme.html(
-    """<script>
-    (function(){
-      function isLight(d){
-        var els=[d.querySelector('[data-testid="stApp"]'),
-                 d.querySelector('[data-testid="stMain"]'), d.body];
-        for(var i=0;i<els.length;i++){ if(!els[i]) continue;
-          var m=(getComputedStyle(els[i]).backgroundColor||'').match(/[\\d.]+/g);
-          if(m&&m.length>=3&&(m.length<4||parseFloat(m[3])>0.1)){
-            var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2]; return L>140; } }
-        return null;
-      }
-      function apply(){ try{
-        var d=window.parent.document, lt=isLight(d); if(lt===null) return;
-        d.documentElement.classList.toggle('cau-light', lt);
-        d.documentElement.classList.toggle('cau-dark', !lt);
-      }catch(e){} }
-      apply(); [150,400,900,1800,3500].forEach(function(t){setTimeout(apply,t);});
-      try{ new MutationObserver(apply).observe(window.parent.document.documentElement,
-          {attributes:true, attributeFilter:['style','class']}); }catch(e){}
-    })();
-    </script>""", height=0)
+# KÍCH HOẠT TỰ ĐỘNG THEO HỆ THỐNG — không nút, không JS dò (chạy chắc trên Cloud).
+# Trình duyệt tự áp khi OS/Streamlit "Use system setting" ở chế độ SÁNG.
+# Bao selector phẳng trong @media (prefers-color-scheme: light).
+st.markdown(
+    "<style>@media (prefers-color-scheme: light){\n"
+    + _light_css("")
+    + "\n}</style>",
+    unsafe_allow_html=True,
+)
 
 
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
@@ -3173,10 +3149,6 @@ with st.sidebar:
         "</div></div>",
         unsafe_allow_html=True,
     )
-
-    # ── Nút GIAO DIỆN SÁNG/TỐI (thủ công, áp toàn app: card + form + 3D) ──────
-    st.toggle("☀️ Giao diện Sáng", key="ui_theme_light",
-              help="Bật = nền sáng toàn app (thẻ, hộp thoại, lưới 3D). Tắt = tối.")
 
     _u = AUTH.current_user()
     st.markdown(
@@ -6594,11 +6566,12 @@ with _col_main:
                                     xaxis=dict(title="Lý trình (m)"),
                                     yaxis=dict(title="Ngang cầu (m)"),
                                     zaxis=dict(title="Cao độ (m)"),
-                                    # nền scene 3D theo nút Sáng/Tối
-                                    bgcolor=("#f4f6f9" if _ui_light else "rgba(0,0,0,0)"),
+                                    # nền scene trong suốt → hiện nền trang (tự theo
+                                    # theme sáng/tối của hệ thống)
+                                    bgcolor="rgba(0,0,0,0)",
                                 ),
-                                # màu chữ trục theo nút Sáng/Tối
-                                font=dict(color=("#1a1f2b" if _ui_light else "#e6e6e6")),
+                                # chữ trục xám trung tính → đọc được trên cả sáng lẫn tối
+                                font=dict(color="#8a90a0"),
                             )
 
                             # Lưu LƯỚI cầu (mesh) đã dựng để XUẤT IFC khớp ĐÚNG 3D
