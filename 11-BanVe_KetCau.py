@@ -2850,14 +2850,15 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # ── ĐƯỜNG ĐẦU CẦU: nền đắp + mặt đường vươn 50m mỗi bên ──────────────
         # Extrapolate tim tuyến beyond survey range (np.interp would clamp).
         def _vn_ext(s, off=0.0):
-            # Đường đầu cầu chạy THẲNG theo tim tuyến (không trượt xiên) → skew=False
+            # Đường đầu cầu XIÊN theo góc giao (khớp mố xiên) → skew=True: điểm ở
+            # offset off trượt lý trình off·cot(α), nối liền với bản mặt cầu xiên.
             if s < lt_v[0]:
-                xc, yc = _vn(float(lt_v[0]), off, False); g = float(goc_v[0]); dd = s - lt_v[0]
+                xc, yc = _vn(float(lt_v[0]), off, True); g = float(goc_v[0]); dd = s - lt_v[0]
                 return (xc + dd*np.cos(g), yc + dd*np.sin(g))
             if s > lt_v[-1]:
-                xc, yc = _vn(float(lt_v[-1]), off, False); g = float(goc_v[-1]); dd = s - lt_v[-1]
+                xc, yc = _vn(float(lt_v[-1]), off, True); g = float(goc_v[-1]); dd = s - lt_v[-1]
                 return (xc + dd*np.cos(g), yc + dd*np.sin(g))
-            return _vn(s, off, False)
+            return _vn(s, off, True)
 
         def _approach_emb(s0, s1, z_top_fn, taluy=1.5, name="", sl=True, step=5.0):
             """Nền đắp đầu cầu QUÉT dọc tim tuyến: mặt cắt hình thang (đỉnh = mặt
@@ -3251,9 +3252,17 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     # THỨ TỰ CAO ĐỘ TỪ ĐƯỜNG ĐỎ XUỐNG: đường đỏ = đỉnh bản mặt cầu → bản mặt cầu
     # (dày t_ban) → dầm (H_dam) → đá kê gối (h_goi) → tường thân mố/xà mũ.
     z_deck = cao_dd + H_dam + t_ban    # đỉnh bản mặt cầu = ĐƯỜNG ĐỎ (tại TIM)
-    z_ban_b = cao_dd + H_dam           # đáy bản = đỉnh dầm (tại TIM)
-    _z_beam_soffit = cao_dd     # đáy dầm tại vị trí (mố hạ theo khấc bên dưới)
+    z_ban_b = cao_dd + H_dam           # đáy bản = ĐỈNH dầm (tại TIM)
     h_goi_v = max(0.12, _h_goi(d))     # chiều cao đá kê gối (gối + đá kê)
+    # Chiều cao dầm THẬT (từ mặt cắt thư viện nếu có) → ĐÁY dầm để dầm nằm HẲN
+    # DƯỚI bản (đỉnh dầm = đáy bản), KHÔNG trồi lên bản mặt cầu.
+    _bm_all = (beam_mcn_outer or {}).get("outer") if beam_mcn_outer else None
+    if _bm_all:
+        _bz_h = [p[1] for p in _bm_all]
+        _H_sec = (max(_bz_h) - min(_bz_h)) / 1000.0
+    else:
+        _H_sec = H_dam
+    _z_beam_soffit = z_ban_b - _H_sec  # ĐÁY dầm tại TIM = đáy bản − chiều cao dầm
     # ĐỘ DỐC NGANG mặt cầu (đồng bộ MCN điển hình & 3D): crown tại tim (x=0), hạ
     # dần ra mép. Bản/dầm/đá kê gối/lan can bám dốc; xà mũ/thân mố giữ ĐỈNH PHẲNG
     # (đá kê gối cao thấp khác nhau để tạo dốc — đúng cấu tạo).
@@ -3294,12 +3303,11 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             _PBa = _get_PB()
             _z_base_mo = h_tn - 0.5
             _is_back = (mo_view == 'sau')
-            # Đáy dầm PHÍA MỐ = đáy dầm − độ sâu khấc (đầu dầm lên mố là đầu trơn).
-            _seat_mo = _abut_seat_z(cao_dd, pier_assembly)   # = ĐÁY DẦM phía mố
-            _z_beam_soffit = _seat_mo     # dầm kê lên đá kê gối (đáy dầm)
-            # ĐỈNH tường thân mố nằm DƯỚI đáy dầm đúng chiều cao đá kê gối → chừa
-            # chỗ đặt đá kê gối giữa đáy dầm và đỉnh thân mố (đúng cấu tạo).
-            _z_body_top = _seat_mo - h_goi_v
+            # ĐÁY dầm = đáy bản − chiều cao dầm THẬT (dầm nằm HẲN dưới bản). Đỉnh
+            # tường thân mố HẠ xuống dưới đáy dầm đúng chiều cao đá kê gối → chừa
+            # chỗ đặt gối; vai kê mố thấp lại (theo yêu cầu).
+            _seat_mo = _z_beam_soffit                     # đáy dầm tại mố
+            _z_body_top = _z_beam_soffit - h_goi_v        # ĐỈNH tường thân mố
             # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn (thân + cánh); nét thấy/khuất
             # đảo theo hướng nhìn (trước = từ sông, sau = từ tuyến về sông).
             _mcn_pl = _PBa.abutment_mcn_polys(
@@ -3363,7 +3371,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     else:
         # Bệ cọc — ĐỈNH xà mũ nằm DƯỚI đáy dầm đúng chiều cao đá kê gối.
         cap_H  = 0.80; be_H = 1.50
-        z_cap_t = cao_dd - h_goi_v          # đỉnh xà mũ = dưới đá kê gối
+        z_cap_t = _z_beam_soffit - h_goi_v  # đỉnh xà mũ = đáy dầm − đá kê gối
         z_capb = z_cap_t - cap_H
         z_shb  = z_capb - H_tru
         z_beb  = z_shb - be_H
@@ -3393,7 +3401,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                 z_beb = min(_ally)
             # Đá kê gối: NẰM DƯỚI đáy dầm (cao_dd), TRÊN đỉnh xà mũ (z_cap_t).
             _cap_yr = ((min(_capx), max(_capx)) if _capx else (-cap_W, cap_W))
-            _draw_da_ke_goi(cao_dd, _cap_yr)
+            _draw_da_ke_goi(_z_beam_soffit, _cap_yr)
             # KÍCH THƯỚC trụ lắp ghép: bề rộng & chiều cao từng bộ phận
             _xd = (max(_capx) if _capx else cap_W) + 0.9
             if _capx and _capy:
@@ -3431,7 +3439,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                   [z_capb, z_capb, z_cap_t, z_cap_t],
                   _C["btong"], _C["dam_dk"], "Xà mũ")
             # Đá kê gối: dưới đáy dầm (cao_dd), trên đỉnh xà mũ (z_cap_t)
-            _draw_da_ke_goi(cao_dd, (-cap_W, cap_W))
+            _draw_da_ke_goi(_z_beam_soffit, (-cap_W, cap_W))
 
         # Cọc — ưu tiên sơ đồ cọc khai báo từ DXF (mặt cắt ngang: chiếu trục ngang)
         _piles_vt = _layout_piles(d, vi_tri)
@@ -3458,8 +3466,9 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
             _dim_h(fig, z_beb - 0.5, -be_W, be_W, f"B_bệ={be_W*2:.1f}m", dy=0)
 
     # ── Dầm chủ (mặt cắt ngang) — MẶT CẮT DẦM THỰC từ thư viện (beam_mcn_outer);
-    # ĐÁY dầm đặt tại vai kê (= đỉnh đá kê gối), đỉnh dầm sát đáy bản. Vị trí dùng
-    # chung _beam_cx (đã ×_wsk) để dầm ⟷ đá kê gối trùng khớp. KHÔNG vẽ 'hộp' cũ.
+    # ĐỈNH dầm sát ĐÁY BẢN (dầm nằm HẲN dưới bản, không trồi lên), đáy dầm =
+    # _z_beam_soffit. Vị trí dùng chung _beam_cx (đã ×_wsk) để dầm ⟷ đá kê gối
+    # trùng khớp. KHÔNG vẽ 'hộp' cũ.
     _bm_out = (beam_mcn_outer or {}).get("outer") if beam_mcn_outer else None
     if _bm_out:
         # Mặt cắt thư viện: z 0 ở đỉnh, âm xuống đáy → đặt ĐÁY dầm tại vai kê.
@@ -4004,8 +4013,8 @@ def _to_concrete(trace) -> None:
 # Cụm KHÔNG biến dạng theo góc xiên (địa hình thực, mặt nước, khung tĩnh không,
 # nền/mặt đường đầu cầu chạy thẳng theo lý trình) — chỉ KẾT CẤU CẦU mới xiên.
 _SKEW_SKIP_KW = ("địa hình", "dia hinh", "terrain", "mặt nước", "mat nuoc",
-                 "nước", "nuoc", "tĩnh không", "tinh khong", "đường đầu cầu",
-                 "duong dau cau")
+                 "nước", "nuoc", "tĩnh không", "tinh khong")
+# (Đường đầu cầu KHÔNG còn trong skip → xiên theo góc giao, khớp mố xiên.)
 
 
 def apply_skew_3d(fig, d, start_index=0):
