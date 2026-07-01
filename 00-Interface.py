@@ -237,12 +237,13 @@ def _light_css(pfx: str = "") -> str:
 
 # (1) Kích hoạt qua class .cau-light (JS đọc nền thực) — selector PHẲNG
 st.markdown(f"<style>{_light_css('html.cau-light')}</style>", unsafe_allow_html=True)
-# (2) Áp TRỰC TIẾP khi st.context.theme = Light (không phụ thuộc JS)
+# (2) NÚT SÁNG/TỐI THỦ CÔNG (chắc chắn, không phụ thuộc dò) — ưu tiên; auto phụ.
 try:
     _stt = str(st.context.theme.type or "").lower()
 except Exception:
     _stt = ""
-if _stt == "light":
+_ui_light = bool(st.session_state.get("ui_theme_light", False)) or (_stt == "light")
+if _ui_light:
     st.markdown(f"<style>{_light_css('')}</style>", unsafe_allow_html=True)
 import streamlit.components.v1 as _cc_theme
 _cc_theme.html(
@@ -3172,6 +3173,10 @@ with st.sidebar:
         "</div></div>",
         unsafe_allow_html=True,
     )
+
+    # ── Nút GIAO DIỆN SÁNG/TỐI (thủ công, áp toàn app: card + form + 3D) ──────
+    st.toggle("☀️ Giao diện Sáng", key="ui_theme_light",
+              help="Bật = nền sáng toàn app (thẻ, hộp thoại, lưới 3D). Tắt = tối.")
 
     _u = AUTH.current_user()
     st.markdown(
@@ -6589,11 +6594,11 @@ with _col_main:
                                     xaxis=dict(title="Lý trình (m)"),
                                     yaxis=dict(title="Ngang cầu (m)"),
                                     zaxis=dict(title="Cao độ (m)"),
-                                    # nền scene trong suốt → theo theme (sáng/tối) của trang
-                                    bgcolor="rgba(0,0,0,0)",
+                                    # nền scene 3D theo nút Sáng/Tối
+                                    bgcolor=("#f4f6f9" if _ui_light else "rgba(0,0,0,0)"),
                                 ),
-                                # màu chữ trục theo theme (☰)
-                                font=dict(color=("#1a1f2b" if _stt == "light" else "#e6e6e6")),
+                                # màu chữ trục theo nút Sáng/Tối
+                                font=dict(color=("#1a1f2b" if _ui_light else "#e6e6e6")),
                             )
 
                             # Lưu LƯỚI cầu (mesh) đã dựng để XUẤT IFC khớp ĐÚNG 3D
