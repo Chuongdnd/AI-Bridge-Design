@@ -7159,7 +7159,9 @@ with _col_main:
                 st.markdown(f"**🧊 Mô hình 3D — {_vt_label_cur}** (kéo xoay)")
                 try:
                     _is_mo_vt = _selected_vt in ("mo_trai", "mo_phai")
-                    _bc_vt    = float(d.get("bc", 12.0))   # bề rộng cầu → co xà mũ/mố
+                    # Bề rộng THẬT dọc trục xiên = bc/sin(α) → 3D chi tiết mố/trụ
+                    # dài đúng theo góc xiên (khớp mặt cắt ngang vị trí).
+                    _bc_vt    = float(d.get("bc", 12.0)) * BVK._skew_widen(d)
                     if _is_mo_vt:
                         # KHỚP mố thực của cầu: cùng model + co bề rộng theo cầu +
                         # NEO vai kê=đáy dầm, đỉnh bệ=ĐTN−0.5 (như MCN 2D) → 3D
@@ -7459,7 +7461,8 @@ with _col_main:
                             return EXP.export_pier_ifc(d)
                         _Ht = float(d.get("H_tru_est", 5.0)) + 2.30
                         _trs = PB.build_pier_mesh_traces(
-                            _pm, H_tru=_Ht, cap_width=float(d.get("bc", 12.0)))
+                            _pm, H_tru=_Ht,
+                            cap_width=float(d.get("bc", 12.0)) * BVK._skew_widen(d))
                         return IFCX.mesh_traces_to_ifc(_trs,
                                                        project_name=f"Tru {selected_ribbon}")
 
