@@ -3410,14 +3410,14 @@ def _render_floating_chat():
     st.markdown("""
     <style>
     /* Bong bóng mở chat (khi thu nhỏ) */
-    .st-key-floatbtn_wrap { position: fixed; bottom: 20px; right: 20px; z-index: 100000; width: 150px; }
+    .st-key-floatbtn_wrap { position: fixed; bottom: 72px; right: 20px; z-index: 100000; width: 150px; }
     .st-key-floatbtn_wrap button {
         border-radius: 28px !important; height: 50px; font-weight: 700;
         box-shadow: 0 8px 24px rgba(0,0,0,0.5); }
     /* Khung chat (khi mở) — kéo tay nắm góc TRÊN-TRÁI để phóng to/thu nhỏ
        (neo dưới-phải nên nở lên-trái). Kích thước do JS điều khiển. */
     .st-key-floatchat_wrap {
-        position: fixed; bottom: 20px; right: 20px; z-index: 100000;
+        position: fixed; bottom: 72px; right: 20px; z-index: 100000;
         width: 380px; max-width: 92vw;
         background: #12121c; border: 1px solid #2a3550; border-radius: 14px;
         box-shadow: 0 12px 44px rgba(0,0,0,0.6); padding: 14px 12px 4px; }
