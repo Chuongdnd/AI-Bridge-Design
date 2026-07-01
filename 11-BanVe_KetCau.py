@@ -95,6 +95,34 @@ def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None,
         hovertemplate=(f"<b>{name}</b><extra></extra>" if name else None),
     ))
 
+def _skew_alpha_rad(d):
+    """Góc giao (radian) đã clamp 30°–90°. 90° = không xiên."""
+    try:
+        g = float((d or {}).get("goc_giao", 90.0))
+    except Exception:
+        g = 90.0
+    return np.radians(max(30.0, min(90.0, g)))
+
+
+def _skew_widen(d) -> float:
+    """Hệ số NỚI bề rộng phần dưới theo góc xiên: chiều dài THẬT của mố/trụ dọc
+    trục xiên = bc/sin(α). Trả 1.0 khi cầu vuông góc (α≈90°)."""
+    a = _skew_alpha_rad(d)
+    s = np.sin(a)
+    return 1.0 / s if s > 1e-6 else 1.0
+
+
+def _skew_cot(d) -> float:
+    """cot(α) — hệ số TRƯỢT mặt bằng theo góc xiên (dọc += ngang·cot). 0 khi α≈90°."""
+    try:
+        g = float((d or {}).get("goc_giao", 90.0))
+    except Exception:
+        g = 90.0
+    if g >= 89.9 or g <= 0:
+        return 0.0
+    return 1.0 / np.tan(_skew_alpha_rad(d))
+
+
 def _h_goi(d) -> float:
     """Chiều cao GỐI cầu (m): khoảng hở đáy dầm ↔ đỉnh xà mũ. Khai báo qua
     d['h_goi_m'] (mặc định 0.15m). Dầm SPT kê trên gối nên đỉnh xà mũ THẤP HƠN
@@ -3104,7 +3132,10 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     tru_r = d.get("tru_result", {}) or {}
     mong  = d.get("mong_result", {}) or {}
 
-    bc     = float(d.get("bc", 12.0))
+    bc_raw = float(d.get("bc", 12.0))
+    # Góc xiên: mặt cắt ngang mố/trụ vẽ theo bề rộng THẬT dọc trục xiên = bc/sin(α)
+    _wsk   = _skew_widen(d)
+    bc     = bc_raw * _wsk
     B_tk   = float(d.get("B", 20.0))
     H_tk   = float(d.get("H", 3.0))
     H_tru  = float(d.get("H_tru_est", 5.0))
@@ -3372,8 +3403,9 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
 
     # ── Dầm chủ (mặt cắt ngang) — vẽ tại từng vị trí dầm dưới bản mặt cầu ──
     _ndam_v = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5) or 5)
-    _kcd_v  = float(kcn.get("khoang_cach_dam", 2.2) or 2.2)
-    _oh_v   = float(kcn.get("overhang", 0.5) or 0.5)
+    # Vị trí/khoảng cách dầm chiếu lên trục xiên cũng nới theo 1/sin(α).
+    _kcd_v  = float(kcn.get("khoang_cach_dam", 2.2) or 2.2) * _wsk
+    _oh_v   = float(kcn.get("overhang", 0.5) or 0.5) * _wsk
     if _ndam_v >= 1:
         # Tim dầm đầu tiên cách mép cầu một đoạn hẫng; nếu khoảng cách không phủ
         # hết bề rộng thì căn đều theo bề rộng cầu.
@@ -3422,8 +3454,10 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         _poly(fig, [yy for yy, _ in _pg_vt], [z_deck + zz - _zg for _, zz in _pg_vt],
               _C["lan_can"], "#2c3e50", "Giải phân cách", showlegend=True)
 
-    # Dimensions chung
-    _dim_h(fig, z_deck + 1.5, -bc/2, bc/2, f"B_cầu = {bc:.1f} m", dy=0)
+    # Dimensions chung — khi xiên: ghi bề rộng THẬT dọc trục xiên = bc/sin(α)
+    _blbl = (f"B_xiên = {bc:.2f} m (Bc {bc_raw:.1f}/sin{float(d.get('goc_giao',90)):.0f}°)"
+             if _wsk > 1.001 else f"B_cầu = {bc:.1f} m")
+    _dim_h(fig, z_deck + 1.5, -bc/2, bc/2, _blbl, dy=0)
     if not is_mo:
         _dim_h(fig, z_deck + 2.2, -cap_W, cap_W, f"B_xà mũ = {cap_W*2:.1f} m",
                color="#8e44ad", dy=0)
@@ -3575,12 +3609,19 @@ def ve_mat_bang_coc(d, vi_tri='mo_trai'):
 
     piles = g["piles"]
     declared = bool(piles)
+    # Góc xiên: bệ HÌNH BÌNH HÀNH (dọc += ngang·cot). Cọc DXF khai báo giữ tọa độ
+    # thật; lưới cọc TỰ ĐỘNG trượt theo bệ cho khớp.
+    _cotp = _skew_cot(d)
     if not piles:
         piles = _auto_pile_grid(g)
+        if _cotp:
+            for _p in piles:
+                _p["y"] = _p["y"] + _p["x"] * _cotp
 
     bhn, bhd = g["be_half_ngang"], g["be_half_doc"]
-    # Bệ cọc (hình chiếu bằng)
-    _poly(fig, [-bhn, bhn, bhn, -bhn], [-bhd, -bhd, bhd, bhd],
+    # Bệ cọc (hình chiếu bằng — bình hành theo góc xiên)
+    _bx = [-bhn, bhn, bhn, -bhn]; _by = [-bhd, -bhd, bhd, bhd]
+    _poly(fig, _bx, [y + x * _cotp for x, y in zip(_bx, _by)],
           "rgba(170,183,184,0.25)", _C["be_dk"], "Bệ cọc", lw=1.8)
 
     # Vòng tròn cọc
@@ -3642,6 +3683,13 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
     fig = go.Figure()
     bhn, bhd = g["be_half_ngang"], g["be_half_doc"]
     bc = g["bc"]
+    # Góc xiên: mặt bằng mố/trụ vẽ HÌNH BÌNH HÀNH — trượt dọc theo ngang·cot(α).
+    _cotp = _skew_cot(d)
+    def _polyS(xs, ys, *a, **k):
+        _poly(fig, list(xs),
+              [y + x * _cotp for x, y in zip(list(xs), list(ys))], *a, **k)
+    def _circS(xc, yc, r, *a, **k):
+        _circle(fig, xc, yc + xc * _cotp, r, *a, **k)
     _use_asm = bool(pier_assembly) and not g["is_mo"]
     _use_mo  = bool(abutment_assembly) and g["is_mo"]
 
@@ -3652,8 +3700,8 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
         _seen = set()
         for _pl in _polys:
             _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
-            _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["be_dk"],
-                  _nm if _sl else "", showlegend=_sl, lw=1.6)
+            _polyS(_pl["xs"], _pl["ys"], _pl["color"], _C["be_dk"],
+                   _nm if _sl else "", showlegend=_sl, lw=1.6)
         _allx = [x for pl in _polys for x in pl["xs"]]
         _ally = [y for pl in _polys for y in pl["ys"]]
         if _allx:
@@ -3667,8 +3715,8 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
         _seen = set()
         for _pl in _mpolys:
             _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
-            _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["be_dk"],
-                  _nm if _sl else "", showlegend=_sl, lw=1.6)
+            _polyS(_pl["xs"], _pl["ys"], _pl["color"], _C["be_dk"],
+                   _nm if _sl else "", showlegend=_sl, lw=1.6)
         _allx = [x for pl in _mpolys for x in pl["xs"]]
         _ally = [y for pl in _mpolys for y in pl["ys"]]
         if _allx:
@@ -3677,8 +3725,8 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
             bhd = max(bhd, abs(min(_ally)), abs(max(_ally)))
     else:
         # Bệ cọc (chung)
-        _poly(fig, [-bhn, bhn, bhn, -bhn], [-bhd, -bhd, bhd, bhd],
-              "rgba(170,183,184,0.30)", _C["be_dk"], "Bệ cọc", lw=1.8)
+        _polyS([-bhn, bhn, bhn, -bhn], [-bhd, -bhd, bhd, bhd],
+               "rgba(170,183,184,0.30)", _C["be_dk"], "Bệ cọc", lw=1.8)
 
     if _use_asm or _use_mo:
         pass  # đã vẽ footprint trụ/mố ở trên
@@ -3686,32 +3734,32 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
         # Thân mố (tường thân) + tường cánh kéo về phía sau (dọc cầu)
         body_ng = bc / 2 + 0.5
         body_dc = max(0.8, bhd * 0.35)
-        _poly(fig, [-body_ng, body_ng, body_ng, -body_ng],
-              [-body_dc, -body_dc, body_dc, body_dc],
-              _C["moc"], _C["be_dk"], "Thân mố")
+        _polyS([-body_ng, body_ng, body_ng, -body_ng],
+               [-body_dc, -body_dc, body_dc, body_dc],
+               _C["moc"], _C["be_dk"], "Thân mố")
         wing_len = bhd  # tường cánh trải theo dọc
         for sy in (-1, 1):
             xw = sy * body_ng
-            _poly(fig, [xw - sy*0.4, xw, xw, xw - sy*0.4],
-                  [-wing_len, -wing_len, wing_len, wing_len],
-                  "rgba(192,160,107,0.45)", _C["be_dk"],
-                  "Tường cánh" if sy == -1 else "", showlegend=(sy == -1))
+            _polyS([xw - sy*0.4, xw, xw, xw - sy*0.4],
+                   [-wing_len, -wing_len, wing_len, wing_len],
+                   "rgba(192,160,107,0.45)", _C["be_dk"],
+                   "Tường cánh" if sy == -1 else "", showlegend=(sy == -1))
     else:
         # Xà mũ (chạy ngang) + thân cột
-        _poly(fig, [-g["cap_W"], g["cap_W"], g["cap_W"], -g["cap_W"]],
-              [-g["cap_half_doc"], -g["cap_half_doc"], g["cap_half_doc"], g["cap_half_doc"]],
-              "rgba(133,146,158,0.45)", _C["dam_dk"], "Xà mũ", lw=1.5)
+        _polyS([-g["cap_W"], g["cap_W"], g["cap_W"], -g["cap_W"]],
+               [-g["cap_half_doc"], -g["cap_half_doc"], g["cap_half_doc"], g["cap_half_doc"]],
+               "rgba(133,146,158,0.45)", _C["dam_dk"], "Xà mũ", lw=1.5)
         r_col = g["W_cot"] / 2.0
         for ic, off_c in enumerate(g["col_offs"]):
-            _circle(fig, off_c, 0.0, r_col, _C["btong_dk"], "rgba(200,214,192,0.85)",
-                    name=("Thân cột" if ic == 0 else ""), showlegend=(ic == 0))
+            _circS(off_c, 0.0, r_col, _C["btong_dk"], "rgba(200,214,192,0.85)",
+                   name=("Thân cột" if ic == 0 else ""), showlegend=(ic == 0))
 
     # Cọc (chấm tròn mờ để định vị)
     _piles = g["piles"] or _auto_pile_grid(g)
     for j, p in enumerate(_piles):
-        _circle(fig, p["x"], p["y"], p["D"] / 2.0, "rgba(86,101,115,0.55)",
-                "rgba(86,101,115,0.12)",
-                name=("Cọc" if j == 0 else ""), showlegend=(j == 0))
+        _circS(p["x"], p["y"], p["D"] / 2.0, "rgba(86,101,115,0.55)",
+               "rgba(86,101,115,0.12)",
+               name=("Cọc" if j == 0 else ""), showlegend=(j == 0))
 
     fig.add_shape(type="line", x0=0, y0=-bhd - 0.6, x1=0, y1=bhd + 0.6,
                   line=dict(color="#aab7b8", width=1, dash="dashdot"))
