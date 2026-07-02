@@ -69,6 +69,118 @@ _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 KHO_HO_DAM_MO = 0.10  # m — khoảng hở (khe co giãn) đầu dầm ↔ mặt trước tường đỉnh mố
 
 
+def _stitch_loops(segs, q=1e-3):
+    """Nối các ĐOẠN giao (mesh × mặt phẳng) thành các VÒNG KÍN → list [(a,b)].
+    Lượng tử hoá điểm về lưới q(m) để khớp đầu mút. Tham lam, hợp mặt cắt lồi/hộp."""
+    def _k(p):
+        return (round(p[0] / q), round(p[1] / q))
+    adj = {}; pos = {}
+    for a, b in segs:
+        ka, kb = _k(a), _k(b)
+        if ka == kb:
+            continue
+        pos[ka] = a; pos[kb] = b
+        adj.setdefault(ka, set()).add(kb)
+        adj.setdefault(kb, set()).add(ka)
+    loops = []; used = set()
+    for start in list(adj):
+        if start in used or len(adj[start]) == 0:
+            continue
+        loop = [start]; used.add(start); cur = start; prev = None
+        while True:
+            nxt = next((n for n in adj[cur] if n != prev and n not in used), None)
+            if nxt is None:
+                break
+            loop.append(nxt); used.add(nxt); prev, cur = cur, nxt
+            if start in adj[cur] and len(loop) >= 3:
+                break
+        if len(loop) >= 3:
+            loops.append([pos[k] for k in loop])
+    return loops
+
+
+def _convex_hull(pts):
+    """Bao lồi 2D (Andrew monotone chain) → list điểm CCW. pts: [(a,b)]."""
+    pts = sorted(set((round(p[0], 4), round(p[1], 4)) for p in pts))
+    if len(pts) <= 2:
+        return pts
+    def _cross(o, a, b):
+        return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
+    lo = []
+    for p in pts:
+        while len(lo) >= 2 and _cross(lo[-2], lo[-1], p) <= 0:
+            lo.pop()
+        lo.append(p)
+    hi = []
+    for p in reversed(pts):
+        while len(hi) >= 2 and _cross(hi[-2], hi[-1], p) <= 0:
+            hi.pop()
+        hi.append(p)
+    return lo[:-1] + hi[:-1]
+
+
+def project_mesh_traces(traces, axis="y"):
+    """CHIẾU list go.Mesh3d lên mặt phẳng vuông góc trục `axis` → list
+    {name,color,xs,zs} là BAO LỒI (silhouette) từng bộ phận. Dùng cho HÌNH CHIẾU
+    ĐỨNG (trắc dọc): axis 'y' giữ (x=dọc, z=cao) → trụ 2 thân chiếu chồng thành 1
+    cột (đúng elevation), khác với lát cắt mỏng tại tim làm MẤT cột."""
+    m0, m1 = [i for i in (0, 1, 2) if i != {"x": 0, "y": 1, "z": 2}[axis]]
+    groups = {}
+    for t in traces:
+        if getattr(t, "type", "") != "mesh3d":
+            continue
+        X, Y, Z = list(t.x or []), list(t.y or []), list(t.z or [])
+        if not X:
+            continue
+        V = list(zip(X, Y, Z))
+        nm = getattr(t, "name", "") or ""
+        g = groups.setdefault(nm, {"pts": [], "color": getattr(t, "color", None)})
+        g["pts"].extend((v[m0], v[m1]) for v in V)
+    out = []
+    for nm, g in groups.items():
+        hull = _convex_hull(g["pts"])
+        if len(hull) >= 3:
+            out.append({"name": nm, "color": g["color"],
+                        "xs": [p[0] for p in hull], "zs": [p[1] for p in hull]})
+    return out
+
+
+def cut_mesh_traces(traces, axis="y", value=0.0, q=1e-3):
+    """CẮT list go.Mesh3d bằng mặt phẳng axis=value → list {name,color,xs,zs} là
+    ĐƯỜNG BAO tiết diện thật, chiếu lên 2 trục còn lại. axis 'y' = cắt DỌC tim cầu
+    (giữ x=dọc, z=cao) cho trắc dọc; 'x' = cắt NGANG tại lý trình (giữ y=ngang, z).
+    Gom theo tên bộ phận rồi nối vòng kín (fill được)."""
+    ax = {"x": 0, "y": 1, "z": 2}[axis]
+    m0, m1 = [i for i in (0, 1, 2) if i != ax]
+    groups = {}
+    for t in traces:
+        if getattr(t, "type", "") != "mesh3d":
+            continue
+        X, Y, Z = list(t.x or []), list(t.y or []), list(t.z or [])
+        I, J, K = list(t.i or []), list(t.j or []), list(t.k or [])
+        if not (X and I):
+            continue
+        V = list(zip(X, Y, Z))
+        nm = getattr(t, "name", "") or ""
+        g = groups.setdefault(nm, {"segs": [], "color": getattr(t, "color", None)})
+        for a, b, c in zip(I, J, K):
+            pts = []
+            for p, r in ((a, b), (b, c), (c, a)):
+                dp, dr = V[p][ax] - value, V[r][ax] - value
+                if (dp < 0 <= dr) or (dr < 0 <= dp):
+                    tt = dp / (dp - dr)
+                    pts.append((V[p][m0] + tt * (V[r][m0] - V[p][m0]),
+                                V[p][m1] + tt * (V[r][m1] - V[p][m1])))
+            if len(pts) >= 2:
+                g["segs"].append((pts[0], pts[1]))
+    out = []
+    for nm, g in groups.items():
+        for loop in _stitch_loops(g["segs"], q):
+            out.append({"name": nm, "color": g["color"],
+                        "xs": [p[0] for p in loop], "zs": [p[1] for p in loop]})
+    return out
+
+
 def _abut_seat_z(cao_dd, pier_assembly):
     """Cao độ VAI KÊ (đáy dầm) PHÍA MỐ. Dầm SPT lên mố là ĐẦU TRƠN (không khấc)
     nên đáy dầm phía mố HẠ THẤP so với phía trụ đúng bằng ĐỘ SÂU KHẤC xà mũ →
@@ -190,40 +302,41 @@ def make_red_line(d):
     R     = float(d.get("R_hinh_hoc", 0) or 0)
     i_gr  = abs(float(d.get("i_max_hinh_hoc", 0) or 0)) / 100.0
 
-    # CAO ĐỘ đường đỏ — phân biệt NHỊP CHÍNH (có tĩnh không thông thuyền) và MỐ.
-    #   • ĐỈNH (tại TIM TĨNH KHÔNG, nhịp chính): khống chế bởi TĨNH KHÔNG CAO NHẤT
-    #     (max lũ & thông thuyền) = cao_day_dam hệ thống → đáy dầm biên nhịp chính.
-    #   • MỐ (nhịp biên): CHỈ cần ĐK1 an-toàn-lũ (đáy dầm ≥ MNCN + 0.50m). KHÔNG áp
-    #     tĩnh không thông thuyền cho mố → mố hạ thấp, không bị cao thừa.
-    # Cộng (bc/2)·i_ngang để chính ĐÁY DẦM BIÊN vừa đủ hở (dầm bám đáy bản dốc ngang).
+    # ĐƯỜNG ĐỎ = TRẮC DỌC THIẾT KẾ theo KHAI BÁO (đường cong đứng lồi bán kính R
+    # + độ dốc dọc i người dùng khai báo/tính). ĐỈNH đặt tại TIM TĨNH KHÔNG; cao độ
+    # đỉnh đặt sao cho ĐÁY DẦM BIÊN tại nhịp chính vừa đủ hở TĨNH KHÔNG CAO NHẤT
+    # (max lũ & thông thuyền = cao_day_dam hệ thống). Vẫn KIỂM SOÁT không cho vi
+    # phạm ĐK1 an-toàn-lũ ở mọi điểm (nâng đường đỏ nếu cần).
     MNCN = float(d.get("MNCN", 3.5))
     _cao_dd_sys = float(d.get("cao_day_dam", 0) or 0)   # đáy dầm biên nhịp chính
     if _cao_dd_sys <= 0:                                 # suy dự phòng nếu thiếu
         _cao_dd_sys = max(MNCN + 0.50, MNTT + H_tk + KHO_HO_DAY_DAM)
     _extra   = (bc / 2.0) * i_ng + H_dam + t_ban        # đáy dầm biên → đỉnh bản tại tim
-    z_crown  = _cao_dd_sys + _extra                     # đỉnh (nhịp chính, tại tim TK)
-    z_mo     = (MNCN + 0.50) + _extra                   # đỉnh bản tại MỐ (chỉ ĐK1 lũ)
-    z_mo     = min(z_mo, z_crown)                        # mố không cao hơn đỉnh
-    _dxL = max(x_tim - x0, 1e-6)                         # nửa trái (đỉnh→mố trái)
-    _dxR = max(x_end - x_tim, 1e-6)                      # nửa phải (đỉnh→mố phải)
+    z_crown  = _cao_dd_sys + _extra                     # đỉnh đường đỏ (tại tim TK)
+    z_floor  = (MNCN + 0.50) + _extra                   # đỉnh bản tối thiểu (ĐK1 lũ)
+    # Nâng đỉnh thêm độ VÕNG của đường cong đứng trong bề rộng khổ tĩnh không, để
+    # đáy dầm tại MÉP khổ (x_tim ± B_tk/2) vẫn KHÔNG PHẠM tĩnh không thông thuyền.
+    B_tk = float(d.get("B", 20.0))
+    if R > 0:
+        z_crown += (B_tk / 2.0) ** 2 / (2.0 * R)
 
-    _drop = z_crown - z_mo                               # độ hạ đỉnh → mố
-    _gL = 2.0 * _drop / _dxL                             # dốc tiếp tuyến tại mố trái
-    _gR = 2.0 * _drop / _dxR                             # dốc tiếp tuyến tại mố phải
+    def _raw(x):
+        # Đường cong đứng lồi theo KHAI BÁO: parabol bán kính R quanh đỉnh, ngoài
+        # cung nối dốc thẳng i. R≤0 → chỉ dốc i; i=0 & R≤0 → phẳng.
+        dx = abs(x - x_tim)
+        if R > 0:
+            x_tan = R * i_gr if i_gr > 0 else float("inf")
+            if dx <= x_tan:
+                return z_crown - dx * dx / (2.0 * R)
+            z_tan = z_crown - x_tan * x_tan / (2.0 * R)
+            return z_tan - (dx - x_tan) * i_gr
+        if i_gr > 0:
+            return z_crown - dx * i_gr
+        return z_crown
 
     def _z_red(x):
-        # ĐƯỜNG CONG ĐỨNG LỒI (parabol) — ĐỈNH tại tim tĩnh không (nhịp chính,
-        # khống chế bởi tĩnh không thông thuyền), hạ mượt về cao độ MỐ (chỉ ĐK1
-        # an-toàn-lũ). Ngoài mố: giữ dốc tiếp tuyến cho đường đầu cầu.
-        if x < x0:      # đường đầu cầu trái
-            return z_mo - (x0 - x) * _gL
-        if x > x_end:   # đường đầu cầu phải
-            return z_mo - (x - x_end) * _gR
-        if x <= x_tim:
-            f = (x_tim - x) / _dxL
-            return z_crown - _drop * f * f
-        f = (x - x_tim) / _dxR
-        return z_crown - _drop * f * f
+        # Theo trắc dọc khai báo, NHƯNG không thấp hơn mức ĐK1 lũ (nâng nếu vi phạm).
+        return max(_raw(x), z_floor)
 
     return _z_red, x_tim, z_crown, t_ban, H_dam
 
@@ -832,9 +945,11 @@ def _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip=None):
     main_L = x_tim - L_std / 2.0
     main_R = x_tim + L_std / 2.0
 
-    # Mở rộng đều về hai phía để phủ phạm vi cầu [x0, x_end]
-    n_left  = max(0, int(np.ceil((main_L - x0)   / L_std - 1e-6)))
-    n_right = max(0, int(np.ceil((x_end - main_R) / L_std - 1e-6)))
+    # Số nhịp dẫn mỗi phía = LÀM TRÒN (gần nhất) quãng từ nhịp chính tới điểm ngắt
+    # cầu (vị trí đắp ≈ 6m). Dùng round (không phải ceil) để mố chỉ DỜI 1 CHÚT về
+    # đúng bội số chiều dài nhịp — không lố hẳn ra thêm gần cả một nhịp.
+    n_left  = max(0, int(round((main_L - x0)   / L_std)))
+    n_right = max(0, int(round((x_end - main_R) / L_std)))
 
     left  = [main_L - i * L_std for i in range(n_left, 0, -1)]
     right = [main_R + i * L_std for i in range(1, n_right + 1)]
@@ -899,8 +1014,9 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
 
     main_L = x_tim - L_main / 2.0
     main_R = x_tim + L_main / 2.0
-    n_left  = max(0, int(np.ceil((main_L - x0)   / L_dan - 1e-6)))
-    n_right = max(0, int(np.ceil((x_end - main_R) / L_dan - 1e-6)))
+    # LÀM TRÒN (gần nhất) số nhịp dẫn → mố dời 1 chút về bội số chiều dài nhịp dẫn.
+    n_left  = max(0, int(round((main_L - x0)   / L_dan)))
+    n_right = max(0, int(round((x_end - main_R) / L_dan)))
     left  = [main_L - i * L_dan for i in range(n_left, 0, -1)]
     right = [main_R + i * L_dan for i in range(1, n_right + 1)]
     supports = left + [main_L, main_R] + right
@@ -1395,6 +1511,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     D_coc_m, L_coc, _n_coc = mong_dims(mong)
     n_coc_row = max(2, min(4, _n_coc))
 
+    # TRỤ / MỐ lấy từ MÔ HÌNH 3D (d['_pier_model'] / d['_mo_model']) nếu người gọi
+    # không truyền assembly → trắc dọc hiển thị ĐÚNG trụ/mố như 3D cầu, KHÔNG dùng
+    # khối tự vẽ độc lập.
+    if pier_assembly is None:
+        pier_assembly = d.get("_pier_model")
+    if abutment_assembly is None:
+        abutment_assembly = d.get("_mo_model")
+
     # Tọa độ Lý trình thực địa
     x0    = float(geo.get("x_mo_trai", -L_cau / 2))
     x_end = float(geo.get("x_mo_phai", x0 + L_cau))
@@ -1635,11 +1759,18 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         # Trụ LẮP GHÉP từ thư viện: vẽ bóng mặt đứng dọc theo mặt cắt thật
         if pier_assembly:
             _PB = _get_PB()
-            for _rc in _PB.pier_elevation_rects(
-                    pier_assembly, H_tru=(z_cap_t_i - z_be_b_i),
-                    x_ctr=xt, z_base=z_be_b_i):
+            # TRẮC DỌC = HÌNH CHIẾU ĐỨNG thật của LƯỚI 3D trụ (chiếu lên x–z tại
+            # tim) — cùng nguồn với 3D toàn cầu → trụ 2 thân hiện đúng, xà mũ bậc
+            # (ụ giữa) đúng, thay khối hộp tham số cũ (pier_elevation_rects).
+            _ptr_td = _PB.build_pier_mesh_traces(
+                pier_assembly, H_tru=(z_cap_t_i - z_be_b_i),
+                x_ctr=xt, z_base=z_be_b_i, cap_width=None)
+            _seen_td = set()
+            for _rc in project_mesh_traces(_ptr_td, axis="y"):
+                _nm = _rc["name"].split(" #")[0]
+                _sl = sl and _nm not in _seen_td; _seen_td.add(_nm)
                 _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["dam_dk"],
-                      (_rc["name"] if sl else ""), showlegend=sl)
+                      (_nm if _sl else ""), showlegend=_sl)
             fig.add_annotation(
                 x=xt, y=z_terr_tru, text=f"Z={z_terr_tru:.2f}m",
                 showarrow=True, arrowhead=2, arrowcolor="#27ae60",
@@ -2857,6 +2988,14 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             """Độ lệch cao độ đường đỏ so với đỉnh (×hz) — quét bản/dầm theo trắc dọc."""
             return (_zred_fn(s) - _zcrown) * hz
 
+        def _pier_found(xt):
+            """Cao độ móng trụ THEO ĐỊA HÌNH TỪNG TRỤ (khớp trắc dọc) — real units.
+            Trả (đáy_dầm, đỉnh_bệ, đáy_bệ). Đỉnh bệ chôn 0.5m dưới ĐTN tại trụ."""
+            _soffit = _zred_fn(xt) - t_ban - H_dam       # đáy dầm (vai kê) tại trụ
+            _zt     = float(np.interp(xt, lt_v, vz_v))   # cao độ ĐTN tại trụ
+            _be_top = min(_zt - 0.5, _soffit - 1.0)      # đỉnh bệ (chừa tối thiểu thân)
+            return _soffit, _be_top, _be_top - 1.50      # đáy bệ = đỉnh bệ − 1.5m
+
         # ── Cao độ × he_so_z (mốc tại ĐỈNH đường cong; theo trạm cộng _prof) ────
         z_phu  = (cao_dd + H_dam + t_ban + t_phu) * hz
         z_deck = (cao_dd + H_dam + t_ban) * hz    # = _zcrown*hz
@@ -3110,21 +3249,26 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         _pier_model = d.get("_pier_model")
         _PBp = _get_PB()
         if _pier_model:
-            _H_total = H_tru + 2.30                   # đáy bệ → đỉnh xà mũ
-            # Dầm vẽ ĐẦY ĐỦ, đáy dầm = cao_dd kê trên VAI KÊ = cao_dd; build_pier
-            # neo ĐỈNH ụ giữa = z_base+H_total, vai kê = đỉnh ụ − khấc → để VAI KÊ
-            # = cao_dd thì đỉnh ụ giữa = cao_dd + khấc (ụ nhô lên đỡ bản).
+            # Dầm vẽ ĐẦY ĐỦ, đáy dầm = VAI KÊ; build_pier neo ĐỈNH ụ giữa =
+            # z_base+H_total, vai kê = đỉnh ụ − khấc → để VAI KÊ = đáy dầm thì đỉnh
+            # ụ giữa = đáy dầm + khấc (ụ nhô lên đỡ bản).
             try:
                 _notch3d = _PBp.cap_seat_notch_depth_m(_pier_model) or 0.0
             except Exception:
                 _notch3d = 0.0
-            _z_base_pier = (cao_dd + _notch3d) - _H_total   # vai kê = cao_dd (đáy dầm)
             for i_p, xt in enumerate(piers):
                 sl = (i_p == 0)
+                # THÂN TRỤ KÉO GIÃN theo ĐỊA HÌNH TỪNG TRỤ (khớp trắc dọc):
+                #  • Vai kê (đáy dầm) BÁM ĐƯỜNG ĐỎ tại trụ → đỉnh ụ giữa = +khấc.
+                #  • Đỉnh bệ chôn 0.5m dưới ĐTN tại trụ; đáy bệ = đỉnh bệ − 1.5m.
+                #  • Chiều cao thân trụ tự co để nối đáy bệ ↔ đỉnh ụ (build_pier).
+                _soffit_i, _z_be_top_i, _z_be_bot_i = _pier_found(xt)
+                _anchor_top  = _soffit_i + _notch3d               # đỉnh ụ giữa (neo)
+                _H_total_i   = _anchor_top - _z_be_bot_i          # đáy bệ → đỉnh ụ
                 try:
                     _ptr = _PBp.build_pier_mesh_traces(
-                        _pier_model, H_tru=_H_total, x_ctr=xt,
-                        z_base=_z_base_pier, cap_width=bc)
+                        _pier_model, H_tru=_H_total_i, x_ctr=xt,
+                        z_base=_z_be_bot_i, cap_width=bc)
                 except Exception as _pe:
                     print(f"[add_all] trụ lắp ghép lỗi: {_pe}")
                     _ptr = []
@@ -3177,8 +3321,14 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                                     z_beb, z_bet, "#aab7b8", 0.90,
                                     "Bệ cọc" if sl else "", sl=sl))
 
-            # Cọc (line - OK vì cọc thực tế cũng tròn/mảnh)
+            # Cọc (line) — ĐỈNH CỌC bám ĐÁY BỆ theo địa hình từng trụ (khớp trắc dọc)
             _grp_state["g"] = "Cọc"
+            if _pier_model:
+                _, _, _z_be_bot_p = _pier_found(xt)
+                _z_coc_top = _z_be_bot_p * hz
+            else:
+                _z_coc_top = z_bet
+            _z_coc_bot = _z_coc_top - L_coc * hz
             c_ds = np.linspace(-be_W*0.65, be_W*0.65, n_coc_row)
             c_ls = np.linspace(-be_long*0.65, be_long*0.65, n_coc_row)
             for dl in c_ls:
@@ -3187,7 +3337,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                     lbl_coc = (f"Cọc Ø{int(D_coc*1000)}mm L={L_coc:.0f}m"
                                if (sl and dl == c_ls[0] and dt == c_ds[0]) else "")
                     _ag(go.Scatter3d(
-                        x=[xp, xp], y=[yp, yp], z=[z_bet, z_pileb],
+                        x=[xp, xp], y=[yp, yp], z=[_z_coc_top, _z_coc_bot],
                         mode="lines",
                         line=dict(color="#4a4a4a", width=5),
                         name=lbl_coc,
