@@ -1247,6 +1247,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     D_coc_m, L_coc, _n_coc = mong_dims(mong)
     n_coc_row = max(2, min(4, _n_coc))
 
+    # TRỤ / MỐ lấy từ MÔ HÌNH 3D (d['_pier_model'] / d['_mo_model']) nếu người gọi
+    # không truyền assembly → trắc dọc hiển thị ĐÚNG trụ/mố như 3D cầu, KHÔNG dùng
+    # khối tự vẽ độc lập.
+    if pier_assembly is None:
+        pier_assembly = d.get("_pier_model")
+    if abutment_assembly is None:
+        abutment_assembly = d.get("_mo_model")
+
     # Tọa độ Lý trình thực địa
     x0    = float(geo.get("x_mo_trai", -L_cau / 2))
     x_end = float(geo.get("x_mo_phai", x0 + L_cau))
