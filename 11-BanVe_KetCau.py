@@ -1226,6 +1226,26 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     W_be  = W_cap + 0.8
     W_mo  = 3.0
 
+    # ── ĐƯỜNG ĐỎ (trắc dọc thiết kế) ─────────────────────────────────────────
+    # Thể hiện theo BÁN KÍNH đường cong đứng lồi + ĐỘ DỐC DỌC người dùng khai báo
+    # / hệ thống tính (R_hinh_hoc, i_max_hinh_hoc). Đỉnh đường cong đặt giữa cầu,
+    # cao độ đỉnh = cao độ mặt cầu hiện có (z_deck). Không có R → mặt cầu phẳng.
+    _R_vc  = float(d.get("R_hinh_hoc", 0) or 0)
+    _i_gr  = abs(float(d.get("i_max_hinh_hoc", 0) or 0)) / 100.0
+    _x_apex = (x0 + x_end) / 2.0
+    _z_crown = z_deck
+
+    def _z_red(x):
+        """Cao độ ĐƯỜNG ĐỎ (mặt cầu thiết kế) tại lý trình x."""
+        if _R_vc <= 0:
+            return _z_crown
+        dx = abs(x - _x_apex)
+        x_tan = _R_vc * _i_gr if _i_gr > 0 else float("inf")
+        if dx <= x_tan:
+            return _z_crown - dx * dx / (2.0 * _R_vc)
+        z_tan = _z_crown - x_tan * x_tan / (2.0 * _R_vc)
+        return z_tan - (dx - x_tan) * _i_gr
+
     mg = max(20, L_cau * 0.15)
     fig = go.Figure()
 
@@ -1271,9 +1291,11 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         _hline(fig, h_tn, x0-mg, x_end+mg,
                f"CĐTN trung bình ≈ {h_tn:.2f}m", "#27ae60", dash="dash")
 
-    # ── Mực nước ─────────────────────────────────────────────────────────
+    # ── Mực nước — CHỈ hiển thị trong phạm vi TĨNH KHÔNG ─────────────────────
+    _wx0 = x_tim - B_tk / 2
+    _wx1 = x_tim + B_tk / 2
     _poly(fig,
-        [x0+W_mo, x_end-W_mo, x_end-W_mo, x0+W_mo],
+        [_wx0, _wx1, _wx1, _wx0],
         [MNTN, MNTN, MNCN, MNCN],
         _C["nuoc"], "rgba(0,0,0,0)", "Mực nước sông", showlegend=True)
     for y_w, lbl, clr in [
@@ -1282,7 +1304,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         (MNTN, f"MNTN={MNTN:.3f}m", "#1abc9c"),
     ]:
         fig.add_trace(go.Scatter(
-            x=[x0+W_mo+1, x_end-W_mo-1], y=[y_w, y_w],
+            x=[_wx0, _wx1], y=[y_w, y_w],
             mode="lines+text", name=lbl,
             line=dict(color=clr, width=1.5, dash="dot"),
             text=[lbl, ""], textposition="top left",
@@ -1501,45 +1523,63 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     for i, (xs, xe) in enumerate(spans):
         sl = (i == 0)
         L_span = xe - xs
+        # Mặt trên bản = ĐƯỜNG ĐỎ (cong theo trắc dọc thiết kế)
         _poly(fig, [xs, xe, xe, xs],
-              [cao_dd+H_dam, cao_dd+H_dam, z_deck, z_deck],
+              [cao_dd+H_dam, cao_dd+H_dam, _z_red(xe), _z_red(xs)],
               _C["ban"], _C["dam_dk"],
               "Bản mặt cầu" if sl else "", showlegend=sl)
         # Dimension mỗi nhịp
-        fig.add_annotation(x=(xs+xe)/2, y=z_deck+0.4, text=f"L={L_span:.1f}m",
+        fig.add_annotation(x=(xs+xe)/2, y=_z_red((xs+xe)/2)+0.4, text=f"L={L_span:.1f}m",
                            showarrow=False, font=dict(size=8, color=_C["dam_dk"]),
                            bgcolor="rgba(255,255,255,0.8)")
+
+    # ── ĐƯỜNG ĐỎ (nét thiết kế) — vẽ nổi trên mặt cầu + kéo qua đường đầu cầu ──
+    _L_app_red = max(12.0, mg * 0.85)
+    _red_xs = list(np.linspace(x0 - _L_app_red, x_end + _L_app_red, 120))
+    fig.add_trace(go.Scatter(
+        x=_red_xs, y=[_z_red(x) for x in _red_xs],
+        mode="lines", name="Đường đỏ (trắc dọc TK)",
+        line=dict(color="#e4002b", width=2.6),
+        hovertemplate="Lý trình: %{x:.1f}m<br>Đường đỏ: %{y:.3f}m<extra></extra>",
+    ))
+    if _R_vc > 0:
+        fig.add_annotation(
+            x=_x_apex, y=_z_red(_x_apex) + 0.9,
+            text=f"ĐƯỜNG ĐỎ — R={_R_vc:,.0f}m, i={_i_gr*100:.1f}%",
+            showarrow=False, font=dict(size=8, color="#e4002b"),
+            bgcolor="rgba(255,255,255,0.8)")
 
     # ── ĐƯỜNG ĐẦU CẦU (nền đắp + mặt đường sau mố) ──────────────────────────
     L_app  = max(12.0, mg * 0.85)          # chiều dài đoạn đường đầu cầu hiển thị
     taluy  = 1.5                           # mái dốc taluy 1:1.5
-    z_road = z_deck                        # cao độ mặt đường = mặt cầu
     for xm, od in [(x0, -1.0), (x_end, 1.0)]:
         x_far = xm + od * L_app
+        z_road_m = _z_red(xm)              # cao độ mặt đường tại mố = đường đỏ
+        z_road_f = _z_red(x_far)           # cao độ mặt đường đầu xa (theo đường đỏ)
         z_g   = _tz(xm)                     # cao độ địa hình gần mố
-        toe_x = x_far + od * max(0.0, (z_road - z_g)) * taluy   # chân taluy
+        toe_x = x_far + od * max(0.0, (z_road_f - z_g)) * taluy   # chân taluy
         # Nền đắp đầu cầu (đất đắp sau mố)
-        _poly(fig, [xm, x_far, toe_x, xm], [z_road, z_road, z_g, z_g],
+        _poly(fig, [xm, x_far, toe_x, xm], [z_road_m, z_road_f, z_g, z_g],
               "rgba(196,164,107,0.32)", "#8a6d3b",
               "Nền đắp đầu cầu" if od < 0 else "", showlegend=(od < 0))
         # Mái taluy (đường dốc) + mặt đường (lớp phủ)
         fig.add_trace(go.Scatter(
-            x=[x_far, toe_x], y=[z_road, z_g], mode="lines",
+            x=[x_far, toe_x], y=[z_road_f, z_g], mode="lines",
             line=dict(color="#8a6d3b", width=1.4, dash="dot"),
             showlegend=False, hoverinfo="skip"))
         fig.add_trace(go.Scatter(
-            x=[xm, x_far], y=[z_road, z_road], mode="lines",
+            x=[xm, x_far], y=[z_road_m, z_road_f], mode="lines",
             line=dict(color="#2c3e50", width=3),
             name="Mặt đường đầu cầu" if od < 0 else "", showlegend=(od < 0),
             hoverinfo="skip"))
         fig.add_annotation(
-            x=(xm + x_far) / 2, y=z_road + 0.45, text="ĐƯỜNG ĐẦU CẦU",
+            x=(xm + x_far) / 2, y=(z_road_m + z_road_f) / 2 + 0.45, text="ĐƯỜNG ĐẦU CẦU",
             showarrow=False, font=dict(size=8, color="#2c3e50"),
             bgcolor="rgba(255,255,255,0.75)")
         # Chiều cao đắp sau mố (từ mặt đất TN tới mặt đường)
-        _h_dap = z_road - z_g
+        _h_dap = z_road_m - z_g
         if _h_dap > 0.3:
-            _dim_v(fig, xm + od * (L_app * 0.5), z_g, z_road,
+            _dim_v(fig, xm + od * (L_app * 0.5), z_g, z_road_m,
                    f"H_đắp={_h_dap:.2f}m", color="#8a6d3b", dx=od * 0.4)
 
     # ── Khung tĩnh không ─────────────────────────────────────────────────
@@ -1555,11 +1595,26 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         bgcolor="rgba(255,255,255,0.8)")
 
     # Gióng thẳng vị trí biên tĩnh không → trụ (từ đáy bệ thực của trụ → mặt cầu)
+    # kèm DIM cao độ ĐƯỜNG ĐỎ tại từng vị trí trụ.
     for xp in piers:
         _y0_gp = min(_tz(xp) - 0.5 - 1.50, z_be_b)
+        _z_red_p = _z_red(xp)
         fig.add_shape(type="line",
-            x0=xp, y0=_y0_gp, x1=xp, y1=z_deck,
+            x0=xp, y0=_y0_gp, x1=xp, y1=_z_red_p,
             line=dict(color="#aab7b8", width=0.8, dash="dashdot"))
+        # Cao độ đường đỏ tại trụ (dim)
+        fig.add_annotation(
+            x=xp, y=_z_red_p + 0.15,
+            text=f"▽ ĐĐ={_z_red_p:.3f}m",
+            showarrow=False, font=dict(size=8, color="#e4002b"),
+            yanchor="bottom", bgcolor="rgba(255,255,255,0.85)")
+    # Cao độ đường đỏ tại 2 mố
+    for _xm in (x0, x_end):
+        _zr = _z_red(_xm)
+        fig.add_annotation(
+            x=_xm, y=_zr + 0.15, text=f"▽ ĐĐ={_zr:.3f}m",
+            showarrow=False, font=dict(size=8, color="#e4002b"),
+            yanchor="bottom", bgcolor="rgba(255,255,255,0.85)")
 
     # ── Dimension tổng ────────────────────────────────────────────────────
     dy_dim = z_deck + 0.7
