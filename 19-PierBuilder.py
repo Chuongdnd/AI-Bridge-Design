@@ -287,7 +287,8 @@ def _scale_section_u(section: dict, target_w_m: float) -> dict:
 
 def build_pier_mesh_traces(pier: dict, H_tru: float = None,
                            x_ctr: float = 0.0, z_base: float = 0.0,
-                           labels: dict = None, cap_width: float = None) -> list:
+                           labels: dict = None, cap_width: float = None,
+                           cap_mid_extra: float = 0.0) -> list:
     """Trả về list go.Mesh3d của 1 trụ/mố (3 bộ phận).
 
     H_tru     : nếu cho (m), chiều cao THÂN tự co để (đáy bệ→đỉnh mũ) = H_tru.
@@ -330,7 +331,7 @@ def build_pier_mesh_traces(pier: dict, H_tru: float = None,
     z += H_than
     # 3) XÀ MŨ — các đoạn xếp theo DỌC CẦU, đoạn loft vuốt sang đoạn sau.
     traces += cap_traces(_cap_layers(cap), z, x_ctr, cap_width=cap_width,
-                         color=_COL["xa_mu"], name=L["xa_mu"])
+                         color=_COL["xa_mu"], name=L["xa_mu"], mid_extra=cap_mid_extra)
     return [t for t in traces if t is not None]
 
 
@@ -544,13 +545,40 @@ def _cap_loft_mesh(secA, secB, z0, x0, D, color, name, N=44, M=12):
                      hovertemplate=f"{name}<extra></extra>")
 
 
-def cap_traces(layers, z0, x_ctr, cap_width=None, color=None, name="Xà mũ"):
+def cap_mid_width_m(pier: dict) -> float:
+    """Bề rộng DỌC CẦU (m) của ĐOẠN GIỮA (ụ giữa = đoạn CAO NHẤT) của xà mũ —
+    khối nằm giữa 2 đầu dầm SPT. Dùng tính khoảng cách trụ & cơ chế NỚI xà mũ.
+    0 nếu không có xà mũ."""
+    p = migrate_pier(pier or {})
+    caps = _cap_layers(p.get("parts", {}).get("xa_mu", {}))
+    if not caps:
+        return 0.0
+    _hs = []
+    for l in caps:
+        _, _, vmin, vmax = _bbox_ab(l["section"].get("outer", [[0, 0]]))
+        _hs.append(vmax - vmin)
+    _mid = max(range(len(caps)), key=lambda i: _hs[i])
+    return float(caps[_mid].get("D", 1.8) or 1.8)
+
+
+def cap_traces(layers, z0, x_ctr, cap_width=None, color=None, name="Xà mũ",
+               mid_extra=0.0):
     """Render xà mũ: list đoạn [{section,D,loft}] xếp dọc cầu, đoạn loft vuốt
-    sang đoạn sau. Tổng bề dày căn giữa tại x_ctr; co bề rộng theo cap_width."""
+    sang đoạn sau. Tổng bề dày căn giữa tại x_ctr; co bề rộng theo cap_width.
+    mid_extra>0 → NỚI RỘNG đoạn giữa (ụ giữa) thêm mid_extra (m) để nhịp SPT dài
+    hơn mà vẫn dùng dầm 38.2m (xà mũ mở rộng khi bị khống chế tĩnh không)."""
     color = color or _COL["xa_mu"]
     layers = [l for l in (layers or []) if (l.get("section") or {}).get("outer")]
     if not layers:
         return []
+    if mid_extra and mid_extra > 1e-6:              # nới ụ giữa (đoạn cao nhất)
+        _hs = []
+        for l in layers:
+            _, _, vmin, vmax = _bbox_ab(l["section"].get("outer", [[0, 0]]))
+            _hs.append(vmax - vmin)
+        _mid = max(range(len(layers)), key=lambda i: _hs[i])
+        layers = [dict(l) for l in layers]
+        layers[_mid]["D"] = float(layers[_mid].get("D", 1.8) or 1.8) + float(mid_extra)
     total_D = sum(float(l.get("D", 1.8) or 1.8) for l in layers) or 1.8
     x = x_ctr - total_D / 2.0
     multi = len(layers) > 1
