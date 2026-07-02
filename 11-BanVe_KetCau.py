@@ -1748,9 +1748,12 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         sl = (i == 0)
         z_terr_tru = _tz(xt)   # cao độ địa hình (đường tự nhiên) tại vị trí trụ
 
-        # Đỉnh xà mũ trụ BÁM ĐƯỜNG ĐỎ: = đáy dầm(xt) − 150mm (đá kê gối + gối).
-        z_cap_t_i = _z_cap_top(xt)
-        z_cap_b_i = z_cap_t_i - 0.80
+        # ĐỈNH Ụ GIỮA xà mũ = ĐÁY BẢN MẶT CẦU (đỡ bản); 2 VAI KÊ 2 bên thấp hơn
+        # (đỡ phần KHẤC của dầm). Neo xà mũ lắp ghép tại đỉnh ụ = đáy bản.
+        z_ugiua_i = _z_deck_bot(xt)               # đỉnh ụ giữa = đáy bản mặt cầu
+        z_vaike_i = _z_beam_soffit(xt)            # vai kê = đáy dầm (đỡ khấc dầm)
+        z_cap_t_i = z_ugiua_i                     # neo đỉnh xà mũ (ụ giữa)
+        z_cap_b_i = z_vaike_i - 0.80              # đáy xà mũ (dưới vai kê)
         # Đỉnh bệ trụ CHÔN 0.5m DƯỚI ĐƯỜNG TỰ NHIÊN tại lý trình trụ.
         z_be_t_i = min(z_terr_tru - 0.5, z_cap_b_i - 0.5)  # chừa tối thiểu 0.5m thân trụ
         z_sh_b_i = z_be_t_i                              # đáy thân trụ = đỉnh bệ
@@ -1828,11 +1831,17 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                 [z_shaft_visible_bot, z_shaft_visible_bot, z_cap_b_i, z_cap_b_i],
                 _C["btong"], _C["btong_dk"], f"Thân trụ T{i+1}", showlegend=sl)
 
-        # Xà mũ — đỉnh = đáy dầm − 150mm (đá kê gối + gối), bám đường đỏ
+        # Xà mũ dạng BẬC: VAI KÊ 2 bên (đến đáy dầm — đỡ khấc dầm) + Ụ GIỮA cao hơn
+        # (đến đáy bản — đỡ bản mặt cầu). Bám đường đỏ tại trụ.
         _poly(fig,
             [xt-W_cap, xt+W_cap, xt+W_cap, xt-W_cap],
-            [z_cap_b_i, z_cap_b_i, z_cap_t_i, z_cap_t_i],
-            _C["btong"], _C["dam_dk"], "Xà mũ" if sl else "", showlegend=sl)
+            [z_cap_b_i, z_cap_b_i, z_vaike_i, z_vaike_i],
+            _C["btong"], _C["dam_dk"], "Xà mũ (vai kê)" if sl else "", showlegend=sl)
+        _w_ug = max(0.6, W_cap * 0.35)     # nửa bề rộng ụ giữa
+        _poly(fig,
+            [xt-_w_ug, xt+_w_ug, xt+_w_ug, xt-_w_ug],
+            [z_vaike_i, z_vaike_i, z_ugiua_i, z_ugiua_i],
+            _C["btong"], _C["dam_dk"], "Ụ giữa (đỡ bản)" if sl else "", showlegend=sl)
 
         # Cao độ địa hình tại trụ
         fig.add_annotation(
@@ -3259,11 +3268,12 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             for i_p, xt in enumerate(piers):
                 sl = (i_p == 0)
                 # THÂN TRỤ KÉO GIÃN theo ĐỊA HÌNH TỪNG TRỤ (khớp trắc dọc):
-                #  • Vai kê (đáy dầm) BÁM ĐƯỜNG ĐỎ tại trụ → đỉnh ụ giữa = +khấc.
+                #  • ĐỈNH Ụ GIỮA xà mũ = ĐÁY BẢN (đỡ bản mặt cầu); vai kê 2 bên thấp
+                #    hơn (đỡ khấc dầm) do khấc trong model.
                 #  • Đỉnh bệ chôn 0.5m dưới ĐTN tại trụ; đáy bệ = đỉnh bệ − 1.5m.
                 #  • Chiều cao thân trụ tự co để nối đáy bệ ↔ đỉnh ụ (build_pier).
                 _soffit_i, _z_be_top_i, _z_be_bot_i = _pier_found(xt)
-                _anchor_top  = _soffit_i + _notch3d               # đỉnh ụ giữa (neo)
+                _anchor_top  = _soffit_i + H_dam                  # đỉnh ụ giữa = đáy bản
                 _H_total_i   = _anchor_top - _z_be_bot_i          # đáy bệ → đỉnh ụ
                 try:
                     _ptr = _PBp.build_pier_mesh_traces(
