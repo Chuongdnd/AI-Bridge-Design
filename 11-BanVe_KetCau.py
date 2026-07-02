@@ -168,16 +168,17 @@ def make_red_line(d):
     """Trắc dọc thiết kế (ĐƯỜNG ĐỎ) — DÙNG CHUNG cho trắc dọc / dầm / 3D.
 
     - Đỉnh đường cong đứng lồi đặt tại TIM TĨNH KHÔNG (x_tim_clearance).
-    - Cao độ đỉnh = đỉnh tĩnh không (MNCN + H) + 100mm khe hở đáy dầm
-      (xét đáy dầm biên xếp theo dốc ngang → cộng (Bc/2)·i_ngang)
+    - Cao độ đỉnh = đỉnh tĩnh không THÔNG THUYỀN (MNTT + H) + 100mm khe hở đáy
+      dầm (xét đáy dầm biên xếp theo dốc ngang → cộng (Bc/2)·i_ngang)
       + chiều cao dầm + chiều dày bản mặt cầu.
-    - Cong theo bán kính R_hinh_hoc và dốc dọc i_max_hinh_hoc; R≤0 → phẳng.
+    - Cong theo bán kính R_hinh_hoc; ngoài cung / khi R≤0 → 2 nhánh dốc thẳng
+      theo dốc dọc i_max_hinh_hoc; i=0 & R≤0 → phẳng.
 
     Trả (z_red_fn, x_apex, z_crown, t_ban, H_dam).
     """
     kcn   = d.get("kcn_result") or d.get("ai_result", {})
     geo   = d.get("geo_logic", {})
-    MNCN  = float(d.get("MNCN", 3.5))
+    MNTT  = float(d.get("MNTT", 2.0))
     H_tk  = float(d.get("H", 3.0))
     H_dam = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao", 1.75))
     t_ban = float(d.get("t_ban_mm", 200)) / 1000.0
@@ -189,18 +190,22 @@ def make_red_line(d):
     R     = float(d.get("R_hinh_hoc", 0) or 0)
     i_gr  = abs(float(d.get("i_max_hinh_hoc", 0) or 0)) / 100.0
 
-    z_tk_top = MNCN + H_tk
+    # Đỉnh tĩnh không THÔNG THUYỀN = MNTT + chiều cao tĩnh không.
+    z_tk_top = MNTT + H_tk
     z_crown  = z_tk_top + KHO_HO_DAY_DAM + (bc / 2.0) * i_ng + H_dam + t_ban
 
     def _z_red(x):
-        if R <= 0:
-            return z_crown
         dx = abs(x - x_tim)
-        x_tan = R * i_gr if i_gr > 0 else float("inf")
-        if dx <= x_tan:
-            return z_crown - dx * dx / (2.0 * R)
-        z_tan = z_crown - x_tan * x_tan / (2.0 * R)
-        return z_tan - (dx - x_tan) * i_gr
+        if R > 0:
+            x_tan = R * i_gr if i_gr > 0 else float("inf")
+            if dx <= x_tan:
+                return z_crown - dx * dx / (2.0 * R)
+            z_tan = z_crown - x_tan * x_tan / (2.0 * R)
+            return z_tan - (dx - x_tan) * i_gr
+        # R≤0: có dốc dọc → 2 nhánh thẳng đối xứng từ đỉnh; không → phẳng
+        if i_gr > 0:
+            return z_crown - dx * i_gr
+        return z_crown
 
     return _z_red, x_tim, z_crown, t_ban, H_dam
 
@@ -1663,8 +1668,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             _dim_v(fig, xm + od * (L_app * 0.5), z_g, z_road_m,
                    f"H_đắp={_h_dap:.2f}m", color="#8a6d3b", dx=od * 0.4)
 
-    # ── Khung tĩnh không ─────────────────────────────────────────────────
-    y_tk_bot = MNCN
+    # ── Khung tĩnh không THÔNG THUYỀN — đáy tại MNTT (mực nước thông thuyền) ──
+    y_tk_bot = MNTT
     fig.add_shape(type="rect",
         x0=x_tim-B_tk/2, x1=x_tim+B_tk/2,
         y0=y_tk_bot, y1=y_tk_bot+H_tk,
@@ -1810,7 +1815,9 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
 
     fig = go.Figure()
 
-    x_first = -bc/2 + oh   # tim dầm đầu tiên
+    # Tim dầm đầu tiên — CĂN ĐỐI XỨNG quanh tim cầu (khớp bố trí dầm thực đã được
+    # co để MÉP dầm biên nằm trong bản mặt cầu).
+    x_first = -(n_dam - 1) * kc / 2.0
 
     # ── Bê tông đổ tại chỗ giữa các dầm (cho T ngược và Dầm I) ──────────
     is_tngược = "t ngược" in loai_l or "t-ngược" in loai_l or "tngược" in loai_l
@@ -3248,7 +3255,9 @@ def _ve_binh_do_cong(d, df_geology):
         line=dict(color="#2980b9", width=1.5, dash="dot"),
         name=f"Sông/Kênh (B_tk={B_tk:.0f}m)"))
 
-    # ── Đường đầu cầu (2 đầu, kéo dài ngoài mố, KHÔNG xiên) ─────────────────
+    # ── Đường đầu cầu (2 đầu, kéo dài ngoài mố, KHÔNG xiên) + mái TALUY ──────
+    _h_dap_tb = max(1.5, float(d.get("H_tru_est", 5.0)) * 0.4)   # chiều cao đắp ước tính
+    _taluy_w  = 1.5 * _h_dap_tb                                   # bề rộng chân taluy 1:1.5
     for s_m, od, lbl in [(x0, -1.0, "Đường đầu cầu"), (x_end, 1.0, None)]:
         ss_a = np.linspace(s_m, s_m + od*mg, 14)
         _la = [_vn(s, -bc/2, skew=False) for s in ss_a]
@@ -3258,6 +3267,21 @@ def _ve_binh_do_cong(d, df_geology):
             fillcolor="rgba(196,164,107,0.28)", mode="lines",
             line=dict(color="#8a6d3b", width=1.4),
             name=lbl or "", showlegend=bool(lbl)))
+        # Mái taluy: chân taluy = mép đường + bề rộng taluy (nét đứt 2 bên)
+        for _sgn in (-1, 1):
+            _toe = [_vn(s, _sgn*(bc/2 + _taluy_w), skew=False) for s in ss_a]
+            _px, _py = _xy(_toe)
+            fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
+                line=dict(color="#a5866b", width=1.0, dash="dot"),
+                name=("Chân taluy" if (lbl and _sgn == -1) else ""),
+                showlegend=bool(lbl and _sgn == -1)))
+            # gạch mái taluy (đường xiên từ mép đường ra chân taluy)
+            for _st in np.linspace(ss_a[0], ss_a[-1], 6):
+                _e0 = _vn(_st, _sgn*bc/2, skew=False)
+                _e1 = _vn(_st, _sgn*(bc/2 + _taluy_w), skew=False)
+                fig.add_trace(go.Scatter(x=[_e0[0], _e1[0]], y=[_e0[1], _e1[1]],
+                    mode="lines", line=dict(color="#c4a76b", width=0.6),
+                    showlegend=False, hoverinfo="skip"))
 
     # ── Mặt cầu (dải cong theo tim) ─────────────────────────────────────────
     _left  = [_vn(s, -bc/2) for s in ss]
@@ -3293,14 +3317,56 @@ def _ve_binh_do_cong(d, df_geology):
             fillcolor="rgba(192,160,107,0.65)", mode="lines",
             line=dict(color="#7d6608", width=2), name=lbl))
 
-    # ── Trụ — xà mũ xiên theo góc, khớp 3D ──────────────────────────────────
+    # ── Trụ — mặt bằng đầy đủ: bệ + cọc + thân trụ (NÉT ĐỨT) + xà mũ (nét liền) ─
+    be_W  = cap_W + 0.8      # nửa bề rộng bệ (ngang) > xà mũ
+    be_L  = tru_L + 1.2      # nửa bề dài bệ (dọc)
+    sh_W  = cap_W * 0.62     # nửa bề rộng thân trụ (ngang)
+    sh_L  = tru_L * 0.60     # nửa bề dày thân trụ (dọc)
+    mong  = d.get("mong_result") or {}
+    D_coc, _Lc, _ncoc = mong_dims(mong)
+    _ncoc = max(4, min(8, _ncoc))
+
+    def _box_tru(xc_s, oL, oR, sL, sR):
+        return [_vn(xc_s + sL, oL), _vn(xc_s + sL, oR),
+                _vn(xc_s + sR, oR), _vn(xc_s + sR, oL)]
+
     for i, xt in enumerate(piers):
-        _c = [_vn(xt - tru_L, -cap_W), _vn(xt - tru_L, +cap_W),
-              _vn(xt + tru_L, +cap_W), _vn(xt + tru_L, -cap_W)]
+        _sl = (i == 0)
+        # Bệ trụ (nét đứt, khối lớn nhất)
+        _c = _box_tru(xt, -be_W, be_W, -be_L, be_L)
+        _px, _py = _xy(_c + [_c[0]])
+        fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
+            fill="toself", fillcolor="rgba(170,183,184,0.12)",
+            line=dict(color="#8395a7", width=1.2, dash="dash"),
+            name="Bệ trụ (khuất)" if _sl else "", showlegend=_sl))
+        # Cọc (nét đứt) — lưới trong phạm vi bệ
+        _nc_side = max(2, int(round(_ncoc ** 0.5)))
+        _osp = np.linspace(-be_W*0.6, be_W*0.6, _nc_side)
+        _ssp = np.linspace(-be_L*0.55, be_L*0.55, max(2, _ncoc // _nc_side))
+        _pcx, _pcy = [], []
+        for _oo in _osp:
+            for _ss2 in _ssp:
+                _pxx, _pyy = _vn(xt + _ss2, _oo)
+                _pcx.append(_pxx); _pcy.append(_pyy)
+        fig.add_trace(go.Scatter(x=_pcx, y=_pcy, mode="markers",
+            marker=dict(symbol="circle-open", size=7,
+                        color="#8e6e53", line=dict(width=1.2)),
+            name=(f"Cọc Ø{int((D_coc or 1.0)*1000)}mm (khuất)" if _sl else ""),
+            showlegend=_sl))
+        # Thân trụ (nét đứt)
+        _c = _box_tru(xt, -sh_W, sh_W, -sh_L, sh_L)
+        _px, _py = _xy(_c + [_c[0]])
+        fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
+            fill="toself", fillcolor="rgba(200,214,192,0.18)",
+            line=dict(color="#7f8c8d", width=1.2, dash="dash"),
+            name="Thân trụ (khuất)" if _sl else "", showlegend=_sl))
+        # Xà mũ (nét liền, trên cùng)
+        _c = _box_tru(xt, -cap_W, cap_W, -tru_L, tru_L)
         _px, _py = _xy(_c + [_c[0]])
         fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
             fillcolor="rgba(133,146,158,0.78)", mode="lines",
-            line=dict(color="#566573", width=1.5), name=f"Trụ T{i+1}"))
+            line=dict(color="#566573", width=1.5),
+            name="Xà mũ" if _sl else f"Trụ T{i+1}", showlegend=True))
         _cx, _cy = _vn(xt, 0.0)
         fig.add_annotation(x=_cx, y=_cy, text=f"T{i+1}", showarrow=False,
             font=dict(size=8, color="white"), bgcolor="rgba(86,101,115,0.85)")
