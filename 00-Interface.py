@@ -2205,6 +2205,11 @@ def dialog_step3():
             res['t_ban_mm'] = t_ban_mm
             res['is_urban'] = is_urban_val
             res['x_tim_clearance'] = x_tim_clearance
+            # Tĩnh không PHỤ: giữ qua pipeline (design_data bị THAY = res ở cuối) →
+            # trắc dọc / 3D / bố trí trụ mới thấy để vẽ + rải trụ tránh.
+            res['extra_clearances'] = (
+                st.session_state.wizard_draft.get('extra_clearances')
+                or st.session_state.design_data.get('extra_clearances') or [])
             res['mcn_oto_input'] = mcn_oto_override
             tracker.done("TK", f"B={res.get('B',0)}m  H={res.get('H',0)}m  Đáy dầm≥{res.get('day_dam',0):.3f}m")
         except Exception as _e:
