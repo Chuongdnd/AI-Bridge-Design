@@ -891,42 +891,52 @@ def _avoid_extra_clearances(supports, d):
 
 
 def _in_any_zone(p, zones):
-    return any(a - 1e-6 <= p <= b + 1e-6 for (a, b) in zones)
+    return any(a - 1e-6 <= p <= b + 1e-6 for (a, b, *_ ) in zones)
 
 
-def _place_dir(P0, sgn, target, zones, L_base, mode):
-    """Rải trụ từ P0 theo hướng sgn (±1) tới target. Mỗi nhịp chọn CHIỀU DÀI
-    ĐỊNH HÌNH catalog sao cho trụ kế KHÔNG rơi vào vùng cấm tĩnh không.
-      mode 'fewest'   : ưu tiên nhịp DÀI NHẤT (ít trụ) — chỉ rút khi buộc né.
-      mode 'straddle' : ưu tiên nhịp ĐỀU = L_base; khi nhịp đều lọt vùng cấm thì
-                        chọn nhịp nhỏ nhất BẮC TRỌN qua khoang.
-    Trả list trụ (KHÔNG gồm P0); trụ ngoài cùng sẽ là MỐ."""
-    cat = sorted(STD_LENGTHS)
-    Lmax = cat[-1]
+def _snap_ge(v):
+    """Chiều dài catalog nhỏ nhất ≥ v (m)."""
+    return next((L for L in sorted(STD_LENGTHS) if L + 1e-6 >= v), _snap_up_std(v))
+
+
+def _place_dir(P0, sgn, target, zones, L0, mode, Lc_common):
+    """Rải trụ từ P0 theo hướng sgn (±1) tới target — ƯU TIÊN CHIỀU DÀI CHUNG L0
+    (đồng bộ dầm, ít loại dầm). Chỉ nơi trụ L0 rơi vào vùng cấm mới đổi = nhịp
+    BẮC QUA khoang: PA1 dùng CHUNG Lc_common (theo khoang rộng nhất); PA2 dùng
+    nhịp vừa đủ cho khoang đó. Trụ trước khoang có thể lệch để nhịp bắc qua khớp.
+    Nhịp biên = L0 (mố chạy tới lưới, không sinh nhịp lẻ). zones=(a,b,need)."""
     piers = []
     P = P0
     guard = 0
-    while sgn * (target - P) > 1e-6 and guard < 400:
+    while sgn * (target - P) > 1e-6 and guard < 500:
         guard += 1
-        remaining = sgn * (target - P)
-        if remaining <= Lmax + 1e-6:            # NHỊP CUỐI cập mố
-            pick = next((L for L in cat
-                         if L + 1e-6 >= remaining and not _in_any_zone(P + sgn*L, zones)),
-                        None) or _snap_up_std(remaining)
-            P += sgn * pick; piers.append(P); break
-        if mode == "fewest":
-            order = sorted(cat, reverse=True)                    # dài nhất trước
+        Pn = P + sgn * L0
+        zb = next(((a, b, nd) for (a, b, nd) in zones
+                   if a - 1e-6 <= Pn <= b + 1e-6), None)
+        if zb is None:                       # nhịp L0 bình thường (đồng bộ)
+            P = Pn; piers.append(P)
+            continue
+        a, b, nd = zb                        # trụ L0 sẽ phạm khoang → bắc qua
+        far = (b if sgn > 0 else a) + sgn * 0.01   # đáp QUA hẳn mép xa khoang
+        Lc = Lc_common if mode == "fewest" else max(L0, _snap_ge(nd))
+        pp = far - sgn * Lc                        # trụ trước → nhịp bắc qua = Lc
+        approach = sgn * (pp - P)
+        if approach >= 12.0 - 1e-6 and not _in_any_zone(pp, zones):
+            # đủ chỗ đặt TRỤ TRƯỚC (nhịp dẫn ≥ 12m) → nhịp bắc qua = Lc (đồng bộ)
+            P = pp; piers.append(P)
+            P = far; piers.append(P)
         else:
-            order = ([L_base] if L_base in cat else []) + sorted(cat)  # đều trước
-        pick = next((L for L in order if not _in_any_zone(P + sgn*L, zones)), Lmax)
-        P += sgn * pick; piers.append(P)
+            # P đã sát khoang → BẮC THẲNG từ P (tránh nhịp dẫn lẻ quá ngắn)
+            L = _snap_ge(sgn * (far - P))
+            P = P + sgn * L; piers.append(P)
     return piers
 
 
 def _clearance_layout(x0, x_end, x_tim, B_tk, L_base, extras, mode):
     """Bố trí MỐ–TRỤ né MỌI tĩnh không (chính + phụ), rải TỪ TIM TĨNH KHÔNG CHÍNH
-    ra 2 mố, trộn chiều dài dầm catalog. Trả (supports, L_main)."""
-    cat = sorted(STD_LENGTHS)
+    ra 2 mố. ƯU TIÊN dùng CHUNG 1 chiều dài dầm L0 = L_base (đồng bộ, ít loại
+    dầm); chỉ nhịp bắc qua khoang mới khác. Trả (supports, L0)."""
+    L0 = float(L_base) if L_base and float(L_base) > 0 else 33.0
     clearances = [(float(x_tim), float(B_tk))]
     for c in (extras or []):
         try:
@@ -935,16 +945,20 @@ def _clearance_layout(x0, x_end, x_tim, B_tk, L_base, extras, mode):
                 clearances.append((float(c["x"]), _b))
         except (TypeError, ValueError, KeyError):
             pass
-    zones = _clearance_zones([(x, b) for (x, b) in clearances])
-    need = float(B_tk) + 2.0 * _PIER_SAFETY                  # nhịp chính bắc qua TK chính
-    ge = [L for L in cat if L + 1e-6 >= need]
-    L_main = ((ge[-1] if ge else _snap_up_std(need)) if mode == "fewest"
-              else (ge[0] if ge else _snap_up_std(need)))
+    needs = [b + 2.0 * _PIER_SAFETY for (_x, b) in clearances]
+    zones = [(x - b / 2.0 - _PIER_SAFETY, x + b / 2.0 + _PIER_SAFETY,
+              b + 2.0 * _PIER_SAFETY) for (x, b) in clearances if b and b > 0]
+    # PA1: 1 loại nhịp bắc qua CHUNG (đủ cho khoang RỘNG NHẤT); PA2: theo từng khoang.
+    Lc_common = max(L0, _snap_ge(max(needs)))
+    # Nhịp CHÍNH căng giữa tim TK chính = L0 nếu đủ dài bắc qua, không thì Lc.
+    need_main = float(B_tk) + 2.0 * _PIER_SAFETY
+    L_main = L0 if L0 + 1e-6 >= need_main else (
+        Lc_common if mode == "fewest" else max(L0, _snap_ge(need_main)))
     P_L = x_tim - L_main / 2.0
     P_R = x_tim + L_main / 2.0
-    left  = _place_dir(P_L, -1.0, x0,   zones, L_base, mode)
-    right = _place_dir(P_R, +1.0, x_end, zones, L_base, mode)
-    return sorted(left + [P_L, P_R] + right), L_main
+    left  = _place_dir(P_L, -1.0, x0,    zones, L0, mode, Lc_common)
+    right = _place_dir(P_R, +1.0, x_end, zones, L0, mode, Lc_common)
+    return sorted(left + [P_L, P_R] + right), L0
 
 
 def _clearance_zones(clearances):
