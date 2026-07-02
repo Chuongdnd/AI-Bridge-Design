@@ -1413,18 +1413,22 @@ def dialog_step1():
     _apply_col, btn_col = st.columns([1, 1])
     with _apply_col:
         if st.button(
-            "✅ Áp dụng & kiểm tra",
+            "✅ Áp dụng & cập nhật",
             use_container_width=True,
             key="d1_apply",
-            help="Lưu số liệu đã khai báo và kiểm tra tính hợp lệ",
+            help="Lưu số liệu và CẬP NHẬT hệ thống ngay (không cần sang bước sau)",
         ):
             _d1_commit()
             st.session_state.d1_show_feedback = True
             if _d1_validate():
                 st.toast("⚠️ Có cao độ chưa hợp lệ — xem cảnh báo.", icon="⚠️")
+                st.rerun()
             else:
-                st.toast("✅ Đã lưu & hợp lệ — Thủy văn & Vị trí.", icon="✅")
-            st.rerun()
+                # Áp dụng CỤC BỘ → chạy lại pipeline, giữ nguyên tab & khai báo
+                st.session_state._d3_run = True
+                st.session_state._apply_keep_context = True
+                st.session_state.open_dialog = "step3"
+                st.rerun()
     with btn_col:
         if st.button(
             "Bước 2 ▶",
@@ -1994,8 +1998,13 @@ def dialog_step2():
             st.rerun()
     with btn_a:
         if st.button("✅ Áp dụng", use_container_width=True, key="d2_apply",
-                     help="Lưu các thông số hình học đã khai báo"):
-            st.toast("✅ Đã lưu — Yếu tố hình học.", icon="✅")
+                     help="Lưu thông số hình học và CẬP NHẬT hệ thống ngay "
+                          "(không cần sang bước sau)"):
+            # draft đã được cập nhật ở khối update phía trên mỗi lần render.
+            st.session_state._d3_run = True
+            st.session_state._apply_keep_context = True
+            st.session_state.open_dialog = "step3"
+            st.rerun()
     with btn_f:
         if st.button("Bước 3 ▶", use_container_width=True, type="primary", key="d2_next"):
             _errs2 = {}
@@ -2108,15 +2117,15 @@ def dialog_step3():
         h98              = d.get('h98', _sd0.get('MNTN', 0.5))
         t_ban_mm         = d.get('t_ban_mm', _sd0.get('t_ban_mm', 200))
         x_tim_clearance  = d.get('x_tim_clearance', _sd0.get('x_tim_clearance', 350.0))
-        l_hinhhoc        = d.get('l_hinhhoc', 'Do thi')
-        v_hinhhoc        = d.get('v_hinhhoc', 60)
+        l_hinhhoc        = d.get('l_hinhhoc', _sd0.get('loai_duong', 'Do thi'))
+        v_hinhhoc        = d.get('v_hinhhoc', _sd0.get('vtk', 60))
         d_hinhhoc        = d.get('d_hinhhoc', '1')
         input_tra_cuu    = d.get('input_tra_cuu', v_hinhhoc)
-        mcn_oto_override = d.get('mcn_oto_override', {})
-        b_cau            = d.get('b_cau', 12.0)
-        r_final_calc     = d.get('r_final_calc', 5000)
-        i_final_calc     = d.get('i_final_calc', 4.0)
-        is_urban_val     = d.get('is_urban', 0)
+        mcn_oto_override = d.get('mcn_oto_override', _sd0.get('mcn_oto_input', {}))
+        b_cau            = d.get('b_cau', _sd0.get('bc', 12.0))
+        r_final_calc     = d.get('r_final_calc', _sd0.get('R_hinh_hoc', 5000))
+        i_final_calc     = d.get('i_final_calc', _sd0.get('i_max_hinh_hoc', 4.0))
+        is_urban_val     = d.get('is_urban', _sd0.get('is_urban', 0))
 
         _df_tl = st.session_state.get('df_tim_line', None)
         lt_diahinh_arr = None
@@ -2425,13 +2434,22 @@ def dialog_step3():
                 f"LoaiTru={res.get('tru_result',{}).get('loai_tru','?')} | "
                 f"LoaiMong={res.get('mong_result',{}).get('loai_mong','?')}"
             )
+            # keep_context: bấm 'Áp dụng' để cập nhật CỤC BỘ → giữ nguyên draft &
+            # tab hiện tại (không nhảy sang Phương án 1, không xoá khai báo).
+            _keep_ctx = st.session_state.pop('_apply_keep_context', False)
             if n_errors == 0:
-                st.success("✅ Hoàn thành khai báo & tính toán AI — chuyển sang Bản vẽ.")
-                # toast tồn tại qua rerun → người dùng thấy báo sau khi đóng hộp thoại
-                try:
-                    st.toast("✅ Hoàn thành khai báo & tính toán AI!", icon="🎉")
-                except Exception:
-                    pass
+                if _keep_ctx:
+                    st.success("✅ Đã áp dụng & cập nhật hệ thống.")
+                    try:
+                        st.toast("✅ Đã áp dụng — hệ thống đã cập nhật!", icon="✅")
+                    except Exception:
+                        pass
+                else:
+                    st.success("✅ Hoàn thành khai báo & tính toán AI — chuyển sang Bản vẽ.")
+                    try:
+                        st.toast("✅ Hoàn thành khai báo & tính toán AI!", icon="🎉")
+                    except Exception:
+                        pass
             else:
                 st.warning(
                     f"⚠️ Hoàn thành với {n_errors} bước có cảnh báo. "
@@ -2443,8 +2461,9 @@ def dialog_step3():
                     pass
             time.sleep(0.6)
             st.session_state.open_dialog = None
-            st.session_state.wizard_draft = {}
-            st.session_state.current_tab = "Phương án 1"
+            if not _keep_ctx:
+                st.session_state.wizard_draft = {}
+                st.session_state.current_tab = "Phương án 1"
             st.rerun()
         elif n_critical_errors > 0:
             st.error(
