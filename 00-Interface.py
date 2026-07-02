@@ -449,6 +449,7 @@ _DESIGN_SAVE_KEYS = [
     'h_goi_m', '_auto_pier_cap',
     'abutment_assembly_id', 'pier_assembly_id',
     'pier_col_spacing_m', 'pier_solid_width_m',
+    'extra_clearances',
 ]
 
 def _cur_user_pid():
@@ -1334,6 +1335,36 @@ def dialog_step1():
             unit      = "mm",
         )
 
+        st.markdown("**🚧 Tĩnh không khác (nếu có)**")
+        st.caption("Ngoài tĩnh không sông chính (theo cấp sông). Khai báo lý trình, "
+                   "cao độ đáy, bề rộng B (dọc cầu) × cao H. Hệ thống sẽ rải trụ "
+                   "TRÁNH các tĩnh không này.")
+        import pandas as _pd_tk
+        _ex0 = (draft.get('extra_clearances')
+                or st.session_state.design_data.get('extra_clearances') or [])
+        _df_ex0 = _pd_tk.DataFrame(_ex0) if _ex0 else _pd_tk.DataFrame(
+            columns=['ten', 'x', 'z', 'B', 'H'])
+        for _c in ['ten', 'x', 'z', 'B', 'H']:
+            if _c not in _df_ex0.columns:
+                _df_ex0[_c] = None
+        _df_ex0 = _df_ex0[['ten', 'x', 'z', 'B', 'H']]
+        _df_ex = st.data_editor(
+            _df_ex0, num_rows="dynamic", use_container_width=True, key="d1_extra_tk",
+            column_config={
+                'ten': st.column_config.TextColumn("Tên", help="VD: Chui dân sinh"),
+                'x':   st.column_config.NumberColumn("Lý trình (m)", format="%.2f"),
+                'z':   st.column_config.NumberColumn("Cao độ đáy (m)", format="%.2f"),
+                'B':   st.column_config.NumberColumn("Bề rộng B (m)", format="%.2f"),
+                'H':   st.column_config.NumberColumn("Chiều cao H (m)", format="%.2f"),
+            })
+        _extra_tk = [
+            {'ten': (r.get('ten') or f"TK phụ {i+1}"),
+             'x': float(r['x']), 'z': float(r.get('z') or 0.0),
+             'B': float(r.get('B') or 0.0), 'H': float(r.get('H') or 0.0)}
+            for i, r in enumerate(_df_ex.to_dict('records'))
+            if r.get('x') is not None and str(r.get('x')) != 'nan'
+        ]
+
     _has_hard_errors = any(
         k in st.session_state.field_errors
         for k in ['d1_h1', 'd1_h5', 'd1_h10', 'd1_h98', 'd1_xtim', 'd1_goc', 'd1_tban']
@@ -1354,8 +1385,10 @@ def dialog_step1():
                 'mien': mien, 'cap_s': cap_s, 'loai_h': loai_h,
                 'goc_giao': goc_giao, 'x_tim_clearance': x_tim_clearance,
                 'h1': h1, 'h5': h5, 'h10': h10, 'h98': h98,
-                't_ban_mm': int(t_ban_mm),
+                't_ban_mm': int(t_ban_mm), 'extra_clearances': _extra_tk,
             })
+            # Ghi thẳng vào design_data để trắc dọc/bố trí trụ cập nhật ngay.
+            st.session_state.design_data['extra_clearances'] = _extra_tk
             st.session_state.open_dialog = "step2"
             st.rerun()
 

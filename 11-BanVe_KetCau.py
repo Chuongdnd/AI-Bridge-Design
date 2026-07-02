@@ -743,7 +743,8 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
         L_user = sl.get("L_dan") or sl.get("L_main")
         if L_user and float(L_user) > 0:
             L_nhip = float(L_user)
-        return _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip + _cap_gap)
+        _sp, _Ls = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip + _cap_gap)
+        return _avoid_extra_clearances(_sp, d), _Ls
 
     L_clear = B_tk + 2.0 * _PIER_SAFETY
     L_dan   = float(sl.get("L_dan") or L_nhip)
@@ -763,7 +764,36 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
     left  = [main_L - i * L_dan for i in range(n_left, 0, -1)]
     right = [main_R + i * L_dan for i in range(1, n_right + 1)]
     supports = left + [main_L, main_R] + right
-    return supports, L_dan
+    return _avoid_extra_clearances(supports, d), L_dan
+
+
+def extra_clearance_intervals(d):
+    """Vùng CẤM đặt trụ [a,b] (lý trình m) của các TĨNH KHÔNG PHỤ khai báo trong
+    hộp thoại thủy văn. Mỗi tĩnh không: {x: lý trình, B: bề rộng, H, z}. Vùng cấm
+    = [x − B/2 − an toàn, x + B/2 + an toàn]. [] nếu không khai báo."""
+    out = []
+    for c in ((d or {}).get("extra_clearances") or []):
+        try:
+            x = float(c.get("x"))
+            B = float(c.get("B", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        half = B / 2.0 + _PIER_SAFETY
+        out.append((x - half, x + half))
+    return out
+
+
+def _avoid_extra_clearances(supports, d):
+    """Bỏ các TRỤ rơi vào vùng cấm của tĩnh không phụ → trụ KHÔNG phạm tĩnh không
+    (nhịp bắc qua tĩnh không tự nối dài = hệ thống chọn nhịp lớn hơn). Luôn giữ 2
+    MỐ đầu–cuối. No-op khi chưa khai báo tĩnh không phụ (không đổi hành vi cũ)."""
+    forb = extra_clearance_intervals(d)
+    if not forb or len(supports) < 3:
+        return supports
+    x0, x_end = supports[0], supports[-1]
+    kept = [p for p in supports[1:-1]
+            if not any(a - 1e-6 <= p <= b + 1e-6 for (a, b) in forb)]
+    return [x0] + kept + [x_end]
 
 
 def main_span_index(supports, x_tim):
@@ -1535,6 +1565,27 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         text=f"<b>TĨNH KHÔNG</b><br>B={B_tk:.1f}m × H={H_tk:.1f}m",
         showarrow=False, font=dict(size=9, color=_C["tk_line"]),
         bgcolor="rgba(255,255,255,0.8)")
+
+    # ── Tĩnh không PHỤ (khai báo thêm ở hộp thoại thủy văn) ───────────────
+    # Mỗi tĩnh không: x=lý trình, z=cao độ đáy, B×H. Trụ đã được rải TRÁNH các
+    # vùng này (resolve_supports → _avoid_extra_clearances).
+    for _ic, _cx in enumerate((d.get("extra_clearances") or [])):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+            _Hk = float(_cx.get("H", 0) or 0); _zk = float(_cx.get("z", MNCN))
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0 or _Hk <= 0:
+            continue
+        _nm = str(_cx.get("ten") or f"TK phụ {_ic+1}")
+        fig.add_shape(type="rect",
+            x0=_xk-_Bk/2, x1=_xk+_Bk/2, y0=_zk, y1=_zk+_Hk,
+            line=dict(color="#e67e22", width=2.0, dash="dash"),
+            fillcolor="rgba(230,126,34,0.10)")
+        fig.add_annotation(x=_xk, y=_zk+_Hk/2,
+            text=f"<b>{_nm}</b><br>B={_Bk:.1f}m × H={_Hk:.1f}m",
+            showarrow=False, font=dict(size=8, color="#e67e22"),
+            bgcolor="rgba(255,255,255,0.8)")
 
     # Gióng thẳng vị trí biên tĩnh không → trụ (từ đáy bệ thực của trụ → mặt cầu)
     for xp in piers:
