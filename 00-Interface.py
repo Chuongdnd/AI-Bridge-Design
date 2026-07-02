@@ -2337,7 +2337,7 @@ def dialog_step3():
                 )
                 _ph = MOT.estimate_pier_height(
                     MNCN=h1, H_tinh_khong=res.get('H', 3.5),
-                    H_dam=H_dam_est, MNTN=h98,
+                    H_dam=H_dam_est, MNTN=h98, MNTT=h5,
                     # Đỉnh bệ bám ĐƯỜNG TỰ NHIÊN (đỉnh bệ = ĐTN − 0.5m), không
                     # theo MNTN. Đây là giá trị đại diện (CĐTN trung bình); bản vẽ
                     # bố trí chung tính lại đỉnh bệ TỪNG trụ theo địa hình thực.
@@ -7199,10 +7199,10 @@ with _col_main:
                     _SUB_KW = ("Xà mũ", "xà mũ", "Thân trụ", "Bệ cọc", "Bệ ",
                                "B_bệ", "Cọc", "cọc", "a_cọc", "H_trụ", "Gối", "gối")
 
-                    def _build_mcn_fig(_which):
+                    def _build_mcn_fig(_which, _pfx=_spt_pfx):
                         # Lấy mặt cắt dầm THỰC trước → biết đáy dầm (đầu/giữa)
                         try:
-                            _trs = BBUI.get_mcn_overlay_traces(d, pfx=_spt_pfx, which=_which)
+                            _trs = BBUI.get_mcn_overlay_traces(d, pfx=_pfx, which=_which)
                         except Exception:
                             _trs = []
                         _ys = [y for _tr in (_trs or [])
@@ -7241,21 +7241,39 @@ with _col_main:
                                 height=340)
                         return _fig
 
+                    # Cầu có NHIỀU LOẠI DẦM (bố trí 2 tầng: nhịp dẫn + nhịp chính)
+                    # → cắt MCN từ 3D cho TỪNG loại dầm. Mỗi loại: 1 MCN đầu dầm +
+                    # 1 MCN giữa dầm. Cầu 1 loại dầm → 1 bộ (toàn cầu).
+                    _sl_mcn = d.get("span_layout") or {}
+                    _main_pfx = f"{_spt_pfx}_main"
+                    if _sl_mcn.get("mode") == "two_tier":
+                        _beam_types = [("dầm nhịp dẫn", _spt_pfx)]
+                        try:
+                            if BBUI.get_mcn_overlay_traces(d, pfx=_main_pfx, which="mid"):
+                                _beam_types.append(("dầm nhịp chính", _main_pfx))
+                        except Exception:
+                            pass
+                    else:
+                        _beam_types = [("", _spt_pfx)]
+
                     # MCN cầu rất RỘNG–THẤP (≈6:1); khóa 1:1 trong cột nửa trang
                     # khiến 2 hình co giãn lệch nhau, khó xem → XẾP DỌC full-width
                     # để cả hai cùng to, cân nhau và giữ đúng tỷ lệ 1:1.
-                    st.caption("📍 MCN tại **đầu dầm** (trên gối)")
-                    _fe = _build_mcn_fig("end")
-                    PLOT.aspect_control(_fe, "mcn_btc_end")
-                    st.plotly_chart(_fe, use_container_width=True,
-                                    config={"scrollZoom": True, "displayModeBar": True},
-                                    key="mcn_btc_end")
-                    st.caption("📍 MCN tại **giữa dầm** (giữa nhịp)")
-                    _fm = _build_mcn_fig("mid")
-                    PLOT.aspect_control(_fm, "mcn_btc_mid")
-                    st.plotly_chart(_fm, use_container_width=True,
-                                    config={"scrollZoom": True, "displayModeBar": True},
-                                    key="mcn_btc_mid")
+                    for _lbl_bt, _pfx_bt in _beam_types:
+                        if _lbl_bt:
+                            st.markdown(f"##### 🔹 Mặt cắt ngang — {_lbl_bt.capitalize()}")
+                        st.caption("📍 MCN tại **đầu dầm** (trên gối)")
+                        _fe = _build_mcn_fig("end", _pfx_bt)
+                        PLOT.aspect_control(_fe, f"mcn_btc_end_{_pfx_bt}")
+                        st.plotly_chart(_fe, use_container_width=True,
+                                        config={"scrollZoom": True, "displayModeBar": True},
+                                        key=f"mcn_btc_end_{_pfx_bt}")
+                        st.caption("📍 MCN tại **giữa dầm** (giữa nhịp)")
+                        _fm = _build_mcn_fig("mid", _pfx_bt)
+                        PLOT.aspect_control(_fm, f"mcn_btc_mid_{_pfx_bt}")
+                        st.plotly_chart(_fm, use_container_width=True,
+                                        config={"scrollZoom": True, "displayModeBar": True},
+                                        key=f"mcn_btc_mid_{_pfx_bt}")
 
                     # ── 4. Bảng KHỐI LƯỢNG cấu kiện TOÀN CẦU ─────────────────
                     st.markdown("---")
