@@ -438,32 +438,59 @@ def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=Tr
     )
 
 
-# 12 cạnh của HỘP 8 đỉnh (thứ tự chung của _box3d & _abox: 0-3 đáy, 4-7 đỉnh).
-_BOX_EDGE_PAIRS = [(0,1),(1,2),(2,3),(3,0), (4,5),(5,6),(6,7),(7,4),
-                   (0,4),(1,5),(2,6),(3,7)]
+# Nhóm cấu kiện ĐƯỢC vẽ đường bao (KHÔNG gồm mặt nước, tĩnh không, địa hình,
+# đường đầu cầu, lớp phủ). Khớp theo legendgroup/name của trace.
+_OUTLINE_GROUPS = ("Lan can", "Giải phân cách", "Mố", "Trụ", "Xà mũ",
+                   "Thân", "Bệ", "Cọc", "Dầm", "Mặt cầu", "Bản")
 
 
-def _add_box_outlines(fig, color="#1b2631", width=2.0, name="Đường bao cấu kiện"):
-    """Gộp ĐƯỜNG BAO (12 cạnh) của MỌI hộp Mesh3d 8-đỉnh trong fig vào 1 trace
-    Scatter3d → thấy rõ ranh giới từng cấu kiện trên 3D tổng. Bỏ qua mesh phức
-    tạp (địa hình, tấm quét) vì không phải hộp 8 đỉnh."""
+def _add_box_outlines(fig, color="#1b2631", width=2.0, name="Đường bao cấu kiện",
+                      groups=_OUTLINE_GROUPS):
+    """Gộp ĐƯỜNG BAO của các cấu kiện (lan can, mố, trụ, cọc, dầm, bản mặt cầu)
+    vào 1 trace Scatter3d → thấy rõ ranh giới trên 3D tổng.
+
+    Dùng CẠNH ĐẶC TRƯNG (feature edge): cạnh biên (1 tam giác) hoặc cạnh gấp khúc
+    (2 mặt lệch > ~25°). Nhờ vậy hộp, tấm quét (bản), khối extrude (lan can) đều
+    ra viền sạch, KHÔNG vẽ đường chéo trên mặt phẳng. Mặt nước/tĩnh không/địa hình
+    bị loại theo nhóm."""
+    def _want(tr):
+        g = str(getattr(tr, "legendgroup", "") or "") + "|" + \
+            str(getattr(tr, "name", "") or "")
+        return any(k in g for k in groups)
+
     xs, ys, zs = [], [], []
     for tr in list(fig.data):
-        if getattr(tr, "type", "") != "mesh3d":
+        if getattr(tr, "type", "") != "mesh3d" or not _want(tr):
             continue
         vx, vy, vz = tr.x, tr.y, tr.z
-        if vx is None or len(vx) != 8:
+        ii, jj, kk = tr.i, tr.j, tr.k
+        if vx is None or ii is None:
             continue
-        # Bỏ hộp DẸT (đáy≈đỉnh, vd mặt nước) → không viền cho gọn
         try:
-            if abs(max(vz) - min(vz)) < 1e-6:
-                continue
+            V = np.column_stack([np.asarray(vx, float),
+                                 np.asarray(vy, float),
+                                 np.asarray(vz, float)])
+            tris = list(zip(ii, jj, kk))
         except Exception:
-            pass
-        for a, b in _BOX_EDGE_PAIRS:
-            xs += [vx[a], vx[b], None]
-            ys += [vy[a], vy[b], None]
-            zs += [vz[a], vz[b], None]
+            continue
+        edge_norms = {}
+        for (a, b, c) in tris:
+            a, b, c = int(a), int(b), int(c)
+            nrm = np.cross(V[b] - V[a], V[c] - V[a])
+            _ln = float(np.linalg.norm(nrm))
+            if _ln < 1e-12:
+                continue
+            nrm = nrm / _ln
+            for p, q in ((a, b), (b, c), (c, a)):
+                key = (p, q) if p < q else (q, p)
+                edge_norms.setdefault(key, []).append(nrm)
+        for (p, q), ns in edge_norms.items():
+            feat = (len(ns) == 1) or (abs(float(np.dot(ns[0], ns[1]))) < 0.90)
+            if not feat:
+                continue
+            xs += [V[p, 0], V[q, 0], None]
+            ys += [V[p, 1], V[q, 1], None]
+            zs += [V[p, 2], V[q, 2], None]
     if not xs:
         return
     fig.add_trace(go.Scatter3d(
