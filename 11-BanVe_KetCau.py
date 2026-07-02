@@ -2808,6 +2808,33 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             textfont=dict(color="#e74c3c", size=11), showlegend=False,
         ))
 
+        # Tĩnh không PHỤ (khai báo trong hộp thoại thủy văn) — khung cam
+        _tkp_sl = True
+        for _cx in (d.get("extra_clearances") or []):
+            try:
+                _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+                _Hk = float(_cx.get("H", 0) or 0); _zk = float(_cx.get("z", MNCN))
+            except (TypeError, ValueError):
+                continue
+            if _Bk <= 0 or _Hk <= 0:
+                continue
+            _nmk = str(_cx.get("ten") or "TK phụ")
+            _pxL, _pyL = _vn(_xk - _Bk/2, 0); _pxR, _pyR = _vn(_xk + _Bk/2, 0)
+            _zkb = _zk * hz; _zkt = (_zk + _Hk) * hz
+            for xs, ys, xe, ye, z0, z1 in [
+                (_pxL,_pyL, _pxR,_pyR, _zkb,_zkb), (_pxL,_pyL, _pxR,_pyR, _zkt,_zkt),
+                (_pxL,_pyL, _pxL,_pyL, _zkb,_zkt), (_pxR,_pyR, _pxR,_pyR, _zkb,_zkt),
+            ]:
+                _ag(go.Scatter3d(
+                    x=[xs,xe], y=[ys,ye], z=[z0,z1], mode="lines",
+                    line=dict(color="#e67e22", width=5),
+                    name="Tĩnh không phụ" if _tkp_sl else "", showlegend=_tkp_sl))
+                _tkp_sl = False
+            _ag(go.Scatter3d(
+                x=[(_pxL+_pxR)/2], y=[(_pyL+_pyR)/2], z=[(_zkb+_zkt)/2],
+                mode="text", text=[f"{_nmk}<br>B={_Bk:.1f}×H={_Hk:.1f}m"],
+                textfont=dict(color="#e67e22", size=9), showlegend=False))
+
         # =========================================================
         # LỚP 2 — TRẮC DỌC (đường line — đúng cho profile)
         # =========================================================
