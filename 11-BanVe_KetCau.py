@@ -204,25 +204,31 @@ def make_red_line(d):
     z_crown  = _cao_dd_sys + _extra                     # đỉnh (nhịp chính, tại tim TK)
     z_mo     = (MNCN + 0.50) + _extra                   # đỉnh bản tại MỐ (chỉ ĐK1 lũ)
     z_mo     = min(z_mo, z_crown)                        # mố không cao hơn đỉnh
-    _dxL = max(x_tim - x0, 1e-6)                         # nửa trái (đỉnh→mố trái)
-    _dxR = max(x_end - x_tim, 1e-6)                      # nửa phải (đỉnh→mố phải)
-
+    # GIỮ PHẲNG đỉnh trên toàn BỀ RỘNG TĨNH KHÔNG (B_tk): đáy dầm không được phạm
+    # tĩnh không ở BẤT KỲ điểm nào trong khổ thông thuyền → red line phẳng = z_crown
+    # suốt [x_tim ± B_tk/2], rồi mới hạ mượt về mố (chỉ khống chế ĐK1 lũ).
+    B_tk = float(d.get("B", 20.0))
+    _xLb = x_tim - B_tk / 2.0                            # mép trái khổ tĩnh không
+    _xRb = x_tim + B_tk / 2.0                            # mép phải khổ tĩnh không
+    _dxL = max(_xLb - x0, 1e-6)                          # từ mép trái box → mố trái
+    _dxR = max(x_end - _xRb, 1e-6)                       # từ mép phải box → mố phải
     _drop = z_crown - z_mo                               # độ hạ đỉnh → mố
     _gL = 2.0 * _drop / _dxL                             # dốc tiếp tuyến tại mố trái
     _gR = 2.0 * _drop / _dxR                             # dốc tiếp tuyến tại mố phải
 
     def _z_red(x):
-        # ĐƯỜNG CONG ĐỨNG LỒI (parabol) — ĐỈNH tại tim tĩnh không (nhịp chính,
-        # khống chế bởi tĩnh không thông thuyền), hạ mượt về cao độ MỐ (chỉ ĐK1
-        # an-toàn-lũ). Ngoài mố: giữ dốc tiếp tuyến cho đường đầu cầu.
+        # PHẲNG qua khổ tĩnh không (không phạm tĩnh không), 2 bên hạ mượt (parabol
+        # lồi) về cao độ MỐ (ĐK1 lũ). Ngoài mố giữ dốc tiếp tuyến cho đường đầu cầu.
+        if _xLb <= x <= _xRb:
+            return z_crown
         if x < x0:      # đường đầu cầu trái
             return z_mo - (x0 - x) * _gL
         if x > x_end:   # đường đầu cầu phải
             return z_mo - (x - x_end) * _gR
-        if x <= x_tim:
-            f = (x_tim - x) / _dxL
+        if x < _xLb:
+            f = (_xLb - x) / _dxL
             return z_crown - _drop * f * f
-        f = (x - x_tim) / _dxR
+        f = (x - _xRb) / _dxR
         return z_crown - _drop * f * f
 
     return _z_red, x_tim, z_crown, t_ban, H_dam
