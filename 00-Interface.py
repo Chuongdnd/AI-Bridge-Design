@@ -292,6 +292,48 @@ _cc_theme.html(
     })();
     </script>""", height=0)
 
+# ── LỚP PHỦ "ĐANG XỬ LÝ…" hiện NGAY khi bấm nút (phản hồi tức thì) ────────────
+# Bấm nút → overlay + spinner xuất hiện lập tức, chặn thao tác. Mỗi lần app chạy
+# lại xong (component này nạp lại) → tự ẩn overlay. Bỏ qua nút chat (chạy fragment
+# nên không rerun toàn trang → sẽ không tự ẩn được).
+_cc_theme.html(
+    """<script>
+    (function(){
+      var d = window.parent.document;
+      var ov = d.getElementById('cau-loading-ov');
+      if(!ov){
+        var stl = d.createElement('style');
+        stl.textContent =
+          '#cau-loading-ov{position:fixed;inset:0;z-index:2147483600;display:none;'
+          +'align-items:center;justify-content:center;background:rgba(8,10,18,.42);cursor:wait}'
+          +'#cau-loading-ov .bx{display:flex;flex-direction:column;align-items:center;gap:12px;'
+          +'padding:22px 30px;background:#12121c;border:1px solid #2a3550;border-radius:14px;'
+          +'box-shadow:0 12px 44px rgba(0,0,0,.5)}'
+          +'#cau-loading-ov .sp{width:38px;height:38px;border:4px solid #2a3550;'
+          +'border-top-color:#4fc3f7;border-radius:50%;animation:causpin .8s linear infinite}'
+          +'#cau-loading-ov .tx{color:#dfe6f0;font-size:13px;font-weight:600}'
+          +'@keyframes causpin{to{transform:rotate(360deg)}}';
+        d.head.appendChild(stl);
+        ov = d.createElement('div');
+        ov.id = 'cau-loading-ov';
+        ov.innerHTML = '<div class="bx"><div class="sp"></div>'
+                     + '<div class="tx">Đang xử lý…</div></div>';
+        d.body.appendChild(ov);
+        var _t = null;
+        d.addEventListener('click', function(ev){
+          var t = ev.target.closest(
+            '[data-testid="stButton"] button, [data-testid="stFormSubmitButton"] button');
+          if(!t || t.disabled) return;
+          if(t.closest('.st-key-floatchat_wrap, .st-key-floatbtn_wrap')) return; // chat=fragment
+          ov.style.display = 'flex';
+          if(_t) clearTimeout(_t);
+          _t = setTimeout(function(){ ov.style.display='none'; }, 60000); // an toàn
+        }, true);
+      }
+      ov.style.display = 'none';   // app đã render xong lần này → ẩn
+    })();
+    </script>""", height=0)
+
 
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
@@ -1328,11 +1370,11 @@ def dialog_step1():
         _ex0 = (draft.get('extra_clearances')
                 or st.session_state.design_data.get('extra_clearances') or [])
         _df_ex0 = _pd_tk.DataFrame(_ex0) if _ex0 else _pd_tk.DataFrame(
-            columns=['ten', 'x', 'z', 'B', 'H'])
-        for _c in ['ten', 'x', 'z', 'B', 'H']:
+            columns=['ten', 'x', 'z', 'B', 'H', 'goc'])
+        for _c in ['ten', 'x', 'z', 'B', 'H', 'goc']:
             if _c not in _df_ex0.columns:
                 _df_ex0[_c] = None
-        _df_ex0 = _df_ex0[['ten', 'x', 'z', 'B', 'H']]
+        _df_ex0 = _df_ex0[['ten', 'x', 'z', 'B', 'H', 'goc']]
         _df_ex = st.data_editor(
             _df_ex0, num_rows="dynamic", use_container_width=True, key="d1_extra_tk",
             column_config={
@@ -1341,11 +1383,17 @@ def dialog_step1():
                 'z':   st.column_config.NumberColumn("Cao độ đáy (m)", format="%.2f"),
                 'B':   st.column_config.NumberColumn("Bề rộng B (m)", format="%.2f"),
                 'H':   st.column_config.NumberColumn("Chiều cao H (m)", format="%.2f"),
+                'goc': st.column_config.NumberColumn(
+                    "Góc giao (°)", format="%.1f", min_value=10.0, max_value=90.0,
+                    help="Góc giữa trục tĩnh không phụ và tim tuyến. 90° = vuông góc "
+                         "(để trống = 90°)."),
             })
         _extra_tk = [
             {'ten': (r.get('ten') or f"TK phụ {i+1}"),
              'x': float(r['x']), 'z': float(r.get('z') or 0.0),
-             'B': float(r.get('B') or 0.0), 'H': float(r.get('H') or 0.0)}
+             'B': float(r.get('B') or 0.0), 'H': float(r.get('H') or 0.0),
+             'goc': float(r['goc']) if (r.get('goc') is not None
+                                        and str(r.get('goc')) != 'nan') else 90.0}
             for i, r in enumerate(_df_ex.to_dict('records'))
             if r.get('x') is not None and str(r.get('x')) != 'nan'
         ]

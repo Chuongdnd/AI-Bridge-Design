@@ -2363,10 +2363,14 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
             continue
         if _Bk <= 0 or _Hk <= 0:
             continue
+        _gk = float(_cx.get("goc", 90) or 90)
+        _cotk = (0.0 if _gk >= 89.9 or _gk <= 0
+                 else 1.0 / np.tan(np.radians(max(10.0, min(89.9, _gk)))))
         _xkL = _xk - _Bk/2; _xkR = _xk + _Bk/2
         for _y in y_tk:
+            _dx = _y * _cotk        # xiên theo góc giao với tim tuyến
             fig.add_trace(go.Scatter3d(
-                x=[_xkL, _xkR, _xkR, _xkL, _xkL], y=[_y]*5,
+                x=[_xkL+_dx, _xkR+_dx, _xkR+_dx, _xkL+_dx, _xkL+_dx], y=[_y]*5,
                 z=[_zk, _zk, _zk+_Hk, _zk+_Hk, _zk],
                 mode="lines", line=dict(color="#e67e22", width=3),
                 name="Tĩnh không phụ" if (_tkp_sl3 and _y == y_tk[0]) else "",
@@ -3300,9 +3304,14 @@ def _ve_binh_do_cong(d, df_geology):
         if _Bk <= 0:
             continue
         _nmk = str(_cx.get("ten") or "Tĩnh không phụ")
+        _gk = float(_cx.get("goc", 90) or 90)
+        _cotk = (0.0 if _gk >= 89.9 or _gk <= 0
+                 else 1.0 / np.tan(np.radians(max(10.0, min(89.9, _gk)))))
+        _yh = B_tk*0.7
         _ssk = np.linspace(_xk - _Bk/2, _xk + _Bk/2, 8)
-        _lak = [_vn(s, -B_tk*0.7, skew=False) for s in _ssk]
-        _rak = [_vn(s, +B_tk*0.7, skew=False) for s in _ssk]
+        # Xiên theo góc giao: mép transverse dịch dọc tuyến 1 lượng off·cotk
+        _lak = [_vn(s + (-_yh)*_cotk, -_yh, skew=False) for s in _ssk]
+        _rak = [_vn(s + (+_yh)*_cotk, +_yh, skew=False) for s in _ssk]
         _px, _py = _xy(_lak + _rak[::-1] + [_lak[0]])
         fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
             fillcolor="rgba(230,126,34,0.12)", mode="lines",
@@ -3594,14 +3603,23 @@ def ve_binh_do_2d(d, df_tim_line=None, df_geology=None):
         if _Bk <= 0:
             continue
         _nmk = str(_cx.get("ten") or "TK phụ")
-        fig.add_shape(type="rect",
-            x0=_xk - _Bk/2, x1=_xk + _Bk/2,
-            y0=-B_tk/2 - 0.3, y1=B_tk/2 + 0.3,
+        _gk = float(_cx.get("goc", 90) or 90)
+        _cotk = (0.0 if _gk >= 89.9 or _gk <= 0
+                 else 1.0 / np.tan(np.radians(max(10.0, min(89.9, _gk)))))
+        _yh = B_tk/2 + 0.3
+        _shk = lambda _y: _y * _cotk        # xiên theo góc giao với tim tuyến
+        fig.add_trace(go.Scatter(
+            x=[_xk-_Bk/2+_shk(-_yh), _xk+_Bk/2+_shk(-_yh),
+               _xk+_Bk/2+_shk(+_yh), _xk-_Bk/2+_shk(+_yh), _xk-_Bk/2+_shk(-_yh)],
+            y=[-_yh, -_yh, _yh, _yh, -_yh],
+            fill="toself", fillcolor="rgba(230,126,34,0.06)", mode="lines",
             line=dict(color="#e67e22", width=2.0, dash="dash"),
-            fillcolor="rgba(230,126,34,0.06)")
-        fig.add_annotation(x=_xk, y=B_tk/2 + 0.6,
-            text=f"<b>{_nmk}</b> B={_Bk:.1f}m", showarrow=False,
-            font=dict(size=8, color="#e67e22"),
+            name="Tĩnh không phụ", showlegend=False,
+            hovertemplate=f"{_nmk} B={_Bk:.1f}m, góc={_gk:.0f}°<extra></extra>"))
+        fig.add_annotation(x=_xk + _shk(_yh), y=B_tk/2 + 0.6,
+            text=(f"<b>{_nmk}</b> B={_Bk:.1f}m"
+                  + (f" · {_gk:.0f}°" if _gk < 89.0 else "")),
+            showarrow=False, font=dict(size=8, color="#e67e22"),
             bgcolor="rgba(255,255,255,0.8)")
 
     # ── Chú thích góc xiên ────────────────────────────────────────────────
