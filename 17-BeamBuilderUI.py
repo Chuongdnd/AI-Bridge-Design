@@ -2330,6 +2330,20 @@ def _beam_end_section_name(vpfx: str):
     return None
 
 
+def _fit_beam_centers(bc: float, n_dam: int, kc_dam: float,
+                      bw_half: float, cover: float = 0.10) -> list:
+    """Vị trí tim dầm (m) sao cho MÉP dầm biên (tim ± nửa bề rộng dầm) nằm TRONG
+    bề rộng bản mặt cầu ±bc/2 (chừa lớp bảo vệ `cover`). Giữ khoảng cách khai báo
+    kc_dam nếu đủ chỗ; nếu không thì CO khoảng cách lại và căn ĐỐI XỨNG."""
+    if n_dam <= 1:
+        return [0.0]
+    max_half = max(0.0, bc / 2.0 - bw_half - cover)   # |tim dầm biên| tối đa
+    half_span = (n_dam - 1) * kc_dam / 2.0
+    kc_eff = kc_dam if half_span <= max_half else (2.0 * max_half / (n_dam - 1))
+    x_first = -(n_dam - 1) * kc_eff / 2.0              # căn đối xứng quanh tim
+    return [x_first + i * kc_eff for i in range(n_dam)]
+
+
 def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> list:
     """Trả về go.Scatter traces (2D) overlay mặt cắt dầm thực tế lên MCN điển hình.
 
@@ -2350,16 +2364,13 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
     t_ban  = float(d.get("t_ban_mm", 200)) / 1000.0
     i_ng   = float(d.get("i_doc_ngang", 2.0)) / 100.0   # dốc ngang: đáy bản dốc 2%
 
-    x_first = -bc / 2 + oh
-    result  = []
-    # MCN điển hình = nhịp GIỮA (L="G"); chỉ khác theo vai trò NGANG (dầm biên/giữa).
-    # Dùng span giả ở giữa (n_span=3, i_span=1) để _cell_section cho L="G".
-    _leg = True
+    # ── Tính trước MẶT CẮT từng dầm để biết BỀ RỘNG dầm → bố trí sao cho MÉP dầm
+    #    biên (không chỉ tim) NẰM TRONG bề rộng bản mặt cầu. ─────────────────────
+    _beams = []
     for i_dam in range(n_dam):
         sec, mir = _cell_section(pfx, active, secmap, 1, 3, i_dam, n_dam)
         _drop_holes = False
         if which == "end":
-            # Mặt cắt tại đầu dầm của đúng cây dầm (variant) ở vị trí ngang này.
             _T = "B" if (i_dam == 0 or i_dam == n_dam - 1) else "G"
             _vpfx = _variant_pfx(pfx, "G", _T, active)
             _secs_v, _fill_v = _resolve_beam_sections(_vpfx)
@@ -2368,13 +2379,24 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
             if _sec_end is not None and getattr(_sec_end, "outer", None):
                 sec = _sec_end
             else:
-                # Không có mặt cắt đầu dầm riêng → đầu dầm là khối ĐẶC (bịt khoang
-                # rỗng), bỏ lỗ để phân biệt rõ với mặt cắt giữa nhịp (có khoang rỗng).
                 _drop_holes = True
+        _beams.append((sec, mir, _drop_holes))
+
+    # Nửa bề rộng dầm rộng nhất (m) — dùng cho ràng buộc mép dầm ≤ ±bc/2.
+    _bw_half = 0.0
+    for _sec, _, _ in _beams:
+        if _sec and getattr(_sec, "outer", None):
+            _bw_half = max(_bw_half, max(abs(p[0]) for p in _sec.outer) / 1000.0)
+    xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half)
+
+    result  = []
+    _leg = True
+    for i_dam in range(n_dam):
+        sec, mir, _drop_holes = _beams[i_dam]
         if sec is None or not getattr(sec, "outer", None):
             continue
         _sgn = -1.0 if mir else 1.0
-        x_center = x_first + i_dam * kc_dam
+        x_center = xs_ctr[i_dam]
         # Đáy bản mặt cầu dốc 2% → dầm đặt thấp dần ra mép (đỉnh dầm = đáy bản tại
         # tim dầm). z giảm theo |x_center|.
         _z_top_dam = -t_ban - abs(x_center) * i_ng
@@ -2427,8 +2449,23 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     else:
         L_m = L_nhip * 1000.0              # fallback: L_nhip metres → mm
 
-    beam_top = cao_dd + H_nom   # cao độ đỉnh dầm (m) — cố định theo thiết kế
+    beam_top = cao_dd + H_nom   # fallback (phẳng) nếu không lấy được đường đỏ
     L_half = L_m / 2.0
+
+    # Đỉnh dầm BÁM ĐÁY BẢN MẶT CẦU = đường đỏ − bề dày bản (dùng chung make_red_line
+    # với trắc dọc → dầm khớp đúng đáy bản). Fallback phẳng nếu không sẵn.
+    _bv_rl = _get_banve()
+    _z_red_fn = None; _t_ban_rl = 0.0
+    if _bv_rl is not None and hasattr(_bv_rl, "make_red_line"):
+        try:
+            _z_red_fn, _, _, _t_ban_rl, _ = _bv_rl.make_red_line(d)
+        except Exception:
+            _z_red_fn = None
+
+    def _deck_bot_at(x):
+        if _z_red_fn is None:
+            return beam_top
+        return _z_red_fn(x) - _t_ban_rl
 
     def _full_pts_for(_pfx: str):
         """Profil dầm (full_pts mm) cho 1 pfx; None nếu không dựng được."""
@@ -2527,12 +2564,22 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
         span_x1 = span_x1 - _off1
         scale   = (span_x1 - span_x0) / L_m
 
-        bot_x = [span_x0 + s * scale for s, _ in full_pts]
-        bot_y = [beam_top - h / 1000.0 for _, h in full_pts]
+        # ĐỈNH DẦM BÁM ĐÁY BẢN MẶT CẦU (đường đỏ − bề dày bản). Dầm THẲNG →
+        # đỉnh dầm là dây cung nối đáy bản tại 2 đầu nhịp (span_x0, span_x1).
+        _zL = _deck_bot_at(span_x0)
+        _zR = _deck_bot_at(span_x1)
+        _den = (span_x1 - span_x0) or 1.0
 
-        # Polygon: top-left → bottom trace → top-right → close
-        px = [bot_x[0]] + bot_x + [bot_x[-1], bot_x[0]]
-        py = [beam_top]  + bot_y + [beam_top,  beam_top]
+        def _top_at(bx, _zL=_zL, _zR=_zR, _x0=span_x0, _den=_den):
+            return _zL + (bx - _x0) / _den * (_zR - _zL)
+
+        bot_x  = [span_x0 + s * scale for s, _ in full_pts]
+        top_ys = [_top_at(bx) for bx in bot_x]
+        bot_y  = [ty - h / 1000.0 for ty, (_, h) in zip(top_ys, full_pts)]
+
+        # Polygon: top-left → bottom trace → top-right → close (đỉnh theo dây cung)
+        px = [bot_x[0]]  + bot_x + [bot_x[-1],  bot_x[0]]
+        py = [top_ys[0]] + bot_y + [top_ys[-1], top_ys[0]]
 
         result.append(go.Scatter(
             x=px, y=py,
