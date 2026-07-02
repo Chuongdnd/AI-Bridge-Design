@@ -92,6 +92,12 @@ section[data-testid="stMain"] {
     max-width: var(--right-panel-width, 220px) !important;
     flex: 0 0 var(--right-panel-width, 220px) !important;
 }
+/* Cột trong HỘP THOẠI không dính bề rộng panel phải cố định → chia ĐỀU */
+[data-testid="stDialog"] [data-testid="stHorizontalBlock"] > div:last-child {
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: 1 1 0% !important;
+}
 
 /* ── Topbar cố định (vị trí điều khiển qua CSS var để responsive) ── */
 .uth-topbar {
@@ -1322,6 +1328,35 @@ def dialog_step1():
             show_feedback = _d1_show,
         )
 
+        st.markdown("**🚧 Tĩnh không khác (nếu có)**")
+        st.caption("Ngoài tĩnh không sông chính. Khai báo lý trình, cao độ đáy, "
+                   "bề rộng B (dọc cầu) × cao H → hệ thống rải trụ TRÁNH.")
+        import pandas as _pd_tk
+        _ex0 = (draft.get('extra_clearances')
+                or st.session_state.design_data.get('extra_clearances') or [])
+        _df_ex0 = _pd_tk.DataFrame(_ex0) if _ex0 else _pd_tk.DataFrame(
+            columns=['ten', 'x', 'z', 'B', 'H'])
+        for _c in ['ten', 'x', 'z', 'B', 'H']:
+            if _c not in _df_ex0.columns:
+                _df_ex0[_c] = None
+        _df_ex0 = _df_ex0[['ten', 'x', 'z', 'B', 'H']]
+        _df_ex = st.data_editor(
+            _df_ex0, num_rows="dynamic", use_container_width=True, key="d1_extra_tk",
+            column_config={
+                'ten': st.column_config.TextColumn("Tên", help="VD: Chui dân sinh"),
+                'x':   st.column_config.NumberColumn("Lý trình (m)", format="%.2f"),
+                'z':   st.column_config.NumberColumn("Cao độ đáy (m)", format="%.2f"),
+                'B':   st.column_config.NumberColumn("Bề rộng B (m)", format="%.2f"),
+                'H':   st.column_config.NumberColumn("Chiều cao H (m)", format="%.2f"),
+            })
+        _extra_tk = [
+            {'ten': (r.get('ten') or f"TK phụ {i+1}"),
+             'x': float(r['x']), 'z': float(r.get('z') or 0.0),
+             'B': float(r.get('B') or 0.0), 'H': float(r.get('H') or 0.0)}
+            for i, r in enumerate(_df_ex.to_dict('records'))
+            if r.get('x') is not None and str(r.get('x')) != 'nan'
+        ]
+
     with col_b:
         st.markdown("**📏 Cao độ thủy văn (m)**")
         st.caption("Thứ tự bắt buộc: MNCN > MNTT > MNTC > MNTN")
@@ -1388,36 +1423,6 @@ def dialog_step1():
         st.caption(
             "ℹ️ Bề dày bản mặt cầu được khai báo ở **Bước 2** — ngay dưới bề rộng bản mặt cầu."
         )
-
-        st.markdown("**🚧 Tĩnh không khác (nếu có)**")
-        st.caption("Ngoài tĩnh không sông chính (theo cấp sông). Khai báo lý trình, "
-                   "cao độ đáy, bề rộng B (dọc cầu) × cao H. Hệ thống sẽ rải trụ "
-                   "TRÁNH các tĩnh không này.")
-        import pandas as _pd_tk
-        _ex0 = (draft.get('extra_clearances')
-                or st.session_state.design_data.get('extra_clearances') or [])
-        _df_ex0 = _pd_tk.DataFrame(_ex0) if _ex0 else _pd_tk.DataFrame(
-            columns=['ten', 'x', 'z', 'B', 'H'])
-        for _c in ['ten', 'x', 'z', 'B', 'H']:
-            if _c not in _df_ex0.columns:
-                _df_ex0[_c] = None
-        _df_ex0 = _df_ex0[['ten', 'x', 'z', 'B', 'H']]
-        _df_ex = st.data_editor(
-            _df_ex0, num_rows="dynamic", use_container_width=True, key="d1_extra_tk",
-            column_config={
-                'ten': st.column_config.TextColumn("Tên", help="VD: Chui dân sinh"),
-                'x':   st.column_config.NumberColumn("Lý trình (m)", format="%.2f"),
-                'z':   st.column_config.NumberColumn("Cao độ đáy (m)", format="%.2f"),
-                'B':   st.column_config.NumberColumn("Bề rộng B (m)", format="%.2f"),
-                'H':   st.column_config.NumberColumn("Chiều cao H (m)", format="%.2f"),
-            })
-        _extra_tk = [
-            {'ten': (r.get('ten') or f"TK phụ {i+1}"),
-             'x': float(r['x']), 'z': float(r.get('z') or 0.0),
-             'B': float(r.get('B') or 0.0), 'H': float(r.get('H') or 0.0)}
-            for i, r in enumerate(_df_ex.to_dict('records'))
-            if r.get('x') is not None and str(r.get('x')) != 'nan'
-        ]
 
     def _d1_commit():
         st.session_state.wizard_draft.update({
