@@ -2344,6 +2344,31 @@ def _fit_beam_centers(bc: float, n_dam: int, kc_dam: float,
     return [x_first + i * kc_eff for i in range(n_dam)]
 
 
+def mcn_beam_centers(d: dict, pfx: str = "spt", which: str = "mid") -> list:
+    """Tim dầm (m) TRÊN MCN — DÙNG CHUNG với get_mcn_overlay_traces & 3D: xét bề
+    rộng dầm THẬT để mép dầm biên nằm trong bản mặt cầu. Trả [] nếu không có mặt
+    cắt dầm (để nơi gọi tự dùng bố trí mặc định)."""
+    try:
+        active, secmap = _build_role_sections(pfx)
+    except Exception:
+        return []
+    if not any(s and getattr(s, "outer", None) for s in secmap.values()):
+        return []
+    kcn    = d.get("kcn_result") or d.get("ai_result", {})
+    n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
+    kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
+    bc     = float(d.get("bc", 12.0))
+    _bw_half = 0.0
+    for i_dam in range(n_dam):
+        try:
+            sec, _ = _cell_section(pfx, active, secmap, 1, 3, i_dam, n_dam)
+        except Exception:
+            sec = None
+        if sec is not None and getattr(sec, "outer", None):
+            _bw_half = max(_bw_half, max(abs(p[0]) for p in sec.outer) / 1000.0)
+    return _fit_beam_centers(bc, n_dam, kc_dam, _bw_half)
+
+
 def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> list:
     """Trả về go.Scatter traces (2D) overlay mặt cắt dầm thực tế lên MCN điển hình.
 

@@ -1771,7 +1771,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
 
 
 def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
-                        show_substructure=True):
+                        show_substructure=True, beam_centers=None):
     """MCN điển hình: bản, lớp phủ, dầm, lan can, kích thước, chú thích lớp.
 
     beam_params : dict | None — nếu có, ưu tiên dùng giá trị từ beam_params_final
@@ -1807,9 +1807,13 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
 
     fig = go.Figure()
 
-    # Tim dầm đầu tiên — CĂN ĐỐI XỨNG quanh tim cầu (khớp bố trí dầm thực đã được
-    # co để MÉP dầm biên nằm trong bản mặt cầu).
-    x_first = -(n_dam - 1) * kc / 2.0
+    # TIM DẦM — dùng CHUNG bố trí với dầm thực & 3D (beam_centers từ mcn_beam_centers
+    # đã co mép dầm biên vào trong bản). Thiếu → căn đối xứng theo kc.
+    if beam_centers and len(beam_centers) == n_dam:
+        _cx = list(beam_centers)
+    else:
+        _cx = [-(n_dam - 1) * kc / 2.0 + i * kc for i in range(n_dam)]
+    x_first = _cx[0]
 
     # ── Bê tông đổ tại chỗ giữa các dầm (cho T ngược và Dầm I) ──────────
     is_tngược = "t ngược" in loai_l or "t-ngược" in loai_l or "tngược" in loai_l
@@ -1818,8 +1822,8 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
         # Vùng BT đổ tại chỗ giữa các dầm (từ đáy bản → đỉnh cánh dầm)
         # (màu nhạt hơn để phân biệt với dầm precast)
         for i in range(n_dam - 1):
-            x_left  = x_first + i * kc
-            x_right = x_first + (i + 1) * kc
+            x_left  = _cx[i]
+            x_right = _cx[i + 1]
             _poly(fig,
                   [x_left, x_right, x_right, x_left],
                   [-t_ban, -t_ban, -t_ban - H_dam * 0.5, -t_ban - H_dam * 0.5],
