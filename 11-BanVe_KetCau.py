@@ -190,29 +190,40 @@ def make_red_line(d):
     R     = float(d.get("R_hinh_hoc", 0) or 0)
     i_gr  = abs(float(d.get("i_max_hinh_hoc", 0) or 0)) / 100.0
 
-    # CAO ĐỘ ĐỈNH đường đỏ (đỉnh bản tại tim TK).
-    # cao_day_dam hệ thống = ĐÁY DẦM BIÊN tối thiểu (điểm thấp nhất) theo tĩnh
-    # không CAO NHẤT (max của an-toàn-lũ & thông-thuyền). Khi xếp dầm bám đáy bản
-    # dốc ngang, đáy dầm tại TIM cao hơn đáy dầm biên (bc/2)·i_ngang → CỘNG lượng
-    # này để chính đáy dầm BIÊN vừa đủ hở tĩnh không (không vi phạm).
+    # CAO ĐỘ đường đỏ — phân biệt NHỊP CHÍNH (có tĩnh không thông thuyền) và MỐ.
+    #   • ĐỈNH (tại TIM TĨNH KHÔNG, nhịp chính): khống chế bởi TĨNH KHÔNG CAO NHẤT
+    #     (max lũ & thông thuyền) = cao_day_dam hệ thống → đáy dầm biên nhịp chính.
+    #   • MỐ (nhịp biên): CHỈ cần ĐK1 an-toàn-lũ (đáy dầm ≥ MNCN + 0.50m). KHÔNG áp
+    #     tĩnh không thông thuyền cho mố → mố hạ thấp, không bị cao thừa.
+    # Cộng (bc/2)·i_ngang để chính ĐÁY DẦM BIÊN vừa đủ hở (dầm bám đáy bản dốc ngang).
     MNCN = float(d.get("MNCN", 3.5))
-    _cao_dd_sys = float(d.get("cao_day_dam", 0) or 0)   # đáy dầm biên (hệ thống)
+    _cao_dd_sys = float(d.get("cao_day_dam", 0) or 0)   # đáy dầm biên nhịp chính
     if _cao_dd_sys <= 0:                                 # suy dự phòng nếu thiếu
         _cao_dd_sys = max(MNCN + 0.50, MNTT + H_tk + KHO_HO_DAY_DAM)
-    z_crown = _cao_dd_sys + (bc / 2.0) * i_ng + H_dam + t_ban
+    _extra   = (bc / 2.0) * i_ng + H_dam + t_ban        # đáy dầm biên → đỉnh bản tại tim
+    z_crown  = _cao_dd_sys + _extra                     # đỉnh (nhịp chính, tại tim TK)
+    z_mo     = (MNCN + 0.50) + _extra                   # đỉnh bản tại MỐ (chỉ ĐK1 lũ)
+    z_mo     = min(z_mo, z_crown)                        # mố không cao hơn đỉnh
+    _dxL = max(x_tim - x0, 1e-6)                         # nửa trái (đỉnh→mố trái)
+    _dxR = max(x_end - x_tim, 1e-6)                      # nửa phải (đỉnh→mố phải)
+
+    _drop = z_crown - z_mo                               # độ hạ đỉnh → mố
+    _gL = 2.0 * _drop / _dxL                             # dốc tiếp tuyến tại mố trái
+    _gR = 2.0 * _drop / _dxR                             # dốc tiếp tuyến tại mố phải
 
     def _z_red(x):
-        dx = abs(x - x_tim)
-        if R > 0:
-            x_tan = R * i_gr if i_gr > 0 else float("inf")
-            if dx <= x_tan:
-                return z_crown - dx * dx / (2.0 * R)
-            z_tan = z_crown - x_tan * x_tan / (2.0 * R)
-            return z_tan - (dx - x_tan) * i_gr
-        # R≤0: có dốc dọc → 2 nhánh thẳng đối xứng từ đỉnh; không → phẳng
-        if i_gr > 0:
-            return z_crown - dx * i_gr
-        return z_crown
+        # ĐƯỜNG CONG ĐỨNG LỒI (parabol) — ĐỈNH tại tim tĩnh không (nhịp chính,
+        # khống chế bởi tĩnh không thông thuyền), hạ mượt về cao độ MỐ (chỉ ĐK1
+        # an-toàn-lũ). Ngoài mố: giữ dốc tiếp tuyến cho đường đầu cầu.
+        if x < x0:      # đường đầu cầu trái
+            return z_mo - (x0 - x) * _gL
+        if x > x_end:   # đường đầu cầu phải
+            return z_mo - (x - x_end) * _gR
+        if x <= x_tim:
+            f = (x_tim - x) / _dxL
+            return z_crown - _drop * f * f
+        f = (x - x_tim) / _dxR
+        return z_crown - _drop * f * f
 
     return _z_red, x_tim, z_crown, t_ban, H_dam
 
