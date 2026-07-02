@@ -2333,20 +2333,30 @@ def _beam_end_section_name(vpfx: str):
 def _fit_beam_centers(bc: float, n_dam: int, kc_dam: float,
                       bw_half: float, cover: float = 0.10,
                       lan_can_w: float = 0.0, min_gap: float = 0.01) -> list:
-    """Vị trí tim dầm (m) — bố trí dầm trong PHẠM VI xe chạy (giữa 2 lan can) sao
-    cho: (1) MÉP CÁNH dầm biên hở MÉP TRONG LAN CAN ≥ min_gap (10mm); (2) 2 CÁNH
-    dầm kề nhau hở ≥ min_gap (không chồng cánh). Hở phân bố ĐỀU và TỰ THAY ĐỔI theo
-    bề rộng cầu. bw_half = nửa bề rộng CÁNH dầm (m); lan_can_w = bề rộng chân lan
-    can mỗi bên (m)."""
+    """Vị trí tim dầm (m) — CHIA ĐỀU dầm trong PHẠM VI xe chạy (giữa 2 mép trong
+    lan can). Mỗi dầm nằm giữa 1 ô chia đều; bản cánh sẽ được CẮT NGẮN (xem
+    _flange_clip_bounds) để 2 cánh kề hở ≥ min_gap và cánh biên hở lan can ≥ min_gap
+    — KHÔNG đổi số lượng/tim dầm. lan_can_w = bề rộng chân lan can mỗi bên (m)."""
     if n_dam <= 1:
         return [0.0]
-    avail   = bc - 2.0 * lan_can_w                    # bề rộng giữa 2 lan can
-    flanges = n_dam * 2.0 * bw_half                   # tổng bề rộng các cánh dầm
-    gap     = (avail - flanges) / (n_dam + 1)         # hở ĐỀU: mép lan can + giữa dầm
-    gap     = max(gap, 0.0)                            # không âm (nếu quá chật)
-    sp      = 2.0 * bw_half + gap                      # khoảng cách TIM–TIM
-    x_first = -(n_dam - 1) * sp / 2.0                  # căn đối xứng quanh tim cầu
-    return [x_first + i * sp for i in range(n_dam)]
+    y_in = bc / 2.0 - lan_can_w                        # mép trong lan can (±)
+    slot = 2.0 * y_in / n_dam                          # chia đều bề rộng xe chạy
+    return [-y_in + (i + 0.5) * slot for i in range(n_dam)]
+
+
+def _flange_clip_bounds(xs_ctr: list, y_in: float, min_gap: float = 0.01) -> list:
+    """[(L_i, R_i)] — biên NGANG (m) để CẮT NGẮN bản cánh mỗi dầm: 2 cánh kề hở
+    min_gap (mỗi bên lùi min_gap/2 khỏi trung điểm), cánh biên hở MÉP TRONG LAN CAN
+    (±y_in) một khoảng min_gap. Điểm cánh vượt biên bị kẹp về biên (cắt ngắn)."""
+    n = len(xs_ctr)
+    out = []
+    for i in range(n):
+        bL = -y_in if i == 0 else (xs_ctr[i - 1] + xs_ctr[i]) / 2.0
+        bR = y_in if i == n - 1 else (xs_ctr[i] + xs_ctr[i + 1]) / 2.0
+        L = bL + (min_gap if i == 0 else min_gap / 2.0)
+        R = bR - (min_gap if i == n - 1 else min_gap / 2.0)
+        out.append((L, R))
+    return out
 
 
 def _lan_can_w(d: dict, bc: float) -> float:
@@ -2431,8 +2441,9 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
     for _sec, _, _ in _beams:
         if _sec and getattr(_sec, "outer", None):
             _bw_half = max(_bw_half, max(abs(p[0]) for p in _sec.outer) / 1000.0)
-    xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half,
-                               lan_can_w=_lan_can_w(d, bc))
+    _lcw   = _lan_can_w(d, bc)
+    xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half, lan_can_w=_lcw)
+    _clip  = _flange_clip_bounds(xs_ctr, bc / 2.0 - _lcw)
 
     result  = []
     _leg = True
@@ -2442,10 +2453,11 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
             continue
         _sgn = -1.0 if mir else 1.0
         x_center = xs_ctr[i_dam]
+        _cL, _cR = _clip[i_dam]        # CẮT NGẮN bản cánh về biên hở 10mm
         # Đáy bản mặt cầu dốc 2% → dầm đặt thấp dần ra mép (đỉnh dầm = đáy bản tại
         # tim dầm). z giảm theo |x_center|.
         _z_top_dam = -t_ban - abs(x_center) * i_ng
-        xs = [x_center + _sgn * p[0] / 1000.0 for p in sec.outer]
+        xs = [min(max(x_center + _sgn * p[0] / 1000.0, _cL), _cR) for p in sec.outer]
         ys = [_z_top_dam + p[1] / 1000.0 for p in sec.outer]
         xs.append(xs[0]); ys.append(ys[0])
         result.append(go.Scatter(
@@ -3610,8 +3622,9 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
                     _bw_half = max(_bw_half, float(np.max(np.abs(_R[:, 0]))) / 1000.0)
                 except Exception:
                     pass
-    xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half,
-                               lan_can_w=_lan_can_w(d, bc))
+    _lcw   = _lan_can_w(d, bc)
+    xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half, lan_can_w=_lcw)
+    _clip  = _flange_clip_bounds(xs_ctr, bc / 2.0 - _lcw)  # cắt ngắn bản cánh
 
     spans   = _beam_span_list(d)
     n_span  = len(spans)
@@ -3647,6 +3660,7 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
             if not rings or len(rings) < 2:
                 continue
             _sgn = -1.0 if mir else 1.0
+            _cL, _cR = _clip[i_dam]              # CẮT NGẮN bản cánh về biên hở 10mm
             Np   = len(rings[0][1]); M = len(rings)
             # Đỉnh dầm = ĐÁY BẢN, dây cung THẲNG bám đường đỏ theo nhịp.
             _ztL = _deck_bot(sx0); _ztR = _deck_bot(sx1)
@@ -3656,7 +3670,8 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
                 ch = sx0 + frac * (sx1 - sx0)
                 _zt_ch = _ztL + (ch - sx0) / _den * (_ztR - _ztL)
                 for i in range(Np):
-                    X, Y = _vn(ch, beam_y + _sgn * R[i, 0] / 1000.0)
+                    _off = min(max(beam_y + _sgn * R[i, 0] / 1000.0, _cL), _cR)
+                    X, Y = _vn(ch, _off)
                     vX.append(X); vY.append(Y); vZ.append((_zt_ch + R[i, 1] / 1000.0) * he_so_z)
             _ii, _jj, _kk = _beam_solid_faces(rings, Np)
             result.append(go.Mesh3d(
