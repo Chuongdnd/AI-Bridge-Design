@@ -821,6 +821,16 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
     # đoạn (dầm liền) → giữ nguyên hành vi cũ.
     _cap_gap = float((d or {}).get("cap_gap_m", 0.0) or 0.0)
 
+    # ── Có TĨNH KHÔNG PHỤ + phương án bật quy tắc né (PA1 'fewest' / PA2
+    # 'straddle') → CHIA LẠI nhịp từ tim tĩnh không chính ra 2 mố, trộn chiều dài
+    # dầm catalog để KHÔNG trụ nào phạm tĩnh không (thay vì chỉ bỏ trụ). PA3/khác
+    # hoặc không có tĩnh không phụ → giữ luồng cũ bên dưới.
+    _clr_mode = (d or {}).get("_clearance_mode")
+    if _clr_mode in ("fewest", "straddle") and ((d or {}).get("extra_clearances")):
+        _L_base = float(sl.get("L_dan") or sl.get("L_main") or L_nhip)
+        return _clearance_layout(x0, x_end, x_tim, B_tk, _L_base,
+                                 d.get("extra_clearances"), _clr_mode)
+
     if sl.get("mode") != "two_tier":
         # Bố trí ĐỀU. Ưu tiên chiều dài người dùng đặt/áp dầm thư viện
         # (span_layout['L_dan']/['L_main']); nếu chưa có thì dùng L_nhip mặc định.
@@ -878,6 +888,69 @@ def _avoid_extra_clearances(supports, d):
     kept = [p for p in supports[1:-1]
             if not any(a - 1e-6 <= p <= b + 1e-6 for (a, b) in forb)]
     return [x0] + kept + [x_end]
+
+
+def _in_any_zone(p, zones):
+    return any(a - 1e-6 <= p <= b + 1e-6 for (a, b) in zones)
+
+
+def _place_dir(P0, sgn, target, zones, L_base, mode):
+    """Rải trụ từ P0 theo hướng sgn (±1) tới target. Mỗi nhịp chọn CHIỀU DÀI
+    ĐỊNH HÌNH catalog sao cho trụ kế KHÔNG rơi vào vùng cấm tĩnh không.
+      mode 'fewest'   : ưu tiên nhịp DÀI NHẤT (ít trụ) — chỉ rút khi buộc né.
+      mode 'straddle' : ưu tiên nhịp ĐỀU = L_base; khi nhịp đều lọt vùng cấm thì
+                        chọn nhịp nhỏ nhất BẮC TRỌN qua khoang.
+    Trả list trụ (KHÔNG gồm P0); trụ ngoài cùng sẽ là MỐ."""
+    cat = sorted(STD_LENGTHS)
+    Lmax = cat[-1]
+    piers = []
+    P = P0
+    guard = 0
+    while sgn * (target - P) > 1e-6 and guard < 400:
+        guard += 1
+        remaining = sgn * (target - P)
+        if remaining <= Lmax + 1e-6:            # NHỊP CUỐI cập mố
+            pick = next((L for L in cat
+                         if L + 1e-6 >= remaining and not _in_any_zone(P + sgn*L, zones)),
+                        None) or _snap_up_std(remaining)
+            P += sgn * pick; piers.append(P); break
+        if mode == "fewest":
+            order = sorted(cat, reverse=True)                    # dài nhất trước
+        else:
+            order = ([L_base] if L_base in cat else []) + sorted(cat)  # đều trước
+        pick = next((L for L in order if not _in_any_zone(P + sgn*L, zones)), Lmax)
+        P += sgn * pick; piers.append(P)
+    return piers
+
+
+def _clearance_layout(x0, x_end, x_tim, B_tk, L_base, extras, mode):
+    """Bố trí MỐ–TRỤ né MỌI tĩnh không (chính + phụ), rải TỪ TIM TĨNH KHÔNG CHÍNH
+    ra 2 mố, trộn chiều dài dầm catalog. Trả (supports, L_main)."""
+    cat = sorted(STD_LENGTHS)
+    clearances = [(float(x_tim), float(B_tk))]
+    for c in (extras or []):
+        try:
+            _b = float(c.get("B", 0) or 0)
+            if _b > 0:
+                clearances.append((float(c["x"]), _b))
+        except (TypeError, ValueError, KeyError):
+            pass
+    zones = _clearance_zones([(x, b) for (x, b) in clearances])
+    need = float(B_tk) + 2.0 * _PIER_SAFETY                  # nhịp chính bắc qua TK chính
+    ge = [L for L in cat if L + 1e-6 >= need]
+    L_main = ((ge[-1] if ge else _snap_up_std(need)) if mode == "fewest"
+              else (ge[0] if ge else _snap_up_std(need)))
+    P_L = x_tim - L_main / 2.0
+    P_R = x_tim + L_main / 2.0
+    left  = _place_dir(P_L, -1.0, x0,   zones, L_base, mode)
+    right = _place_dir(P_R, +1.0, x_end, zones, L_base, mode)
+    return sorted(left + [P_L, P_R] + right), L_main
+
+
+def _clearance_zones(clearances):
+    """[(a,b)] vùng cấm đặt trụ từ list (x, B): [x−B/2−an toàn, x+B/2+an toàn]."""
+    return [(x - b / 2.0 - _PIER_SAFETY, x + b / 2.0 + _PIER_SAFETY)
+            for (x, b) in clearances if b and b > 0]
 
 
 def main_span_index(supports, x_tim):

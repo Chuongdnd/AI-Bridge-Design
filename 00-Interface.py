@@ -3849,7 +3849,15 @@ def _build_pa_d(base_d: dict, ribbon: str) -> dict:
         d["kcn_result"] = dict(_3pa[pa_key])
     d["span_layout"] = _pa_span_layout(ribbon)
     d["railings"] = _resolve_railings_for_pa(ribbon)
+    d["_clearance_mode"] = _clearance_mode_for(ribbon)
     return d
+
+
+def _clearance_mode_for(ribbon: str) -> str:
+    """Quy tắc rải trụ tránh tĩnh không theo phương án:
+    PA1 = 'fewest' (ưu tiên ít trụ, nhịp dài nhất) · PA2 = 'straddle' (mỗi tĩnh
+    không 1 nhịp bắc trọn khoang) · PA3/khác = '' (giữ hành vi cũ: bỏ trụ phạm)."""
+    return {"Phương án 1": "fewest", "Phương án 2": "straddle"}.get(ribbon, "")
 
 
 def _maybe_fragment(fn):
@@ -6727,7 +6735,8 @@ with _col_main:
             _spt_pfx = _PA_SPT_PFX.get(selected_ribbon, "spt")
             # Nạp bố trí nhịp (2 tầng) của PA vào d → mọi bản vẽ đồng bộ
             d = {**d, "span_layout": _pa_span_layout(selected_ribbon),
-                 "railings": _resolve_railings_for_pa(selected_ribbon)}
+                 "railings": _resolve_railings_for_pa(selected_ribbon),
+                 "_clearance_mode": _clearance_mode_for(selected_ribbon)}
 
             # Chưa khai báo dầm → tự lấy dầm phù hợp theo nhịp từ THƯ VIỆN người
             # dùng (nếu có DXF); không có thì các mặt cắt sinh hình tham số đúng
