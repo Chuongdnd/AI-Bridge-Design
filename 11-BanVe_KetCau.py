@@ -302,18 +302,27 @@ def make_red_line(d):
     R     = float(d.get("R_hinh_hoc", 0) or 0)
     i_gr  = abs(float(d.get("i_max_hinh_hoc", 0) or 0)) / 100.0
 
-    # CAO ĐỘ ĐỈNH đường đỏ (đỉnh bản tại tim TK).
-    # cao_day_dam hệ thống = ĐÁY DẦM BIÊN tối thiểu (điểm thấp nhất) theo tĩnh
-    # không CAO NHẤT (max của an-toàn-lũ & thông-thuyền). Khi xếp dầm bám đáy bản
-    # dốc ngang, đáy dầm tại TIM cao hơn đáy dầm biên (bc/2)·i_ngang → CỘNG lượng
-    # này để chính đáy dầm BIÊN vừa đủ hở tĩnh không (không vi phạm).
+    # ĐƯỜNG ĐỎ = TRẮC DỌC THIẾT KẾ theo KHAI BÁO (đường cong đứng lồi bán kính R
+    # + độ dốc dọc i người dùng khai báo/tính). ĐỈNH đặt tại TIM TĨNH KHÔNG; cao độ
+    # đỉnh đặt sao cho ĐÁY DẦM BIÊN tại nhịp chính vừa đủ hở TĨNH KHÔNG CAO NHẤT
+    # (max lũ & thông thuyền = cao_day_dam hệ thống). Vẫn KIỂM SOÁT không cho vi
+    # phạm ĐK1 an-toàn-lũ ở mọi điểm (nâng đường đỏ nếu cần).
     MNCN = float(d.get("MNCN", 3.5))
-    _cao_dd_sys = float(d.get("cao_day_dam", 0) or 0)   # đáy dầm biên (hệ thống)
+    _cao_dd_sys = float(d.get("cao_day_dam", 0) or 0)   # đáy dầm biên nhịp chính
     if _cao_dd_sys <= 0:                                 # suy dự phòng nếu thiếu
         _cao_dd_sys = max(MNCN + 0.50, MNTT + H_tk + KHO_HO_DAY_DAM)
-    z_crown = _cao_dd_sys + (bc / 2.0) * i_ng + H_dam + t_ban
+    _extra   = (bc / 2.0) * i_ng + H_dam + t_ban        # đáy dầm biên → đỉnh bản tại tim
+    z_crown  = _cao_dd_sys + _extra                     # đỉnh đường đỏ (tại tim TK)
+    z_floor  = (MNCN + 0.50) + _extra                   # đỉnh bản tối thiểu (ĐK1 lũ)
+    # Nâng đỉnh thêm độ VÕNG của đường cong đứng trong bề rộng khổ tĩnh không, để
+    # đáy dầm tại MÉP khổ (x_tim ± B_tk/2) vẫn KHÔNG PHẠM tĩnh không thông thuyền.
+    B_tk = float(d.get("B", 20.0))
+    if R > 0:
+        z_crown += (B_tk / 2.0) ** 2 / (2.0 * R)
 
-    def _z_red(x):
+    def _raw(x):
+        # Đường cong đứng lồi theo KHAI BÁO: parabol bán kính R quanh đỉnh, ngoài
+        # cung nối dốc thẳng i. R≤0 → chỉ dốc i; i=0 & R≤0 → phẳng.
         dx = abs(x - x_tim)
         if R > 0:
             x_tan = R * i_gr if i_gr > 0 else float("inf")
@@ -321,10 +330,13 @@ def make_red_line(d):
                 return z_crown - dx * dx / (2.0 * R)
             z_tan = z_crown - x_tan * x_tan / (2.0 * R)
             return z_tan - (dx - x_tan) * i_gr
-        # R≤0: có dốc dọc → 2 nhánh thẳng đối xứng từ đỉnh; không → phẳng
         if i_gr > 0:
             return z_crown - dx * i_gr
         return z_crown
+
+    def _z_red(x):
+        # Theo trắc dọc khai báo, NHƯNG không thấp hơn mức ĐK1 lũ (nâng nếu vi phạm).
+        return max(_raw(x), z_floor)
 
     return _z_red, x_tim, z_crown, t_ban, H_dam
 
@@ -898,9 +910,11 @@ def _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip=None):
     main_L = x_tim - L_std / 2.0
     main_R = x_tim + L_std / 2.0
 
-    # Mở rộng đều về hai phía để phủ phạm vi cầu [x0, x_end]
-    n_left  = max(0, int(np.ceil((main_L - x0)   / L_std - 1e-6)))
-    n_right = max(0, int(np.ceil((x_end - main_R) / L_std - 1e-6)))
+    # Số nhịp dẫn mỗi phía = LÀM TRÒN (gần nhất) quãng từ nhịp chính tới điểm ngắt
+    # cầu (vị trí đắp ≈ 6m). Dùng round (không phải ceil) để mố chỉ DỜI 1 CHÚT về
+    # đúng bội số chiều dài nhịp — không lố hẳn ra thêm gần cả một nhịp.
+    n_left  = max(0, int(round((main_L - x0)   / L_std)))
+    n_right = max(0, int(round((x_end - main_R) / L_std)))
 
     left  = [main_L - i * L_std for i in range(n_left, 0, -1)]
     right = [main_R + i * L_std for i in range(1, n_right + 1)]
@@ -965,8 +979,9 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
 
     main_L = x_tim - L_main / 2.0
     main_R = x_tim + L_main / 2.0
-    n_left  = max(0, int(np.ceil((main_L - x0)   / L_dan - 1e-6)))
-    n_right = max(0, int(np.ceil((x_end - main_R) / L_dan - 1e-6)))
+    # LÀM TRÒN (gần nhất) số nhịp dẫn → mố dời 1 chút về bội số chiều dài nhịp dẫn.
+    n_left  = max(0, int(round((main_L - x0)   / L_dan)))
+    n_right = max(0, int(round((x_end - main_R) / L_dan)))
     left  = [main_L - i * L_dan for i in range(n_left, 0, -1)]
     right = [main_R + i * L_dan for i in range(1, n_right + 1)]
     supports = left + [main_L, main_R] + right
