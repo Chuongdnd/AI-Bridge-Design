@@ -190,46 +190,41 @@ def make_red_line(d):
     R     = float(d.get("R_hinh_hoc", 0) or 0)
     i_gr  = abs(float(d.get("i_max_hinh_hoc", 0) or 0)) / 100.0
 
-    # CAO ĐỘ đường đỏ — phân biệt NHỊP CHÍNH (có tĩnh không thông thuyền) và MỐ.
-    #   • ĐỈNH (tại TIM TĨNH KHÔNG, nhịp chính): khống chế bởi TĨNH KHÔNG CAO NHẤT
-    #     (max lũ & thông thuyền) = cao_day_dam hệ thống → đáy dầm biên nhịp chính.
-    #   • MỐ (nhịp biên): CHỈ cần ĐK1 an-toàn-lũ (đáy dầm ≥ MNCN + 0.50m). KHÔNG áp
-    #     tĩnh không thông thuyền cho mố → mố hạ thấp, không bị cao thừa.
-    # Cộng (bc/2)·i_ngang để chính ĐÁY DẦM BIÊN vừa đủ hở (dầm bám đáy bản dốc ngang).
+    # ĐƯỜNG ĐỎ = TRẮC DỌC THIẾT KẾ theo KHAI BÁO (đường cong đứng lồi bán kính R
+    # + độ dốc dọc i người dùng khai báo/tính). ĐỈNH đặt tại TIM TĨNH KHÔNG; cao độ
+    # đỉnh đặt sao cho ĐÁY DẦM BIÊN tại nhịp chính vừa đủ hở TĨNH KHÔNG CAO NHẤT
+    # (max lũ & thông thuyền = cao_day_dam hệ thống). Vẫn KIỂM SOÁT không cho vi
+    # phạm ĐK1 an-toàn-lũ ở mọi điểm (nâng đường đỏ nếu cần).
     MNCN = float(d.get("MNCN", 3.5))
     _cao_dd_sys = float(d.get("cao_day_dam", 0) or 0)   # đáy dầm biên nhịp chính
     if _cao_dd_sys <= 0:                                 # suy dự phòng nếu thiếu
         _cao_dd_sys = max(MNCN + 0.50, MNTT + H_tk + KHO_HO_DAY_DAM)
     _extra   = (bc / 2.0) * i_ng + H_dam + t_ban        # đáy dầm biên → đỉnh bản tại tim
-    z_crown  = _cao_dd_sys + _extra                     # đỉnh (nhịp chính, tại tim TK)
-    z_mo     = (MNCN + 0.50) + _extra                   # đỉnh bản tại MỐ (chỉ ĐK1 lũ)
-    z_mo     = min(z_mo, z_crown)                        # mố không cao hơn đỉnh
-    # GIỮ PHẲNG đỉnh trên toàn BỀ RỘNG TĨNH KHÔNG (B_tk): đáy dầm không được phạm
-    # tĩnh không ở BẤT KỲ điểm nào trong khổ thông thuyền → red line phẳng = z_crown
-    # suốt [x_tim ± B_tk/2], rồi mới hạ mượt về mố (chỉ khống chế ĐK1 lũ).
+    z_crown  = _cao_dd_sys + _extra                     # đỉnh đường đỏ (tại tim TK)
+    z_floor  = (MNCN + 0.50) + _extra                   # đỉnh bản tối thiểu (ĐK1 lũ)
+    # Nâng đỉnh thêm độ VÕNG của đường cong đứng trong bề rộng khổ tĩnh không, để
+    # đáy dầm tại MÉP khổ (x_tim ± B_tk/2) vẫn KHÔNG PHẠM tĩnh không thông thuyền.
     B_tk = float(d.get("B", 20.0))
-    _xLb = x_tim - B_tk / 2.0                            # mép trái khổ tĩnh không
-    _xRb = x_tim + B_tk / 2.0                            # mép phải khổ tĩnh không
-    _dxL = max(_xLb - x0, 1e-6)                          # từ mép trái box → mố trái
-    _dxR = max(x_end - _xRb, 1e-6)                       # từ mép phải box → mố phải
-    _drop = z_crown - z_mo                               # độ hạ đỉnh → mố
-    _gL = 2.0 * _drop / _dxL                             # dốc tiếp tuyến tại mố trái
-    _gR = 2.0 * _drop / _dxR                             # dốc tiếp tuyến tại mố phải
+    if R > 0:
+        z_crown += (B_tk / 2.0) ** 2 / (2.0 * R)
+
+    def _raw(x):
+        # Đường cong đứng lồi theo KHAI BÁO: parabol bán kính R quanh đỉnh, ngoài
+        # cung nối dốc thẳng i. R≤0 → chỉ dốc i; i=0 & R≤0 → phẳng.
+        dx = abs(x - x_tim)
+        if R > 0:
+            x_tan = R * i_gr if i_gr > 0 else float("inf")
+            if dx <= x_tan:
+                return z_crown - dx * dx / (2.0 * R)
+            z_tan = z_crown - x_tan * x_tan / (2.0 * R)
+            return z_tan - (dx - x_tan) * i_gr
+        if i_gr > 0:
+            return z_crown - dx * i_gr
+        return z_crown
 
     def _z_red(x):
-        # PHẲNG qua khổ tĩnh không (không phạm tĩnh không), 2 bên hạ mượt (parabol
-        # lồi) về cao độ MỐ (ĐK1 lũ). Ngoài mố giữ dốc tiếp tuyến cho đường đầu cầu.
-        if _xLb <= x <= _xRb:
-            return z_crown
-        if x < x0:      # đường đầu cầu trái
-            return z_mo - (x0 - x) * _gL
-        if x > x_end:   # đường đầu cầu phải
-            return z_mo - (x - x_end) * _gR
-        if x < _xLb:
-            f = (_xLb - x) / _dxL
-            return z_crown - _drop * f * f
-        f = (x - _xRb) / _dxR
-        return z_crown - _drop * f * f
+        # Theo trắc dọc khai báo, NHƯNG không thấp hơn mức ĐK1 lũ (nâng nếu vi phạm).
+        return max(_raw(x), z_floor)
 
     return _z_red, x_tim, z_crown, t_ban, H_dam
 
