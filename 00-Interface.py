@@ -7094,12 +7094,19 @@ with _col_main:
 
                     # ── 2. Mặt bằng cầu ──────────────────────────────────────
                     st.markdown("**Mặt bằng cầu** (nhìn từ trên)")
-                    fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim)
-                    try:
-                        for _bd_tr in BBUI.get_plan_beam_traces(d, pfx=_spt_pfx):
-                            fig_bd.add_trace(_bd_tr)
-                    except Exception:
-                        pass
+                    _dg_plan = st.session_state.get("df_geology")
+                    _plan_cong = (_dg_plan is not None and hasattr(_dg_plan, "columns")
+                                  and {"X_VN2000", "Y_VN2000", "Góc_Tuyến", "Offset"}
+                                      <= set(_dg_plan.columns))
+                    fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim, df_geology=_dg_plan)
+                    # Dầm mặt bằng vẽ theo hệ toạ độ THẲNG → chỉ chèn khi bình đồ
+                    # KHÔNG cong (tránh dầm thẳng lệch khỏi mặt cầu cong).
+                    if not _plan_cong:
+                        try:
+                            for _bd_tr in BBUI.get_plan_beam_traces(d, pfx=_spt_pfx):
+                                fig_bd.add_trace(_bd_tr)
+                        except Exception:
+                            pass
                     PLOT.aspect_control(fig_bd, "binh_do_btc")
                     st.plotly_chart(fig_bd, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})

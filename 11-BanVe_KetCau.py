@@ -3051,8 +3051,163 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 # ===========================================================================
 # 7. BÌNH ĐỒ CẦU (MẶT BẰNG — nhìn từ trên xuống)
 # ===========================================================================
-def ve_binh_do_2d(d, df_tim_line=None):
-    """Bình đồ cầu: mặt bằng nhìn từ trên, bao gồm dầm, mố, trụ, TK, góc xiên."""
+def _ve_binh_do_cong(d, df_geology):
+    """Mặt bằng cầu CONG theo tim tuyến khảo sát — khớp với 3D tổng
+    (add_all_to_terrain_fig): dùng cùng phép chiếu _vn(lý_trình, offset) sang
+    tọa độ VN-2000 (đã trừ gốc). Vẽ: mặt cầu + lan can + tim + đường đầu cầu +
+    mố + trụ + khung tĩnh không, đều bám đúng đường cong & góc xiên như 3D."""
+    kcn = d.get("kcn_result") or d.get("ai_result", {})
+    geo = d.get("geo_logic", {})
+    bc     = float(d.get("bc", 12.0))
+    B_tk   = float(d.get("B", 20.0))
+    L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
+    L_cau0 = float(geo.get("L_cau", 120))
+    x0    = float(geo.get("x_mo_trai", -L_cau0 / 2))
+    x_end = float(geo.get("x_mo_phai", x0 + L_cau0))
+    x_tim = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
+    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+    x0, x_end = supports[0], supports[-1]
+    piers  = supports[1:-1]
+    n_nhip = len(supports) - 1
+    L_cau  = x_end - x0
+    goc    = float(d.get("goc_giao", 90.0))
+
+    # ── Tim tuyến VN-2000 (Offset==0) — giống add_all_to_terrain_fig ─────────
+    df_cl = (df_geology[df_geology["Offset"] == 0]
+             [["Lý trình", "X_VN2000", "Y_VN2000", "Góc_Tuyến"]]
+             .drop_duplicates("Lý trình").sort_values("Lý trình"))
+    lt_v  = df_cl["Lý trình"].values
+    vx_v  = df_cl["X_VN2000"].values
+    vy_v  = df_cl["Y_VN2000"].values
+    goc_v = df_cl["Góc_Tuyến"].values
+    _i0   = int(np.argmin(lt_v))
+    x_org = float(vx_v[_i0]); y_org = float(vy_v[_i0])
+    _cot  = (0.0 if goc >= 89.9 or goc <= 0
+             else 1.0 / np.tan(np.radians(max(30.0, min(89.9, goc)))))
+
+    def _at(s):
+        return (float(np.interp(s, lt_v, vx_v)),
+                float(np.interp(s, lt_v, vy_v)),
+                float(np.interp(s, lt_v, goc_v)))
+
+    def _vn(s, off=0.0, skew=True):
+        s_eff = (s + off * _cot) if skew else s
+        xc, yc, g = _at(s_eff)
+        perp = g + np.pi / 2
+        return (xc + off * np.cos(perp) - x_org,
+                yc + off * np.sin(perp) - y_org)
+
+    cap_W = max(2.0, bc * 0.18 + 1.0)   # nửa bề rộng xà mũ (ngang) — như 3D tổng
+    tru_L = 0.8                          # nửa bề dày xà mũ (dọc)
+    mo_L  = 3.5                          # chiều dài mố (dọc)
+    mg    = max(12.0, L_cau * 0.15)      # chiều dài đường đầu cầu hiển thị
+
+    def _xy(pts):
+        return [p[0] for p in pts], [p[1] for p in pts]
+
+    fig = go.Figure()
+    _ns = max(24, int(L_cau / 2))
+    ss  = np.linspace(x0, x_end, _ns)
+
+    # ── Khung tĩnh không (sông) — vuông góc tuyến tại tim tĩnh không ─────────
+    ss_tk = np.linspace(x_tim - B_tk/2, x_tim + B_tk/2, 8)
+    _la = [_vn(s, -B_tk*0.7, skew=False) for s in ss_tk]
+    _ra = [_vn(s, +B_tk*0.7, skew=False) for s in ss_tk]
+    _px, _py = _xy(_la + _ra[::-1] + [_la[0]])
+    fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+        fillcolor="rgba(52,152,219,0.15)", mode="lines",
+        line=dict(color="#2980b9", width=1.5, dash="dot"),
+        name=f"Sông/Kênh (B_tk={B_tk:.0f}m)"))
+
+    # ── Đường đầu cầu (2 đầu, kéo dài ngoài mố, KHÔNG xiên) ─────────────────
+    for s_m, od, lbl in [(x0, -1.0, "Đường đầu cầu"), (x_end, 1.0, None)]:
+        ss_a = np.linspace(s_m, s_m + od*mg, 14)
+        _la = [_vn(s, -bc/2, skew=False) for s in ss_a]
+        _ra = [_vn(s, +bc/2, skew=False) for s in ss_a]
+        _px, _py = _xy(_la + _ra[::-1] + [_la[0]])
+        fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+            fillcolor="rgba(196,164,107,0.28)", mode="lines",
+            line=dict(color="#8a6d3b", width=1.4),
+            name=lbl or "", showlegend=bool(lbl)))
+
+    # ── Mặt cầu (dải cong theo tim) ─────────────────────────────────────────
+    _left  = [_vn(s, -bc/2) for s in ss]
+    _right = [_vn(s, +bc/2) for s in ss]
+    _px, _py = _xy(_left + _right[::-1] + [_left[0]])
+    fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+        fillcolor="rgba(213,216,220,0.60)", mode="lines",
+        line=dict(color="#2c3e50", width=2), name="Mặt cầu",
+        hovertemplate=f"Mặt cầu B={bc:.1f}m, Góc={goc:.0f}°<extra></extra>"))
+
+    # ── Lan can 2 bên (nét đậm) ─────────────────────────────────────────────
+    for _sy, _nm in [(-1, "Lan can"), (1, None)]:
+        _edge = [_vn(s, _sy*bc/2) for s in ss]
+        _px, _py = _xy(_edge)
+        fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
+            line=dict(color="#2c3e50", width=3),
+            name=_nm or "", showlegend=bool(_nm)))
+
+    # ── Tim cầu ─────────────────────────────────────────────────────────────
+    _ctr = [_vn(s, 0.0) for s in np.linspace(x0 - 6, x_end + 6, _ns)]
+    _px, _py = _xy(_ctr)
+    fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
+        line=dict(color="#e74c3c", width=1, dash="dashdot"),
+        name="Tim cầu", showlegend=False))
+
+    # ── Mố (2 đầu) — khối xiên theo góc giao, khớp 3D ───────────────────────
+    for s_m, od, lbl in [(x0, -1.0, "Mố trái"), (x_end, 1.0, "Mố phải")]:
+        bm = bc/2 + 0.6
+        _c = [_vn(s_m, -bm), _vn(s_m, +bm),
+              _vn(s_m + od*mo_L, +bm), _vn(s_m + od*mo_L, -bm)]
+        _px, _py = _xy(_c + [_c[0]])
+        fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+            fillcolor="rgba(192,160,107,0.65)", mode="lines",
+            line=dict(color="#7d6608", width=2), name=lbl))
+
+    # ── Trụ — xà mũ xiên theo góc, khớp 3D ──────────────────────────────────
+    for i, xt in enumerate(piers):
+        _c = [_vn(xt - tru_L, -cap_W), _vn(xt - tru_L, +cap_W),
+              _vn(xt + tru_L, +cap_W), _vn(xt + tru_L, -cap_W)]
+        _px, _py = _xy(_c + [_c[0]])
+        fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+            fillcolor="rgba(133,146,158,0.78)", mode="lines",
+            line=dict(color="#566573", width=1.5), name=f"Trụ T{i+1}"))
+        _cx, _cy = _vn(xt, 0.0)
+        fig.add_annotation(x=_cx, y=_cy, text=f"T{i+1}", showarrow=False,
+            font=dict(size=8, color="white"), bgcolor="rgba(86,101,115,0.85)")
+
+    fig.update_layout(
+        title=dict(text=(f"BÌNH ĐỒ CẦU (theo tim khảo sát) — {n_nhip} nhịp | "
+                         f"L={L_cau:.1f}m | B_c={bc:.1f}m"
+                         + (f" | Góc xiên α={goc:.0f}°" if goc < 89.0 else "")),
+                   x=0.5, font=dict(size=12)),
+        xaxis=dict(title="X (m, VN-2000 tương đối)", showgrid=True,
+                   gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
+        yaxis=dict(title="Y (m)", showgrid=True, scaleanchor="x", scaleratio=1,
+                   gridcolor="rgba(128,128,128,0.35)", gridwidth=0.5),
+        height=460, template="plotly_white",
+        legend=dict(orientation="h", y=-0.22, font=dict(size=9)),
+        margin=dict(l=60, r=40, t=60, b=90), hovermode="closest",
+    )
+    _apply_layers_2d(fig)
+    return fig
+
+
+def ve_binh_do_2d(d, df_tim_line=None, df_geology=None):
+    """Bình đồ cầu: mặt bằng nhìn từ trên, bao gồm dầm, mố, trụ, TK, góc xiên.
+
+    Nếu có df_geology (VN-2000: X_VN2000, Y_VN2000, Góc_Tuyến, Offset) → vẽ
+    bình đồ CONG theo tim khảo sát (khớp 3D tổng). Ngược lại vẽ bình đồ THẲNG
+    có xét góc xiên (fallback khi chưa nạp khảo sát)."""
+    _align = df_geology if df_geology is not None else df_tim_line
+    _need = {"X_VN2000", "Y_VN2000", "Góc_Tuyến", "Offset", "Lý trình"}
+    if (_align is not None and hasattr(_align, "columns")
+            and not _align.empty and _need <= set(_align.columns)):
+        try:
+            return _ve_binh_do_cong(d, _align)
+        except Exception as _e:
+            print(f"[ve_binh_do_2d] fallback thẳng do lỗi bình đồ cong: {_e}")
+
     kcn  = d.get("kcn_result") or d.get("ai_result", {})
     geo  = d.get("geo_logic", {})
     L_cau  = float(geo.get("L_cau", 120))
