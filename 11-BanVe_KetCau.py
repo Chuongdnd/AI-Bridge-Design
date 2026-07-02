@@ -2346,6 +2346,28 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
             legendgroup="Tĩnh không",
         ))
 
+    # Tĩnh không PHỤ (khung cam) — khai báo ở hộp thoại thủy văn
+    _tkp_sl3 = True
+    for _cx in (d.get("extra_clearances") or []):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+            _Hk = float(_cx.get("H", 0) or 0); _zk = float(_cx.get("z", MNCN))
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0 or _Hk <= 0:
+            continue
+        _xkL = _xk - _Bk/2; _xkR = _xk + _Bk/2
+        for _y in y_tk:
+            fig.add_trace(go.Scatter3d(
+                x=[_xkL, _xkR, _xkR, _xkL, _xkL], y=[_y]*5,
+                z=[_zk, _zk, _zk+_Hk, _zk+_Hk, _zk],
+                mode="lines", line=dict(color="#e67e22", width=3),
+                name="Tĩnh không phụ" if (_tkp_sl3 and _y == y_tk[0]) else "",
+                showlegend=(_tkp_sl3 and _y == y_tk[0]),
+                legendgroup="Tĩnh không phụ",
+            ))
+        _tkp_sl3 = False
+
     fig.update_layout(
         title=dict(
             text=f"MÔ HÌNH 3D CẦU — {n_nhip} NHỊP | L={L_cau:.1f}m | B={bc}m",
@@ -3255,6 +3277,26 @@ def _ve_binh_do_cong(d, df_geology):
         line=dict(color="#2980b9", width=1.5, dash="dot"),
         name=f"Sông/Kênh (B_tk={B_tk:.0f}m)"))
 
+    # ── Tĩnh không PHỤ (dải cam vuông góc tuyến tại từng lý trình khai báo) ──
+    _tkp_first = True
+    for _cx in (d.get("extra_clearances") or []):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0:
+            continue
+        _nmk = str(_cx.get("ten") or "Tĩnh không phụ")
+        _ssk = np.linspace(_xk - _Bk/2, _xk + _Bk/2, 8)
+        _lak = [_vn(s, -B_tk*0.7, skew=False) for s in _ssk]
+        _rak = [_vn(s, +B_tk*0.7, skew=False) for s in _ssk]
+        _px, _py = _xy(_lak + _rak[::-1] + [_lak[0]])
+        fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+            fillcolor="rgba(230,126,34,0.12)", mode="lines",
+            line=dict(color="#e67e22", width=1.8, dash="dash"),
+            name=(_nmk if _tkp_first else ""), showlegend=_tkp_first))
+        _tkp_first = False
+
     # ── Đường đầu cầu (2 đầu, kéo dài ngoài mố, KHÔNG xiên) + mái TALUY ──────
     _h_dap_tb = max(1.5, float(d.get("H_tru_est", 5.0)) * 0.4)   # chiều cao đắp ước tính
     _taluy_w  = 1.5 * _h_dap_tb                                   # bề rộng chân taluy 1:1.5
@@ -3529,6 +3571,25 @@ def ve_binh_do_2d(d, df_tim_line=None, df_geology=None):
         y0=-B_tk/2 - 0.3, y1=B_tk/2 + 0.3,
         line=dict(color="#e74c3c", width=2.5, dash="dash"),
         fillcolor="rgba(231,76,60,0.04)")
+
+    # ── Tĩnh không PHỤ (khung cam tại từng lý trình khai báo) ────────────────
+    for _cx in (d.get("extra_clearances") or []):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0:
+            continue
+        _nmk = str(_cx.get("ten") or "TK phụ")
+        fig.add_shape(type="rect",
+            x0=_xk - _Bk/2, x1=_xk + _Bk/2,
+            y0=-B_tk/2 - 0.3, y1=B_tk/2 + 0.3,
+            line=dict(color="#e67e22", width=2.0, dash="dash"),
+            fillcolor="rgba(230,126,34,0.06)")
+        fig.add_annotation(x=_xk, y=B_tk/2 + 0.6,
+            text=f"<b>{_nmk}</b> B={_Bk:.1f}m", showarrow=False,
+            font=dict(size=8, color="#e67e22"),
+            bgcolor="rgba(255,255,255,0.8)")
 
     # ── Chú thích góc xiên ────────────────────────────────────────────────
     if goc < 89.0:
