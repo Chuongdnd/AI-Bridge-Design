@@ -2667,6 +2667,14 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             """Độ lệch cao độ đường đỏ so với đỉnh (×hz) — quét bản/dầm theo trắc dọc."""
             return (_zred_fn(s) - _zcrown) * hz
 
+        def _pier_found(xt):
+            """Cao độ móng trụ THEO ĐỊA HÌNH TỪNG TRỤ (khớp trắc dọc) — real units.
+            Trả (đáy_dầm, đỉnh_bệ, đáy_bệ). Đỉnh bệ chôn 0.5m dưới ĐTN tại trụ."""
+            _soffit = _zred_fn(xt) - t_ban - H_dam       # đáy dầm (vai kê) tại trụ
+            _zt     = float(np.interp(xt, lt_v, vz_v))   # cao độ ĐTN tại trụ
+            _be_top = min(_zt - 0.5, _soffit - 1.0)      # đỉnh bệ (chừa tối thiểu thân)
+            return _soffit, _be_top, _be_top - 1.50      # đáy bệ = đỉnh bệ − 1.5m
+
         # ── Cao độ × he_so_z (mốc tại ĐỈNH đường cong; theo trạm cộng _prof) ────
         z_phu  = (cao_dd + H_dam + t_ban + t_phu) * hz
         z_deck = (cao_dd + H_dam + t_ban) * hz    # = _zcrown*hz
@@ -2893,21 +2901,26 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         _pier_model = d.get("_pier_model")
         _PBp = _get_PB()
         if _pier_model:
-            _H_total = H_tru + 2.30                   # đáy bệ → đỉnh xà mũ
-            # Dầm vẽ ĐẦY ĐỦ, đáy dầm = cao_dd kê trên VAI KÊ = cao_dd; build_pier
-            # neo ĐỈNH ụ giữa = z_base+H_total, vai kê = đỉnh ụ − khấc → để VAI KÊ
-            # = cao_dd thì đỉnh ụ giữa = cao_dd + khấc (ụ nhô lên đỡ bản).
+            # Dầm vẽ ĐẦY ĐỦ, đáy dầm = VAI KÊ; build_pier neo ĐỈNH ụ giữa =
+            # z_base+H_total, vai kê = đỉnh ụ − khấc → để VAI KÊ = đáy dầm thì đỉnh
+            # ụ giữa = đáy dầm + khấc (ụ nhô lên đỡ bản).
             try:
                 _notch3d = _PBp.cap_seat_notch_depth_m(_pier_model) or 0.0
             except Exception:
                 _notch3d = 0.0
-            _z_base_pier = (cao_dd + _notch3d) - _H_total   # vai kê = cao_dd (đáy dầm)
             for i_p, xt in enumerate(piers):
                 sl = (i_p == 0)
+                # THÂN TRỤ KÉO GIÃN theo ĐỊA HÌNH TỪNG TRỤ (khớp trắc dọc):
+                #  • Vai kê (đáy dầm) BÁM ĐƯỜNG ĐỎ tại trụ → đỉnh ụ giữa = +khấc.
+                #  • Đỉnh bệ chôn 0.5m dưới ĐTN tại trụ; đáy bệ = đỉnh bệ − 1.5m.
+                #  • Chiều cao thân trụ tự co để nối đáy bệ ↔ đỉnh ụ (build_pier).
+                _soffit_i, _z_be_top_i, _z_be_bot_i = _pier_found(xt)
+                _anchor_top  = _soffit_i + _notch3d               # đỉnh ụ giữa (neo)
+                _H_total_i   = _anchor_top - _z_be_bot_i          # đáy bệ → đỉnh ụ
                 try:
                     _ptr = _PBp.build_pier_mesh_traces(
-                        _pier_model, H_tru=_H_total, x_ctr=xt,
-                        z_base=_z_base_pier, cap_width=bc)
+                        _pier_model, H_tru=_H_total_i, x_ctr=xt,
+                        z_base=_z_be_bot_i, cap_width=bc)
                 except Exception as _pe:
                     print(f"[add_all] trụ lắp ghép lỗi: {_pe}")
                     _ptr = []
@@ -2960,8 +2973,14 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                                     z_beb, z_bet, "#aab7b8", 0.90,
                                     "Bệ cọc" if sl else "", sl=sl))
 
-            # Cọc (line - OK vì cọc thực tế cũng tròn/mảnh)
+            # Cọc (line) — ĐỈNH CỌC bám ĐÁY BỆ theo địa hình từng trụ (khớp trắc dọc)
             _grp_state["g"] = "Cọc"
+            if _pier_model:
+                _, _, _z_be_bot_p = _pier_found(xt)
+                _z_coc_top = _z_be_bot_p * hz
+            else:
+                _z_coc_top = z_bet
+            _z_coc_bot = _z_coc_top - L_coc * hz
             c_ds = np.linspace(-be_W*0.65, be_W*0.65, n_coc_row)
             c_ls = np.linspace(-be_long*0.65, be_long*0.65, n_coc_row)
             for dl in c_ls:
@@ -2970,7 +2989,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                     lbl_coc = (f"Cọc Ø{int(D_coc*1000)}mm L={L_coc:.0f}m"
                                if (sl and dl == c_ls[0] and dt == c_ds[0]) else "")
                     _ag(go.Scatter3d(
-                        x=[xp, xp], y=[yp, yp], z=[z_bet, z_pileb],
+                        x=[xp, xp], y=[yp, yp], z=[_z_coc_top, _z_coc_bot],
                         mode="lines",
                         line=dict(color="#4a4a4a", width=5),
                         name=lbl_coc,
