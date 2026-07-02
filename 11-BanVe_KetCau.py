@@ -325,6 +325,41 @@ def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=Tr
     )
 
 
+# 12 cạnh của HỘP 8 đỉnh (thứ tự chung của _box3d & _abox: 0-3 đáy, 4-7 đỉnh).
+_BOX_EDGE_PAIRS = [(0,1),(1,2),(2,3),(3,0), (4,5),(5,6),(6,7),(7,4),
+                   (0,4),(1,5),(2,6),(3,7)]
+
+
+def _add_box_outlines(fig, color="#1b2631", width=2.0, name="Đường bao cấu kiện"):
+    """Gộp ĐƯỜNG BAO (12 cạnh) của MỌI hộp Mesh3d 8-đỉnh trong fig vào 1 trace
+    Scatter3d → thấy rõ ranh giới từng cấu kiện trên 3D tổng. Bỏ qua mesh phức
+    tạp (địa hình, tấm quét) vì không phải hộp 8 đỉnh."""
+    xs, ys, zs = [], [], []
+    for tr in list(fig.data):
+        if getattr(tr, "type", "") != "mesh3d":
+            continue
+        vx, vy, vz = tr.x, tr.y, tr.z
+        if vx is None or len(vx) != 8:
+            continue
+        # Bỏ hộp DẸT (đáy≈đỉnh, vd mặt nước) → không viền cho gọn
+        try:
+            if abs(max(vz) - min(vz)) < 1e-6:
+                continue
+        except Exception:
+            pass
+        for a, b in _BOX_EDGE_PAIRS:
+            xs += [vx[a], vx[b], None]
+            ys += [vy[a], vy[b], None]
+            zs += [vz[a], vz[b], None]
+    if not xs:
+        return
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs, mode="lines",
+        line=dict(color=color, width=width),
+        name=name, showlegend=True, legendgroup="_outline",
+        hoverinfo="skip"))
+
+
 def _approach_road_traces(xa, xb, bc, z_road, z_g, taluy=1.5, sl=True):
     """Đường đầu cầu 3D: nền đắp (lăng trụ hình thang, mái taluy) + mặt đường.
     xa = tại lưng mố, xb = đầu xa (cách xb−xa theo phương dọc)."""
@@ -2477,6 +2512,9 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
             ))
         _tkp_sl3 = False
 
+    # Đường bao cấu kiện (viền tối các hộp) → dễ nhìn ranh giới
+    _add_box_outlines(fig)
+
     fig.update_layout(
         title=dict(
             text=f"MÔ HÌNH 3D CẦU — {n_nhip} NHỊP | L={L_cau:.1f}m | B={bc}m",
@@ -3294,6 +3332,9 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             _ag(_approach_road(
                 _xm, _s1, _z_app,
                 name="Mặt đường đầu cầu" if _od < 0 else "", sl=(_od < 0)))
+
+        # Đường bao cấu kiện (viền tối các hộp trụ/mố/xà mũ/bệ…) → dễ nhìn
+        _add_box_outlines(fig)
 
         # ── Title ─────────────────────────────────────────────────────────
         fig.update_layout(
