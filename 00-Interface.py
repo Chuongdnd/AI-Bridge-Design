@@ -293,6 +293,51 @@ _cc_theme.html(
     })();
     </script>""", height=0)
 
+# ── CHẶN THAO TÁC KHI STREAMLIT ĐANG CHẠY (tránh bấm lặp) ─────────────────────
+# Lớp phủ trong suốt bật/tắt theo TRẠNG THÁI CHẠY THỰC (stStatusWidget hiện khi
+# đang chạy, mất khi xong) → chặn chuột/phím trong lúc chờ, tự mở lại khi xong,
+# không bao giờ kẹt. Con trỏ "progress" báo hệ thống đang bận.
+_cc_theme.html(
+    """<script>
+    (function(){
+      var d = window.parent.document;
+      if(d.getElementById('cau-busy-block')) return;   // gắn 1 lần
+      var stl = d.createElement('style');
+      stl.textContent =
+        '#cau-busy-block{position:fixed;inset:0;z-index:2147483000;display:none;'
+        +'background:transparent;cursor:progress}'
+        +'#cau-busy-block.on{display:block}';
+      d.head.appendChild(stl);
+      var bl = d.createElement('div');
+      bl.id = 'cau-busy-block';
+      d.body.appendChild(bl);
+      function busy(){ return bl.classList.contains('on'); }
+      // Chặn chuột/cảm ứng (overlay đã phủ) + phím (bắt ở document khi đang bận)
+      ['mousedown','mouseup','click','dblclick','wheel','touchstart','touchend',
+       'keydown','keypress','keyup'].forEach(function(ev){
+        d.addEventListener(ev, function(e){
+          if(!busy()) return;
+          if(e.target && e.target.closest &&
+             e.target.closest('[data-testid="stStatusWidget"]')) return;
+          e.stopPropagation(); e.preventDefault();
+        }, true);
+      });
+      function running(){
+        var w = d.querySelector('[data-testid="stStatusWidget"]');
+        if(!w) return false;
+        var cs = getComputedStyle(w);
+        if(cs.display==='none' || cs.visibility==='hidden'
+           || parseFloat(cs.opacity||'1') < 0.1) return false;
+        return true;
+      }
+      function tick(){ bl.classList.toggle('on', running()); }
+      setInterval(tick, 120);
+      try{ new MutationObserver(tick).observe(d.body,
+             {childList:true, subtree:true}); }catch(e){}
+      tick();
+    })();
+    </script>""", height=0)
+
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
 _auth_spec = _iutil.spec_from_file_location("auth00", os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-Auth.py"))
@@ -6816,6 +6861,8 @@ with _col_main:
                                         _fig_t.add_trace(_spt_t)
                                 except Exception:
                                     pass
+                                try: BVK._hover3d(_fig_t)   # hover tên + cao độ (gồm dầm)
+                                except Exception: pass
                                 # Góc xiên ĐÃ nướng vào hình học (qua _vn theo tim
                                 # tuyến) → KHÔNG hậu xử lý trượt toạ độ tuyệt đối.
                                 BVK.apply_render_mode(_fig_t, render_mode_3d)
@@ -6917,6 +6964,8 @@ with _col_main:
                                 st.caption("🔩 Dầm thực tế từ mô hình thư viện")
                         except Exception:
                             pass
+                        try: BVK._hover3d(fig_3d)   # hover tên + cao độ (gồm dầm)
+                        except Exception: pass
                         # Biến dạng XIÊN kết cấu cầu theo góc giao (bỏ qua địa
                         # hình/mặt nước/tĩnh không theo tên nhóm).
                         BVK.apply_skew_3d(fig_3d, d)
@@ -7159,6 +7208,8 @@ with _col_main:
                             fig_td_btc.add_trace(_td_tr)
                     except Exception:
                         pass
+                    try: BVK._hover2d(fig_td_btc)   # hover tên + cao độ (gồm dầm)
+                    except Exception: pass
                     PLOT.aspect_control(fig_td_btc, "td_btc")
                     st.plotly_chart(fig_td_btc, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
