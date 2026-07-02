@@ -556,6 +556,7 @@ def estimate_pier_height(
     h_xa_mu=1.2,
     t_ban=0.20,
     t_phu=0.05,
+    MNTT=None,
 ):
     """
     Ước tính chiều cao thân trụ theo ba tình huống thiết kế.
@@ -597,7 +598,16 @@ def estimate_pier_height(
         Z_dinh_be = Z_day_song − h_xoi_chung − 0.5
         Phát sinh cảnh báo: xói cục bộ chân cọc lộ, lực đẩy nổi, va trôi.
     """
-    cao_day_dam   = MNCN + H_tinh_khong          # cao độ đáy dầm
+    # Cao độ đáy dầm (đáy dầm BIÊN — điểm THẤP NHẤT) tối thiểu theo TCVN 8818
+    # điều 4.3, lấy GIÁ TRỊ LỚN HƠN của 2 điều kiện (tĩnh không nào cao nhất):
+    #   ĐK1 — an toàn lũ:      đáy dầm ≥ MNCN + 0.50m
+    #   ĐK2 — thông thuyền:    đáy dầm ≥ MNTT + H_tĩnh_không + 0.10m
+    # (KHÔNG lấy MNCN + H_tĩnh_không — đó là ghép sai mực nước lũ với khổ thông
+    #  thuyền → tĩnh không "phụ" không đúng chuẩn.)
+    _mntt = float(MNTT) if MNTT is not None else float(MNCN)
+    cao_do_an_toan      = float(MNCN) + 0.50
+    cao_do_thong_thuyen = _mntt + float(H_tinh_khong) + 0.10
+    cao_day_dam   = max(cao_do_an_toan, cao_do_thong_thuyen)
     # Mặt cầu hoàn thiện = đáy dầm + chiều cao dầm + bản BTCT + lớp phủ
     # (đồng bộ với bản vẽ: z_deck = đáy dầm + H_dam + t_ban; mặt phủ trên đó).
     cao_mat_cau   = cao_day_dam + H_dam + float(t_ban) + float(t_phu)

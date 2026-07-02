@@ -191,15 +191,15 @@ def make_red_line(d):
     i_gr  = abs(float(d.get("i_max_hinh_hoc", 0) or 0)) / 100.0
 
     # CAO ĐỘ ĐỈNH đường đỏ (đỉnh bản tại tim TK).
-    # ƯU TIÊN đáy dầm THIẾT KẾ của hệ thống (cao_day_dam — dùng chung với MẶT CẮT
-    # NGANG mố/trụ) để TRẮC DỌC · MCN · 3D CÙNG một cao độ đặt dầm. Nếu chưa có
-    # thì suy từ tĩnh không thông thuyền (MNTT + H) + khe hở + dốc ngang dầm biên.
-    _cao_dd_sys = float(d.get("cao_day_dam", 0) or 0)   # đáy dầm hệ thống (nếu có)
-    if _cao_dd_sys > 0:
-        z_crown = _cao_dd_sys + H_dam + t_ban
-    else:
-        z_tk_top = MNTT + H_tk
-        z_crown  = z_tk_top + KHO_HO_DAY_DAM + (bc / 2.0) * i_ng + H_dam + t_ban
+    # cao_day_dam hệ thống = ĐÁY DẦM BIÊN tối thiểu (điểm thấp nhất) theo tĩnh
+    # không CAO NHẤT (max của an-toàn-lũ & thông-thuyền). Khi xếp dầm bám đáy bản
+    # dốc ngang, đáy dầm tại TIM cao hơn đáy dầm biên (bc/2)·i_ngang → CỘNG lượng
+    # này để chính đáy dầm BIÊN vừa đủ hở tĩnh không (không vi phạm).
+    MNCN = float(d.get("MNCN", 3.5))
+    _cao_dd_sys = float(d.get("cao_day_dam", 0) or 0)   # đáy dầm biên (hệ thống)
+    if _cao_dd_sys <= 0:                                 # suy dự phòng nếu thiếu
+        _cao_dd_sys = max(MNCN + 0.50, MNTT + H_tk + KHO_HO_DAY_DAM)
+    z_crown = _cao_dd_sys + (bc / 2.0) * i_ng + H_dam + t_ban
 
     def _z_red(x):
         dx = abs(x - x_tim)
