@@ -69,6 +69,118 @@ _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 KHO_HO_DAM_MO = 0.10  # m — khoảng hở (khe co giãn) đầu dầm ↔ mặt trước tường đỉnh mố
 
 
+def _stitch_loops(segs, q=1e-3):
+    """Nối các ĐOẠN giao (mesh × mặt phẳng) thành các VÒNG KÍN → list [(a,b)].
+    Lượng tử hoá điểm về lưới q(m) để khớp đầu mút. Tham lam, hợp mặt cắt lồi/hộp."""
+    def _k(p):
+        return (round(p[0] / q), round(p[1] / q))
+    adj = {}; pos = {}
+    for a, b in segs:
+        ka, kb = _k(a), _k(b)
+        if ka == kb:
+            continue
+        pos[ka] = a; pos[kb] = b
+        adj.setdefault(ka, set()).add(kb)
+        adj.setdefault(kb, set()).add(ka)
+    loops = []; used = set()
+    for start in list(adj):
+        if start in used or len(adj[start]) == 0:
+            continue
+        loop = [start]; used.add(start); cur = start; prev = None
+        while True:
+            nxt = next((n for n in adj[cur] if n != prev and n not in used), None)
+            if nxt is None:
+                break
+            loop.append(nxt); used.add(nxt); prev, cur = cur, nxt
+            if start in adj[cur] and len(loop) >= 3:
+                break
+        if len(loop) >= 3:
+            loops.append([pos[k] for k in loop])
+    return loops
+
+
+def _convex_hull(pts):
+    """Bao lồi 2D (Andrew monotone chain) → list điểm CCW. pts: [(a,b)]."""
+    pts = sorted(set((round(p[0], 4), round(p[1], 4)) for p in pts))
+    if len(pts) <= 2:
+        return pts
+    def _cross(o, a, b):
+        return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
+    lo = []
+    for p in pts:
+        while len(lo) >= 2 and _cross(lo[-2], lo[-1], p) <= 0:
+            lo.pop()
+        lo.append(p)
+    hi = []
+    for p in reversed(pts):
+        while len(hi) >= 2 and _cross(hi[-2], hi[-1], p) <= 0:
+            hi.pop()
+        hi.append(p)
+    return lo[:-1] + hi[:-1]
+
+
+def project_mesh_traces(traces, axis="y"):
+    """CHIẾU list go.Mesh3d lên mặt phẳng vuông góc trục `axis` → list
+    {name,color,xs,zs} là BAO LỒI (silhouette) từng bộ phận. Dùng cho HÌNH CHIẾU
+    ĐỨNG (trắc dọc): axis 'y' giữ (x=dọc, z=cao) → trụ 2 thân chiếu chồng thành 1
+    cột (đúng elevation), khác với lát cắt mỏng tại tim làm MẤT cột."""
+    m0, m1 = [i for i in (0, 1, 2) if i != {"x": 0, "y": 1, "z": 2}[axis]]
+    groups = {}
+    for t in traces:
+        if getattr(t, "type", "") != "mesh3d":
+            continue
+        X, Y, Z = list(t.x or []), list(t.y or []), list(t.z or [])
+        if not X:
+            continue
+        V = list(zip(X, Y, Z))
+        nm = getattr(t, "name", "") or ""
+        g = groups.setdefault(nm, {"pts": [], "color": getattr(t, "color", None)})
+        g["pts"].extend((v[m0], v[m1]) for v in V)
+    out = []
+    for nm, g in groups.items():
+        hull = _convex_hull(g["pts"])
+        if len(hull) >= 3:
+            out.append({"name": nm, "color": g["color"],
+                        "xs": [p[0] for p in hull], "zs": [p[1] for p in hull]})
+    return out
+
+
+def cut_mesh_traces(traces, axis="y", value=0.0, q=1e-3):
+    """CẮT list go.Mesh3d bằng mặt phẳng axis=value → list {name,color,xs,zs} là
+    ĐƯỜNG BAO tiết diện thật, chiếu lên 2 trục còn lại. axis 'y' = cắt DỌC tim cầu
+    (giữ x=dọc, z=cao) cho trắc dọc; 'x' = cắt NGANG tại lý trình (giữ y=ngang, z).
+    Gom theo tên bộ phận rồi nối vòng kín (fill được)."""
+    ax = {"x": 0, "y": 1, "z": 2}[axis]
+    m0, m1 = [i for i in (0, 1, 2) if i != ax]
+    groups = {}
+    for t in traces:
+        if getattr(t, "type", "") != "mesh3d":
+            continue
+        X, Y, Z = list(t.x or []), list(t.y or []), list(t.z or [])
+        I, J, K = list(t.i or []), list(t.j or []), list(t.k or [])
+        if not (X and I):
+            continue
+        V = list(zip(X, Y, Z))
+        nm = getattr(t, "name", "") or ""
+        g = groups.setdefault(nm, {"segs": [], "color": getattr(t, "color", None)})
+        for a, b, c in zip(I, J, K):
+            pts = []
+            for p, r in ((a, b), (b, c), (c, a)):
+                dp, dr = V[p][ax] - value, V[r][ax] - value
+                if (dp < 0 <= dr) or (dr < 0 <= dp):
+                    tt = dp / (dp - dr)
+                    pts.append((V[p][m0] + tt * (V[r][m0] - V[p][m0]),
+                                V[p][m1] + tt * (V[r][m1] - V[p][m1])))
+            if len(pts) >= 2:
+                g["segs"].append((pts[0], pts[1]))
+    out = []
+    for nm, g in groups.items():
+        for loop in _stitch_loops(g["segs"], q):
+            out.append({"name": nm, "color": g["color"],
+                        "xs": [p[0] for p in loop], "zs": [p[1] for p in loop]})
+    return out
+
+
 def _abut_seat_z(cao_dd, pier_assembly):
     """Cao độ VAI KÊ (đáy dầm) PHÍA MỐ. Dầm SPT lên mố là ĐẦU TRƠN (không khấc)
     nên đáy dầm phía mố HẠ THẤP so với phía trụ đúng bằng ĐỘ SÂU KHẤC xà mũ →
@@ -1589,11 +1701,18 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         # Trụ LẮP GHÉP từ thư viện: vẽ bóng mặt đứng dọc theo mặt cắt thật
         if pier_assembly:
             _PB = _get_PB()
-            for _rc in _PB.pier_elevation_rects(
-                    pier_assembly, H_tru=(z_cap_t_i - z_be_b_i),
-                    x_ctr=xt, z_base=z_be_b_i):
+            # TRẮC DỌC = HÌNH CHIẾU ĐỨNG thật của LƯỚI 3D trụ (chiếu lên x–z tại
+            # tim) — cùng nguồn với 3D toàn cầu → trụ 2 thân hiện đúng, xà mũ bậc
+            # (ụ giữa) đúng, thay khối hộp tham số cũ (pier_elevation_rects).
+            _ptr_td = _PB.build_pier_mesh_traces(
+                pier_assembly, H_tru=(z_cap_t_i - z_be_b_i),
+                x_ctr=xt, z_base=z_be_b_i, cap_width=None)
+            _seen_td = set()
+            for _rc in project_mesh_traces(_ptr_td, axis="y"):
+                _nm = _rc["name"].split(" #")[0]
+                _sl = sl and _nm not in _seen_td; _seen_td.add(_nm)
                 _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["dam_dk"],
-                      (_rc["name"] if sl else ""), showlegend=sl)
+                      (_nm if _sl else ""), showlegend=_sl)
             fig.add_annotation(
                 x=xt, y=z_terr_tru, text=f"Z={z_terr_tru:.2f}m",
                 showarrow=True, arrowhead=2, arrowcolor="#27ae60",
