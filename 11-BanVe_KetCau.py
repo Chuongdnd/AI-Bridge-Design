@@ -222,24 +222,47 @@ def _abut_seat_z(cao_dd, pier_assembly):
     return float(cao_dd) - float(nd or 0.0)
 
 
-def _terrain_z_at(d, df_geology, x):
+def _terrain_z_at(d, df_geology, x, df_tim_line=None):
     """Cao độ ĐỊA HÌNH TỰ NHIÊN tại lý trình x — DÙNG CHUNG với 3D
-    (add_all_to_terrain_fig): nội suy đường tim (Offset==0) của df_geology.
-    Fallback h_tn_tb khi không có khảo sát / ngoài phạm vi. Nhờ vậy cao độ MÓNG
-    ở các mặt cắt chi tiết BÁM địa hình từng vị trí y hệt mô hình 3D thực."""
+    (add_all_to_terrain_fig, tim Offset==0 của df_geology) VÀ trắc dọc
+    (df_tim_line). Ưu tiên df_geology; thiếu → df_tim_line; thiếu nữa → h_tn_tb.
+    Nhờ vậy cao độ MÓNG ở các mặt cắt chi tiết BÁM địa hình y hệt 3D & trắc dọc."""
     h_tn = float((d or {}).get("h_tn_tb", 2.0))
-    if df_geology is None or getattr(df_geology, "empty", True):
-        return h_tn
-    try:
-        if {"Offset", "Lý trình", "Z"} <= set(df_geology.columns):
-            _cl = df_geology[df_geology["Offset"] == 0]
-            _lt = _cl["Lý trình"].values.astype(float)
-            _z  = _cl["Z"].values.astype(float)
-            if len(_lt) >= 2 and _lt.min() <= x <= _lt.max():
-                return float(np.interp(x, _lt, _z))
-    except Exception:
-        pass
+    # (1) df_geology — nguồn của mô hình 3D
+    if df_geology is not None and not getattr(df_geology, "empty", True):
+        try:
+            if {"Offset", "Lý trình", "Z"} <= set(df_geology.columns):
+                _cl = df_geology[df_geology["Offset"] == 0]
+                _lt = _cl["Lý trình"].values.astype(float)
+                _z  = _cl["Z"].values.astype(float)
+                if len(_lt) >= 2 and _lt.min() <= x <= _lt.max():
+                    return float(np.interp(x, _lt, _z))
+        except Exception:
+            pass
+    # (2) df_tim_line — nguồn của trắc dọc (nếu không có df_geology)
+    if df_tim_line is not None and not getattr(df_tim_line, "empty", True):
+        try:
+            _lc = next((c for c in df_tim_line.columns
+                        if 'ý trình' in c or c.lower() in ['ly_trinh', 'chainage']), None)
+            _zc = next((c for c in df_tim_line.columns
+                        if c.upper() in ['Z', 'CAO_DO', 'H', 'ELEVATION']), None)
+            if _lc and _zc:
+                _lt = df_tim_line[_lc].values.astype(float)
+                _z  = df_tim_line[_zc].values.astype(float)
+                if len(_lt) >= 2 and _lt.min() <= x <= _lt.max():
+                    return float(np.interp(x, _lt, _z))
+        except Exception:
+            pass
     return h_tn
+
+
+def _pier_be_tops_synced(piers, terrain_fn, soffit_fn):
+    """Đỉnh bệ CHUẨN cho MỌI trụ — DÙNG CHUNG 3D · trắc dọc · mặt cắt chi tiết:
+    min(ĐTN−0.5, đáy_dầm−1.0) rồi ĐỒNG BỘ cao độ chẵn (_snap_be_tops). Trả
+    {round(xt,3): đỉnh_bệ}. Bảo đảm 3 view vẽ CÙNG cao độ móng từng trụ."""
+    raw = [min(float(terrain_fn(xt)) - 0.5, float(soffit_fn(xt)) - 1.0)
+           for xt in piers]
+    return {round(xt, 3): v for xt, v in zip(piers, _snap_be_tops(raw))}
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 def _poly(fig, xs, ys, fill, line_c, name="", opacity=1.0, showlegend=None,
@@ -1929,10 +1952,9 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             ))
 
     # ── Trụ giữa (đặt NGOÀI tĩnh không + 2m an toàn) ─────────────────────
-    # ĐỒNG BỘ đỉnh bệ: tính thô từng trụ rồi gộp về 1 cao độ chẵn nếu chênh ≤ 1m.
-    _be_raw = [_pier_be_top(xt, _tz, _z_beam_soffit(xt) - 0.80) for xt in piers]
-    _be_top_map = {round(xt, 3): v
-                   for xt, v in zip(piers, _snap_be_tops(_be_raw))}
+    # ĐỈNH BỆ DÙNG CHUNG với 3D & mặt cắt chi tiết (_pier_be_tops_synced):
+    # min(ĐTN−0.5, đáy_dầm−1.0) + đồng bộ cao độ chẵn → 3 view khớp tuyệt đối.
+    _be_top_map = _pier_be_tops_synced(piers, _tz, _z_beam_soffit)
     for i, xt in enumerate(piers):
         sl = (i == 0)
         z_terr_tru = _tz(xt)   # cao độ địa hình (đường tự nhiên) tại vị trí trụ
@@ -3235,10 +3257,11 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         x0, x_end = supports[0], supports[-1]
         piers    = supports[1:-1]
         n_nhip   = len(supports) - 1
-        # ĐỒNG BỘ đỉnh bệ 3D (khớp trắc dọc): gộp về cao độ chẵn nếu chênh ≤ 1m.
-        _be3d_snap.update({round(xt, 3): v for xt, v in zip(piers, _snap_be_tops(
-            [min(float(np.interp(xt, lt_v, vz_v)) - 0.5,
-                 (_zred_fn(xt) - t_ban - H_dam) - 1.0) for xt in piers]))})
+        # ĐỈNH BỆ DÙNG CHUNG với trắc dọc & mặt cắt chi tiết (_pier_be_tops_synced).
+        _be3d_snap.update(_pier_be_tops_synced(
+            piers,
+            lambda xt: float(np.interp(xt, lt_v, vz_v)),
+            lambda xt: _zred_fn(xt) - t_ban - H_dam))
         L_cau    = x_end - x0
         spans    = [(supports[i], supports[i+1]) for i in range(len(supports)-1)]
 
@@ -4217,7 +4240,7 @@ def ve_binh_do_2d(d, df_tim_line=None, df_geology=None):
 # ===========================================================================
 def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                   x_half=None, abutment_assembly=None, mo_view='truoc',
-                  beam_mcn_outer=None):
+                  beam_mcn_outer=None, df_tim_line=None):
     """
     MCN cắt vuông góc tim cầu tại vị trí mố hoặc trụ cụ thể.
     vi_tri: 'mo_trai' | 'mo_phai' | 'tru_1' | 'tru_2' | ...
@@ -4276,8 +4299,18 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         cao_dd = _zred_mcn(x_cut) - t_ban - H_dam
     except Exception:
         pass
-    # ĐTN tại lý trình cắt (DÙNG CHUNG 3D) → móng bám địa hình từng vị trí.
-    z_ground = _terrain_z_at(d, df_geology, x_cut)
+    # ĐTN tại lý trình cắt (DÙNG CHUNG 3D & trắc dọc) → móng bám địa hình.
+    z_ground = _terrain_z_at(d, df_geology, x_cut, df_tim_line)
+    # Đỉnh bệ TRỤ đồng bộ 3 view: min(ĐTN−0.5, đáy dầm−1.0) + snap toàn cầu.
+    _be_top_sync = None
+    if not vi_tri.startswith('mo'):
+        try:
+            _tfn_m = lambda _x: _terrain_z_at(d, df_geology, _x, df_tim_line)
+            _sfn_m = lambda _x: _zred_mcn(_x) - t_ban - H_dam
+            _be_top_sync = _pier_be_tops_synced(piers, _tfn_m, _sfn_m).get(
+                round(x_cut, 3))
+        except Exception:
+            _be_top_sync = None
 
     is_mo = vi_tri.startswith('mo')
     fig = go.Figure()
@@ -4463,9 +4496,10 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         cap_H  = 0.80; be_H = 1.50
         z_cap_t = _z_beam_soffit              # mức VAI KÊ = đáy dầm (ụ giữa do model nhô)
         z_capb = z_cap_t - cap_H
-        # THÂN TRỤ KÉO GIÃN theo ĐTN tại lý trình (đồng bộ 3D _pier_found): đỉnh bệ
-        # chôn 0.5m dưới ĐTN, luôn dưới đáy xà mũ ≥0.5m. H_tru = chiều cao thân THẬT.
-        z_shb  = min(z_ground - 0.5, z_capb - 0.5)
+        # THÂN TRỤ KÉO GIÃN theo ĐTN tại lý trình (đồng bộ 3D & trắc dọc qua
+        # _pier_be_tops_synced): đỉnh bệ có SNAP toàn cầu, luôn dưới đáy xà mũ ≥0.5m.
+        z_shb  = _be_top_sync if _be_top_sync is not None else (z_ground - 0.5)
+        z_shb  = min(z_shb, z_capb - 0.5)
         H_tru  = max(0.5, z_capb - z_shb)
         z_beb  = z_shb - be_H
 
@@ -4668,7 +4702,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
 # 8b. BỐ HÌNH MỐ – TRỤ THEO VỊ TRÍ — 4 hình: mặt bằng KC, mặt bằng cọc,
 #     mặt cắt ngang (ở trên), mặt cắt dọc. Dùng chung 1 bộ hình học _pos_geometry.
 # ===========================================================================
-def _pos_geometry(d, vi_tri, pier_assembly=None, df_geology=None):
+def _pos_geometry(d, vi_tri, pier_assembly=None, df_geology=None, df_tim_line=None):
     """Tập hợp toàn bộ kích thước/hình học cho 1 vị trí (mố/trụ) — dùng chung
     cho cả 4 hình để đảm bảo nhất quán. Kích thước theo DỌC cầu suy từ sơ đồ
     cọc khai báo (nếu có), nếu không dùng mặc định.
@@ -4740,12 +4774,21 @@ def _pos_geometry(d, vi_tri, pier_assembly=None, df_geology=None):
         _notch_pg = 0.0
     z_cap_t = (cao_dd - h_goi) if is_mo else (cao_dd + _notch_pg)
     z_capb = z_cap_t - cap_H
-    # ── MÓNG BÁM ĐỊA HÌNH TẠI VỊ TRÍ (đồng bộ 3D _pier_found / mố 3D): đỉnh bệ
-    #    chôn 0.5m dưới ĐTN tại lý trình cắt; thân trụ/mố KÉO GIÃN theo địa hình
-    #    (không dùng H_tru phẳng). Chừa tối thiểu thân dưới đáy xà mũ 0.5m. ──
-    z_ground = _terrain_z_at(d, df_geology, x_cut)
-    _be_top_raw = z_ground - 0.5
-    z_shb = min(_be_top_raw, z_capb - 0.5)   # đỉnh bệ = đáy thân, luôn dưới xà mũ
+    # ── MÓNG BÁM ĐỊA HÌNH TẠI VỊ TRÍ (đồng bộ 3D & trắc dọc): đỉnh bệ TRỤ dùng
+    #    CHUNG _pier_be_tops_synced (min(ĐTN−0.5, đáy dầm−1.0) + snap); MỐ = ĐTN−0.5.
+    #    Thân KÉO GIÃN theo địa hình (không dùng H_tru phẳng). ──
+    z_ground = _terrain_z_at(d, df_geology, x_cut, df_tim_line)
+    if is_mo:
+        z_shb = min(z_ground - 0.5, z_capb - 0.5)
+    else:
+        try:
+            _tfn = lambda _x: _terrain_z_at(d, df_geology, _x, df_tim_line)
+            _sfn = lambda _x: _zred_pg(_x) - t_ban - H_dam
+            _bmap = _pier_be_tops_synced(piers, _tfn, _sfn)
+            z_shb = _bmap.get(round(x_cut, 3), min(z_ground - 0.5, cao_dd - 1.0))
+        except Exception:
+            z_shb = min(z_ground - 0.5, cao_dd - 1.0)
+        z_shb = min(z_shb, z_capb - 0.5)      # luôn dưới đáy xà mũ ≥0.5m
     z_beb  = z_shb - be_H
     H_tru  = max(0.5, z_capb - z_shb)         # chiều cao thân THẬT (kéo theo ĐTN)
 
@@ -4993,11 +5036,14 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
 
 
 def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
-                          abutment_assembly=None, df_geology=None):
+                          abutment_assembly=None, df_geology=None,
+                          df_tim_line=None):
     """MẶT CẮT DỌC tại vị trí — cắt dọc tim cầu qua mố/trụ: x = dọc cầu, y = cao độ.
     abutment_assembly: mố lắp ghép → vẽ mặt cắt dọc theo mố thực (nét thấy/khuất).
-    df_geology: khảo sát → dầm bám đường đỏ + móng bám địa hình (đồng bộ 3D)."""
-    g = _pos_geometry(d, vi_tri, pier_assembly, df_geology=df_geology)
+    df_geology/df_tim_line: khảo sát → dầm bám đường đỏ + móng bám địa hình (đồng
+    bộ 3D & trắc dọc)."""
+    g = _pos_geometry(d, vi_tri, pier_assembly, df_geology=df_geology,
+                      df_tim_line=df_tim_line)
     fig = go.Figure()
     bhd = g["be_half_doc"]
     h_tn = g["z_ground"]        # ĐTN tại lý trình cắt (đồng bộ 3D), thay h_tn phẳng
