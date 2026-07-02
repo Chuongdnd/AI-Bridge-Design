@@ -18,9 +18,7 @@ class FieldResult:
 # ── Bước 1: Thủy văn ─────────────────────────────────────────────────
 
 def check_h1(h1: float, h5: float) -> FieldResult:
-    """MNCN phải lớn hơn MNTT."""
-    if h1 <= 0:
-        return FieldResult(False, error="MNCN phải lớn hơn 0m")
+    """MNCN phải lớn hơn MNTT (cao độ có thể âm tuỳ vùng — không chặn cứng < 0)."""
     if h1 <= h5:
         return FieldResult(False,
             error=f"MNCN ({h1:.3f}m) phải LỚN HƠN MNTT ({h5:.3f}m)",
@@ -32,9 +30,7 @@ def check_h1(h1: float, h5: float) -> FieldResult:
 
 
 def check_h5(h5: float, h1: float, h10: float) -> FieldResult:
-    """MNTT phải nằm giữa MNCN và MNTC."""
-    if h5 <= 0:
-        return FieldResult(False, error="MNTT phải lớn hơn 0m")
+    """MNTT phải nằm giữa MNCN và MNTC (không chặn cứng < 0)."""
     if h5 >= h1:
         return FieldResult(False,
             error=f"MNTT ({h5:.3f}m) phải NHỎ HƠN MNCN ({h1:.3f}m)",
@@ -47,9 +43,7 @@ def check_h5(h5: float, h1: float, h10: float) -> FieldResult:
 
 
 def check_h10(h10: float, h5: float, h98: float) -> FieldResult:
-    """MNTC phải nằm giữa MNTT và MNTN."""
-    if h10 <= 0:
-        return FieldResult(False, error="MNTC phải lớn hơn 0m")
+    """MNTC phải nằm giữa MNTT và MNTN (không chặn cứng < 0)."""
     if h10 >= h5:
         return FieldResult(False,
             error=f"MNTC ({h10:.3f}m) phải NHỎ HƠN MNTT ({h5:.3f}m)",

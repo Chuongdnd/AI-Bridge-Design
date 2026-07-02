@@ -930,6 +930,51 @@ VAL = _vutil.module_from_spec(_vspec)
 _vspec.loader.exec_module(VAL)
 
 
+def _calc_be_rong_ban(l_hinhhoc: str, mcn: dict, w_lan_can: float):
+    """Tổng bề rộng bản mặt cầu từ MCN tối thiểu đã khai báo.
+
+    Cộng: phần xe chạy + lề gia cố/dải an toàn + dải phân cách giữa (nếu có)
+    + lan can đối xứng 2 bên. Trả (tong_m, danh_sach_thanh_phan_str).
+    Trả 0.0 nếu chưa đủ dữ liệu.
+    """
+    mcn = mcn or {}
+    parts = []
+    w = 0.0
+    try:
+        if l_hinhhoc == "Cao tốc":
+            n    = float(mcn.get('n_lan_moi_chieu', 0) or 0)
+            wl   = float(mcn.get('w_lan', 0) or 0)
+            w_le = float(mcn.get('w_le_dat', 0) or 0)
+            w_at = float(mcn.get('w_dat_an_toan_dg', 0) or 0)
+            w_dpc = float(mcn.get('w_dpc_core', 0) or 0)
+            if n <= 0 or wl <= 0:
+                return 0.0, []
+            xe = 2 * n * wl
+            w = xe + 2 * w_le + 2 * w_at + w_dpc
+            parts = [f"Xe chạy 2×{n:g}×{wl:g}={xe:g}"]
+            if w_le: parts.append(f"Lề GC 2×{w_le:g}")
+            if w_at: parts.append(f"Dải AT 2×{w_at:g}")
+            if w_dpc: parts.append(f"DPC lõi {w_dpc:g}")
+        elif l_hinhhoc in ("O to", "Do thi"):
+            n    = float(mcn.get('so_lan', 0) or 0)
+            wl   = float(mcn.get('w_lan', 0) or 0)
+            w_le = float(mcn.get('w_le', 0) or 0)
+            w_dpc = float(mcn.get('w_dpc', 0) or 0)
+            if n <= 0 or wl <= 0:
+                return 0.0, []
+            xe = n * wl
+            w = xe + 2 * w_le + w_dpc
+            parts = [f"Xe chạy {n:g}×{wl:g}={xe:g}"]
+            if w_le: parts.append(f"Lề 2×{w_le:g}")
+            if w_dpc: parts.append(f"DPC giữa {w_dpc:g}")
+        else:
+            return 0.0, []
+    except (TypeError, ValueError):
+        return 0.0, []
+    w += 2 * float(w_lan_can or 0)
+    return w, parts
+
+
 def _field_with_feedback(
     label: str,
     value: float,
@@ -942,13 +987,18 @@ def _field_with_feedback(
     step: float = 0.001,
     help_txt: str = "",
     unit: str = "m",
+    show_feedback: bool = True,
 ) -> float:
-    """number_input bọc thêm icon trạng thái và feedback dưới ô."""
+    """number_input bọc thêm icon trạng thái và feedback dưới ô.
+
+    show_feedback=False → chỉ hiện ô nhập, KHÔNG kiểm tra/ hiển thị cảnh báo
+    (dùng để hoãn kiểm tra tới khi người dùng bấm 'Áp dụng').
+    """
     touched  = key in st.session_state.field_touched
     prev_err = st.session_state.field_errors.get(key)
     label_display = (
-        f"🔴 {label}" if (touched and prev_err)
-        else f"✅ {label}" if touched
+        f"🔴 {label}" if (show_feedback and touched and prev_err)
+        else f"✅ {label}" if (show_feedback and touched)
         else label
     )
 
@@ -969,6 +1019,12 @@ def _field_with_feedback(
 
     if new_val != value:
         st.session_state.field_touched.add(key)
+
+    if not show_feedback:
+        # Hoãn kiểm tra: dọn trạng thái cũ để không chặn / hiện cảnh báo sớm
+        st.session_state.field_errors.pop(key, None)
+        st.session_state.field_warnings.pop(key, None)
+        return new_val
 
     if key in st.session_state.field_touched:
         result = check_fn(new_val, *check_args)
@@ -1202,6 +1258,9 @@ _inject_resizable_panels()
 @st.dialog("🌊 BƯỚC 1 / 3 — Thủy văn & Vị trí cầu", width="large")
 def dialog_step1():
     draft = st.session_state.wizard_draft
+    # Hoãn kiểm tra tới khi bấm 'Áp dụng': tránh cảnh báo dồn dập khi người dùng
+    # đang khai báo cao độ tuần tự từ trên xuống.
+    _d1_show = st.session_state.get('d1_show_feedback', False)
 
     st.markdown(
         DS.section_header(
@@ -1215,7 +1274,7 @@ def dialog_step1():
     _touched = st.session_state.field_touched & {
         'd1_h1', 'd1_h5', 'd1_h10', 'd1_h98', 'd1_xtim', 'd1_goc', 'd1_tban'
     }
-    if _touched:
+    if _d1_show and _touched:
         _render_step_status_banner(
             errors={k: v for k, v in st.session_state.field_errors.items()
                     if k.startswith('d1_')},
@@ -1259,6 +1318,7 @@ def dialog_step1():
             max_val   = 90.0,
             step      = 1.0,
             help_txt  = "90° = vuông góc. Cầu xiên < 75° cần kiểm tra thêm.",
+            show_feedback = _d1_show,
         )
 
     with col_b:
@@ -1283,6 +1343,7 @@ def dialog_step1():
             fmt       = "%.2f",
             step      = 1.0,
             help_txt  = "Lý trình điểm tim cầu vượt qua sông/kênh.",
+            show_feedback = _d1_show,
         )
 
         _d = st.session_state.design_data
@@ -1293,6 +1354,7 @@ def dialog_step1():
             check_fn  = VAL.check_h1,
             check_args= (float(draft.get('h5', _d.get('MNTT', 2.00))),),
             help_txt  = "Mực nước cao nhất tần suất 1% — dùng tính an toàn va tàu",
+            show_feedback = _d1_show,
         )
         h5 = _field_with_feedback(
             label     = "MNTT — Mực nước thông thuyền H5% (m)",
@@ -1301,6 +1363,7 @@ def dialog_step1():
             check_fn  = VAL.check_h5,
             check_args= (h1, float(draft.get('h10', _d.get('MNTC', 1.50)))),
             help_txt  = "Mực nước thông thuyền — dùng tính chiều cao tĩnh không H",
+            show_feedback = _d1_show,
         )
         h10 = _field_with_feedback(
             label     = "MNTC — Mực nước thi công H10% (m)",
@@ -1309,6 +1372,7 @@ def dialog_step1():
             check_fn  = VAL.check_h10,
             check_args= (h5, float(draft.get('h98', _d.get('MNTN', 0.50)))),
             help_txt  = "Mực nước thi công tần suất 10%",
+            show_feedback = _d1_show,
         )
         h98 = _field_with_feedback(
             label     = "MNTN — Mực nước thấp nhất H98% (m)",
@@ -1317,30 +1381,50 @@ def dialog_step1():
             check_fn  = VAL.check_h98,
             check_args= (h10,),
             help_txt  = "Mực nước kiệt tần suất 98% — dùng ước tính chiều cao trụ",
+            show_feedback = _d1_show,
         )
 
-        st.markdown("**🛣️ Bản mặt cầu**")
-        t_ban_mm = _field_with_feedback(
-            label     = "Chiều dày bản mặt cầu (mm)",
-            value     = float(draft.get('t_ban_mm', _d.get('t_ban_mm', 200))),
-            key       = "d1_tban",
-            check_fn  = VAL.check_t_ban,
-            check_args= (),
-            fmt       = "%.0f",
-            min_val   = 150.0,
-            max_val   = 400.0,
-            step      = 5.0,
-            help_txt  = "Tối thiểu 175mm — TCVN 11823-2017 Điều 9.7.1.1",
-            unit      = "mm",
+        st.caption(
+            "ℹ️ Bề dày bản mặt cầu được khai báo ở **Bước 2** — ngay dưới bề rộng bản mặt cầu."
         )
 
-    _has_hard_errors = any(
+    def _d1_commit():
+        st.session_state.wizard_draft.update({
+            'mien': mien, 'cap_s': cap_s, 'loai_h': loai_h,
+            'goc_giao': goc_giao, 'x_tim_clearance': x_tim_clearance,
+            'h1': h1, 'h5': h5, 'h10': h10, 'h98': h98,
+        })
+
+    def _d1_validate():
+        _rs = [
+            VAL.check_goc_giao(goc_giao),
+            VAL.check_x_tim(x_tim_clearance, _lt_min, _lt_max),
+            VAL.check_h1(h1, h5), VAL.check_h5(h5, h1, h10),
+            VAL.check_h10(h10, h5, h98), VAL.check_h98(h98, h10),
+        ]
+        return any((not r.ok) and r.error for r in _rs)
+
+    _has_hard_errors = _d1_show and any(
         k in st.session_state.field_errors
-        for k in ['d1_h1', 'd1_h5', 'd1_h10', 'd1_h98', 'd1_xtim', 'd1_goc', 'd1_tban']
+        for k in ['d1_h1', 'd1_h5', 'd1_h10', 'd1_h98', 'd1_xtim', 'd1_goc']
     )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    _, btn_col = st.columns([3, 1])
+    _apply_col, btn_col = st.columns([1, 1])
+    with _apply_col:
+        if st.button(
+            "✅ Áp dụng & kiểm tra",
+            use_container_width=True,
+            key="d1_apply",
+            help="Lưu số liệu đã khai báo và kiểm tra tính hợp lệ",
+        ):
+            _d1_commit()
+            st.session_state.d1_show_feedback = True
+            if _d1_validate():
+                st.toast("⚠️ Có cao độ chưa hợp lệ — xem cảnh báo.", icon="⚠️")
+            else:
+                st.toast("✅ Đã lưu & hợp lệ — Thủy văn & Vị trí.", icon="✅")
+            st.rerun()
     with btn_col:
         if st.button(
             "Bước 2 ▶",
@@ -1350,23 +1434,22 @@ def dialog_step1():
             key="d1_next",
             help="Sửa hết lỗi đỏ trước khi sang bước tiếp theo" if _has_hard_errors else "",
         ):
-            st.session_state.wizard_draft.update({
-                'mien': mien, 'cap_s': cap_s, 'loai_h': loai_h,
-                'goc_giao': goc_giao, 'x_tim_clearance': x_tim_clearance,
-                'h1': h1, 'h5': h5, 'h10': h10, 'h98': h98,
-                't_ban_mm': int(t_ban_mm),
-            })
+            _d1_commit()
+            st.session_state.d1_show_feedback = True
+            if _d1_validate():
+                st.toast("⚠️ Có cao độ chưa hợp lệ — kiểm tra lại.", icon="⚠️")
+                st.rerun()
             st.session_state.open_dialog = "step2"
             st.rerun()
 
 
-@st.dialog("🛣️ BƯỚC 2 / 3 — Tiêu chuẩn hình học tuyến", width="large")
+@st.dialog("🛣️ BƯỚC 2 / 3 — Yếu tố hình học", width="large")
 def dialog_step2():
     draft = st.session_state.wizard_draft
 
     st.markdown(
         DS.section_header(
-            title = "Tiêu chuẩn hình học tuyến đường",
+            title = "Yếu tố hình học",
             icon  = "🛣️",
             sub   = "Chọn loại đường, vận tốc thiết kế và nhập bề rộng cầu",
         ),
@@ -1390,6 +1473,8 @@ def dialog_step2():
     mcn_oto_override = {}
     r_final_calc  = draft.get('r_final_calc', 5000)
     i_final_calc  = draft.get('i_final_calc', 4.0)
+    loai_dt       = draft.get('dt_loai', 'Trục chính đô thị')
+    cap_dt        = draft.get('dt_cap', 'Đặc biệt')
     res_geo       = {}
 
     _lh_opts = ["Cao tốc", "O to", "Do thi"]
@@ -1400,9 +1485,19 @@ def dialog_step2():
     )
 
     if l_hinhhoc == "Cao tốc":
-        d_hinhhoc = st.radio("Địa hình:", options=["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Khó khăn")
+        _ct_dh_default = draft.get('d_hinhhoc', '1')
+        d_hinhhoc = st.radio(
+            "Địa hình:", options=["1", "2"],
+            index=0 if _ct_dh_default == "1" else 1,
+            format_func=lambda x: "Đồng bằng" if x == "1" else "Vùng núi",
+        )
         v_list = [120, 100] if d_hinhhoc == "1" else [80, 60]
-        v_hinhhoc = st.selectbox("Vận tốc thiết kế Vtk (km/h):", options=v_list)
+        _ct_v_prev = draft.get('v_hinhhoc', v_list[0])
+        _ct_v_idx = v_list.index(_ct_v_prev) if _ct_v_prev in v_list else 0
+        v_hinhhoc = st.selectbox(
+            "Vận tốc thiết kế Vtk (km/h):", options=v_list,
+            index=_ct_v_idx,
+        )
         input_tra_cuu = v_hinhhoc
 
         _dpc_ct_labels = {
@@ -1478,8 +1573,17 @@ def dialog_step2():
             st.warning(f"⚠️ {tra_ct.get('message','Không tra được MCN cao tốc.')}")
             mcn_oto_override = {"loai_dpc_ct": loai_dpc_ct}
     elif l_hinhhoc == "O to":
-        cap_duong_oto = st.selectbox("Cấp đường ô tô:", ["I", "II", "III", "IV", "V", "VI"])
-        d_hinhhoc = st.radio("Địa hình vùng:", ["1", "2"], format_func=lambda x: "Đồng bằng" if x == "1" else "Miền núi")
+        _oto_caps = ["I", "II", "III", "IV", "V", "VI"]
+        _oto_cap_prev = str(draft.get('input_tra_cuu', 'III'))
+        cap_duong_oto = st.selectbox(
+            "Cấp đường ô tô:", _oto_caps,
+            index=_oto_caps.index(_oto_cap_prev) if _oto_cap_prev in _oto_caps else 2,
+        )
+        d_hinhhoc = st.radio(
+            "Địa hình vùng:", ["1", "2"],
+            index=0 if draft.get('d_hinhhoc', '1') == "1" else 1,
+            format_func=lambda x: "Đồng bằng" if x == "1" else "Vùng núi",
+        )
         input_tra_cuu = cap_duong_oto
 
         dia_hinh_mcn = "dong_bang" if d_hinhhoc == "1" else "nui"
@@ -1590,11 +1694,28 @@ def dialog_step2():
             st.warning(f"⚠️ {tra_mcn.get('message','Không tra được MCN tối thiểu.')}")
             mcn_oto_override = {"cap_duong": cap_duong_oto, "dia_hinh": dia_hinh_mcn}
     else:  # Do thi
-        loai_dt = st.selectbox("Phân loại đường đô thị:", ["Trục chính đô thị", "Đường chính đô thị", "Đường khu vực", "Đường nội bộ"])
-        cap_dt = st.selectbox("Cấp kỹ thuật kỹ sư:", ["Đặc biệt", "Cấp I", "Cấp II"] if loai_dt == "Trục chính đô thị" else ["Cấp I", "Cấp II"])
+        _dt_loai_opts = ["Trục chính đô thị", "Đường chính đô thị", "Đường khu vực", "Đường nội bộ"]
+        _dt_loai_prev = draft.get('dt_loai', 'Trục chính đô thị')
+        loai_dt = st.selectbox(
+            "Phân loại đường đô thị:", _dt_loai_opts,
+            index=_dt_loai_opts.index(_dt_loai_prev) if _dt_loai_prev in _dt_loai_opts else 0,
+        )
+        _dt_cap_opts = ["Đặc biệt", "Cấp I", "Cấp II"] if loai_dt == "Trục chính đô thị" else ["Cấp I", "Cấp II"]
+        _dt_cap_prev = draft.get('dt_cap', _dt_cap_opts[0])
+        cap_dt = st.selectbox(
+            "Cấp kỹ thuật kỹ sư:", _dt_cap_opts,
+            index=_dt_cap_opts.index(_dt_cap_prev) if _dt_cap_prev in _dt_cap_opts else 0,
+        )
         list_vtk = YTHH.get_vtk_goi_y_dothi(loai_dt, cap_dt)
-        v_hinhhoc = st.radio("Vận tốc thiết kế Vtk:", options=list_vtk, horizontal=True)
-        d_hinhhoc = st.radio("Địa hình đô thị:", ["1", "2"], format_func=lambda x: "Bằng phẳng" if x == "1" else "Khó khăn")
+        _dt_v_prev = draft.get('v_hinhhoc', list_vtk[0] if list_vtk else None)
+        _dt_v_idx = list_vtk.index(_dt_v_prev) if _dt_v_prev in list_vtk else 0
+        v_hinhhoc = st.radio("Vận tốc thiết kế Vtk:", options=list_vtk,
+                             index=_dt_v_idx, horizontal=True)
+        d_hinhhoc = st.radio(
+            "Địa hình đô thị:", ["1", "2"],
+            index=0 if draft.get('d_hinhhoc', '1') == "1" else 1,
+            format_func=lambda x: "Bằng phẳng" if x == "1" else "Khó khăn",
+        )
         input_tra_cuu = v_hinhhoc
 
         _dt_labels = {
@@ -1759,11 +1880,61 @@ def dialog_step2():
             st.warning(f"⚠️ {tra_dt.get('message','Không tra được MCN đô thị.')}")
             mcn_oto_override = {"loai_dt": loai_dt_mcn, "dieu_kien_xd": dieu_kien_xd}
 
-    b_cau = st.number_input(
-        "Bề rộng Bc mặt cắt cầu (m):",
-        min_value=6.0,
-        value=float(draft.get('b_cau', st.session_state.design_data.get('bc', 12.0))),
-        step=0.5,
+    # ── BỀ RỘNG BẢN MẶT CẦU — tính tự động từ MCN tối thiểu đã khai báo ──────
+    #   Tổng = mép ngoài lan can → phần xe chạy + dải phân cách giữa (nếu có)
+    #          + lan can đối xứng 2 bên.
+    st.markdown("---")
+    st.markdown("**📐 Bề rộng bản mặt cầu**")
+
+    w_lan_can = st.number_input(
+        "Bề rộng lan can mỗi bên (m):",
+        min_value=0.0,
+        value=float(draft.get('w_lan_can', 0.5)),
+        step=0.05, format="%.2f",
+        help="Bề rộng gờ lan can (tính tới mép ngoài cùng). Cầu có lan can đối xứng 2 bên.",
+    )
+
+    _tinh_ban, _bd_parts = _calc_be_rong_ban(l_hinhhoc, mcn_oto_override, w_lan_can)
+    if _tinh_ban > 0:
+        import math as _math
+        _bc_goi_y = _math.ceil(_tinh_ban * 2) / 2.0   # làm tròn lên bội số 0.5m
+        st.caption(
+            "Σ = " + " + ".join(_bd_parts)
+            + f" + Lan can 2×{w_lan_can:g} = **{_tinh_ban:.2f} m** "
+            + f"→ đề xuất Bc = **{_bc_goi_y:.2f} m** (làm tròn lên 0.5m)"
+        )
+    else:
+        _bc_goi_y = float(draft.get('b_cau', st.session_state.design_data.get('bc', 12.0)))
+        st.caption("ℹ️ Chưa đủ dữ liệu MCN để tính tự động — nhập bề rộng cầu thủ công.")
+
+    _auto_bc = st.checkbox(
+        "Tự động lấy bề rộng theo MCN tối thiểu",
+        value=bool(draft.get('auto_bc', _tinh_ban > 0)),
+        help="Bỏ chọn để nhập bề rộng Bc thủ công.",
+        key="d2_auto_bc",
+    )
+    if _auto_bc and _tinh_ban > 0:
+        b_cau = _bc_goi_y
+        st.number_input(
+            "Bề rộng Bc mặt cắt cầu (m) — tự động:",
+            value=float(b_cau), disabled=True, key="d2_bc_auto_disp",
+        )
+    else:
+        b_cau = st.number_input(
+            "Bề rộng Bc mặt cắt cầu (m):",
+            min_value=6.0,
+            value=float(draft.get('b_cau', _bc_goi_y)),
+            step=0.5, key="d2_bc_manual",
+        )
+
+    # Bề dày bản mặt cầu — chuyển từ hộp Thủy văn sang, đặt DƯỚI bề rộng.
+    t_ban_mm = st.number_input(
+        "Bề dày bản mặt cầu (mm):",
+        min_value=150.0, max_value=400.0,
+        value=float(draft.get('t_ban_mm', st.session_state.design_data.get('t_ban_mm', 200))),
+        step=5.0, format="%.0f",
+        help="Tối thiểu 175mm — TCVN 11823-2017 Điều 9.7.1.1.",
+        key="d2_tban",
     )
 
     res_geo = YTHH.tra_cuu_yeu_to_hinh_hoc(l_hinhhoc, input_tra_cuu, d_hinhhoc)
@@ -1810,14 +1981,21 @@ def dialog_step2():
         'r_final_calc': r_final_calc, 'i_final_calc': i_final_calc,
         'vtk': _vtk_from_geo,
         'res_geo_ok': res_geo.get('status') == 'success',
+        'dt_loai': loai_dt, 'dt_cap': cap_dt,
+        'w_lan_can': w_lan_can, 'auto_bc': _auto_bc,
+        't_ban_mm': int(t_ban_mm),
     })
 
     st.markdown("<br>", unsafe_allow_html=True)
-    btn_b, btn_f = st.columns([1, 1])
+    btn_b, btn_a, btn_f = st.columns([1, 1, 1])
     with btn_b:
         if st.button("◀ Bước 1", use_container_width=True, key="d2_back"):
             st.session_state.open_dialog = "step1"
             st.rerun()
+    with btn_a:
+        if st.button("✅ Áp dụng", use_container_width=True, key="d2_apply",
+                     help="Lưu các thông số hình học đã khai báo"):
+            st.toast("✅ Đã lưu — Yếu tố hình học.", icon="✅")
     with btn_f:
         if st.button("Bước 3 ▶", use_container_width=True, type="primary", key="d2_next"):
             _errs2 = {}
@@ -1835,15 +2013,15 @@ def dialog_step2():
                 st.rerun()
 
 
-@st.dialog("🚀 BƯỚC 3 / 3 — Xem lại & Chạy tính toán AI", width="large")
+@st.dialog("🚀 BƯỚC 3 / 3 — Tổng hợp các thông số", width="large")
 def dialog_step3():
     draft = st.session_state.wizard_draft
 
     st.markdown(
         DS.section_header(
-            title = "Xem lại thông số & Chạy tính toán",
+            title = "Tổng hợp các thông số",
             icon  = "✅",
-            sub   = "Kiểm tra lại toàn bộ trước khi chạy pipeline AI",
+            sub   = "Kiểm tra lại toàn bộ trước khi chạy hệ thống",
         ),
         unsafe_allow_html=True,
     )
@@ -1894,16 +2072,6 @@ def dialog_step3():
             st.session_state.open_dialog = "step2"
             st.rerun()
 
-    st.markdown("---")
-    st.markdown("**📋 Điều kiện địa phương**")
-    is_urban_chk = st.checkbox(
-        "Khu vực đông dân cư (hạn chế tiếng ồn/rung)",
-        value=bool(draft.get('is_urban', st.session_state.design_data.get('is_urban', 0))),
-        help="Ảnh hưởng đến lựa chọn loại cọc: khu đông dân → ưu tiên cọc ép",
-        key="d3_urban",
-    )
-    st.session_state.wizard_draft['is_urban'] = int(is_urban_chk)
-
     st.markdown("<br>", unsafe_allow_html=True)
     back_col, run_col = st.columns([1, 2])
     with back_col:
@@ -1919,7 +2087,7 @@ def dialog_step3():
         # on_click callback: bắt cú nhấn TIN CẬY ngay cả khi vừa sửa ô nhập
         # (tránh phải nhấn nhiều lần). Streamlit commit mọi widget rồi mới gọi cb.
         st.button(
-            "🚀 CHẠY TÍNH TOÁN AI",
+            "🚀 CHẠY HỆ THỐNG",
             use_container_width=True,
             type="primary",
             key="d3_submit",
@@ -1929,17 +2097,18 @@ def dialog_step3():
     submitted = st.session_state.pop("_d3_run", False)
     if submitted:
         d = st.session_state.wizard_draft
-        mien             = d['mien']
-        cap_s            = d['cap_s']
-        loai_h           = d['loai_h']
-        goc_giao         = d['goc_giao']
-        h1               = d['h1']
-        h5               = d['h5']
-        h10              = d['h10']
-        h98              = d['h98']
-        t_ban_mm         = d['t_ban_mm']
-        x_tim_clearance  = d['x_tim_clearance']
-        l_hinhhoc        = d['l_hinhhoc']
+        _sd0 = st.session_state.design_data
+        mien             = d.get('mien', _sd0.get('mien', '2'))
+        cap_s            = d.get('cap_s', _sd0.get('cap_song', '4'))
+        loai_h           = d.get('loai_h', '2')
+        goc_giao         = d.get('goc_giao', _sd0.get('goc_giao', 90.0))
+        h1               = d.get('h1', _sd0.get('MNCN', 3.5))
+        h5               = d.get('h5', _sd0.get('MNTT', 2.0))
+        h10              = d.get('h10', _sd0.get('MNTC', 1.5))
+        h98              = d.get('h98', _sd0.get('MNTN', 0.5))
+        t_ban_mm         = d.get('t_ban_mm', _sd0.get('t_ban_mm', 200))
+        x_tim_clearance  = d.get('x_tim_clearance', _sd0.get('x_tim_clearance', 350.0))
+        l_hinhhoc        = d.get('l_hinhhoc', 'Do thi')
         v_hinhhoc        = d.get('v_hinhhoc', 60)
         d_hinhhoc        = d.get('d_hinhhoc', '1')
         input_tra_cuu    = d.get('input_tra_cuu', v_hinhhoc)
@@ -2628,7 +2797,7 @@ with _dk1:
         st.session_state.open_dialog = "step1"
         st.rerun()
 with _dk2:
-    if st.button("🛣️ Tiêu chuẩn hình học tuyến đường",
+    if st.button("🛣️ Yếu tố hình học",
                  use_container_width=True, key="declbtn_step2",
                  help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
         st.session_state.open_dialog = "step2"
@@ -2642,10 +2811,10 @@ with _dk4:
         st.session_state.open_dialog = "geodata"
         st.rerun()
 with _dk3:
-    if st.button("✅ Xem lại thông số & Chạy tính toán",
+    if st.button("✅ Tổng hợp các thông số",
                  use_container_width=True, key="declbtn_step3",
                  type="primary" if not _has_kq_decl else "secondary",
-                 help="Xem lại toàn bộ rồi chạy pipeline AI"):
+                 help="Tổng hợp toàn bộ thông số rồi chạy hệ thống"):
         st.session_state.open_dialog = "step3"
         st.rerun()
 
