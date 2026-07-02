@@ -190,9 +190,16 @@ def make_red_line(d):
     R     = float(d.get("R_hinh_hoc", 0) or 0)
     i_gr  = abs(float(d.get("i_max_hinh_hoc", 0) or 0)) / 100.0
 
-    # Đỉnh tĩnh không THÔNG THUYỀN = MNTT + chiều cao tĩnh không.
-    z_tk_top = MNTT + H_tk
-    z_crown  = z_tk_top + KHO_HO_DAY_DAM + (bc / 2.0) * i_ng + H_dam + t_ban
+    # CAO ĐỘ ĐỈNH đường đỏ (đỉnh bản tại tim TK).
+    # ƯU TIÊN đáy dầm THIẾT KẾ của hệ thống (cao_day_dam — dùng chung với MẶT CẮT
+    # NGANG mố/trụ) để TRẮC DỌC · MCN · 3D CÙNG một cao độ đặt dầm. Nếu chưa có
+    # thì suy từ tĩnh không thông thuyền (MNTT + H) + khe hở + dốc ngang dầm biên.
+    _cao_dd_sys = float(d.get("cao_day_dam", 0) or 0)   # đáy dầm hệ thống (nếu có)
+    if _cao_dd_sys > 0:
+        z_crown = _cao_dd_sys + H_dam + t_ban
+    else:
+        z_tk_top = MNTT + H_tk
+        z_crown  = z_tk_top + KHO_HO_DAY_DAM + (bc / 2.0) * i_ng + H_dam + t_ban
 
     def _z_red(x):
         dx = abs(x - x_tim)
@@ -3630,6 +3637,14 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         idx = int(vi_tri.replace('tru_', '')) - 1
         x_cut = piers[idx] if idx < len(piers) else x_tim
         title_vt = f"TRỤ T{idx + 1}"
+
+    # CAO ĐỘ ĐẶT DẦM DÙNG CHUNG với trắc dọc & 3D: đáy dầm theo ĐƯỜNG ĐỎ
+    # (make_red_line) tại ĐÚNG lý trình cắt → MCN · trắc dọc · 3D KHÔNG lệch nhau.
+    try:
+        _zred_mcn, _, _, _tb_mcn, _hd_mcn = make_red_line(d)
+        cao_dd = _zred_mcn(x_cut) - t_ban - H_dam
+    except Exception:
+        pass
 
     is_mo = vi_tri.startswith('mo')
     fig = go.Figure()
