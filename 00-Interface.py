@@ -7521,19 +7521,35 @@ with _col_main:
                     except Exception:
                         _beam_mcn = None
 
-                    def _overlay_real_beams(_fig, _x_cut):
+                    def _overlay_real_beams(_fig, _x_cut, _projected=False):
+                        # _projected=True (TRỤ): mặt cắt tại TIM trụ cắt qua Ụ GIỮA xà
+                        # mũ → đầu dầm khấc nằm SAU mặt cắt → vẽ nét ĐỨT (chiếu) để
+                        # KHỐI GIỮA xà mũ (solid) hiện đầy đủ phía trước.
                         if _draw_own:
                             return
                         try:
                             _wsk_v = BVK._skew_widen(d)
                             _zred_v = BVK.make_red_line(d)[0]
                             _sh = float(_zred_v(_x_cut))       # đỉnh bản tại lý trình
+                            _first = True
                             for _tb in (BBUI.get_mcn_overlay_traces(
                                     d, "spt", which="end") or []):
                                 _tb.x = tuple(None if v is None else v * _wsk_v
                                               for v in _tb.x)
                                 _tb.y = tuple(None if v is None else v + _sh
                                               for v in _tb.y)
+                                if _projected:
+                                    _tb.fill = None
+                                    _tb.fillcolor = "rgba(0,0,0,0)"
+                                    try:
+                                        _tb.line.dash = "dot"; _tb.line.width = 1.1
+                                        _tb.line.color = "#1e7d4f"
+                                    except Exception:
+                                        pass
+                                    _tb.name = ("Đầu dầm khấc (chiếu)"
+                                                if _first else "")
+                                    _tb.showlegend = _first
+                                    _first = False
                                 _fig.add_trace(_tb)
                         except Exception:
                             pass
@@ -7546,7 +7562,9 @@ with _col_main:
                             mo_view='truoc', df_tim_line=_df_tim,
                             beam_mcn_outer=(_beam_mcn if _draw_own else None),
                             beam_centers=_fit_ctr, draw_own_beams=_draw_own)
-                        _overlay_real_beams(_f_mcnvt, _x_cut_show)
+                        _overlay_real_beams(
+                            _f_mcnvt, _x_cut_show,
+                            _projected=_selected_vt.startswith("tru"))
                         PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
                         st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,
