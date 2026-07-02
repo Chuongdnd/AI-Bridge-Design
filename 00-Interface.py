@@ -38,7 +38,8 @@ st.markdown("""
 [data-testid="stToolbarActions"]  { display: none !important; }
 .stDeployButton                   { display: none !important; }
 [data-testid="stDecoration"]      { display: none !important; }
-[data-testid="stStatusWidget"]    { display: none !important; }
+/* GIỮ stStatusWidget: đây là chỉ báo "Running…" gốc của Streamlit — hiện đúng lúc
+   đang chạy, tắt ngay khi xong (phản hồi loading chuẩn, không kẹt). */
 footer                            { display: none !important; }
 /* Header trong suốt + cho click xuyên → KHÔNG che ribbon top; riêng ☰ vẫn bấm được */
 [data-testid="stHeader"]  { background: transparent !important; pointer-events: none !important; }
@@ -91,6 +92,12 @@ section[data-testid="stMain"] {
     min-width: var(--right-panel-width, 220px) !important;
     max-width: var(--right-panel-width, 220px) !important;
     flex: 0 0 var(--right-panel-width, 220px) !important;
+}
+/* Cột trong HỘP THOẠI không dính bề rộng panel phải cố định → chia ĐỀU */
+[data-testid="stDialog"] [data-testid="stHorizontalBlock"] > div:last-child {
+    min-width: 0 !important;
+    max-width: none !important;
+    flex: 1 1 0% !important;
 }
 
 /* ── Topbar cố định (vị trí điều khiển qua CSS var để responsive) ── */
@@ -286,7 +293,6 @@ _cc_theme.html(
     })();
     </script>""", height=0)
 
-
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
 _auth_spec = _iutil.spec_from_file_location("auth00", os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-Auth.py"))
@@ -449,6 +455,7 @@ _DESIGN_SAVE_KEYS = [
     'h_goi_m', '_auto_pier_cap',
     'abutment_assembly_id', 'pier_assembly_id',
     'pier_col_spacing_m', 'pier_solid_width_m',
+    'extra_clearances',
 ]
 
 def _cur_user_pid():
@@ -764,21 +771,10 @@ class PipelineTracker:
         self._ph_grid  = None
 
     def setup(self):
-        st.markdown(
-            "<div style='background:#141420;border:1px solid #333366;"
-            "border-radius:12px;padding:16px;margin:8px 0'>",
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            "<p style='font-size:13px;font-weight:600;color:#4fc3f7;"
-            "margin:0 0 8px'>🤖 Pipeline AI đang chạy...</p>",
-            unsafe_allow_html=True,
-        )
-        self._ph_label = st.empty()
-        self._ph_bar   = st.empty()
-        self._ph_grid  = st.empty()
-        st.markdown("</div>", unsafe_allow_html=True)
-        self._render()
+        # Ẩn bảng tiến trình: nhấn CHẠY HỆ THỐNG là ra kết quả luôn, không hiện
+        # panel "Pipeline AI đang chạy…". Vẫn theo dõi trạng thái/thời gian trong
+        # bộ nhớ để đếm lỗi. (Muốn hiện lại: bỏ no-op ở setup/_render.)
+        return
 
     def start(self, step_id: str):
         self.statuses[step_id] = self.STATUS_RUNNING
@@ -811,6 +807,8 @@ class PipelineTracker:
         self._render()
 
     def render_timing_summary(self):
+        # No-op: không hiện bảng thời gian chi tiết (xem setup()).
+        return
         total = sum(self.timings.values())
         rows  = []
         for s in self.steps:
@@ -840,6 +838,8 @@ class PipelineTracker:
             )
 
     def _render(self):
+        # No-op: không vẽ bảng tiến trình (xem setup()).
+        return
         running_id = next(
             (sid for sid, st_ in self.statuses.items() if st_ == self.STATUS_RUNNING), None
         )
@@ -1321,6 +1321,41 @@ def dialog_step1():
             show_feedback = _d1_show,
         )
 
+        st.markdown("**🚧 Tĩnh không khác (nếu có)**")
+        st.caption("Ngoài tĩnh không sông chính. Khai báo lý trình, cao độ đáy, "
+                   "bề rộng B (dọc cầu) × cao H → hệ thống rải trụ TRÁNH.")
+        import pandas as _pd_tk
+        _ex0 = (draft.get('extra_clearances')
+                or st.session_state.design_data.get('extra_clearances') or [])
+        _df_ex0 = _pd_tk.DataFrame(_ex0) if _ex0 else _pd_tk.DataFrame(
+            columns=['ten', 'x', 'z', 'B', 'H', 'goc'])
+        for _c in ['ten', 'x', 'z', 'B', 'H', 'goc']:
+            if _c not in _df_ex0.columns:
+                _df_ex0[_c] = None
+        _df_ex0 = _df_ex0[['ten', 'x', 'z', 'B', 'H', 'goc']]
+        _df_ex = st.data_editor(
+            _df_ex0, num_rows="dynamic", use_container_width=True, key="d1_extra_tk",
+            column_config={
+                'ten': st.column_config.TextColumn("Tên", help="VD: Chui dân sinh"),
+                'x':   st.column_config.NumberColumn("Lý trình (m)", format="%.2f"),
+                'z':   st.column_config.NumberColumn("Cao độ đáy (m)", format="%.2f"),
+                'B':   st.column_config.NumberColumn("Bề rộng B (m)", format="%.2f"),
+                'H':   st.column_config.NumberColumn("Chiều cao H (m)", format="%.2f"),
+                'goc': st.column_config.NumberColumn(
+                    "Góc giao (°)", format="%.1f", min_value=10.0, max_value=90.0,
+                    help="Góc giữa trục tĩnh không phụ và tim tuyến. 90° = vuông góc "
+                         "(để trống = 90°)."),
+            })
+        _extra_tk = [
+            {'ten': (r.get('ten') or f"TK phụ {i+1}"),
+             'x': float(r['x']), 'z': float(r.get('z') or 0.0),
+             'B': float(r.get('B') or 0.0), 'H': float(r.get('H') or 0.0),
+             'goc': float(r['goc']) if (r.get('goc') is not None
+                                        and str(r.get('goc')) != 'nan') else 90.0}
+            for i, r in enumerate(_df_ex.to_dict('records'))
+            if r.get('x') is not None and str(r.get('x')) != 'nan'
+        ]
+
     with col_b:
         st.markdown("**📏 Cao độ thủy văn (m)**")
         st.caption("Thứ tự bắt buộc: MNCN > MNTT > MNTC > MNTN")
@@ -1393,7 +1428,10 @@ def dialog_step1():
             'mien': mien, 'cap_s': cap_s, 'loai_h': loai_h,
             'goc_giao': goc_giao, 'x_tim_clearance': x_tim_clearance,
             'h1': h1, 'h5': h5, 'h10': h10, 'h98': h98,
+            'extra_clearances': _extra_tk,
         })
+        # Ghi thẳng vào design_data để trắc dọc/bố trí trụ cập nhật ngay.
+        st.session_state.design_data['extra_clearances'] = _extra_tk
 
     def _d1_validate():
         _rs = [
@@ -2166,6 +2204,11 @@ def dialog_step3():
             res['t_ban_mm'] = t_ban_mm
             res['is_urban'] = is_urban_val
             res['x_tim_clearance'] = x_tim_clearance
+            # Tĩnh không PHỤ: giữ qua pipeline (design_data bị THAY = res ở cuối) →
+            # trắc dọc / 3D / bố trí trụ mới thấy để vẽ + rải trụ tránh.
+            res['extra_clearances'] = (
+                st.session_state.wizard_draft.get('extra_clearances')
+                or st.session_state.design_data.get('extra_clearances') or [])
             res['mcn_oto_input'] = mcn_oto_override
             tracker.done("TK", f"B={res.get('B',0)}m  H={res.get('H',0)}m  Đáy dầm≥{res.get('day_dam',0):.3f}m")
         except Exception as _e:
@@ -2453,7 +2496,7 @@ def dialog_step3():
             else:
                 st.warning(
                     f"⚠️ Hoàn thành với {n_errors} bước có cảnh báo. "
-                    "Kết quả vẫn được lưu — xem chi tiết ở trên."
+                    "Kết quả vẫn được lưu."
                 )
                 try:
                     st.toast(f"⚠️ Hoàn thành ({n_errors} cảnh báo).", icon="⚠️")
@@ -3764,7 +3807,15 @@ def _build_pa_d(base_d: dict, ribbon: str) -> dict:
         d["kcn_result"] = dict(_3pa[pa_key])
     d["span_layout"] = _pa_span_layout(ribbon)
     d["railings"] = _resolve_railings_for_pa(ribbon)
+    d["_clearance_mode"] = _clearance_mode_for(ribbon)
     return d
+
+
+def _clearance_mode_for(ribbon: str) -> str:
+    """Quy tắc rải trụ tránh tĩnh không theo phương án:
+    PA1 = 'fewest' (ưu tiên ít trụ, nhịp dài nhất) · PA2 = 'straddle' (mỗi tĩnh
+    không 1 nhịp bắc trọn khoang) · PA3/khác = '' (giữ hành vi cũ: bỏ trụ phạm)."""
+    return {"Phương án 1": "fewest", "Phương án 2": "straddle"}.get(ribbon, "")
 
 
 def _maybe_fragment(fn):
@@ -6642,7 +6693,8 @@ with _col_main:
             _spt_pfx = _PA_SPT_PFX.get(selected_ribbon, "spt")
             # Nạp bố trí nhịp (2 tầng) của PA vào d → mọi bản vẽ đồng bộ
             d = {**d, "span_layout": _pa_span_layout(selected_ribbon),
-                 "railings": _resolve_railings_for_pa(selected_ribbon)}
+                 "railings": _resolve_railings_for_pa(selected_ribbon),
+                 "_clearance_mode": _clearance_mode_for(selected_ribbon)}
 
             # Chưa khai báo dầm → tự lấy dầm phù hợp theo nhịp từ THƯ VIỆN người
             # dùng (nếu có DXF); không có thì các mặt cắt sinh hình tham số đúng

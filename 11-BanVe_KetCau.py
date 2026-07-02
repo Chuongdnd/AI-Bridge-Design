@@ -69,6 +69,130 @@ _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 KHO_HO_DAM_MO = 0.10  # m — khoảng hở (khe co giãn) đầu dầm ↔ mặt trước tường đỉnh mố
 
 
+def _hex_rgba(col, op=1.0):
+    """'#rrggbb' → 'rgba(r,g,b,op)'. Nếu đã là rgb/rgba thì giữ nguyên."""
+    c = str(col or "#888888")
+    if c.startswith("#") and len(c) >= 7:
+        try:
+            r, g, b = int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+            return f"rgba({r},{g},{b},{op})"
+        except ValueError:
+            return c
+    return c
+
+
+def _stitch_loops(segs, q=1e-3):
+    """Nối các ĐOẠN giao (mesh × mặt phẳng) thành các VÒNG KÍN → list [(a,b)].
+    Lượng tử hoá điểm về lưới q(m) để khớp đầu mút. Tham lam, hợp mặt cắt lồi/hộp."""
+    def _k(p):
+        return (round(p[0] / q), round(p[1] / q))
+    adj = {}; pos = {}
+    for a, b in segs:
+        ka, kb = _k(a), _k(b)
+        if ka == kb:
+            continue
+        pos[ka] = a; pos[kb] = b
+        adj.setdefault(ka, set()).add(kb)
+        adj.setdefault(kb, set()).add(ka)
+    loops = []; used = set()
+    for start in list(adj):
+        if start in used or len(adj[start]) == 0:
+            continue
+        loop = [start]; used.add(start); cur = start; prev = None
+        while True:
+            nxt = next((n for n in adj[cur] if n != prev and n not in used), None)
+            if nxt is None:
+                break
+            loop.append(nxt); used.add(nxt); prev, cur = cur, nxt
+            if start in adj[cur] and len(loop) >= 3:
+                break
+        if len(loop) >= 3:
+            loops.append([pos[k] for k in loop])
+    return loops
+
+
+def _convex_hull(pts):
+    """Bao lồi 2D (Andrew monotone chain) → list điểm CCW. pts: [(a,b)]."""
+    pts = sorted(set((round(p[0], 4), round(p[1], 4)) for p in pts))
+    if len(pts) <= 2:
+        return pts
+    def _cross(o, a, b):
+        return (a[0]-o[0])*(b[1]-o[1]) - (a[1]-o[1])*(b[0]-o[0])
+    lo = []
+    for p in pts:
+        while len(lo) >= 2 and _cross(lo[-2], lo[-1], p) <= 0:
+            lo.pop()
+        lo.append(p)
+    hi = []
+    for p in reversed(pts):
+        while len(hi) >= 2 and _cross(hi[-2], hi[-1], p) <= 0:
+            hi.pop()
+        hi.append(p)
+    return lo[:-1] + hi[:-1]
+
+
+def project_mesh_traces(traces, axis="y"):
+    """CHIẾU list go.Mesh3d lên mặt phẳng vuông góc trục `axis` → list
+    {name,color,xs,zs} là BAO LỒI (silhouette) từng bộ phận. Dùng cho HÌNH CHIẾU
+    ĐỨNG (trắc dọc): axis 'y' giữ (x=dọc, z=cao) → trụ 2 thân chiếu chồng thành 1
+    cột (đúng elevation), khác với lát cắt mỏng tại tim làm MẤT cột."""
+    m0, m1 = [i for i in (0, 1, 2) if i != {"x": 0, "y": 1, "z": 2}[axis]]
+    groups = {}
+    for t in traces:
+        if getattr(t, "type", "") != "mesh3d":
+            continue
+        X, Y, Z = list(t.x or []), list(t.y or []), list(t.z or [])
+        if not X:
+            continue
+        V = list(zip(X, Y, Z))
+        nm = getattr(t, "name", "") or ""
+        g = groups.setdefault(nm, {"pts": [], "color": getattr(t, "color", None)})
+        g["pts"].extend((v[m0], v[m1]) for v in V)
+    out = []
+    for nm, g in groups.items():
+        hull = _convex_hull(g["pts"])
+        if len(hull) >= 3:
+            out.append({"name": nm, "color": g["color"],
+                        "xs": [p[0] for p in hull], "zs": [p[1] for p in hull]})
+    return out
+
+
+def cut_mesh_traces(traces, axis="y", value=0.0, q=1e-3):
+    """CẮT list go.Mesh3d bằng mặt phẳng axis=value → list {name,color,xs,zs} là
+    ĐƯỜNG BAO tiết diện thật, chiếu lên 2 trục còn lại. axis 'y' = cắt DỌC tim cầu
+    (giữ x=dọc, z=cao) cho trắc dọc; 'x' = cắt NGANG tại lý trình (giữ y=ngang, z).
+    Gom theo tên bộ phận rồi nối vòng kín (fill được)."""
+    ax = {"x": 0, "y": 1, "z": 2}[axis]
+    m0, m1 = [i for i in (0, 1, 2) if i != ax]
+    groups = {}
+    for t in traces:
+        if getattr(t, "type", "") != "mesh3d":
+            continue
+        X, Y, Z = list(t.x or []), list(t.y or []), list(t.z or [])
+        I, J, K = list(t.i or []), list(t.j or []), list(t.k or [])
+        if not (X and I):
+            continue
+        V = list(zip(X, Y, Z))
+        nm = getattr(t, "name", "") or ""
+        g = groups.setdefault(nm, {"segs": [], "color": getattr(t, "color", None)})
+        for a, b, c in zip(I, J, K):
+            pts = []
+            for p, r in ((a, b), (b, c), (c, a)):
+                dp, dr = V[p][ax] - value, V[r][ax] - value
+                if (dp < 0 <= dr) or (dr < 0 <= dp):
+                    tt = dp / (dp - dr)
+                    pts.append((V[p][m0] + tt * (V[r][m0] - V[p][m0]),
+                                V[p][m1] + tt * (V[r][m1] - V[p][m1])))
+            if len(pts) >= 2:
+                g["segs"].append((pts[0], pts[1]))
+    out = []
+    for nm, g in groups.items():
+        for loop in _stitch_loops(g["segs"], q):
+            out.append({"name": nm, "color": g["color"],
+                        "xs": [p[0] for p in loop], "zs": [p[1] for p in loop]})
+    return out
+
+
 def _abut_seat_z(cao_dd, pier_assembly):
     """Cao độ VAI KÊ (đáy dầm) PHÍA MỐ. Dầm SPT lên mố là ĐẦU TRƠN (không khấc)
     nên đáy dầm phía mố HẠ THẤP so với phía trụ đúng bằng ĐỘ SÂU KHẤC xà mũ →
@@ -324,6 +448,68 @@ def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=Tr
         lighting=dict(ambient=0.65, diffuse=0.85, specular=0.2),
         hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
     )
+
+
+# Nhóm cấu kiện ĐƯỢC vẽ đường bao (KHÔNG gồm mặt nước, tĩnh không, địa hình,
+# đường đầu cầu, lớp phủ). Khớp theo legendgroup/name của trace.
+_OUTLINE_GROUPS = ("Lan can", "Giải phân cách", "Mố", "Trụ", "Xà mũ",
+                   "Thân", "Bệ", "Cọc", "Dầm", "Mặt cầu", "Bản")
+
+
+def _add_box_outlines(fig, color="#1b2631", width=2.0, name="Đường bao cấu kiện",
+                      groups=_OUTLINE_GROUPS):
+    """Gộp ĐƯỜNG BAO của các cấu kiện (lan can, mố, trụ, cọc, dầm, bản mặt cầu)
+    vào 1 trace Scatter3d → thấy rõ ranh giới trên 3D tổng.
+
+    Dùng CẠNH ĐẶC TRƯNG (feature edge): cạnh biên (1 tam giác) hoặc cạnh gấp khúc
+    (2 mặt lệch > ~25°). Nhờ vậy hộp, tấm quét (bản), khối extrude (lan can) đều
+    ra viền sạch, KHÔNG vẽ đường chéo trên mặt phẳng. Mặt nước/tĩnh không/địa hình
+    bị loại theo nhóm."""
+    def _want(tr):
+        g = str(getattr(tr, "legendgroup", "") or "") + "|" + \
+            str(getattr(tr, "name", "") or "")
+        return any(k in g for k in groups)
+
+    xs, ys, zs = [], [], []
+    for tr in list(fig.data):
+        if getattr(tr, "type", "") != "mesh3d" or not _want(tr):
+            continue
+        vx, vy, vz = tr.x, tr.y, tr.z
+        ii, jj, kk = tr.i, tr.j, tr.k
+        if vx is None or ii is None:
+            continue
+        try:
+            V = np.column_stack([np.asarray(vx, float),
+                                 np.asarray(vy, float),
+                                 np.asarray(vz, float)])
+            tris = list(zip(ii, jj, kk))
+        except Exception:
+            continue
+        edge_norms = {}
+        for (a, b, c) in tris:
+            a, b, c = int(a), int(b), int(c)
+            nrm = np.cross(V[b] - V[a], V[c] - V[a])
+            _ln = float(np.linalg.norm(nrm))
+            if _ln < 1e-12:
+                continue
+            nrm = nrm / _ln
+            for p, q in ((a, b), (b, c), (c, a)):
+                key = (p, q) if p < q else (q, p)
+                edge_norms.setdefault(key, []).append(nrm)
+        for (p, q), ns in edge_norms.items():
+            feat = (len(ns) == 1) or (abs(float(np.dot(ns[0], ns[1]))) < 0.90)
+            if not feat:
+                continue
+            xs += [V[p, 0], V[q, 0], None]
+            ys += [V[p, 1], V[q, 1], None]
+            zs += [V[p, 2], V[q, 2], None]
+    if not xs:
+        return
+    fig.add_trace(go.Scatter3d(
+        x=xs, y=ys, z=zs, mode="lines",
+        line=dict(color=color, width=width),
+        name=name, showlegend=True, legendgroup="_outline",
+        hoverinfo="skip"))
 
 
 def _approach_road_traces(xa, xb, bc, z_road, z_g, taluy=1.5, sl=True):
@@ -839,13 +1025,50 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
     # đoạn (dầm liền) → giữ nguyên hành vi cũ.
     _cap_gap = float((d or {}).get("cap_gap_m", 0.0) or 0.0)
 
+    # ── DẦM SPT (~38.2m): GIỮ 1 loại dầm, NỚI RỘNG ụ giữa xà mũ khi nhịp vượt
+    # tĩnh không (như bản vẽ KM4/KM7: 45→42.5→40→39.1). spacing = 38.2 + 2×0.1 +
+    # ụ giữa; nhịp thường 40m, nhịp vượt nới ụ giữa. Ghi d["_pier_cap_widen"] để
+    # xà mũ trụ tương ứng vẽ RỘNG ra (trắc dọc + 3D + MCN).
+    _kcn = (d or {}).get("kcn_result") or (d or {}).get("ai_result", {}) or {}
+    _loai = str(_kcn.get("loai_dam", "") or "").lower()
+    _Lb = float(_kcn.get("chieu_dai", 0) or 0)
+    if ("super" in _loai or "spt" in _loai) and 37.5 <= _Lb <= 39.0:
+        try:
+            _W0 = _get_PB().cap_mid_width_m(d.get("_pier_model")) or 1.6
+        except Exception:
+            _W0 = 1.6
+        _clr = [(x_tim, float(B_tk))]
+        for _c in (d.get("extra_clearances") or []):
+            try:
+                _b = float(_c.get("B", 0) or 0)
+                if _b > 0:
+                    _clr.append((float(_c["x"]), _b))
+            except (TypeError, ValueError, KeyError):
+                pass
+        _sup, _widen = _spt_widen_layout(x0, x_end, x_tim, _clr, _W0, L_beam=_Lb)
+        if isinstance(d, dict):
+            d["_pier_cap_widen"] = _widen      # {round(x,3): bề rộng ụ giữa (m)}
+            d["_pier_cap_W0"] = _W0
+        return _sup, _Lb
+
+    # ── Có TĨNH KHÔNG PHỤ + phương án bật quy tắc né (PA1 'fewest' / PA2
+    # 'straddle') → CHIA LẠI nhịp từ tim tĩnh không chính ra 2 mố, trộn chiều dài
+    # dầm catalog để KHÔNG trụ nào phạm tĩnh không (thay vì chỉ bỏ trụ). PA3/khác
+    # hoặc không có tĩnh không phụ → giữ luồng cũ bên dưới.
+    _clr_mode = (d or {}).get("_clearance_mode")
+    if _clr_mode in ("fewest", "straddle") and ((d or {}).get("extra_clearances")):
+        _L_base = float(sl.get("L_dan") or sl.get("L_main") or L_nhip)
+        return _clearance_layout(x0, x_end, x_tim, B_tk, _L_base,
+                                 d.get("extra_clearances"), _clr_mode)
+
     if sl.get("mode") != "two_tier":
         # Bố trí ĐỀU. Ưu tiên chiều dài người dùng đặt/áp dầm thư viện
         # (span_layout['L_dan']/['L_main']); nếu chưa có thì dùng L_nhip mặc định.
         L_user = sl.get("L_dan") or sl.get("L_main")
         if L_user and float(L_user) > 0:
             L_nhip = float(L_user)
-        return _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip + _cap_gap)
+        _sp, _Ls = _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip + _cap_gap)
+        return _avoid_extra_clearances(_sp, d), _Ls
 
     L_clear = B_tk + 2.0 * _PIER_SAFETY
     L_dan   = float(sl.get("L_dan") or L_nhip)
@@ -866,7 +1089,157 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
     left  = [main_L - i * L_dan for i in range(n_left, 0, -1)]
     right = [main_R + i * L_dan for i in range(1, n_right + 1)]
     supports = left + [main_L, main_R] + right
-    return supports, L_dan
+    return _avoid_extra_clearances(supports, d), L_dan
+
+
+def extra_clearance_intervals(d):
+    """Vùng CẤM đặt trụ [a,b] (lý trình m) của các TĨNH KHÔNG PHỤ khai báo trong
+    hộp thoại thủy văn. Mỗi tĩnh không: {x: lý trình, B: bề rộng, H, z}. Vùng cấm
+    = [x − B/2 − an toàn, x + B/2 + an toàn]. [] nếu không khai báo."""
+    out = []
+    for c in ((d or {}).get("extra_clearances") or []):
+        try:
+            x = float(c.get("x"))
+            B = float(c.get("B", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        half = B / 2.0 + _PIER_SAFETY
+        out.append((x - half, x + half))
+    return out
+
+
+def _avoid_extra_clearances(supports, d):
+    """Bỏ các TRỤ rơi vào vùng cấm của tĩnh không phụ → trụ KHÔNG phạm tĩnh không
+    (nhịp bắc qua tĩnh không tự nối dài = hệ thống chọn nhịp lớn hơn). Luôn giữ 2
+    MỐ đầu–cuối. No-op khi chưa khai báo tĩnh không phụ (không đổi hành vi cũ)."""
+    forb = extra_clearance_intervals(d)
+    if not forb or len(supports) < 3:
+        return supports
+    x0, x_end = supports[0], supports[-1]
+    kept = [p for p in supports[1:-1]
+            if not any(a - 1e-6 <= p <= b + 1e-6 for (a, b) in forb)]
+    return [x0] + kept + [x_end]
+
+
+def _in_any_zone(p, zones):
+    return any(a - 1e-6 <= p <= b + 1e-6 for (a, b, *_ ) in zones)
+
+
+def _snap_ge(v):
+    """Chiều dài catalog nhỏ nhất ≥ v (m)."""
+    return next((L for L in sorted(STD_LENGTHS) if L + 1e-6 >= v), _snap_up_std(v))
+
+
+def _place_dir(P0, sgn, target, zones, L0, mode, Lc_common):
+    """Rải trụ từ P0 theo hướng sgn (±1) tới target — ƯU TIÊN CHIỀU DÀI CHUNG L0
+    (đồng bộ dầm, ít loại dầm). Chỉ nơi trụ L0 rơi vào vùng cấm mới đổi = nhịp
+    BẮC QUA khoang: PA1 dùng CHUNG Lc_common (theo khoang rộng nhất); PA2 dùng
+    nhịp vừa đủ cho khoang đó. Trụ trước khoang có thể lệch để nhịp bắc qua khớp.
+    Nhịp biên = L0 (mố chạy tới lưới, không sinh nhịp lẻ). zones=(a,b,need)."""
+    piers = []
+    P = P0
+    guard = 0
+    while sgn * (target - P) > 1e-6 and guard < 500:
+        guard += 1
+        Pn = P + sgn * L0
+        zb = next(((a, b, nd) for (a, b, nd) in zones
+                   if a - 1e-6 <= Pn <= b + 1e-6), None)
+        if zb is None:                       # nhịp L0 bình thường (đồng bộ)
+            P = Pn; piers.append(P)
+            continue
+        a, b, nd = zb                        # trụ L0 sẽ phạm khoang → bắc qua
+        far = (b if sgn > 0 else a) + sgn * 0.01   # đáp QUA hẳn mép xa khoang
+        Lc = Lc_common if mode == "fewest" else max(L0, _snap_ge(nd))
+        pp = far - sgn * Lc                        # trụ trước → nhịp bắc qua = Lc
+        approach = sgn * (pp - P)
+        if approach >= 12.0 - 1e-6 and not _in_any_zone(pp, zones):
+            # đủ chỗ đặt TRỤ TRƯỚC (nhịp dẫn ≥ 12m) → nhịp bắc qua = Lc (đồng bộ)
+            P = pp; piers.append(P)
+            P = far; piers.append(P)
+        else:
+            # P đã sát khoang → BẮC THẲNG từ P (tránh nhịp dẫn lẻ quá ngắn)
+            L = _snap_ge(sgn * (far - P))
+            P = P + sgn * L; piers.append(P)
+    return piers
+
+
+def _clearance_layout(x0, x_end, x_tim, B_tk, L_base, extras, mode):
+    """Bố trí MỐ–TRỤ né MỌI tĩnh không (chính + phụ), rải TỪ TIM TĨNH KHÔNG CHÍNH
+    ra 2 mố. ƯU TIÊN dùng CHUNG 1 chiều dài dầm L0 = L_base (đồng bộ, ít loại
+    dầm); chỉ nhịp bắc qua khoang mới khác. Trả (supports, L0)."""
+    L0 = float(L_base) if L_base and float(L_base) > 0 else 33.0
+    clearances = [(float(x_tim), float(B_tk))]
+    for c in (extras or []):
+        try:
+            _b = float(c.get("B", 0) or 0)
+            if _b > 0:
+                clearances.append((float(c["x"]), _b))
+        except (TypeError, ValueError, KeyError):
+            pass
+    needs = [b + 2.0 * _PIER_SAFETY for (_x, b) in clearances]
+    zones = [(x - b / 2.0 - _PIER_SAFETY, x + b / 2.0 + _PIER_SAFETY,
+              b + 2.0 * _PIER_SAFETY) for (x, b) in clearances if b and b > 0]
+    # PA1: 1 loại nhịp bắc qua CHUNG (đủ cho khoang RỘNG NHẤT); PA2: theo từng khoang.
+    Lc_common = max(L0, _snap_ge(max(needs)))
+    # Nhịp CHÍNH căng giữa tim TK chính = L0 nếu đủ dài bắc qua, không thì Lc.
+    need_main = float(B_tk) + 2.0 * _PIER_SAFETY
+    L_main = L0 if L0 + 1e-6 >= need_main else (
+        Lc_common if mode == "fewest" else max(L0, _snap_ge(need_main)))
+    P_L = x_tim - L_main / 2.0
+    P_R = x_tim + L_main / 2.0
+    left  = _place_dir(P_L, -1.0, x0,    zones, L0, mode, Lc_common)
+    right = _place_dir(P_R, +1.0, x_end, zones, L0, mode, Lc_common)
+    return sorted(left + [P_L, P_R] + right), L0
+
+
+def _clearance_zones(clearances):
+    """[(a,b)] vùng cấm đặt trụ từ list (x, B): [x−B/2−an toàn, x+B/2+an toàn]."""
+    return [(x - b / 2.0 - _PIER_SAFETY, x + b / 2.0 + _PIER_SAFETY)
+            for (x, b) in clearances if b and b > 0]
+
+
+def _spt_widen_layout(x0, x_end, x_tim, clearances, W0, L_beam=38.2, gap=0.1):
+    """Bố trí trụ cho dầm SPT (VD 38.2m) GIỮ 1 loại dầm, NỚI RỘNG ụ giữa xà mũ tại
+    nhịp vượt tĩnh không (thay vì đổi loại dầm). Trả (supports, widen) với
+    widen[round(x,3)] = bề rộng ụ giữa (m) của trụ.
+
+    spacing = L_beam + 2·gap + (W_trái + W_phải)/2. Nhịp thường W=W0. Nhịp vượt: 2
+    trụ kẹp W = need−(L_beam+2gap) → nhịp kế TỰ thu dần (dùng chung trụ nới). Nhịp
+    biên (mố, đầu trơn) = L_beam + 2gap + W/2."""
+    two = 2.0 * gap
+    need_main = float(clearances[0][1]) + 2.0 * _PIER_SAFETY   # B_tk + 4
+    W_main = max(W0, need_main - L_beam - two)
+    span_main = L_beam + two + W_main
+    P_L = x_tim - span_main / 2.0
+    P_R = x_tim + span_main / 2.0
+    widen = {round(P_L, 3): W_main, round(P_R, 3): W_main}
+    zones = [(cx - B / 2.0 - _PIER_SAFETY, cx + B / 2.0 + _PIER_SAFETY,
+              B + 2.0 * _PIER_SAFETY) for (cx, B) in clearances[1:] if B > 0]
+
+    def _side(P0, Wp, sgn, target):
+        piers = []; cur, Wc = P0, Wp; zs = list(zones); guard = 0
+        while guard < 300:
+            guard += 1
+            end_span = L_beam + two + Wc / 2.0            # trụ → mố (mố đầu trơn)
+            if sgn * (target - cur) <= end_span + 1e-6:   # sát mố → đặt MỐ, dừng
+                piers.append(cur + sgn * end_span)
+                break
+            sp = L_beam + two + (Wc + W0) / 2.0           # → trụ thường
+            nxt = cur + sgn * sp; Wn = W0
+            zc = next(((a, b, nd) for (a, b, nd) in zs
+                       if min(cur, nxt) < b - 1e-6 and max(cur, nxt) > a + 1e-6), None)
+            if zc:                                         # nhịp cắt tĩnh không phụ
+                _a, _b, nd = zc
+                Wn = max(W0, 2.0 * (nd - L_beam - two) - Wc)
+                nxt = cur + sgn * (L_beam + two + (Wc + Wn) / 2.0)
+                zs = [z for z in zs if z != zc]
+            piers.append(nxt); widen[round(nxt, 3)] = Wn
+            cur, Wc = nxt, Wn
+        return piers
+
+    left = _side(P_L, W_main, -1.0, x0)
+    right = _side(P_R, W_main, +1.0, x_end)
+    return sorted(left + [P_L, P_R] + right), widen
 
 
 def main_span_index(supports, x_tim):
@@ -1502,11 +1875,23 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         # Trụ LẮP GHÉP từ thư viện: vẽ bóng mặt đứng dọc theo mặt cắt thật
         if pier_assembly:
             _PB = _get_PB()
-            for _rc in _PB.pier_elevation_rects(
-                    pier_assembly, H_tru=(z_cap_t_i - z_be_b_i),
-                    x_ctr=xt, z_base=z_be_b_i):
+            # TRẮC DỌC = HÌNH CHIẾU ĐỨNG thật của LƯỚI 3D trụ (chiếu lên x–z tại
+            # tim) — cùng nguồn với 3D toàn cầu → trụ 2 thân hiện đúng, xà mũ bậc
+            # (ụ giữa) đúng, thay khối hộp tham số cũ (pier_elevation_rects).
+            # Xà mũ NỚI RỘNG cho nhịp SPT vượt tĩnh không (ụ giữa to hơn W0).
+            _wmap = (d or {}).get("_pier_cap_widen") or {}
+            _w0td = float((d or {}).get("_pier_cap_W0", 0) or 0)
+            _mid_extra_td = max(0.0, _wmap.get(round(xt, 3), _w0td) - _w0td)
+            _ptr_td = _PB.build_pier_mesh_traces(
+                pier_assembly, H_tru=(z_cap_t_i - z_be_b_i),
+                x_ctr=xt, z_base=z_be_b_i, cap_width=None,
+                cap_mid_extra=_mid_extra_td)
+            _seen_td = set()
+            for _rc in project_mesh_traces(_ptr_td, axis="y"):
+                _nm = _rc["name"].split(" #")[0]
+                _sl = sl and _nm not in _seen_td; _seen_td.add(_nm)
                 _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["dam_dk"],
-                      (_rc["name"] if sl else ""), showlegend=sl)
+                      (_nm if _sl else ""), showlegend=_sl)
             fig.add_annotation(
                 x=xt, y=z_terr_tru, text=f"Z={z_terr_tru:.2f}m",
                 showarrow=True, arrowhead=2, arrowcolor="#27ae60",
@@ -1692,6 +2077,27 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         text=f"<b>TĨNH KHÔNG</b><br>B={B_tk:.1f}m × H={H_tk:.1f}m",
         showarrow=False, font=dict(size=9, color=_C["tk_line"]),
         bgcolor="rgba(255,255,255,0.8)")
+
+    # ── Tĩnh không PHỤ (khai báo thêm ở hộp thoại thủy văn) ───────────────
+    # Mỗi tĩnh không: x=lý trình, z=cao độ đáy, B×H. Trụ đã được rải TRÁNH các
+    # vùng này (resolve_supports → _avoid_extra_clearances).
+    for _ic, _cx in enumerate((d.get("extra_clearances") or [])):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+            _Hk = float(_cx.get("H", 0) or 0); _zk = float(_cx.get("z", MNCN))
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0 or _Hk <= 0:
+            continue
+        _nm = str(_cx.get("ten") or f"TK phụ {_ic+1}")
+        fig.add_shape(type="rect",
+            x0=_xk-_Bk/2, x1=_xk+_Bk/2, y0=_zk, y1=_zk+_Hk,
+            line=dict(color="#e67e22", width=2.0, dash="dash"),
+            fillcolor="rgba(230,126,34,0.10)")
+        fig.add_annotation(x=_xk, y=_zk+_Hk/2,
+            text=f"<b>{_nm}</b><br>B={_Bk:.1f}m × H={_Hk:.1f}m",
+            showarrow=False, font=dict(size=8, color="#e67e22"),
+            bgcolor="rgba(255,255,255,0.8)")
 
     # Gióng thẳng vị trí biên tĩnh không → trụ (từ đáy bệ thực của trụ → mặt cầu)
     # kèm DIM cao độ ĐƯỜNG ĐỎ tại từng vị trí trụ.
@@ -2342,6 +2748,35 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
             legendgroup="Tĩnh không",
         ))
 
+    # Tĩnh không PHỤ (khung cam) — khai báo ở hộp thoại thủy văn
+    _tkp_sl3 = True
+    for _cx in (d.get("extra_clearances") or []):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+            _Hk = float(_cx.get("H", 0) or 0); _zk = float(_cx.get("z", MNCN))
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0 or _Hk <= 0:
+            continue
+        _gk = float(_cx.get("goc", 90) or 90)
+        _cotk = (0.0 if _gk >= 89.9 or _gk <= 0
+                 else 1.0 / np.tan(np.radians(max(10.0, min(89.9, _gk)))))
+        _xkL = _xk - _Bk/2; _xkR = _xk + _Bk/2
+        for _y in y_tk:
+            _dx = _y * _cotk        # xiên theo góc giao với tim tuyến
+            fig.add_trace(go.Scatter3d(
+                x=[_xkL+_dx, _xkR+_dx, _xkR+_dx, _xkL+_dx, _xkL+_dx], y=[_y]*5,
+                z=[_zk, _zk, _zk+_Hk, _zk+_Hk, _zk],
+                mode="lines", line=dict(color="#e67e22", width=3),
+                name="Tĩnh không phụ" if (_tkp_sl3 and _y == y_tk[0]) else "",
+                showlegend=(_tkp_sl3 and _y == y_tk[0]),
+                legendgroup="Tĩnh không phụ",
+            ))
+        _tkp_sl3 = False
+
+    # Đường bao cấu kiện (viền tối các hộp) → dễ nhìn ranh giới
+    _add_box_outlines(fig)
+
     fig.update_layout(
         title=dict(
             text=f"MÔ HÌNH 3D CẦU — {n_nhip} NHỊP | L={L_cau:.1f}m | B={bc}m",
@@ -2831,6 +3266,33 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             textfont=dict(color="#e74c3c", size=11), showlegend=False,
         ))
 
+        # Tĩnh không PHỤ (khai báo trong hộp thoại thủy văn) — khung cam
+        _tkp_sl = True
+        for _cx in (d.get("extra_clearances") or []):
+            try:
+                _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+                _Hk = float(_cx.get("H", 0) or 0); _zk = float(_cx.get("z", MNCN))
+            except (TypeError, ValueError):
+                continue
+            if _Bk <= 0 or _Hk <= 0:
+                continue
+            _nmk = str(_cx.get("ten") or "TK phụ")
+            _pxL, _pyL = _vn(_xk - _Bk/2, 0); _pxR, _pyR = _vn(_xk + _Bk/2, 0)
+            _zkb = _zk * hz; _zkt = (_zk + _Hk) * hz
+            for xs, ys, xe, ye, z0, z1 in [
+                (_pxL,_pyL, _pxR,_pyR, _zkb,_zkb), (_pxL,_pyL, _pxR,_pyR, _zkt,_zkt),
+                (_pxL,_pyL, _pxL,_pyL, _zkb,_zkt), (_pxR,_pyR, _pxR,_pyR, _zkb,_zkt),
+            ]:
+                _ag(go.Scatter3d(
+                    x=[xs,xe], y=[ys,ye], z=[z0,z1], mode="lines",
+                    line=dict(color="#e67e22", width=5),
+                    name="Tĩnh không phụ" if _tkp_sl else "", showlegend=_tkp_sl))
+                _tkp_sl = False
+            _ag(go.Scatter3d(
+                x=[(_pxL+_pxR)/2], y=[(_pyL+_pyR)/2], z=[(_zkb+_zkt)/2],
+                mode="text", text=[f"{_nmk}<br>B={_Bk:.1f}×H={_Hk:.1f}m"],
+                textfont=dict(color="#e67e22", size=9), showlegend=False))
+
         # =========================================================
         # LỚP 2 — TRẮC DỌC (đường line — đúng cho profile)
         # =========================================================
@@ -2927,6 +3389,8 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 _notch3d = _PBp.cap_seat_notch_depth_m(_pier_model) or 0.0
             except Exception:
                 _notch3d = 0.0
+            _wmap3d = (d or {}).get("_pier_cap_widen") or {}
+            _w03d = float((d or {}).get("_pier_cap_W0", 0) or 0)
             for i_p, xt in enumerate(piers):
                 sl = (i_p == 0)
                 # THÂN TRỤ KÉO GIÃN theo ĐỊA HÌNH TỪNG TRỤ (khớp trắc dọc):
@@ -2937,10 +3401,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 _soffit_i, _z_be_top_i, _z_be_bot_i = _pier_found(xt)
                 _anchor_top  = _soffit_i + H_dam                  # đỉnh ụ giữa = đáy bản
                 _H_total_i   = _anchor_top - _z_be_bot_i          # đáy bệ → đỉnh ụ
+                # Xà mũ NỚI RỘNG cho nhịp SPT vượt tĩnh không (ụ giữa to hơn W0).
+                _mid_extra_3d = max(0.0, _wmap3d.get(round(xt, 3), _w03d) - _w03d)
                 try:
                     _ptr = _PBp.build_pier_mesh_traces(
                         _pier_model, H_tru=_H_total_i, x_ctr=xt,
-                        z_base=_z_be_bot_i, cap_width=bc)
+                        z_base=_z_be_bot_i, cap_width=bc,
+                        cap_mid_extra=_mid_extra_3d)
                 except Exception as _pe:
                     print(f"[add_all] trụ lắp ghép lỗi: {_pe}")
                     _ptr = []
@@ -3157,6 +3624,9 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 _xm, _s1, _z_app,
                 name="Mặt đường đầu cầu" if _od < 0 else "", sl=(_od < 0)))
 
+        # Đường bao cấu kiện (viền tối các hộp trụ/mố/xà mũ/bệ…) → dễ nhìn
+        _add_box_outlines(fig)
+
         # ── Title ─────────────────────────────────────────────────────────
         fig.update_layout(
             title=dict(
@@ -3254,6 +3724,31 @@ def _ve_binh_do_cong(d, df_geology):
         line=dict(color="#2980b9", width=1.5, dash="dot"),
         name=f"Sông/Kênh (B_tk={B_tk:.0f}m)"))
 
+    # ── Tĩnh không PHỤ (dải cam vuông góc tuyến tại từng lý trình khai báo) ──
+    _tkp_first = True
+    for _cx in (d.get("extra_clearances") or []):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0:
+            continue
+        _nmk = str(_cx.get("ten") or "Tĩnh không phụ")
+        _gk = float(_cx.get("goc", 90) or 90)
+        _cotk = (0.0 if _gk >= 89.9 or _gk <= 0
+                 else 1.0 / np.tan(np.radians(max(10.0, min(89.9, _gk)))))
+        _yh = B_tk*0.7
+        _ssk = np.linspace(_xk - _Bk/2, _xk + _Bk/2, 8)
+        # Xiên theo góc giao: mép transverse dịch dọc tuyến 1 lượng off·cotk
+        _lak = [_vn(s + (-_yh)*_cotk, -_yh, skew=False) for s in _ssk]
+        _rak = [_vn(s + (+_yh)*_cotk, +_yh, skew=False) for s in _ssk]
+        _px, _py = _xy(_lak + _rak[::-1] + [_lak[0]])
+        fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+            fillcolor="rgba(230,126,34,0.12)", mode="lines",
+            line=dict(color="#e67e22", width=1.8, dash="dash"),
+            name=(_nmk if _tkp_first else ""), showlegend=_tkp_first))
+        _tkp_first = False
+
     # ── Đường đầu cầu (2 đầu, kéo dài ngoài mố, KHÔNG xiên) + mái TALUY ──────
     _h_dap_tb = max(1.5, float(d.get("H_tru_est", 5.0)) * 0.4)   # chiều cao đắp ước tính
     _taluy_w  = 1.5 * _h_dap_tb                                   # bề rộng chân taluy 1:1.5
@@ -3306,66 +3801,95 @@ def _ve_binh_do_cong(d, df_geology):
         line=dict(color="#e74c3c", width=1, dash="dashdot"),
         name="Tim cầu", showlegend=False))
 
-    # ── Mố (2 đầu) — khối xiên theo góc giao, khớp 3D ───────────────────────
-    for s_m, od, lbl in [(x0, -1.0, "Mố trái"), (x_end, 1.0, "Mố phải")]:
-        bm = bc/2 + 0.6
-        _c = [_vn(s_m, -bm), _vn(s_m, +bm),
-              _vn(s_m + od*mo_L, +bm), _vn(s_m + od*mo_L, -bm)]
-        _px, _py = _xy(_c + [_c[0]])
-        fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
-            fillcolor="rgba(192,160,107,0.65)", mode="lines",
-            line=dict(color="#7d6608", width=2), name=lbl))
+    # ── Mố (2 đầu) — MẶT BẰNG THẬT từ mố thư viện (footprint thân + 2 cánh),
+    # khớp 3D + cọc theo sơ đồ khai báo. Chiếu lên tim cong _vn (dọc += od·u).
+    _PBa = _get_PB()
+    _mo_asm = d.get("_mo_model")
+    for s_m, od, lbl, _mk in [(x0, -1.0, "Mố M1", "mo_trai"),
+                              (x_end, 1.0, "Mố M2", "mo_phai")]:
+        if _mo_asm:
+            _mseen = set()
+            _mpolys = _PBa.abutment_plan_polys(_mo_asm, target_width=bc)
+            _piles_m = _layout_piles(d, _mk)
+            if _piles_m:
+                _mcx, _mcy = [], []
+                for _p in _piles_m:
+                    _gx, _gy = _vn(s_m + od * float(_p.get("y", 0.0)),
+                                   float(_p.get("x", 0.0)))
+                    _mcx.append(_gx); _mcy.append(_gy)
+                fig.add_trace(go.Scatter(x=_mcx, y=_mcy, mode="markers",
+                    marker=dict(symbol="circle-open", size=7, color="#8e6e53",
+                                line=dict(width=1.2)), showlegend=False))
+            for _pl in _mpolys:
+                _nm = _pl["name"]; _sl2 = (lbl == "Mố M1") and (_nm not in _mseen)
+                _mseen.add(_nm)
+                # xs = ngang; ys = dọc (căn theo vai kê) → dọc thực = s_m + od·ys
+                _pts = [_vn(s_m + od * _yy, _xx)
+                        for _xx, _yy in zip(_pl["xs"], _pl["ys"])]
+                _px, _py = _xy(_pts + [_pts[0]])
+                fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+                    fillcolor=_hex_rgba(_pl.get("color", "#c0a06b"), 0.65),
+                    mode="lines", line=dict(color="#7d6608", width=1.6),
+                    name=(lbl if _sl2 else ""), showlegend=_sl2))
+        else:
+            bm = bc/2 + 0.6
+            _c = [_vn(s_m, -bm), _vn(s_m, +bm),
+                  _vn(s_m + od*mo_L, +bm), _vn(s_m + od*mo_L, -bm)]
+            _px, _py = _xy(_c + [_c[0]])
+            fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+                fillcolor="rgba(192,160,107,0.65)", mode="lines",
+                line=dict(color="#7d6608", width=2), name=lbl))
 
-    # ── Trụ — mặt bằng đầy đủ: bệ + cọc + thân trụ (NÉT ĐỨT) + xà mũ (nét liền) ─
-    be_W  = cap_W + 0.8      # nửa bề rộng bệ (ngang) > xà mũ
-    be_L  = tru_L + 1.2      # nửa bề dài bệ (dọc)
-    sh_W  = cap_W * 0.62     # nửa bề rộng thân trụ (ngang)
-    sh_L  = tru_L * 0.60     # nửa bề dày thân trụ (dọc)
+    # ── Trụ — MẶT BẰNG THẬT từ hệ trụ lắp ghép (khớp 3D): footprint bệ/thân/xà mũ
+    # + cọc theo sơ đồ khai báo (thay khối hộp tham số cũ). Chiếu lên tim cong _vn.
+    _PBm = _get_PB()
+    _pier_asm = d.get("_pier_model")
+    _wmap = (d or {}).get("_pier_cap_widen") or {}
+    _w0cap = float((d or {}).get("_pier_cap_W0", 0) or 0)
     mong  = d.get("mong_result") or {}
     D_coc, _Lc, _ncoc = mong_dims(mong)
-    _ncoc = max(4, min(8, _ncoc))
 
-    def _box_tru(xc_s, oL, oR, sL, sR):
-        return [_vn(xc_s + sL, oL), _vn(xc_s + sL, oR),
-                _vn(xc_s + sR, oR), _vn(xc_s + sR, oL)]
+    def _draw_plan_polys(polys, xc_s, seen, dash=None, fill_op=0.78, first=False):
+        for _pl in polys:
+            _nm = _pl["name"]; _sl = first and (_nm not in seen); seen.add(_nm)
+            _pts = [_vn(xc_s + _yy, _xx) for _xx, _yy in zip(_pl["xs"], _pl["ys"])]
+            _px, _py = _xy(_pts + [_pts[0]])
+            _col = _pl.get("color", "#566573")
+            fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+                fillcolor=_hex_rgba(_col, fill_op), mode="lines",
+                line=dict(color=_C["be_dk"], width=1.4, dash=dash),
+                name=(_nm if _sl else ""), showlegend=_sl))
+
+    def _draw_plan_piles(pos_key, xc_s, first=False):
+        _piles = _layout_piles(d, pos_key)
+        if not _piles:
+            return
+        _cx, _cy = [], []
+        for _p in _piles:
+            _gx, _gy = _vn(xc_s + float(_p.get("y", 0.0)), float(_p.get("x", 0.0)))
+            _cx.append(_gx); _cy.append(_gy)
+        fig.add_trace(go.Scatter(x=_cx, y=_cy, mode="markers",
+            marker=dict(symbol="circle-open", size=7, color="#8e6e53",
+                        line=dict(width=1.2)),
+            name=(f"Cọc ({len(_piles)} cọc)" if first else ""), showlegend=first))
 
     for i, xt in enumerate(piers):
         _sl = (i == 0)
-        # Bệ trụ (nét đứt, khối lớn nhất)
-        _c = _box_tru(xt, -be_W, be_W, -be_L, be_L)
-        _px, _py = _xy(_c + [_c[0]])
-        fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
-            fill="toself", fillcolor="rgba(170,183,184,0.12)",
-            line=dict(color="#8395a7", width=1.2, dash="dash"),
-            name="Bệ trụ (khuất)" if _sl else "", showlegend=_sl))
-        # Cọc (nét đứt) — lưới trong phạm vi bệ
-        _nc_side = max(2, int(round(_ncoc ** 0.5)))
-        _osp = np.linspace(-be_W*0.6, be_W*0.6, _nc_side)
-        _ssp = np.linspace(-be_L*0.55, be_L*0.55, max(2, _ncoc // _nc_side))
-        _pcx, _pcy = [], []
-        for _oo in _osp:
-            for _ss2 in _ssp:
-                _pxx, _pyy = _vn(xt + _ss2, _oo)
-                _pcx.append(_pxx); _pcy.append(_pyy)
-        fig.add_trace(go.Scatter(x=_pcx, y=_pcy, mode="markers",
-            marker=dict(symbol="circle-open", size=7,
-                        color="#8e6e53", line=dict(width=1.2)),
-            name=(f"Cọc Ø{int((D_coc or 1.0)*1000)}mm (khuất)" if _sl else ""),
-            showlegend=_sl))
-        # Thân trụ (nét đứt)
-        _c = _box_tru(xt, -sh_W, sh_W, -sh_L, sh_L)
-        _px, _py = _xy(_c + [_c[0]])
-        fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
-            fill="toself", fillcolor="rgba(200,214,192,0.18)",
-            line=dict(color="#7f8c8d", width=1.2, dash="dash"),
-            name="Thân trụ (khuất)" if _sl else "", showlegend=_sl))
-        # Xà mũ (nét liền, trên cùng)
-        _c = _box_tru(xt, -cap_W, cap_W, -tru_L, tru_L)
-        _px, _py = _xy(_c + [_c[0]])
-        fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
-            fillcolor="rgba(133,146,158,0.78)", mode="lines",
-            line=dict(color="#566573", width=1.5),
-            name="Xà mũ" if _sl else f"Trụ T{i+1}", showlegend=True))
+        _seen = set()
+        if _pier_asm:
+            _mid_extra = max(0.0, _wmap.get(round(xt, 3), _w0cap) - _w0cap)
+            _polys = _PBm.pier_plan_polys(_pier_asm, target_width=bc,
+                                          cap_mid_extra=_mid_extra)
+            _draw_plan_piles(f"tru_{i+1}", xt, first=_sl)
+            _draw_plan_polys(_polys, xt, _seen, first=_sl)   # bệ→thân→xà mũ (trên)
+        else:
+            _c = [_vn(xt + s, o) for s, o in
+                  [(-tru_L, -cap_W), (-tru_L, cap_W), (tru_L, cap_W), (tru_L, -cap_W)]]
+            _px, _py = _xy(_c + [_c[0]])
+            fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+                fillcolor="rgba(133,146,158,0.78)", mode="lines",
+                line=dict(color="#566573", width=1.5),
+                name="Xà mũ" if _sl else "", showlegend=_sl))
         _cx, _cy = _vn(xt, 0.0)
         fig.add_annotation(x=_cx, y=_cy, text=f"T{i+1}", showarrow=False,
             font=dict(size=8, color="white"), bgcolor="rgba(86,101,115,0.85)")
@@ -3528,6 +4052,34 @@ def ve_binh_do_2d(d, df_tim_line=None, df_geology=None):
         y0=-B_tk/2 - 0.3, y1=B_tk/2 + 0.3,
         line=dict(color="#e74c3c", width=2.5, dash="dash"),
         fillcolor="rgba(231,76,60,0.04)")
+
+    # ── Tĩnh không PHỤ (khung cam tại từng lý trình khai báo) ────────────────
+    for _cx in (d.get("extra_clearances") or []):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0:
+            continue
+        _nmk = str(_cx.get("ten") or "TK phụ")
+        _gk = float(_cx.get("goc", 90) or 90)
+        _cotk = (0.0 if _gk >= 89.9 or _gk <= 0
+                 else 1.0 / np.tan(np.radians(max(10.0, min(89.9, _gk)))))
+        _yh = B_tk/2 + 0.3
+        _shk = lambda _y: _y * _cotk        # xiên theo góc giao với tim tuyến
+        fig.add_trace(go.Scatter(
+            x=[_xk-_Bk/2+_shk(-_yh), _xk+_Bk/2+_shk(-_yh),
+               _xk+_Bk/2+_shk(+_yh), _xk-_Bk/2+_shk(+_yh), _xk-_Bk/2+_shk(-_yh)],
+            y=[-_yh, -_yh, _yh, _yh, -_yh],
+            fill="toself", fillcolor="rgba(230,126,34,0.06)", mode="lines",
+            line=dict(color="#e67e22", width=2.0, dash="dash"),
+            name="Tĩnh không phụ", showlegend=False,
+            hovertemplate=f"{_nmk} B={_Bk:.1f}m, góc={_gk:.0f}°<extra></extra>"))
+        fig.add_annotation(x=_xk + _shk(_yh), y=B_tk/2 + 0.6,
+            text=(f"<b>{_nmk}</b> B={_Bk:.1f}m"
+                  + (f" · {_gk:.0f}°" if _gk < 89.0 else "")),
+            showarrow=False, font=dict(size=8, color="#e67e22"),
+            bgcolor="rgba(255,255,255,0.8)")
 
     # ── Chú thích góc xiên ────────────────────────────────────────────────
     if goc < 89.0:
