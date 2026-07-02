@@ -338,6 +338,41 @@ _cc_theme.html(
     })();
     </script>""", height=0)
 
+# ── KHÔNG cho CLICK RA NGOÀI / ESC đóng hộp khai báo (tránh mất thông số) ─────
+# Chỉ đóng bằng nút trong hộp (Bước/Áp dụng/X). Chặn click nền mờ + phím Esc.
+_cc_theme.html(
+    """<script>
+    (function(){
+      var d = window.parent.document;
+      if(d._cauDlgGuard) return; d._cauDlgGuard = true;
+      function box(){
+        var dlg = d.querySelector('[data-testid="stDialog"]');
+        if(!dlg) return null;
+        return {dlg: dlg,
+                inner: dlg.querySelector('[role="dialog"]') || dlg.firstElementChild};
+      }
+      // Chặn thao tác chuột trên NỀN MỜ (vùng trong stDialog nhưng NGOÀI khung
+      // hộp). KHÔNG chặn dropdown/menu (render portal ở body, ngoài stDialog) để
+      // vẫn chọn được các lựa chọn xổ xuống.
+      ['pointerdown','mousedown','mouseup','click'].forEach(function(ev){
+        d.addEventListener(ev, function(e){
+          var b = box(); if(!b || !b.inner) return;
+          var inDlg = e.target.closest && e.target.closest('[data-testid="stDialog"]');
+          if(inDlg === b.dlg && !b.inner.contains(e.target)){  // đúng nền mờ
+            e.stopPropagation(); e.preventDefault();
+          }
+        }, true);
+      });
+      // Chặn phím Esc khi hộp đang mở
+      d.addEventListener('keydown', function(e){
+        if((e.key === 'Escape' || e.keyCode === 27) &&
+           d.querySelector('[data-testid="stDialog"]')){
+          e.stopPropagation(); e.preventDefault();
+        }
+      }, true);
+    })();
+    </script>""", height=0)
+
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
 _auth_spec = _iutil.spec_from_file_location("auth00", os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-Auth.py"))
