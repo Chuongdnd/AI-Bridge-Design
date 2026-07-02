@@ -3799,40 +3799,45 @@ def _ve_binh_do_cong(d, df_geology):
         line=dict(color="#e74c3c", width=1, dash="dashdot"),
         name="Tim cầu", showlegend=False))
 
-    # ── Mố (2 đầu) — MẶT BẰNG THẬT từ mố thư viện (footprint thân + 2 cánh),
-    # khớp 3D + cọc theo sơ đồ khai báo. Chiếu lên tim cong _vn (dọc += od·u).
+    # ── Mố (2 đầu) — MẶT BẰNG = CHIẾU lưới 3D mố thực (build_abutment_mesh_traces)
+    # xuống mặt bằng, CÙNG NGUỒN + CÙNG neo (x_face, out_dir) với 3D toàn cầu →
+    # khớp tuyệt đối (giữ hình chữ U: thân + 2 cánh). Cọc theo sơ đồ khai báo.
     _PBa = _get_PB()
     _mo_asm = d.get("_mo_model")
-    for s_m, od, lbl, _mk in [(x0, -1.0, "Mố M1", "mo_trai"),
-                              (x_end, 1.0, "Mố M2", "mo_phai")]:
+    _cao_dd_bd = float(d.get("cao_day_dam", 8.0))
+    for s_m, sgn, lbl, _mk in [(x0, 1.0, "Mố M1", "mo_trai"),
+                               (x_end, -1.0, "Mố M2", "mo_phai")]:
         if _mo_asm:
             _mseen = set()
-            _mpolys = _PBa.abutment_plan_polys(_mo_asm, target_width=bc)
+            _xf_m = s_m - sgn * (KHO_HO_DAM_MO + _PBa.abut_backwall_u_m(_mo_asm))
+            _seat = _abut_seat_z(_cao_dd_bd, d.get("_pier_model"))
+            _mtr = _PBa.build_abutment_mesh_traces(
+                _mo_asm, H_tru=5.0, x_face=_xf_m, out_dir=sgn,
+                z_base=0.0, seat_z=_seat, target_width=bc)
             _piles_m = _layout_piles(d, _mk)
             if _piles_m:
                 _mcx, _mcy = [], []
                 for _p in _piles_m:
-                    _gx, _gy = _vn(s_m + od * float(_p.get("y", 0.0)),
+                    _gx, _gy = _vn(s_m + sgn * float(_p.get("y", 0.0)),
                                    float(_p.get("x", 0.0)))
                     _mcx.append(_gx); _mcy.append(_gy)
                 fig.add_trace(go.Scatter(x=_mcx, y=_mcy, mode="markers",
                     marker=dict(symbol="circle-open", size=7, color="#8e6e53",
                                 line=dict(width=1.2)), showlegend=False))
-            for _pl in _mpolys:
-                _nm = _pl["name"]; _sl2 = (lbl == "Mố M1") and (_nm not in _mseen)
-                _mseen.add(_nm)
-                # xs = ngang; ys = dọc (căn theo vai kê) → dọc thực = s_m + od·ys
-                _pts = [_vn(s_m + od * _yy, _xx)
-                        for _xx, _yy in zip(_pl["xs"], _pl["ys"])]
+            for _pl in project_mesh_traces(_mtr, axis="z"):
+                _nm = _pl["name"].split(" #")[0]
+                _sl2 = (lbl == "Mố M1") and (_nm not in _mseen); _mseen.add(_nm)
+                # xs = dọc (chainage), zs = ngang → chiếu lên tim cong _vn.
+                _pts = [_vn(_ch, _ng) for _ch, _ng in zip(_pl["xs"], _pl["zs"])]
                 _px, _py = _xy(_pts + [_pts[0]])
                 fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
-                    fillcolor=_hex_rgba(_pl.get("color", "#c0a06b"), 0.65),
-                    mode="lines", line=dict(color="#7d6608", width=1.6),
-                    name=(lbl if _sl2 else ""), showlegend=_sl2))
+                    fillcolor=_hex_rgba(_pl.get("color", "#c0a06b"), 0.6),
+                    mode="lines", line=dict(color="#7d6608", width=1.5),
+                    name=(_nm if _sl2 else ""), showlegend=_sl2))
         else:
             bm = bc/2 + 0.6
             _c = [_vn(s_m, -bm), _vn(s_m, +bm),
-                  _vn(s_m + od*mo_L, +bm), _vn(s_m + od*mo_L, -bm)]
+                  _vn(s_m - sgn*mo_L, +bm), _vn(s_m - sgn*mo_L, -bm)]
             _px, _py = _xy(_c + [_c[0]])
             fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
                 fillcolor="rgba(192,160,107,0.65)", mode="lines",
