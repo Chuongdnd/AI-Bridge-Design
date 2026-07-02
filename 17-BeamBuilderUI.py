@@ -2331,17 +2331,61 @@ def _beam_end_section_name(vpfx: str):
 
 
 def _fit_beam_centers(bc: float, n_dam: int, kc_dam: float,
-                      bw_half: float, cover: float = 0.10) -> list:
-    """Vị trí tim dầm (m) sao cho MÉP dầm biên (tim ± nửa bề rộng dầm) nằm TRONG
-    bề rộng bản mặt cầu ±bc/2 (chừa lớp bảo vệ `cover`). Giữ khoảng cách khai báo
-    kc_dam nếu đủ chỗ; nếu không thì CO khoảng cách lại và căn ĐỐI XỨNG."""
+                      bw_half: float, cover: float = 0.10,
+                      lan_can_w: float = 0.0, min_gap: float = 0.01) -> list:
+    """Vị trí tim dầm (m) — bố trí dầm trong PHẠM VI xe chạy (giữa 2 lan can) sao
+    cho: (1) MÉP CÁNH dầm biên hở MÉP TRONG LAN CAN ≥ min_gap (10mm); (2) 2 CÁNH
+    dầm kề nhau hở ≥ min_gap (không chồng cánh). Hở phân bố ĐỀU và TỰ THAY ĐỔI theo
+    bề rộng cầu. bw_half = nửa bề rộng CÁNH dầm (m); lan_can_w = bề rộng chân lan
+    can mỗi bên (m)."""
     if n_dam <= 1:
         return [0.0]
-    max_half = max(0.0, bc / 2.0 - bw_half - cover)   # |tim dầm biên| tối đa
-    half_span = (n_dam - 1) * kc_dam / 2.0
-    kc_eff = kc_dam if half_span <= max_half else (2.0 * max_half / (n_dam - 1))
-    x_first = -(n_dam - 1) * kc_eff / 2.0              # căn đối xứng quanh tim
-    return [x_first + i * kc_eff for i in range(n_dam)]
+    avail   = bc - 2.0 * lan_can_w                    # bề rộng giữa 2 lan can
+    flanges = n_dam * 2.0 * bw_half                   # tổng bề rộng các cánh dầm
+    gap     = (avail - flanges) / (n_dam + 1)         # hở ĐỀU: mép lan can + giữa dầm
+    gap     = max(gap, 0.0)                            # không âm (nếu quá chật)
+    sp      = 2.0 * bw_half + gap                      # khoảng cách TIM–TIM
+    x_first = -(n_dam - 1) * sp / 2.0                  # căn đối xứng quanh tim cầu
+    return [x_first + i * sp for i in range(n_dam)]
+
+
+def _lan_can_w(d: dict, bc: float) -> float:
+    """Bề rộng CHÂN lan can mỗi bên (m) = bc/2 − mép TRONG lan can. Dùng để bố trí
+    dầm sao cho cánh dầm biên hở mép trong lan can. 0 nếu không tra được."""
+    try:
+        bv = _get_banve()
+        if bv is not None and hasattr(bv, "_railing_inner_y"):
+            y_in, _ = bv._railing_inner_y(d, bc)
+            return max(0.0, bc / 2.0 - float(y_in))
+    except Exception:
+        pass
+    return 0.0
+
+
+def mcn_beam_centers(d: dict, pfx: str = "spt", which: str = "mid") -> list:
+    """Tim dầm (m) TRÊN MCN — DÙNG CHUNG với get_mcn_overlay_traces & 3D: xét bề
+    rộng dầm THẬT để mép dầm biên nằm trong bản mặt cầu. Trả [] nếu không có mặt
+    cắt dầm (để nơi gọi tự dùng bố trí mặc định)."""
+    try:
+        active, secmap = _build_role_sections(pfx)
+    except Exception:
+        return []
+    if not any(s and getattr(s, "outer", None) for s in secmap.values()):
+        return []
+    kcn    = d.get("kcn_result") or d.get("ai_result", {})
+    n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
+    kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
+    bc     = float(d.get("bc", 12.0))
+    _bw_half = 0.0
+    for i_dam in range(n_dam):
+        try:
+            sec, _ = _cell_section(pfx, active, secmap, 1, 3, i_dam, n_dam)
+        except Exception:
+            sec = None
+        if sec is not None and getattr(sec, "outer", None):
+            _bw_half = max(_bw_half, max(abs(p[0]) for p in sec.outer) / 1000.0)
+    return _fit_beam_centers(bc, n_dam, kc_dam, _bw_half,
+                             lan_can_w=_lan_can_w(d, bc))
 
 
 def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> list:
@@ -2387,7 +2431,8 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
     for _sec, _, _ in _beams:
         if _sec and getattr(_sec, "outer", None):
             _bw_half = max(_bw_half, max(abs(p[0]) for p in _sec.outer) / 1000.0)
-    xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half)
+    xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half,
+                               lan_can_w=_lan_can_w(d, bc))
 
     result  = []
     _leg = True
@@ -3565,7 +3610,8 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
                     _bw_half = max(_bw_half, float(np.max(np.abs(_R[:, 0]))) / 1000.0)
                 except Exception:
                     pass
-    xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half)
+    xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half,
+                               lan_can_w=_lan_can_w(d, bc))
 
     spans   = _beam_span_list(d)
     n_span  = len(spans)

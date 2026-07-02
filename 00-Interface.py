@@ -7218,9 +7218,14 @@ with _col_main:
                         _cap_y = (min(_ys) if (_which == "end" and _ys) else None)
                         # GIỮA NHỊP (mid) không có trụ → KHÔNG vẽ kết cấu dưới +
                         # dim của nó ngay từ gốc (sạch hơn lọc trace theo tên).
+                        # Bố trí tim dầm DÙNG CHUNG với dầm thực & 3D → MCN đồng bộ.
+                        try:
+                            _bcen = BBUI.mcn_beam_centers(d, pfx=_pfx, which=_which)
+                        except Exception:
+                            _bcen = None
                         _fig = BVK.ve_mat_cat_ngang_2d(
                             d, pier_assembly=_pa_tru_mcn, cap_top_y=_cap_y,
-                            show_substructure=(_which == "end"))
+                            show_substructure=(_which == "end"), beam_centers=_bcen)
                         if _trs:
                             _fig.layout.annotations = tuple(
                                 a for a in (_fig.layout.annotations or [])
