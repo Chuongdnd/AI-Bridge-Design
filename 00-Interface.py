@@ -7513,7 +7513,8 @@ with _col_main:
                             d, vi_tri=_selected_vt, df_geology=_df_geo,
                             pier_assembly=_pa_tru, x_half=_xh,
                             abutment_assembly=_resolve_assembly(d, "mo"),
-                            mo_view='truoc', beam_mcn_outer=_beam_mcn)
+                            mo_view='truoc', beam_mcn_outer=_beam_mcn,
+                            df_tim_line=_df_tim)
                         PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
                         st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,
@@ -7527,7 +7528,8 @@ with _col_main:
                                 d, vi_tri=_selected_vt, df_geology=_df_geo,
                                 pier_assembly=_pa_tru, x_half=_xh,
                                 abutment_assembly=_resolve_assembly(d, "mo"),
-                                mo_view='sau', beam_mcn_outer=_beam_mcn)
+                                mo_view='sau', beam_mcn_outer=_beam_mcn,
+                                df_tim_line=_df_tim)
                             PLOT.aspect_control(_f_mcnvt_s, "mcn_vitri_sau")
                             st.plotly_chart(_f_mcnvt_s,
                                             use_container_width=True,
@@ -7547,7 +7549,7 @@ with _col_main:
                         _f_mcd = BVK.ve_mat_cat_doc_vi_tri(
                             d, vi_tri=_selected_vt, pier_assembly=_pa_tru,
                             abutment_assembly=_resolve_assembly(d, "mo"),
-                            df_geology=_df_geo)
+                            df_geology=_df_geo, df_tim_line=_df_tim)
                         PLOT.aspect_control(_f_mcd, "mc_doc_vitri")
                         st.plotly_chart(_f_mcd,
                                         use_container_width=True,
@@ -7895,7 +7897,9 @@ with _col_main:
                     def _tru_dxf_bytes():
                         _fig = BVK.ve_mcn_vi_tri(
                             d, vi_tri="tru_1",
-                            pier_assembly=_resolve_assembly(d, "tru"))
+                            pier_assembly=_resolve_assembly(d, "tru"),
+                            df_geology=st.session_state.get("df_geology"),
+                            df_tim_line=st.session_state.get("df_tim_line"))
                         return EXP.fig_to_dxf_bytes(_fig, "TRU - MAT CAT NGANG")
 
                     # Cây xuất 3 cấp: (thư mục, dir, [ (cấu kiện, sub_dir,
