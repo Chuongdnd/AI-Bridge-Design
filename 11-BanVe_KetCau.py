@@ -803,9 +803,11 @@ def _calc_span_layout(x0, x_end, x_tim, B_tk, L_nhip=None):
     main_L = x_tim - L_std / 2.0
     main_R = x_tim + L_std / 2.0
 
-    # Mở rộng đều về hai phía để phủ phạm vi cầu [x0, x_end]
-    n_left  = max(0, int(np.ceil((main_L - x0)   / L_std - 1e-6)))
-    n_right = max(0, int(np.ceil((x_end - main_R) / L_std - 1e-6)))
+    # Số nhịp dẫn mỗi phía = LÀM TRÒN (gần nhất) quãng từ nhịp chính tới điểm ngắt
+    # cầu (vị trí đắp ≈ 6m). Dùng round (không phải ceil) để mố chỉ DỜI 1 CHÚT về
+    # đúng bội số chiều dài nhịp — không lố hẳn ra thêm gần cả một nhịp.
+    n_left  = max(0, int(round((main_L - x0)   / L_std)))
+    n_right = max(0, int(round((x_end - main_R) / L_std)))
 
     left  = [main_L - i * L_std for i in range(n_left, 0, -1)]
     right = [main_R + i * L_std for i in range(1, n_right + 1)]
@@ -859,8 +861,9 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
 
     main_L = x_tim - L_main / 2.0
     main_R = x_tim + L_main / 2.0
-    n_left  = max(0, int(np.ceil((main_L - x0)   / L_dan - 1e-6)))
-    n_right = max(0, int(np.ceil((x_end - main_R) / L_dan - 1e-6)))
+    # LÀM TRÒN (gần nhất) số nhịp dẫn → mố dời 1 chút về bội số chiều dài nhịp dẫn.
+    n_left  = max(0, int(round((main_L - x0)   / L_dan)))
+    n_right = max(0, int(round((x_end - main_R) / L_dan)))
     left  = [main_L - i * L_dan for i in range(n_left, 0, -1)]
     right = [main_R + i * L_dan for i in range(1, n_right + 1)]
     supports = left + [main_L, main_R] + right
