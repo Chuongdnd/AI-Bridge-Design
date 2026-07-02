@@ -7486,7 +7486,8 @@ with _col_main:
                     try:
                         _f_mcd = BVK.ve_mat_cat_doc_vi_tri(
                             d, vi_tri=_selected_vt, pier_assembly=_pa_tru,
-                            abutment_assembly=_resolve_assembly(d, "mo"))
+                            abutment_assembly=_resolve_assembly(d, "mo"),
+                            df_geology=_df_geo)
                         PLOT.aspect_control(_f_mcd, "mc_doc_vitri")
                         st.plotly_chart(_f_mcd,
                                         use_container_width=True,
