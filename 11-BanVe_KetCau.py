@@ -69,6 +69,22 @@ _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 KHO_HO_DAM_MO = 0.10  # m — khoảng hở (khe co giãn) đầu dầm ↔ mặt trước tường đỉnh mố
 
 
+def _snap_be_tops(be_tops, thresh=1.0):
+    """ĐỒNG BỘ cao độ ĐỈNH BỆ giữa các trụ: nếu chênh lệch (max−min) ≤ thresh (m,
+    ~1m) → gộp về 1 cao độ LÀM TRÒN NGUYÊN (không thập phân). Ngược lại giữ nguyên
+    từng trụ (địa hình chênh nhiều). Trả list cùng độ dài."""
+    vals = [v for v in be_tops if v is not None]
+    if len(vals) < 2 or (max(vals) - min(vals)) > thresh + 1e-9:
+        return list(be_tops)
+    _common = float(round(sum(vals) / len(vals)))     # 1 cao độ chẵn dùng chung
+    return [_common if v is not None else None for v in be_tops]
+
+
+def _pier_be_top(xt, terrain_fn, z_cap_b):
+    """Đỉnh bệ 1 trụ (thô, chưa đồng bộ): chôn 0.5m dưới ĐTN, chừa ≥0.5m thân."""
+    return min(float(terrain_fn(xt)) - 0.5, float(z_cap_b) - 0.5)
+
+
 def _hex_rgba(col, op=1.0):
     """'#rrggbb' → 'rgba(r,g,b,op)'. Nếu đã là rgb/rgba thì giữ nguyên."""
     c = str(col or "#888888")
@@ -1893,6 +1909,10 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             ))
 
     # ── Trụ giữa (đặt NGOÀI tĩnh không + 2m an toàn) ─────────────────────
+    # ĐỒNG BỘ đỉnh bệ: tính thô từng trụ rồi gộp về 1 cao độ chẵn nếu chênh ≤ 1m.
+    _be_raw = [_pier_be_top(xt, _tz, _z_beam_soffit(xt) - 0.80) for xt in piers]
+    _be_top_map = {round(xt, 3): v
+                   for xt, v in zip(piers, _snap_be_tops(_be_raw))}
     for i, xt in enumerate(piers):
         sl = (i == 0)
         z_terr_tru = _tz(xt)   # cao độ địa hình (đường tự nhiên) tại vị trí trụ
@@ -1903,8 +1923,10 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         z_vaike_i = _z_beam_soffit(xt)            # vai kê = đáy dầm (đỡ khấc dầm)
         z_cap_t_i = z_ugiua_i                     # neo đỉnh xà mũ (ụ giữa)
         z_cap_b_i = z_vaike_i - 0.80              # đáy xà mũ (dưới vai kê)
-        # Đỉnh bệ trụ CHÔN 0.5m DƯỚI ĐƯỜNG TỰ NHIÊN tại lý trình trụ.
-        z_be_t_i = min(z_terr_tru - 0.5, z_cap_b_i - 0.5)  # chừa tối thiểu 0.5m thân trụ
+        # Đỉnh bệ CHÔN 0.5m DƯỚI ĐTN, đã ĐỒNG BỘ về cao độ chẵn (nếu chênh ≤ 1m).
+        z_be_t_i = _be_top_map.get(round(xt, 3),
+                                   min(z_terr_tru - 0.5, z_cap_b_i - 0.5))
+        z_be_t_i = min(z_be_t_i, z_cap_b_i - 0.5)       # vẫn phải chừa ≥0.5m thân
         z_sh_b_i = z_be_t_i                              # đáy thân trụ = đỉnh bệ
         z_be_b_i = z_be_t_i - 1.50                       # đáy bệ cọc
 
@@ -3157,12 +3179,15 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             """Độ lệch cao độ đường đỏ so với đỉnh (×hz) — quét bản/dầm theo trắc dọc."""
             return (_zred_fn(s) - _zcrown) * hz
 
+        _be3d_snap = {}   # {round(xt,3): đỉnh bệ ĐỒNG BỘ} — nạp sau khi có piers
         def _pier_found(xt):
             """Cao độ móng trụ THEO ĐỊA HÌNH TỪNG TRỤ (khớp trắc dọc) — real units.
-            Trả (đáy_dầm, đỉnh_bệ, đáy_bệ). Đỉnh bệ chôn 0.5m dưới ĐTN tại trụ."""
+            Trả (đáy_dầm, đỉnh_bệ, đáy_bệ). Đỉnh bệ chôn 0.5m dưới ĐTN tại trụ, ĐÃ
+            đồng bộ về cao độ chẵn nếu các trụ chênh ≤ 1m (_be3d_snap)."""
             _soffit = _zred_fn(xt) - t_ban - H_dam       # đáy dầm (vai kê) tại trụ
             _zt     = float(np.interp(xt, lt_v, vz_v))   # cao độ ĐTN tại trụ
             _be_top = min(_zt - 0.5, _soffit - 1.0)      # đỉnh bệ (chừa tối thiểu thân)
+            _be_top = min(_be3d_snap.get(round(xt, 3), _be_top), _soffit - 1.0)
             return _soffit, _be_top, _be_top - 1.50      # đáy bệ = đỉnh bệ − 1.5m
 
         # ── Cao độ × he_so_z (mốc tại ĐỈNH đường cong; theo trạm cộng _prof) ────
@@ -3190,6 +3215,10 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         x0, x_end = supports[0], supports[-1]
         piers    = supports[1:-1]
         n_nhip   = len(supports) - 1
+        # ĐỒNG BỘ đỉnh bệ 3D (khớp trắc dọc): gộp về cao độ chẵn nếu chênh ≤ 1m.
+        _be3d_snap.update({round(xt, 3): v for xt, v in zip(piers, _snap_be_tops(
+            [min(float(np.interp(xt, lt_v, vz_v)) - 0.5,
+                 (_zred_fn(xt) - t_ban - H_dam) - 1.0) for xt in piers]))})
         L_cau    = x_end - x0
         spans    = [(supports[i], supports[i+1]) for i in range(len(supports)-1)]
 
