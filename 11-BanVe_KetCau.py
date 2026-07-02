@@ -69,6 +69,22 @@ _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 KHO_HO_DAM_MO = 0.10  # m — khoảng hở (khe co giãn) đầu dầm ↔ mặt trước tường đỉnh mố
 
 
+def _snap_be_tops(be_tops, thresh=1.0):
+    """ĐỒNG BỘ cao độ ĐỈNH BỆ giữa các trụ: nếu chênh lệch (max−min) ≤ thresh (m,
+    ~1m) → gộp về 1 cao độ LÀM TRÒN NGUYÊN (không thập phân). Ngược lại giữ nguyên
+    từng trụ (địa hình chênh nhiều). Trả list cùng độ dài."""
+    vals = [v for v in be_tops if v is not None]
+    if len(vals) < 2 or (max(vals) - min(vals)) > thresh + 1e-9:
+        return list(be_tops)
+    _common = float(round(sum(vals) / len(vals)))     # 1 cao độ chẵn dùng chung
+    return [_common if v is not None else None for v in be_tops]
+
+
+def _pier_be_top(xt, terrain_fn, z_cap_b):
+    """Đỉnh bệ 1 trụ (thô, chưa đồng bộ): chôn 0.5m dưới ĐTN, chừa ≥0.5m thân."""
+    return min(float(terrain_fn(xt)) - 0.5, float(z_cap_b) - 0.5)
+
+
 def _hex_rgba(col, op=1.0):
     """'#rrggbb' → 'rgba(r,g,b,op)'. Nếu đã là rgb/rgba thì giữ nguyên."""
     c = str(col or "#888888")
@@ -510,6 +526,42 @@ def _add_box_outlines(fig, color="#1b2631", width=2.0, name="Đường bao cấu
         line=dict(color=color, width=width),
         name=name, showlegend=True, legendgroup="_outline",
         hoverinfo="skip"))
+
+
+def _hover3d(fig):
+    """Hover mọi cấu kiện 3D → TÊN (legendgroup/name) + CAO ĐỘ z tại điểm di chuột."""
+    for tr in fig.data:
+        if getattr(tr, "type", "") not in ("mesh3d", "scatter3d"):
+            continue
+        lbl = str(getattr(tr, "legendgroup", "") or getattr(tr, "name", "") or "")
+        if lbl == "_outline":
+            try: tr.hoverinfo = "skip"
+            except Exception: pass
+            continue
+        if not lbl:
+            lbl = "Cấu kiện"
+        try:
+            tr.hovertemplate = f"<b>{lbl}</b><br>Cao độ: %{{z:.3f}} m<extra></extra>"
+            tr.hoverinfo = None
+        except Exception:
+            pass
+
+
+def _hover2d(fig):
+    """Hover mọi cấu kiện trắc dọc 2D → TÊN + LÝ TRÌNH + CAO ĐỘ (y) tại điểm."""
+    for tr in fig.data:
+        if getattr(tr, "type", "") not in ("scatter", "scattergl"):
+            continue
+        lbl = str(getattr(tr, "name", "") or getattr(tr, "legendgroup", "") or "")
+        if lbl == "_outline":
+            continue
+        head = f"<b>{lbl}</b><br>" if lbl else ""
+        try:
+            tr.hovertemplate = (head + "Lý trình %{x:.1f} m · Cao độ %{y:.3f} m"
+                                "<extra></extra>")
+            tr.hoverinfo = None
+        except Exception:
+            pass
 
 
 def _approach_road_traces(xa, xb, bc, z_road, z_g, taluy=1.5, sl=True):
@@ -1857,6 +1909,10 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             ))
 
     # ── Trụ giữa (đặt NGOÀI tĩnh không + 2m an toàn) ─────────────────────
+    # ĐỒNG BỘ đỉnh bệ: tính thô từng trụ rồi gộp về 1 cao độ chẵn nếu chênh ≤ 1m.
+    _be_raw = [_pier_be_top(xt, _tz, _z_beam_soffit(xt) - 0.80) for xt in piers]
+    _be_top_map = {round(xt, 3): v
+                   for xt, v in zip(piers, _snap_be_tops(_be_raw))}
     for i, xt in enumerate(piers):
         sl = (i == 0)
         z_terr_tru = _tz(xt)   # cao độ địa hình (đường tự nhiên) tại vị trí trụ
@@ -1867,8 +1923,10 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         z_vaike_i = _z_beam_soffit(xt)            # vai kê = đáy dầm (đỡ khấc dầm)
         z_cap_t_i = z_ugiua_i                     # neo đỉnh xà mũ (ụ giữa)
         z_cap_b_i = z_vaike_i - 0.80              # đáy xà mũ (dưới vai kê)
-        # Đỉnh bệ trụ CHÔN 0.5m DƯỚI ĐƯỜNG TỰ NHIÊN tại lý trình trụ.
-        z_be_t_i = min(z_terr_tru - 0.5, z_cap_b_i - 0.5)  # chừa tối thiểu 0.5m thân trụ
+        # Đỉnh bệ CHÔN 0.5m DƯỚI ĐTN, đã ĐỒNG BỘ về cao độ chẵn (nếu chênh ≤ 1m).
+        z_be_t_i = _be_top_map.get(round(xt, 3),
+                                   min(z_terr_tru - 0.5, z_cap_b_i - 0.5))
+        z_be_t_i = min(z_be_t_i, z_cap_b_i - 0.5)       # vẫn phải chừa ≥0.5m thân
         z_sh_b_i = z_be_t_i                              # đáy thân trụ = đỉnh bệ
         z_be_b_i = z_be_t_i - 1.50                       # đáy bệ cọc
 
@@ -2168,6 +2226,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
 
     _add_elevation_table(fig, d, loc="tl")
     _apply_layers_2d(fig)
+    _hover2d(fig)   # hover: tên cấu kiện + lý trình + cao độ
     return fig
 
 
@@ -2776,6 +2835,7 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
 
     # Đường bao cấu kiện (viền tối các hộp) → dễ nhìn ranh giới
     _add_box_outlines(fig)
+    _hover3d(fig)   # hover: tên cấu kiện + cao độ
 
     fig.update_layout(
         title=dict(
@@ -3119,12 +3179,15 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             """Độ lệch cao độ đường đỏ so với đỉnh (×hz) — quét bản/dầm theo trắc dọc."""
             return (_zred_fn(s) - _zcrown) * hz
 
+        _be3d_snap = {}   # {round(xt,3): đỉnh bệ ĐỒNG BỘ} — nạp sau khi có piers
         def _pier_found(xt):
             """Cao độ móng trụ THEO ĐỊA HÌNH TỪNG TRỤ (khớp trắc dọc) — real units.
-            Trả (đáy_dầm, đỉnh_bệ, đáy_bệ). Đỉnh bệ chôn 0.5m dưới ĐTN tại trụ."""
+            Trả (đáy_dầm, đỉnh_bệ, đáy_bệ). Đỉnh bệ chôn 0.5m dưới ĐTN tại trụ, ĐÃ
+            đồng bộ về cao độ chẵn nếu các trụ chênh ≤ 1m (_be3d_snap)."""
             _soffit = _zred_fn(xt) - t_ban - H_dam       # đáy dầm (vai kê) tại trụ
             _zt     = float(np.interp(xt, lt_v, vz_v))   # cao độ ĐTN tại trụ
             _be_top = min(_zt - 0.5, _soffit - 1.0)      # đỉnh bệ (chừa tối thiểu thân)
+            _be_top = min(_be3d_snap.get(round(xt, 3), _be_top), _soffit - 1.0)
             return _soffit, _be_top, _be_top - 1.50      # đáy bệ = đỉnh bệ − 1.5m
 
         # ── Cao độ × he_so_z (mốc tại ĐỈNH đường cong; theo trạm cộng _prof) ────
@@ -3152,6 +3215,10 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         x0, x_end = supports[0], supports[-1]
         piers    = supports[1:-1]
         n_nhip   = len(supports) - 1
+        # ĐỒNG BỘ đỉnh bệ 3D (khớp trắc dọc): gộp về cao độ chẵn nếu chênh ≤ 1m.
+        _be3d_snap.update({round(xt, 3): v for xt, v in zip(piers, _snap_be_tops(
+            [min(float(np.interp(xt, lt_v, vz_v)) - 0.5,
+                 (_zred_fn(xt) - t_ban - H_dam) - 1.0) for xt in piers]))})
         L_cau    = x_end - x0
         spans    = [(supports[i], supports[i+1]) for i in range(len(supports)-1)]
 
@@ -3626,6 +3693,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
         # Đường bao cấu kiện (viền tối các hộp trụ/mố/xà mũ/bệ…) → dễ nhìn
         _add_box_outlines(fig)
+        _hover3d(fig)   # hover: tên cấu kiện + cao độ
 
         # ── Title ─────────────────────────────────────────────────────────
         fig.update_layout(
@@ -3801,40 +3869,45 @@ def _ve_binh_do_cong(d, df_geology):
         line=dict(color="#e74c3c", width=1, dash="dashdot"),
         name="Tim cầu", showlegend=False))
 
-    # ── Mố (2 đầu) — MẶT BẰNG THẬT từ mố thư viện (footprint thân + 2 cánh),
-    # khớp 3D + cọc theo sơ đồ khai báo. Chiếu lên tim cong _vn (dọc += od·u).
+    # ── Mố (2 đầu) — MẶT BẰNG = CHIẾU lưới 3D mố thực (build_abutment_mesh_traces)
+    # xuống mặt bằng, CÙNG NGUỒN + CÙNG neo (x_face, out_dir) với 3D toàn cầu →
+    # khớp tuyệt đối (giữ hình chữ U: thân + 2 cánh). Cọc theo sơ đồ khai báo.
     _PBa = _get_PB()
     _mo_asm = d.get("_mo_model")
-    for s_m, od, lbl, _mk in [(x0, -1.0, "Mố M1", "mo_trai"),
-                              (x_end, 1.0, "Mố M2", "mo_phai")]:
+    _cao_dd_bd = float(d.get("cao_day_dam", 8.0))
+    for s_m, sgn, lbl, _mk in [(x0, 1.0, "Mố M1", "mo_trai"),
+                               (x_end, -1.0, "Mố M2", "mo_phai")]:
         if _mo_asm:
             _mseen = set()
-            _mpolys = _PBa.abutment_plan_polys(_mo_asm, target_width=bc)
+            _xf_m = s_m - sgn * (KHO_HO_DAM_MO + _PBa.abut_backwall_u_m(_mo_asm))
+            _seat = _abut_seat_z(_cao_dd_bd, d.get("_pier_model"))
+            _mtr = _PBa.build_abutment_mesh_traces(
+                _mo_asm, H_tru=5.0, x_face=_xf_m, out_dir=sgn,
+                z_base=0.0, seat_z=_seat, target_width=bc)
             _piles_m = _layout_piles(d, _mk)
             if _piles_m:
                 _mcx, _mcy = [], []
                 for _p in _piles_m:
-                    _gx, _gy = _vn(s_m + od * float(_p.get("y", 0.0)),
+                    _gx, _gy = _vn(s_m + sgn * float(_p.get("y", 0.0)),
                                    float(_p.get("x", 0.0)))
                     _mcx.append(_gx); _mcy.append(_gy)
                 fig.add_trace(go.Scatter(x=_mcx, y=_mcy, mode="markers",
                     marker=dict(symbol="circle-open", size=7, color="#8e6e53",
                                 line=dict(width=1.2)), showlegend=False))
-            for _pl in _mpolys:
-                _nm = _pl["name"]; _sl2 = (lbl == "Mố M1") and (_nm not in _mseen)
-                _mseen.add(_nm)
-                # xs = ngang; ys = dọc (căn theo vai kê) → dọc thực = s_m + od·ys
-                _pts = [_vn(s_m + od * _yy, _xx)
-                        for _xx, _yy in zip(_pl["xs"], _pl["ys"])]
+            for _pl in project_mesh_traces(_mtr, axis="z"):
+                _nm = _pl["name"].split(" #")[0]
+                _sl2 = (lbl == "Mố M1") and (_nm not in _mseen); _mseen.add(_nm)
+                # xs = dọc (chainage), zs = ngang → chiếu lên tim cong _vn.
+                _pts = [_vn(_ch, _ng) for _ch, _ng in zip(_pl["xs"], _pl["zs"])]
                 _px, _py = _xy(_pts + [_pts[0]])
                 fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
-                    fillcolor=_hex_rgba(_pl.get("color", "#c0a06b"), 0.65),
-                    mode="lines", line=dict(color="#7d6608", width=1.6),
-                    name=(lbl if _sl2 else ""), showlegend=_sl2))
+                    fillcolor=_hex_rgba(_pl.get("color", "#c0a06b"), 0.6),
+                    mode="lines", line=dict(color="#7d6608", width=1.5),
+                    name=(_nm if _sl2 else ""), showlegend=_sl2))
         else:
             bm = bc/2 + 0.6
             _c = [_vn(s_m, -bm), _vn(s_m, +bm),
-                  _vn(s_m + od*mo_L, +bm), _vn(s_m + od*mo_L, -bm)]
+                  _vn(s_m - sgn*mo_L, +bm), _vn(s_m - sgn*mo_L, -bm)]
             _px, _py = _xy(_c + [_c[0]])
             fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
                 fillcolor="rgba(192,160,107,0.65)", mode="lines",
