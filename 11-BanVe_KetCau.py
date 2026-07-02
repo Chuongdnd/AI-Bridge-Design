@@ -1009,6 +1009,32 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
     # đoạn (dầm liền) → giữ nguyên hành vi cũ.
     _cap_gap = float((d or {}).get("cap_gap_m", 0.0) or 0.0)
 
+    # ── DẦM SPT (~38.2m): GIỮ 1 loại dầm, NỚI RỘNG ụ giữa xà mũ khi nhịp vượt
+    # tĩnh không (như bản vẽ KM4/KM7: 45→42.5→40→39.1). spacing = 38.2 + 2×0.1 +
+    # ụ giữa; nhịp thường 40m, nhịp vượt nới ụ giữa. Ghi d["_pier_cap_widen"] để
+    # xà mũ trụ tương ứng vẽ RỘNG ra (trắc dọc + 3D + MCN).
+    _kcn = (d or {}).get("kcn_result") or (d or {}).get("ai_result", {}) or {}
+    _loai = str(_kcn.get("loai_dam", "") or "").lower()
+    _Lb = float(_kcn.get("chieu_dai", 0) or 0)
+    if ("super" in _loai or "spt" in _loai) and 37.5 <= _Lb <= 39.0:
+        try:
+            _W0 = _get_PB().cap_mid_width_m(d.get("_pier_model")) or 1.6
+        except Exception:
+            _W0 = 1.6
+        _clr = [(x_tim, float(B_tk))]
+        for _c in (d.get("extra_clearances") or []):
+            try:
+                _b = float(_c.get("B", 0) or 0)
+                if _b > 0:
+                    _clr.append((float(_c["x"]), _b))
+            except (TypeError, ValueError, KeyError):
+                pass
+        _sup, _widen = _spt_widen_layout(x0, x_end, x_tim, _clr, _W0, L_beam=_Lb)
+        if isinstance(d, dict):
+            d["_pier_cap_widen"] = _widen      # {round(x,3): bề rộng ụ giữa (m)}
+            d["_pier_cap_W0"] = _W0
+        return _sup, _Lb
+
     # ── Có TĨNH KHÔNG PHỤ + phương án bật quy tắc né (PA1 'fewest' / PA2
     # 'straddle') → CHIA LẠI nhịp từ tim tĩnh không chính ra 2 mố, trộn chiều dài
     # dầm catalog để KHÔNG trụ nào phạm tĩnh không (thay vì chỉ bỏ trụ). PA3/khác
@@ -1154,6 +1180,50 @@ def _clearance_zones(clearances):
     """[(a,b)] vùng cấm đặt trụ từ list (x, B): [x−B/2−an toàn, x+B/2+an toàn]."""
     return [(x - b / 2.0 - _PIER_SAFETY, x + b / 2.0 + _PIER_SAFETY)
             for (x, b) in clearances if b and b > 0]
+
+
+def _spt_widen_layout(x0, x_end, x_tim, clearances, W0, L_beam=38.2, gap=0.1):
+    """Bố trí trụ cho dầm SPT (VD 38.2m) GIỮ 1 loại dầm, NỚI RỘNG ụ giữa xà mũ tại
+    nhịp vượt tĩnh không (thay vì đổi loại dầm). Trả (supports, widen) với
+    widen[round(x,3)] = bề rộng ụ giữa (m) của trụ.
+
+    spacing = L_beam + 2·gap + (W_trái + W_phải)/2. Nhịp thường W=W0. Nhịp vượt: 2
+    trụ kẹp W = need−(L_beam+2gap) → nhịp kế TỰ thu dần (dùng chung trụ nới). Nhịp
+    biên (mố, đầu trơn) = L_beam + 2gap + W/2."""
+    two = 2.0 * gap
+    need_main = float(clearances[0][1]) + 2.0 * _PIER_SAFETY   # B_tk + 4
+    W_main = max(W0, need_main - L_beam - two)
+    span_main = L_beam + two + W_main
+    P_L = x_tim - span_main / 2.0
+    P_R = x_tim + span_main / 2.0
+    widen = {round(P_L, 3): W_main, round(P_R, 3): W_main}
+    zones = [(cx - B / 2.0 - _PIER_SAFETY, cx + B / 2.0 + _PIER_SAFETY,
+              B + 2.0 * _PIER_SAFETY) for (cx, B) in clearances[1:] if B > 0]
+
+    def _side(P0, Wp, sgn, target):
+        piers = []; cur, Wc = P0, Wp; zs = list(zones); guard = 0
+        while guard < 300:
+            guard += 1
+            end_span = L_beam + two + Wc / 2.0            # trụ → mố (mố đầu trơn)
+            if sgn * (target - cur) <= end_span + 1e-6:   # sát mố → đặt MỐ, dừng
+                piers.append(cur + sgn * end_span)
+                break
+            sp = L_beam + two + (Wc + W0) / 2.0           # → trụ thường
+            nxt = cur + sgn * sp; Wn = W0
+            zc = next(((a, b, nd) for (a, b, nd) in zs
+                       if min(cur, nxt) < b - 1e-6 and max(cur, nxt) > a + 1e-6), None)
+            if zc:                                         # nhịp cắt tĩnh không phụ
+                _a, _b, nd = zc
+                Wn = max(W0, 2.0 * (nd - L_beam - two) - Wc)
+                nxt = cur + sgn * (L_beam + two + (Wc + Wn) / 2.0)
+                zs = [z for z in zs if z != zc]
+            piers.append(nxt); widen[round(nxt, 3)] = Wn
+            cur, Wc = nxt, Wn
+        return piers
+
+    left = _side(P_L, W_main, -1.0, x0)
+    right = _side(P_R, W_main, +1.0, x_end)
+    return sorted(left + [P_L, P_R] + right), widen
 
 
 def main_span_index(supports, x_tim):
@@ -1775,9 +1845,12 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
         sl = (i == 0)
         z_terr_tru = _tz(xt)   # cao độ địa hình (đường tự nhiên) tại vị trí trụ
 
-        # Đỉnh xà mũ trụ BÁM ĐƯỜNG ĐỎ: = đáy dầm(xt) − 150mm (đá kê gối + gối).
-        z_cap_t_i = _z_cap_top(xt)
-        z_cap_b_i = z_cap_t_i - 0.80
+        # ĐỈNH Ụ GIỮA xà mũ = ĐÁY BẢN MẶT CẦU (đỡ bản); 2 VAI KÊ 2 bên thấp hơn
+        # (đỡ phần KHẤC của dầm). Neo xà mũ lắp ghép tại đỉnh ụ = đáy bản.
+        z_ugiua_i = _z_deck_bot(xt)               # đỉnh ụ giữa = đáy bản mặt cầu
+        z_vaike_i = _z_beam_soffit(xt)            # vai kê = đáy dầm (đỡ khấc dầm)
+        z_cap_t_i = z_ugiua_i                     # neo đỉnh xà mũ (ụ giữa)
+        z_cap_b_i = z_vaike_i - 0.80              # đáy xà mũ (dưới vai kê)
         # Đỉnh bệ trụ CHÔN 0.5m DƯỚI ĐƯỜNG TỰ NHIÊN tại lý trình trụ.
         z_be_t_i = min(z_terr_tru - 0.5, z_cap_b_i - 0.5)  # chừa tối thiểu 0.5m thân trụ
         z_sh_b_i = z_be_t_i                              # đáy thân trụ = đỉnh bệ
@@ -1789,9 +1862,14 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             # TRẮC DỌC = HÌNH CHIẾU ĐỨNG thật của LƯỚI 3D trụ (chiếu lên x–z tại
             # tim) — cùng nguồn với 3D toàn cầu → trụ 2 thân hiện đúng, xà mũ bậc
             # (ụ giữa) đúng, thay khối hộp tham số cũ (pier_elevation_rects).
+            # Xà mũ NỚI RỘNG cho nhịp SPT vượt tĩnh không (ụ giữa to hơn W0).
+            _wmap = (d or {}).get("_pier_cap_widen") or {}
+            _w0td = float((d or {}).get("_pier_cap_W0", 0) or 0)
+            _mid_extra_td = max(0.0, _wmap.get(round(xt, 3), _w0td) - _w0td)
             _ptr_td = _PB.build_pier_mesh_traces(
                 pier_assembly, H_tru=(z_cap_t_i - z_be_b_i),
-                x_ctr=xt, z_base=z_be_b_i, cap_width=None)
+                x_ctr=xt, z_base=z_be_b_i, cap_width=None,
+                cap_mid_extra=_mid_extra_td)
             _seen_td = set()
             for _rc in project_mesh_traces(_ptr_td, axis="y"):
                 _nm = _rc["name"].split(" #")[0]
@@ -1855,11 +1933,17 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                 [z_shaft_visible_bot, z_shaft_visible_bot, z_cap_b_i, z_cap_b_i],
                 _C["btong"], _C["btong_dk"], f"Thân trụ T{i+1}", showlegend=sl)
 
-        # Xà mũ — đỉnh = đáy dầm − 150mm (đá kê gối + gối), bám đường đỏ
+        # Xà mũ dạng BẬC: VAI KÊ 2 bên (đến đáy dầm — đỡ khấc dầm) + Ụ GIỮA cao hơn
+        # (đến đáy bản — đỡ bản mặt cầu). Bám đường đỏ tại trụ.
         _poly(fig,
             [xt-W_cap, xt+W_cap, xt+W_cap, xt-W_cap],
-            [z_cap_b_i, z_cap_b_i, z_cap_t_i, z_cap_t_i],
-            _C["btong"], _C["dam_dk"], "Xà mũ" if sl else "", showlegend=sl)
+            [z_cap_b_i, z_cap_b_i, z_vaike_i, z_vaike_i],
+            _C["btong"], _C["dam_dk"], "Xà mũ (vai kê)" if sl else "", showlegend=sl)
+        _w_ug = max(0.6, W_cap * 0.35)     # nửa bề rộng ụ giữa
+        _poly(fig,
+            [xt-_w_ug, xt+_w_ug, xt+_w_ug, xt-_w_ug],
+            [z_vaike_i, z_vaike_i, z_ugiua_i, z_ugiua_i],
+            _C["btong"], _C["dam_dk"], "Ụ giữa (đỡ bản)" if sl else "", showlegend=sl)
 
         # Cao độ địa hình tại trụ
         fig.add_annotation(
@@ -3283,19 +3367,25 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 _notch3d = _PBp.cap_seat_notch_depth_m(_pier_model) or 0.0
             except Exception:
                 _notch3d = 0.0
+            _wmap3d = (d or {}).get("_pier_cap_widen") or {}
+            _w03d = float((d or {}).get("_pier_cap_W0", 0) or 0)
             for i_p, xt in enumerate(piers):
                 sl = (i_p == 0)
                 # THÂN TRỤ KÉO GIÃN theo ĐỊA HÌNH TỪNG TRỤ (khớp trắc dọc):
-                #  • Vai kê (đáy dầm) BÁM ĐƯỜNG ĐỎ tại trụ → đỉnh ụ giữa = +khấc.
+                #  • ĐỈNH Ụ GIỮA xà mũ = ĐÁY BẢN (đỡ bản mặt cầu); vai kê 2 bên thấp
+                #    hơn (đỡ khấc dầm) do khấc trong model.
                 #  • Đỉnh bệ chôn 0.5m dưới ĐTN tại trụ; đáy bệ = đỉnh bệ − 1.5m.
                 #  • Chiều cao thân trụ tự co để nối đáy bệ ↔ đỉnh ụ (build_pier).
                 _soffit_i, _z_be_top_i, _z_be_bot_i = _pier_found(xt)
-                _anchor_top  = _soffit_i + _notch3d               # đỉnh ụ giữa (neo)
+                _anchor_top  = _soffit_i + H_dam                  # đỉnh ụ giữa = đáy bản
                 _H_total_i   = _anchor_top - _z_be_bot_i          # đáy bệ → đỉnh ụ
+                # Xà mũ NỚI RỘNG cho nhịp SPT vượt tĩnh không (ụ giữa to hơn W0).
+                _mid_extra_3d = max(0.0, _wmap3d.get(round(xt, 3), _w03d) - _w03d)
                 try:
                     _ptr = _PBp.build_pier_mesh_traces(
                         _pier_model, H_tru=_H_total_i, x_ctr=xt,
-                        z_base=_z_be_bot_i, cap_width=bc)
+                        z_base=_z_be_bot_i, cap_width=bc,
+                        cap_mid_extra=_mid_extra_3d)
                 except Exception as _pe:
                     print(f"[add_all] trụ lắp ghép lỗi: {_pe}")
                     _ptr = []
