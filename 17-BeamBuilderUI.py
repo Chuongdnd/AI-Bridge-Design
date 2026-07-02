@@ -2427,8 +2427,23 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     else:
         L_m = L_nhip * 1000.0              # fallback: L_nhip metres → mm
 
-    beam_top = cao_dd + H_nom   # cao độ đỉnh dầm (m) — cố định theo thiết kế
+    beam_top = cao_dd + H_nom   # fallback (phẳng) nếu không lấy được đường đỏ
     L_half = L_m / 2.0
+
+    # Đỉnh dầm BÁM ĐÁY BẢN MẶT CẦU = đường đỏ − bề dày bản (dùng chung make_red_line
+    # với trắc dọc → dầm khớp đúng đáy bản). Fallback phẳng nếu không sẵn.
+    _bv_rl = _get_banve()
+    _z_red_fn = None; _t_ban_rl = 0.0
+    if _bv_rl is not None and hasattr(_bv_rl, "make_red_line"):
+        try:
+            _z_red_fn, _, _, _t_ban_rl, _ = _bv_rl.make_red_line(d)
+        except Exception:
+            _z_red_fn = None
+
+    def _deck_bot_at(x):
+        if _z_red_fn is None:
+            return beam_top
+        return _z_red_fn(x) - _t_ban_rl
 
     def _full_pts_for(_pfx: str):
         """Profil dầm (full_pts mm) cho 1 pfx; None nếu không dựng được."""
@@ -2527,12 +2542,22 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
         span_x1 = span_x1 - _off1
         scale   = (span_x1 - span_x0) / L_m
 
-        bot_x = [span_x0 + s * scale for s, _ in full_pts]
-        bot_y = [beam_top - h / 1000.0 for _, h in full_pts]
+        # ĐỈNH DẦM BÁM ĐÁY BẢN MẶT CẦU (đường đỏ − bề dày bản). Dầm THẲNG →
+        # đỉnh dầm là dây cung nối đáy bản tại 2 đầu nhịp (span_x0, span_x1).
+        _zL = _deck_bot_at(span_x0)
+        _zR = _deck_bot_at(span_x1)
+        _den = (span_x1 - span_x0) or 1.0
 
-        # Polygon: top-left → bottom trace → top-right → close
-        px = [bot_x[0]] + bot_x + [bot_x[-1], bot_x[0]]
-        py = [beam_top]  + bot_y + [beam_top,  beam_top]
+        def _top_at(bx, _zL=_zL, _zR=_zR, _x0=span_x0, _den=_den):
+            return _zL + (bx - _x0) / _den * (_zR - _zL)
+
+        bot_x  = [span_x0 + s * scale for s, _ in full_pts]
+        top_ys = [_top_at(bx) for bx in bot_x]
+        bot_y  = [ty - h / 1000.0 for ty, (_, h) in zip(top_ys, full_pts)]
+
+        # Polygon: top-left → bottom trace → top-right → close (đỉnh theo dây cung)
+        px = [bot_x[0]]  + bot_x + [bot_x[-1],  bot_x[0]]
+        py = [top_ys[0]] + bot_y + [top_ys[-1], top_ys[0]]
 
         result.append(go.Scatter(
             x=px, y=py,
