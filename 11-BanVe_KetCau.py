@@ -385,9 +385,10 @@ def _sweep_profile_mesh(profile_yz, y_off, mirror, x_start, x_end, z_base,
 
 def _sweep_profile_curve_mesh(profile_yz, y_off, mirror, vn_func, s0, s1,
                               z_base, color, name="", sl=False, step=5.0,
-                              opacity=0.95):
+                              opacity=0.95, dz_fn=None):
     """Như _sweep_profile_mesh nhưng BÁM ĐƯỜNG CONG tim tuyến (VN-2000): tại mỗi
-    lý trình s, mỗi điểm MCN đặt theo offset ngang qua vn_func(s, offset)."""
+    lý trình s, mỗi điểm MCN đặt theo offset ngang qua vn_func(s, offset).
+    dz_fn(s): độ lệch cao độ theo lý trình (bám TRẮC DỌC / đường đỏ)."""
     pts = [(float(p[0]), float(p[1])) for p in (profile_yz or []) if len(p) >= 2]
     n = len(pts)
     if n < 3:
@@ -398,9 +399,10 @@ def _sweep_profile_curve_mesh(profile_yz, y_off, mirror, vn_func, s0, s1,
     ss = _np.linspace(s0, s1, m + 1)
     vx, vy, vz = [], [], []
     for s in ss:
+        _ds = dz_fn(s) if dz_fn else 0.0
         for (yy, zz) in pts:
             xx, yc = vn_func(s, sgn * yy + y_off)
-            vx.append(xx); vy.append(yc); vz.append(z_base + zz)
+            vx.append(xx); vy.append(yc); vz.append(z_base + zz + _ds)
     ii, jj, kk = [], [], []
     for i in range(m):
         for j in range(n):
@@ -521,8 +523,9 @@ def _abut_long_depth_m(abut):
     return 3.5
 
 
-def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
-    """Lan can (2 mép) + giải phân cách (tim) BÁM đường cong tim tuyến VN-2000."""
+def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base, dz_fn=None):
+    """Lan can (2 mép) + giải phân cách (tim) BÁM đường cong tim tuyến VN-2000.
+    dz_fn(s): độ lệch cao độ theo lý trình → lan can BÁM ĐƯỜNG ĐỎ (trắc dọc)."""
     out = []
     rails = _resolve_railings(d)
     if not isinstance(rails, dict):
@@ -539,7 +542,8 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
             _m = _sweep_profile_curve_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir, vn_func=vn_func,
                 s0=s0, s1=s1, z_base=z_base - base_z, color="#bfc4c9",
-                name=f"Lan can ({lc.get('ten','')})" if _sl else "", sl=_sl)
+                name=f"Lan can ({lc.get('ten','')})" if _sl else "", sl=_sl,
+                dz_fn=dz_fn)
             if _m is not None:
                 out.append(_m)
     gpc = rails.get("giai_phan_cach")
@@ -547,7 +551,7 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
         _m = _sweep_profile_curve_mesh(
             _prof_m(gpc), y_off=0.0, mirror=False, vn_func=vn_func,
             s0=s0, s1=s1, z_base=z_base, color="#aeb6bd",
-            name=f"Giải phân cách ({gpc.get('ten','')})", sl=True)
+            name=f"Giải phân cách ({gpc.get('ten','')})", sl=True, dz_fn=dz_fn)
         if _m is not None:
             out.append(_m)
     return out
@@ -2892,7 +2896,9 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         _wd = _abut_long_depth_m(d.get("_mo_model"))
         _z_edge = z_deck + _dz(bc/2)          # mép bản đã hạ theo dốc ngang
         try:
-            for _rt in _railing_curve_traces(d, _vn, x0 - _wd, x_end + _wd, bc, _z_edge):
+            # dz_fn=_prof → lan can BÁM ĐƯỜNG ĐỎ (trắc dọc) theo từng lý trình.
+            for _rt in _railing_curve_traces(d, _vn, x0 - _wd, x_end + _wd, bc,
+                                             _z_edge, dz_fn=_prof):
                 _ag(_rt)
         except Exception as _e:
             print(f"[add_all] lan can lỗi: {_e}")
