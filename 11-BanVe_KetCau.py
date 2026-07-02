@@ -4240,7 +4240,8 @@ def ve_binh_do_2d(d, df_tim_line=None, df_geology=None):
 # ===========================================================================
 def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                   x_half=None, abutment_assembly=None, mo_view='truoc',
-                  beam_mcn_outer=None, df_tim_line=None):
+                  beam_mcn_outer=None, df_tim_line=None,
+                  beam_centers=None, draw_own_beams=True):
     """
     MCN cắt vuông góc tim cầu tại vị trí mố hoặc trụ cụ thể.
     vi_tri: 'mo_trai' | 'mo_phai' | 'tru_1' | 'tru_2' | ...
@@ -4391,14 +4392,20 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     def _off(x):
         return -abs(x) * _i_ng
 
-    # Bố trí dầm (ngang) — khớp mặt cắt dầm THẬT + nới theo góc xiên (×_wsk).
+    # Bố trí dầm (ngang) — DÙNG CHUNG bố trí với MCN điển hình & 3D: ưu tiên
+    # beam_centers (từ mcn_beam_centers = _fit_beam_centers, đã chia đều + hở lan
+    # can). Thiếu → căn đối xứng theo kc (×_wsk theo góc xiên).
     _ndam_g = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5) or 5)
     _kcd_g  = float(kcn.get("khoang_cach_dam", 2.2) or 2.2) * _wsk
-    _oh_g   = float(kcn.get("overhang", 0.5) or 0.5) * _wsk
-    _xf_g   = -bc/2 + _oh_g
-    if _ndam_g >= 2 and (_xf_g + (_ndam_g - 1) * _kcd_g) > bc/2:
-        _xf_g = -(_ndam_g - 1) * _kcd_g / 2.0
-    _beam_cx = [_xf_g + i * _kcd_g for i in range(_ndam_g)]
+    if beam_centers and len(beam_centers) >= 1:
+        _beam_cx = [float(c) * _wsk for c in beam_centers]   # nới theo góc xiên
+        _ndam_g  = len(_beam_cx)
+    else:
+        _oh_g   = float(kcn.get("overhang", 0.5) or 0.5) * _wsk
+        _xf_g   = -bc/2 + _oh_g
+        if _ndam_g >= 2 and (_xf_g + (_ndam_g - 1) * _kcd_g) > bc/2:
+            _xf_g = -(_ndam_g - 1) * _kcd_g / 2.0
+        _beam_cx = [_xf_g + i * _kcd_g for i in range(_ndam_g)]
 
     def _draw_da_ke_goi(z_seat_top, yr, hidden=False):
         """Đá kê gối tại từng vị trí dầm: ĐÁY tại đỉnh xà mũ/thân mố (PHẲNG =
@@ -4605,8 +4612,12 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     # ĐỈNH dầm sát ĐÁY BẢN (dầm nằm HẲN dưới bản, không trồi lên), đáy dầm =
     # _z_beam_soffit. Vị trí dùng chung _beam_cx (đã ×_wsk) để dầm ⟷ đá kê gối
     # trùng khớp. KHÔNG vẽ 'hộp' cũ.
-    _bm_out = (beam_mcn_outer or {}).get("outer") if beam_mcn_outer else None
-    if _bm_out:
+    # draw_own_beams=False → dầm được OVERLAY từ get_mcn_overlay_traces(which="end")
+    # ở nơi gọi (đúng MẶT CẮT ĐẦU DẦM KHẤC + cắt cánh, LÁT CẮT thật của 3D).
+    _bm_out = (beam_mcn_outer or {}).get("outer") if (beam_mcn_outer and draw_own_beams) else None
+    if not draw_own_beams:
+        pass                                  # dầm do nơi gọi overlay (lát cắt 3D)
+    elif _bm_out:
         # Mặt cắt thư viện: z 0 ở đỉnh, âm xuống đáy. Vẽ ĐẦY ĐỦ hình (KHÔNG co,
         # KHÔNG cắt): neo ĐỈNH dầm sát đáy bản → đáy dầm = _z_beam_soffit (= vai kê).
         _bx   = [p[0] for p in _bm_out]; _bz = [p[1] for p in _bm_out]
