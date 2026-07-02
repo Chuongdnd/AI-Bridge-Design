@@ -450,32 +450,59 @@ def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=Tr
     )
 
 
-# 12 cạnh của HỘP 8 đỉnh (thứ tự chung của _box3d & _abox: 0-3 đáy, 4-7 đỉnh).
-_BOX_EDGE_PAIRS = [(0,1),(1,2),(2,3),(3,0), (4,5),(5,6),(6,7),(7,4),
-                   (0,4),(1,5),(2,6),(3,7)]
+# Nhóm cấu kiện ĐƯỢC vẽ đường bao (KHÔNG gồm mặt nước, tĩnh không, địa hình,
+# đường đầu cầu, lớp phủ). Khớp theo legendgroup/name của trace.
+_OUTLINE_GROUPS = ("Lan can", "Giải phân cách", "Mố", "Trụ", "Xà mũ",
+                   "Thân", "Bệ", "Cọc", "Dầm", "Mặt cầu", "Bản")
 
 
-def _add_box_outlines(fig, color="#1b2631", width=2.0, name="Đường bao cấu kiện"):
-    """Gộp ĐƯỜNG BAO (12 cạnh) của MỌI hộp Mesh3d 8-đỉnh trong fig vào 1 trace
-    Scatter3d → thấy rõ ranh giới từng cấu kiện trên 3D tổng. Bỏ qua mesh phức
-    tạp (địa hình, tấm quét) vì không phải hộp 8 đỉnh."""
+def _add_box_outlines(fig, color="#1b2631", width=2.0, name="Đường bao cấu kiện",
+                      groups=_OUTLINE_GROUPS):
+    """Gộp ĐƯỜNG BAO của các cấu kiện (lan can, mố, trụ, cọc, dầm, bản mặt cầu)
+    vào 1 trace Scatter3d → thấy rõ ranh giới trên 3D tổng.
+
+    Dùng CẠNH ĐẶC TRƯNG (feature edge): cạnh biên (1 tam giác) hoặc cạnh gấp khúc
+    (2 mặt lệch > ~25°). Nhờ vậy hộp, tấm quét (bản), khối extrude (lan can) đều
+    ra viền sạch, KHÔNG vẽ đường chéo trên mặt phẳng. Mặt nước/tĩnh không/địa hình
+    bị loại theo nhóm."""
+    def _want(tr):
+        g = str(getattr(tr, "legendgroup", "") or "") + "|" + \
+            str(getattr(tr, "name", "") or "")
+        return any(k in g for k in groups)
+
     xs, ys, zs = [], [], []
     for tr in list(fig.data):
-        if getattr(tr, "type", "") != "mesh3d":
+        if getattr(tr, "type", "") != "mesh3d" or not _want(tr):
             continue
         vx, vy, vz = tr.x, tr.y, tr.z
-        if vx is None or len(vx) != 8:
+        ii, jj, kk = tr.i, tr.j, tr.k
+        if vx is None or ii is None:
             continue
-        # Bỏ hộp DẸT (đáy≈đỉnh, vd mặt nước) → không viền cho gọn
         try:
-            if abs(max(vz) - min(vz)) < 1e-6:
-                continue
+            V = np.column_stack([np.asarray(vx, float),
+                                 np.asarray(vy, float),
+                                 np.asarray(vz, float)])
+            tris = list(zip(ii, jj, kk))
         except Exception:
-            pass
-        for a, b in _BOX_EDGE_PAIRS:
-            xs += [vx[a], vx[b], None]
-            ys += [vy[a], vy[b], None]
-            zs += [vz[a], vz[b], None]
+            continue
+        edge_norms = {}
+        for (a, b, c) in tris:
+            a, b, c = int(a), int(b), int(c)
+            nrm = np.cross(V[b] - V[a], V[c] - V[a])
+            _ln = float(np.linalg.norm(nrm))
+            if _ln < 1e-12:
+                continue
+            nrm = nrm / _ln
+            for p, q in ((a, b), (b, c), (c, a)):
+                key = (p, q) if p < q else (q, p)
+                edge_norms.setdefault(key, []).append(nrm)
+        for (p, q), ns in edge_norms.items():
+            feat = (len(ns) == 1) or (abs(float(np.dot(ns[0], ns[1]))) < 0.90)
+            if not feat:
+                continue
+            xs += [V[p, 0], V[q, 0], None]
+            ys += [V[p, 1], V[q, 1], None]
+            zs += [V[p, 2], V[q, 2], None]
     if not xs:
         return
     fig.add_trace(go.Scatter3d(
@@ -544,9 +571,10 @@ def _sweep_profile_mesh(profile_yz, y_off, mirror, x_start, x_end, z_base,
 
 def _sweep_profile_curve_mesh(profile_yz, y_off, mirror, vn_func, s0, s1,
                               z_base, color, name="", sl=False, step=5.0,
-                              opacity=0.95):
+                              opacity=0.95, dz_fn=None):
     """Như _sweep_profile_mesh nhưng BÁM ĐƯỜNG CONG tim tuyến (VN-2000): tại mỗi
-    lý trình s, mỗi điểm MCN đặt theo offset ngang qua vn_func(s, offset)."""
+    lý trình s, mỗi điểm MCN đặt theo offset ngang qua vn_func(s, offset).
+    dz_fn(s): độ lệch cao độ theo lý trình (bám TRẮC DỌC / đường đỏ)."""
     pts = [(float(p[0]), float(p[1])) for p in (profile_yz or []) if len(p) >= 2]
     n = len(pts)
     if n < 3:
@@ -557,9 +585,10 @@ def _sweep_profile_curve_mesh(profile_yz, y_off, mirror, vn_func, s0, s1,
     ss = _np.linspace(s0, s1, m + 1)
     vx, vy, vz = [], [], []
     for s in ss:
+        _ds = dz_fn(s) if dz_fn else 0.0
         for (yy, zz) in pts:
             xx, yc = vn_func(s, sgn * yy + y_off)
-            vx.append(xx); vy.append(yc); vz.append(z_base + zz)
+            vx.append(xx); vy.append(yc); vz.append(z_base + zz + _ds)
     ii, jj, kk = [], [], []
     for i in range(m):
         for j in range(n):
@@ -680,8 +709,9 @@ def _abut_long_depth_m(abut):
     return 3.5
 
 
-def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
-    """Lan can (2 mép) + giải phân cách (tim) BÁM đường cong tim tuyến VN-2000."""
+def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base, dz_fn=None):
+    """Lan can (2 mép) + giải phân cách (tim) BÁM đường cong tim tuyến VN-2000.
+    dz_fn(s): độ lệch cao độ theo lý trình → lan can BÁM ĐƯỜNG ĐỎ (trắc dọc)."""
     out = []
     rails = _resolve_railings(d)
     if not isinstance(rails, dict):
@@ -698,7 +728,8 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
             _m = _sweep_profile_curve_mesh(
                 prof, y_off=_side * y_edge, mirror=_mir, vn_func=vn_func,
                 s0=s0, s1=s1, z_base=z_base - base_z, color="#bfc4c9",
-                name=f"Lan can ({lc.get('ten','')})" if _sl else "", sl=_sl)
+                name=f"Lan can ({lc.get('ten','')})" if _sl else "", sl=_sl,
+                dz_fn=dz_fn)
             if _m is not None:
                 out.append(_m)
     gpc = rails.get("giai_phan_cach")
@@ -706,7 +737,7 @@ def _railing_curve_traces(d, vn_func, s0, s1, bc, z_base):
         _m = _sweep_profile_curve_mesh(
             _prof_m(gpc), y_off=0.0, mirror=False, vn_func=vn_func,
             s0=s0, s1=s1, z_base=z_base, color="#aeb6bd",
-            name=f"Giải phân cách ({gpc.get('ten','')})", sl=True)
+            name=f"Giải phân cách ({gpc.get('ten','')})", sl=True, dz_fn=dz_fn)
         if _m is not None:
             out.append(_m)
     return out
@@ -2146,7 +2177,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
 
 
 def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
-                        show_substructure=True):
+                        show_substructure=True, beam_centers=None):
     """MCN điển hình: bản, lớp phủ, dầm, lan can, kích thước, chú thích lớp.
 
     beam_params : dict | None — nếu có, ưu tiên dùng giá trị từ beam_params_final
@@ -2182,9 +2213,13 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
 
     fig = go.Figure()
 
-    # Tim dầm đầu tiên — CĂN ĐỐI XỨNG quanh tim cầu (khớp bố trí dầm thực đã được
-    # co để MÉP dầm biên nằm trong bản mặt cầu).
-    x_first = -(n_dam - 1) * kc / 2.0
+    # TIM DẦM — dùng CHUNG bố trí với dầm thực & 3D (beam_centers từ mcn_beam_centers
+    # đã co mép dầm biên vào trong bản). Thiếu → căn đối xứng theo kc.
+    if beam_centers and len(beam_centers) == n_dam:
+        _cx = list(beam_centers)
+    else:
+        _cx = [-(n_dam - 1) * kc / 2.0 + i * kc for i in range(n_dam)]
+    x_first = _cx[0]
 
     # ── Bê tông đổ tại chỗ giữa các dầm (cho T ngược và Dầm I) ──────────
     is_tngược = "t ngược" in loai_l or "t-ngược" in loai_l or "tngược" in loai_l
@@ -2193,8 +2228,8 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
         # Vùng BT đổ tại chỗ giữa các dầm (từ đáy bản → đỉnh cánh dầm)
         # (màu nhạt hơn để phân biệt với dầm precast)
         for i in range(n_dam - 1):
-            x_left  = x_first + i * kc
-            x_right = x_first + (i + 1) * kc
+            x_left  = _cx[i]
+            x_right = _cx[i + 1]
             _poly(fig,
                   [x_left, x_right, x_right, x_left],
                   [-t_ban, -t_ban, -t_ban - H_dam * 0.5, -t_ban - H_dam * 0.5],
@@ -3327,7 +3362,9 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         _wd = _abut_long_depth_m(d.get("_mo_model"))
         _z_edge = z_deck + _dz(bc/2)          # mép bản đã hạ theo dốc ngang
         try:
-            for _rt in _railing_curve_traces(d, _vn, x0 - _wd, x_end + _wd, bc, _z_edge):
+            # dz_fn=_prof → lan can BÁM ĐƯỜNG ĐỎ (trắc dọc) theo từng lý trình.
+            for _rt in _railing_curve_traces(d, _vn, x0 - _wd, x_end + _wd, bc,
+                                             _z_edge, dz_fn=_prof):
                 _ag(_rt)
         except Exception as _e:
             print(f"[add_all] lan can lỗi: {_e}")
