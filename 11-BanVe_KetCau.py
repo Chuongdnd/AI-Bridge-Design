@@ -190,9 +190,16 @@ def make_red_line(d):
     R     = float(d.get("R_hinh_hoc", 0) or 0)
     i_gr  = abs(float(d.get("i_max_hinh_hoc", 0) or 0)) / 100.0
 
-    # Đỉnh tĩnh không THÔNG THUYỀN = MNTT + chiều cao tĩnh không.
-    z_tk_top = MNTT + H_tk
-    z_crown  = z_tk_top + KHO_HO_DAY_DAM + (bc / 2.0) * i_ng + H_dam + t_ban
+    # CAO ĐỘ ĐỈNH đường đỏ (đỉnh bản tại tim TK).
+    # ƯU TIÊN đáy dầm THIẾT KẾ của hệ thống (cao_day_dam — dùng chung với MẶT CẮT
+    # NGANG mố/trụ) để TRẮC DỌC · MCN · 3D CÙNG một cao độ đặt dầm. Nếu chưa có
+    # thì suy từ tĩnh không thông thuyền (MNTT + H) + khe hở + dốc ngang dầm biên.
+    _cao_dd_sys = float(d.get("cao_day_dam", 0) or 0)   # đáy dầm hệ thống (nếu có)
+    if _cao_dd_sys > 0:
+        z_crown = _cao_dd_sys + H_dam + t_ban
+    else:
+        z_tk_top = MNTT + H_tk
+        z_crown  = z_tk_top + KHO_HO_DAY_DAM + (bc / 2.0) * i_ng + H_dam + t_ban
 
     def _z_red(x):
         dx = abs(x - x_tim)
@@ -2419,6 +2426,28 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
             legendgroup="Tĩnh không",
         ))
 
+    # Tĩnh không PHỤ (khung cam) — khai báo ở hộp thoại thủy văn
+    _tkp_sl3 = True
+    for _cx in (d.get("extra_clearances") or []):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+            _Hk = float(_cx.get("H", 0) or 0); _zk = float(_cx.get("z", MNCN))
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0 or _Hk <= 0:
+            continue
+        _xkL = _xk - _Bk/2; _xkR = _xk + _Bk/2
+        for _y in y_tk:
+            fig.add_trace(go.Scatter3d(
+                x=[_xkL, _xkR, _xkR, _xkL, _xkL], y=[_y]*5,
+                z=[_zk, _zk, _zk+_Hk, _zk+_Hk, _zk],
+                mode="lines", line=dict(color="#e67e22", width=3),
+                name="Tĩnh không phụ" if (_tkp_sl3 and _y == y_tk[0]) else "",
+                showlegend=(_tkp_sl3 and _y == y_tk[0]),
+                legendgroup="Tĩnh không phụ",
+            ))
+        _tkp_sl3 = False
+
     fig.update_layout(
         title=dict(
             text=f"MÔ HÌNH 3D CẦU — {n_nhip} NHỊP | L={L_cau:.1f}m | B={bc}m",
@@ -2752,17 +2781,26 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
         hz = he_so_z
 
-        # ── Cao độ × he_so_z ──────────────────────────────────────────────
+        # ── ĐƯỜNG ĐỎ DÙNG CHUNG với trắc dọc 2D (make_red_line) → 3D & trắc dọc
+        #    CÙNG một biên dạng cao độ; trắc dọc 2D là "lát cắt" đúng của 3D. ────
+        _zred_fn, _, _zcrown, _tban_rl, _Hdam_rl = make_red_line(d)
+        cao_dd = _zcrown - t_ban - H_dam          # đáy dầm tại đỉnh (bám đường đỏ)
+
+        def _prof(s):
+            """Độ lệch cao độ đường đỏ so với đỉnh (×hz) — quét bản/dầm theo trắc dọc."""
+            return (_zred_fn(s) - _zcrown) * hz
+
+        # ── Cao độ × he_so_z (mốc tại ĐỈNH đường cong; theo trạm cộng _prof) ────
         z_phu  = (cao_dd + H_dam + t_ban + t_phu) * hz
-        z_deck = (cao_dd + H_dam + t_ban) * hz
+        z_deck = (cao_dd + H_dam + t_ban) * hz    # = _zcrown*hz
         z_bant = (cao_dd + H_dam) * hz
         z_beamb = cao_dd * hz
-        z_capt = cao_dd * hz
-        z_capb = (cao_dd - 0.80) * hz
+        z_capt = (cao_dd - H_DA_KE_GOI) * hz      # đỉnh xà mũ = đáy dầm − 150mm
+        z_capb = (cao_dd - H_DA_KE_GOI - 0.80) * hz
         z_sht  = z_capb
-        z_shb  = (cao_dd - 0.80 - H_tru) * hz
+        z_shb  = (cao_dd - H_DA_KE_GOI - 0.80 - H_tru) * hz
         z_bet  = z_shb
-        z_beb  = (cao_dd - 0.80 - H_tru - 1.50) * hz
+        z_beb  = (cao_dd - H_DA_KE_GOI - 0.80 - H_tru - 1.50) * hz
         z_pileb = z_beb - L_coc * hz
 
         cap_W     = max(2.0, bc * 0.18 + 1.0)
@@ -2801,11 +2839,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             )
 
         def _aswept(s0, s1, oL, oR, zb, zt, color, opacity=0.88,
-                    name="", sl=True, step=5.0, skew=True, zbR=None, ztR=None):
+                    name="", sl=True, step=5.0, skew=True, zbR=None, ztR=None,
+                    dz_fn=None):
             """Tấm 3D (lớp phủ / bản mặt cầu) QUÉT dọc tim tuyến — chia nhỏ theo
             lý trình để bám đúng đường cong, thay cho hộp thẳng nối đầu–cuối.
             zbR/ztR: cao độ đáy/đỉnh tại mép PHẢI (oR) — khác mép trái để tạo DỐC
-            NGANG (crown); mặc định None = phẳng (= zb/zt)."""
+            NGANG (crown); mặc định None = phẳng (= zb/zt).
+            dz_fn(s): độ lệch cao độ theo lý trình (bám TRẮC DỌC / đường đỏ)."""
             _zbR = zb if zbR is None else zbR
             _ztR = zt if ztR is None else ztR
             m  = max(2, int(abs(s1 - s0) / step))
@@ -2814,9 +2854,10 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             for s in ss:
                 xL, yL = _vn(s, oL, skew)
                 xR, yR = _vn(s, oR, skew)
+                _ds = dz_fn(s) if dz_fn else 0.0
                 vx += [xL, xR, xL, xR]
                 vy += [yL, yR, yL, yR]
-                vz += [zb, _zbR, zt, _ztR]  # 0=Lđáy 1=Rđáy 2=Lđỉnh 3=Rđỉnh
+                vz += [zb+_ds, _zbR+_ds, zt+_ds, _ztR+_ds]  # 0=Lđáy 1=Rđáy 2=Lđỉnh 3=Rđỉnh
             ii, jj, kk = [], [], []
             def _q(a, b, c, dd):
                 ii.append(a); jj.append(b); kk.append(c)
@@ -2929,19 +2970,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                                    line=dict(color="#27ae60", width=4),
                                    name="Địa hình TN tim tuyến"))
 
-        x_t1  = geo.get("x_t1", x0); x_t2 = geo.get("x_t2", x_end)
-        y_t   = geo.get("y_t", 4.0); y_dn  = geo.get("y_dinh", 4.5)
-        R_geo = geo.get("R", 5000);  i_geo  = geo.get("i_val", 0.04)
-        y_base = geo.get("y_base_goc", MNTT)
-        def _rdz(s):
-            if   s < x_t1: yr = y_t  - i_geo*(x_t1 - s)
-            elif s > x_t2: yr = y_t  - i_geo*(s  - x_t2)
-            else:           yr = y_dn - (s - x_tim)**2 / (2*R_geo)
-            return (yr + y_base) * hz
+        # Đường đỏ thiết kế = make_red_line (CÙNG với trắc dọc 2D) — kéo hết
+        # đường đầu cầu 2 đầu.
+        _L_app3d_red = max(12.0, L_cau * 0.15)
         XRD, YRD, ZRD = [], [], []
-        for s in np.linspace(x0-5, x_end+5, 80):
+        for s in np.linspace(x0 - _L_app3d_red, x_end + _L_app3d_red, 90):
             xc, yc = _vn(s, 0)
-            XRD.append(xc); YRD.append(yc); ZRD.append(_rdz(s))
+            XRD.append(xc); YRD.append(yc); ZRD.append(_zred_fn(s) * hz)
         _ag(go.Scatter3d(x=XRD, y=YRD, z=ZRD, mode="lines",
                                    line=dict(color="#e74c3c", width=5),
                                    name="Đường đỏ thiết kế"))
@@ -2959,30 +2994,30 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         _i_ng3d = float(d.get("i_doc_ngang", 2.0)) / 100.0
         def _dz(o):
             return -abs(o) * _i_ng3d * hz
-        # Bản mặt cầu — 2 mái dốc từ tim ra 2 mép (crown).
+        # Bản mặt cầu — 2 mái dốc từ tim ra 2 mép (crown), QUÉT bám ĐƯỜNG ĐỎ (_prof).
         _ag(_aswept(x0, x_end, -bc/2, 0.0,
                     z_bant + _dz(-bc/2), z_deck + _dz(-bc/2), "#d5d8dc", 0.82,
-                    "Bản mặt cầu", zbR=z_bant, ztR=z_deck))
+                    "Bản mặt cầu", zbR=z_bant, ztR=z_deck, dz_fn=_prof))
         _ag(_aswept(x0, x_end, 0.0, bc/2,
                     z_bant, z_deck, "#d5d8dc", 0.82, "", sl=False,
-                    zbR=z_bant + _dz(bc/2), ztR=z_deck + _dz(bc/2)))
+                    zbR=z_bant + _dz(bc/2), ztR=z_deck + _dz(bc/2), dz_fn=_prof))
         _y_in, _y_med = _railing_inner_y(d, bc)
         if _y_med > 0:                     # có dải phân cách giữa → lớp phủ 2 bên
             _ag(_aswept(x0, x_end, -_y_in, -_y_med,
                         z_deck + _dz(-_y_in), z_phu + _dz(-_y_in), "#2c3e50", 0.92,
                         "Lớp phủ BTN", zbR=z_deck + _dz(-_y_med),
-                        ztR=z_phu + _dz(-_y_med)))
+                        ztR=z_phu + _dz(-_y_med), dz_fn=_prof))
             _ag(_aswept(x0, x_end, _y_med, _y_in,
                         z_deck + _dz(_y_med), z_phu + _dz(_y_med), "#2c3e50", 0.92,
                         "", sl=False, zbR=z_deck + _dz(_y_in),
-                        ztR=z_phu + _dz(_y_in)))
+                        ztR=z_phu + _dz(_y_in), dz_fn=_prof))
         else:                              # phủ suốt → tách tại tim tạo crown
             _ag(_aswept(x0, x_end, -_y_in, 0.0,
                         z_deck + _dz(-_y_in), z_phu + _dz(-_y_in), "#2c3e50", 0.92,
-                        "Lớp phủ BTN", zbR=z_deck, ztR=z_phu))
+                        "Lớp phủ BTN", zbR=z_deck, ztR=z_phu, dz_fn=_prof))
             _ag(_aswept(x0, x_end, 0.0, _y_in,
                         z_deck, z_phu, "#2c3e50", 0.92, "", sl=False,
-                        zbR=z_deck + _dz(_y_in), ztR=z_phu + _dz(_y_in)))
+                        zbR=z_deck + _dz(_y_in), ztR=z_phu + _dz(_y_in), dz_fn=_prof))
 
         # Lan can / Giải phân cách — ĐẶT TRÊN BẢN MẶT CẦU (z_deck), không trên lớp
         # phủ. KÉO DÀI ra hết tường cánh mố 2 đầu (theo chiều dọc mố).
@@ -3216,14 +3251,14 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 hovertemplate=f"<b>{name}</b><extra></extra>" if name else None,
             )
 
-        # Cao độ mặt đường đầu cầu KHỚP mặt cầu (z_phu) tại lưng mố, hạ dần ra
-        # ngoài theo dốc dọc i_geo → liền mạch, không bị chênh bậc tại khe nối.
+        # Cao độ mặt đường đầu cầu BÁM ĐƯỜNG ĐỎ (make_red_line) + lớp phủ → liền
+        # mạch với mặt cầu, không chênh bậc tại khe nối.
         _grp_state["g"] = "Đường đầu cầu"
         _L_app_t = 50.0
         for _xm, _od in [(x0, -1.0), (x_end, 1.0)]:
             _s1 = _xm + _od * _L_app_t
             def _z_app(s, _xm=_xm):
-                return z_phu - i_geo * abs(s - _xm) * hz
+                return (_zred_fn(s) + t_phu) * hz
             _ag(_approach_emb(
                 _xm, _s1, _z_app, taluy=1.5,
                 name="Nền đắp đầu cầu" if _od < 0 else "", sl=(_od < 0)))
@@ -3327,6 +3362,26 @@ def _ve_binh_do_cong(d, df_geology):
         fillcolor="rgba(52,152,219,0.15)", mode="lines",
         line=dict(color="#2980b9", width=1.5, dash="dot"),
         name=f"Sông/Kênh (B_tk={B_tk:.0f}m)"))
+
+    # ── Tĩnh không PHỤ (dải cam vuông góc tuyến tại từng lý trình khai báo) ──
+    _tkp_first = True
+    for _cx in (d.get("extra_clearances") or []):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0:
+            continue
+        _nmk = str(_cx.get("ten") or "Tĩnh không phụ")
+        _ssk = np.linspace(_xk - _Bk/2, _xk + _Bk/2, 8)
+        _lak = [_vn(s, -B_tk*0.7, skew=False) for s in _ssk]
+        _rak = [_vn(s, +B_tk*0.7, skew=False) for s in _ssk]
+        _px, _py = _xy(_lak + _rak[::-1] + [_lak[0]])
+        fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+            fillcolor="rgba(230,126,34,0.12)", mode="lines",
+            line=dict(color="#e67e22", width=1.8, dash="dash"),
+            name=(_nmk if _tkp_first else ""), showlegend=_tkp_first))
+        _tkp_first = False
 
     # ── Đường đầu cầu (2 đầu, kéo dài ngoài mố, KHÔNG xiên) + mái TALUY ──────
     _h_dap_tb = max(1.5, float(d.get("H_tru_est", 5.0)) * 0.4)   # chiều cao đắp ước tính
@@ -3603,6 +3658,25 @@ def ve_binh_do_2d(d, df_tim_line=None, df_geology=None):
         line=dict(color="#e74c3c", width=2.5, dash="dash"),
         fillcolor="rgba(231,76,60,0.04)")
 
+    # ── Tĩnh không PHỤ (khung cam tại từng lý trình khai báo) ────────────────
+    for _cx in (d.get("extra_clearances") or []):
+        try:
+            _xk = float(_cx.get("x")); _Bk = float(_cx.get("B", 0) or 0)
+        except (TypeError, ValueError):
+            continue
+        if _Bk <= 0:
+            continue
+        _nmk = str(_cx.get("ten") or "TK phụ")
+        fig.add_shape(type="rect",
+            x0=_xk - _Bk/2, x1=_xk + _Bk/2,
+            y0=-B_tk/2 - 0.3, y1=B_tk/2 + 0.3,
+            line=dict(color="#e67e22", width=2.0, dash="dash"),
+            fillcolor="rgba(230,126,34,0.06)")
+        fig.add_annotation(x=_xk, y=B_tk/2 + 0.6,
+            text=f"<b>{_nmk}</b> B={_Bk:.1f}m", showarrow=False,
+            font=dict(size=8, color="#e67e22"),
+            bgcolor="rgba(255,255,255,0.8)")
+
     # ── Chú thích góc xiên ────────────────────────────────────────────────
     if goc < 89.0:
         fig.add_annotation(
@@ -3697,6 +3771,14 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         idx = int(vi_tri.replace('tru_', '')) - 1
         x_cut = piers[idx] if idx < len(piers) else x_tim
         title_vt = f"TRỤ T{idx + 1}"
+
+    # CAO ĐỘ ĐẶT DẦM DÙNG CHUNG với trắc dọc & 3D: đáy dầm theo ĐƯỜNG ĐỎ
+    # (make_red_line) tại ĐÚNG lý trình cắt → MCN · trắc dọc · 3D KHÔNG lệch nhau.
+    try:
+        _zred_mcn, _, _, _tb_mcn, _hd_mcn = make_red_line(d)
+        cao_dd = _zred_mcn(x_cut) - t_ban - H_dam
+    except Exception:
+        pass
 
     is_mo = vi_tri.startswith('mo')
     fig = go.Figure()

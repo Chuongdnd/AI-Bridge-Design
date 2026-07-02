@@ -3543,8 +3543,30 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
         p  = g + np.pi / 2
         return (xc + off * np.cos(p) - x_org, yc + off * np.sin(p) - y_org)
 
-    z_top   = cao_dd + H_dam
-    x_first = -bc / 2 + oh
+    z_top   = cao_dd + H_dam                    # fallback phẳng
+    # ĐƯỜNG ĐỎ dùng chung với trắc dọc/3D → dầm bám ĐÁY BẢN theo trắc dọc.
+    _bv_rl = _get_banve()
+    _zred_fn = None; _tban_rl = 0.0
+    if _bv_rl is not None and hasattr(_bv_rl, "make_red_line"):
+        try:
+            _zred_fn, _, _, _tban_rl, _ = _bv_rl.make_red_line(d)
+        except Exception:
+            _zred_fn = None
+
+    def _deck_bot(s):
+        return (_zred_fn(s) - _tban_rl) if _zred_fn is not None else z_top
+
+    # Bố trí tim dầm sao cho MÉP dầm biên nằm trong bản mặt cầu (như MCN).
+    _bw_half = 0.0
+    for _rr in (ringmap or {}).values():
+        if _rr:
+            for _fr, _R in _rr:
+                try:
+                    _bw_half = max(_bw_half, float(np.max(np.abs(_R[:, 0]))) / 1000.0)
+                except Exception:
+                    pass
+    xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half)
+
     spans   = _beam_span_list(d)
     n_span  = len(spans)
     main_idx = _main_span_idx(d, spans)
@@ -3563,7 +3585,7 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
     result = []
     _legend = True
     for i_dam in range(n_dam):
-        beam_y = x_first + i_dam * kc_dam
+        beam_y = xs_ctr[i_dam]
         for i_span, (sx0, sx1) in enumerate(spans):
             if main_rt is not None and i_span == main_idx:
                 _p, _a, _r = main_rt
@@ -3580,12 +3602,16 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
                 continue
             _sgn = -1.0 if mir else 1.0
             Np   = len(rings[0][1]); M = len(rings)
+            # Đỉnh dầm = ĐÁY BẢN, dây cung THẲNG bám đường đỏ theo nhịp.
+            _ztL = _deck_bot(sx0); _ztR = _deck_bot(sx1)
+            _den = (sx1 - sx0) or 1.0
             vX, vY, vZ = [], [], []
             for frac, R in rings:
                 ch = sx0 + frac * (sx1 - sx0)
+                _zt_ch = _ztL + (ch - sx0) / _den * (_ztR - _ztL)
                 for i in range(Np):
                     X, Y = _vn(ch, beam_y + _sgn * R[i, 0] / 1000.0)
-                    vX.append(X); vY.append(Y); vZ.append((z_top + R[i, 1] / 1000.0) * he_so_z)
+                    vX.append(X); vY.append(Y); vZ.append((_zt_ch + R[i, 1] / 1000.0) * he_so_z)
             _ii, _jj, _kk = _beam_solid_faces(rings, Np)
             result.append(go.Mesh3d(
                 x=vX, y=vY, z=vZ,
