@@ -823,10 +823,12 @@ def pier_total_height(pier: dict, H_tru: float = None) -> float:
     return round(H_be + H_than + H_cap, 3)
 
 
-def pier_plan_polys(pier: dict, target_width: float = None) -> list:
+def pier_plan_polys(pier: dict, target_width: float = None,
+                    cap_mid_extra: float = 0.0) -> list:
     """Hình chiếu MẶT BẰNG (ngang u × dọc v) của trụ lắp ghép → list
     {name,color,xs(ngang m),ys(dọc m)}. Thân/bệ giữ footprint thật (kể cả
-    nhiều khối); xà mũ = chữ nhật ngang(co theo cầu) × sâu tổng các đoạn."""
+    nhiều khối); xà mũ = chữ nhật ngang(co theo cầu) × sâu tổng các đoạn.
+    cap_mid_extra>0 → xà mũ NỚI RỘNG dọc (nhịp SPT vượt tĩnh không)."""
     p = migrate_pier(pier or {})
     parts = p.get("parts", {})
     be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
@@ -846,7 +848,8 @@ def pier_plan_polys(pier: dict, target_width: float = None) -> list:
     _footprint(than, "Thân trụ", _COL["than"])
     cap_secs = _cap_layers(cap)
     if cap_secs:
-        total_D = sum(float(l.get("D", 1.8) or 1.8) for l in cap_secs) or 1.8
+        total_D = (sum(float(l.get("D", 1.8) or 1.8) for l in cap_secs) or 1.8) \
+            + max(0.0, float(cap_mid_extra or 0.0))     # nới ụ giữa (dọc)
         sec = max(cap_secs, key=lambda l: _sec_v_extent(l["section"]))["section"]
         if target_width:
             sec = _scale_section_u(sec, target_width)

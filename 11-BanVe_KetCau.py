@@ -69,6 +69,18 @@ _DIM_ARROW = 1.2  # mũi tên closed filled (~1.5mm)
 KHO_HO_DAM_MO = 0.10  # m — khoảng hở (khe co giãn) đầu dầm ↔ mặt trước tường đỉnh mố
 
 
+def _hex_rgba(col, op=1.0):
+    """'#rrggbb' → 'rgba(r,g,b,op)'. Nếu đã là rgb/rgba thì giữ nguyên."""
+    c = str(col or "#888888")
+    if c.startswith("#") and len(c) >= 7:
+        try:
+            r, g, b = int(c[1:3], 16), int(c[3:5], 16), int(c[5:7], 16)
+            return f"rgba({r},{g},{b},{op})"
+        except ValueError:
+            return c
+    return c
+
+
 def _stitch_loops(segs, q=1e-3):
     """Nối các ĐOẠN giao (mesh × mặt phẳng) thành các VÒNG KÍN → list [(a,b)].
     Lượng tử hoá điểm về lưới q(m) để khớp đầu mút. Tham lam, hợp mặt cắt lồi/hộp."""
@@ -3750,66 +3762,95 @@ def _ve_binh_do_cong(d, df_geology):
         line=dict(color="#e74c3c", width=1, dash="dashdot"),
         name="Tim cầu", showlegend=False))
 
-    # ── Mố (2 đầu) — khối xiên theo góc giao, khớp 3D ───────────────────────
-    for s_m, od, lbl in [(x0, -1.0, "Mố trái"), (x_end, 1.0, "Mố phải")]:
-        bm = bc/2 + 0.6
-        _c = [_vn(s_m, -bm), _vn(s_m, +bm),
-              _vn(s_m + od*mo_L, +bm), _vn(s_m + od*mo_L, -bm)]
-        _px, _py = _xy(_c + [_c[0]])
-        fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
-            fillcolor="rgba(192,160,107,0.65)", mode="lines",
-            line=dict(color="#7d6608", width=2), name=lbl))
+    # ── Mố (2 đầu) — MẶT BẰNG THẬT từ mố thư viện (footprint thân + 2 cánh),
+    # khớp 3D + cọc theo sơ đồ khai báo. Chiếu lên tim cong _vn (dọc += od·u).
+    _PBa = _get_PB()
+    _mo_asm = d.get("_mo_model")
+    for s_m, od, lbl, _mk in [(x0, -1.0, "Mố M1", "mo_trai"),
+                              (x_end, 1.0, "Mố M2", "mo_phai")]:
+        if _mo_asm:
+            _mseen = set()
+            _mpolys = _PBa.abutment_plan_polys(_mo_asm, target_width=bc)
+            _piles_m = _layout_piles(d, _mk)
+            if _piles_m:
+                _mcx, _mcy = [], []
+                for _p in _piles_m:
+                    _gx, _gy = _vn(s_m + od * float(_p.get("y", 0.0)),
+                                   float(_p.get("x", 0.0)))
+                    _mcx.append(_gx); _mcy.append(_gy)
+                fig.add_trace(go.Scatter(x=_mcx, y=_mcy, mode="markers",
+                    marker=dict(symbol="circle-open", size=7, color="#8e6e53",
+                                line=dict(width=1.2)), showlegend=False))
+            for _pl in _mpolys:
+                _nm = _pl["name"]; _sl2 = (lbl == "Mố M1") and (_nm not in _mseen)
+                _mseen.add(_nm)
+                # xs = ngang; ys = dọc (căn theo vai kê) → dọc thực = s_m + od·ys
+                _pts = [_vn(s_m + od * _yy, _xx)
+                        for _xx, _yy in zip(_pl["xs"], _pl["ys"])]
+                _px, _py = _xy(_pts + [_pts[0]])
+                fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+                    fillcolor=_hex_rgba(_pl.get("color", "#c0a06b"), 0.65),
+                    mode="lines", line=dict(color="#7d6608", width=1.6),
+                    name=(lbl if _sl2 else ""), showlegend=_sl2))
+        else:
+            bm = bc/2 + 0.6
+            _c = [_vn(s_m, -bm), _vn(s_m, +bm),
+                  _vn(s_m + od*mo_L, +bm), _vn(s_m + od*mo_L, -bm)]
+            _px, _py = _xy(_c + [_c[0]])
+            fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+                fillcolor="rgba(192,160,107,0.65)", mode="lines",
+                line=dict(color="#7d6608", width=2), name=lbl))
 
-    # ── Trụ — mặt bằng đầy đủ: bệ + cọc + thân trụ (NÉT ĐỨT) + xà mũ (nét liền) ─
-    be_W  = cap_W + 0.8      # nửa bề rộng bệ (ngang) > xà mũ
-    be_L  = tru_L + 1.2      # nửa bề dài bệ (dọc)
-    sh_W  = cap_W * 0.62     # nửa bề rộng thân trụ (ngang)
-    sh_L  = tru_L * 0.60     # nửa bề dày thân trụ (dọc)
+    # ── Trụ — MẶT BẰNG THẬT từ hệ trụ lắp ghép (khớp 3D): footprint bệ/thân/xà mũ
+    # + cọc theo sơ đồ khai báo (thay khối hộp tham số cũ). Chiếu lên tim cong _vn.
+    _PBm = _get_PB()
+    _pier_asm = d.get("_pier_model")
+    _wmap = (d or {}).get("_pier_cap_widen") or {}
+    _w0cap = float((d or {}).get("_pier_cap_W0", 0) or 0)
     mong  = d.get("mong_result") or {}
     D_coc, _Lc, _ncoc = mong_dims(mong)
-    _ncoc = max(4, min(8, _ncoc))
 
-    def _box_tru(xc_s, oL, oR, sL, sR):
-        return [_vn(xc_s + sL, oL), _vn(xc_s + sL, oR),
-                _vn(xc_s + sR, oR), _vn(xc_s + sR, oL)]
+    def _draw_plan_polys(polys, xc_s, seen, dash=None, fill_op=0.78, first=False):
+        for _pl in polys:
+            _nm = _pl["name"]; _sl = first and (_nm not in seen); seen.add(_nm)
+            _pts = [_vn(xc_s + _yy, _xx) for _xx, _yy in zip(_pl["xs"], _pl["ys"])]
+            _px, _py = _xy(_pts + [_pts[0]])
+            _col = _pl.get("color", "#566573")
+            fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+                fillcolor=_hex_rgba(_col, fill_op), mode="lines",
+                line=dict(color=_C["be_dk"], width=1.4, dash=dash),
+                name=(_nm if _sl else ""), showlegend=_sl))
+
+    def _draw_plan_piles(pos_key, xc_s, first=False):
+        _piles = _layout_piles(d, pos_key)
+        if not _piles:
+            return
+        _cx, _cy = [], []
+        for _p in _piles:
+            _gx, _gy = _vn(xc_s + float(_p.get("y", 0.0)), float(_p.get("x", 0.0)))
+            _cx.append(_gx); _cy.append(_gy)
+        fig.add_trace(go.Scatter(x=_cx, y=_cy, mode="markers",
+            marker=dict(symbol="circle-open", size=7, color="#8e6e53",
+                        line=dict(width=1.2)),
+            name=(f"Cọc ({len(_piles)} cọc)" if first else ""), showlegend=first))
 
     for i, xt in enumerate(piers):
         _sl = (i == 0)
-        # Bệ trụ (nét đứt, khối lớn nhất)
-        _c = _box_tru(xt, -be_W, be_W, -be_L, be_L)
-        _px, _py = _xy(_c + [_c[0]])
-        fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
-            fill="toself", fillcolor="rgba(170,183,184,0.12)",
-            line=dict(color="#8395a7", width=1.2, dash="dash"),
-            name="Bệ trụ (khuất)" if _sl else "", showlegend=_sl))
-        # Cọc (nét đứt) — lưới trong phạm vi bệ
-        _nc_side = max(2, int(round(_ncoc ** 0.5)))
-        _osp = np.linspace(-be_W*0.6, be_W*0.6, _nc_side)
-        _ssp = np.linspace(-be_L*0.55, be_L*0.55, max(2, _ncoc // _nc_side))
-        _pcx, _pcy = [], []
-        for _oo in _osp:
-            for _ss2 in _ssp:
-                _pxx, _pyy = _vn(xt + _ss2, _oo)
-                _pcx.append(_pxx); _pcy.append(_pyy)
-        fig.add_trace(go.Scatter(x=_pcx, y=_pcy, mode="markers",
-            marker=dict(symbol="circle-open", size=7,
-                        color="#8e6e53", line=dict(width=1.2)),
-            name=(f"Cọc Ø{int((D_coc or 1.0)*1000)}mm (khuất)" if _sl else ""),
-            showlegend=_sl))
-        # Thân trụ (nét đứt)
-        _c = _box_tru(xt, -sh_W, sh_W, -sh_L, sh_L)
-        _px, _py = _xy(_c + [_c[0]])
-        fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
-            fill="toself", fillcolor="rgba(200,214,192,0.18)",
-            line=dict(color="#7f8c8d", width=1.2, dash="dash"),
-            name="Thân trụ (khuất)" if _sl else "", showlegend=_sl))
-        # Xà mũ (nét liền, trên cùng)
-        _c = _box_tru(xt, -cap_W, cap_W, -tru_L, tru_L)
-        _px, _py = _xy(_c + [_c[0]])
-        fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
-            fillcolor="rgba(133,146,158,0.78)", mode="lines",
-            line=dict(color="#566573", width=1.5),
-            name="Xà mũ" if _sl else f"Trụ T{i+1}", showlegend=True))
+        _seen = set()
+        if _pier_asm:
+            _mid_extra = max(0.0, _wmap.get(round(xt, 3), _w0cap) - _w0cap)
+            _polys = _PBm.pier_plan_polys(_pier_asm, target_width=bc,
+                                          cap_mid_extra=_mid_extra)
+            _draw_plan_piles(f"tru_{i+1}", xt, first=_sl)
+            _draw_plan_polys(_polys, xt, _seen, first=_sl)   # bệ→thân→xà mũ (trên)
+        else:
+            _c = [_vn(xt + s, o) for s, o in
+                  [(-tru_L, -cap_W), (-tru_L, cap_W), (tru_L, cap_W), (tru_L, -cap_W)]]
+            _px, _py = _xy(_c + [_c[0]])
+            fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
+                fillcolor="rgba(133,146,158,0.78)", mode="lines",
+                line=dict(color="#566573", width=1.5),
+                name="Xà mũ" if _sl else "", showlegend=_sl))
         _cx, _cy = _vn(xt, 0.0)
         fig.add_annotation(x=_cx, y=_cy, text=f"T{i+1}", showarrow=False,
             font=dict(size=8, color="white"), bgcolor="rgba(86,101,115,0.85)")
