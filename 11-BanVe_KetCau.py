@@ -500,6 +500,42 @@ def _add_box_outlines(fig, color="#1b2631", width=2.0, name="Đường bao cấu
         hoverinfo="skip"))
 
 
+def _hover3d(fig):
+    """Hover mọi cấu kiện 3D → TÊN (legendgroup/name) + CAO ĐỘ z tại điểm di chuột."""
+    for tr in fig.data:
+        if getattr(tr, "type", "") not in ("mesh3d", "scatter3d"):
+            continue
+        lbl = str(getattr(tr, "legendgroup", "") or getattr(tr, "name", "") or "")
+        if lbl == "_outline":
+            try: tr.hoverinfo = "skip"
+            except Exception: pass
+            continue
+        if not lbl:
+            lbl = "Cấu kiện"
+        try:
+            tr.hovertemplate = f"<b>{lbl}</b><br>Cao độ: %{{z:.3f}} m<extra></extra>"
+            tr.hoverinfo = None
+        except Exception:
+            pass
+
+
+def _hover2d(fig):
+    """Hover mọi cấu kiện trắc dọc 2D → TÊN + LÝ TRÌNH + CAO ĐỘ (y) tại điểm."""
+    for tr in fig.data:
+        if getattr(tr, "type", "") not in ("scatter", "scattergl"):
+            continue
+        lbl = str(getattr(tr, "name", "") or getattr(tr, "legendgroup", "") or "")
+        if lbl == "_outline":
+            continue
+        head = f"<b>{lbl}</b><br>" if lbl else ""
+        try:
+            tr.hovertemplate = (head + "Lý trình %{x:.1f} m · Cao độ %{y:.3f} m"
+                                "<extra></extra>")
+            tr.hoverinfo = None
+        except Exception:
+            pass
+
+
 def _approach_road_traces(xa, xb, bc, z_road, z_g, taluy=1.5, sl=True):
     """Đường đầu cầu 3D: nền đắp (lăng trụ hình thang, mái taluy) + mặt đường.
     xa = tại lưng mố, xb = đầu xa (cách xb−xa theo phương dọc)."""
@@ -2152,6 +2188,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
 
     _add_elevation_table(fig, d, loc="tl")
     _apply_layers_2d(fig)
+    _hover2d(fig)   # hover: tên cấu kiện + lý trình + cao độ
     return fig
 
 
@@ -2756,6 +2793,7 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
 
     # Đường bao cấu kiện (viền tối các hộp) → dễ nhìn ranh giới
     _add_box_outlines(fig)
+    _hover3d(fig)   # hover: tên cấu kiện + cao độ
 
     fig.update_layout(
         title=dict(
@@ -3602,6 +3640,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
         # Đường bao cấu kiện (viền tối các hộp trụ/mố/xà mũ/bệ…) → dễ nhìn
         _add_box_outlines(fig)
+        _hover3d(fig)   # hover: tên cấu kiện + cao độ
 
         # ── Title ─────────────────────────────────────────────────────────
         fig.update_layout(

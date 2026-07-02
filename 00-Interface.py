@@ -6816,6 +6816,8 @@ with _col_main:
                                         _fig_t.add_trace(_spt_t)
                                 except Exception:
                                     pass
+                                try: BVK._hover3d(_fig_t)   # hover tên + cao độ (gồm dầm)
+                                except Exception: pass
                                 # Góc xiên ĐÃ nướng vào hình học (qua _vn theo tim
                                 # tuyến) → KHÔNG hậu xử lý trượt toạ độ tuyệt đối.
                                 BVK.apply_render_mode(_fig_t, render_mode_3d)
@@ -6917,6 +6919,8 @@ with _col_main:
                                 st.caption("🔩 Dầm thực tế từ mô hình thư viện")
                         except Exception:
                             pass
+                        try: BVK._hover3d(fig_3d)   # hover tên + cao độ (gồm dầm)
+                        except Exception: pass
                         # Biến dạng XIÊN kết cấu cầu theo góc giao (bỏ qua địa
                         # hình/mặt nước/tĩnh không theo tên nhóm).
                         BVK.apply_skew_3d(fig_3d, d)
@@ -7159,6 +7163,8 @@ with _col_main:
                             fig_td_btc.add_trace(_td_tr)
                     except Exception:
                         pass
+                    try: BVK._hover2d(fig_td_btc)   # hover tên + cao độ (gồm dầm)
+                    except Exception: pass
                     PLOT.aspect_control(fig_td_btc, "td_btc")
                     st.plotly_chart(fig_td_btc, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
