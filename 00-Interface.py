@@ -2794,6 +2794,7 @@ with _dk1:
         st.session_state.field_touched = set()
         st.session_state.field_errors = {}
         st.session_state.field_warnings = {}
+        st.session_state.d1_show_feedback = False
         st.session_state.open_dialog = "step1"
         st.rerun()
 with _dk2:
