@@ -3487,7 +3487,9 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 _zt_mo    = float(np.interp(xm, lt_v, vz_v))   # ĐTN tại mố
                 _zbase_mo = _zt_mo - 0.5
                 # Đáy dầm PHÍA MỐ = đáy dầm − độ sâu khấc (đầu dầm lên mố đầu trơn).
-                _seat_mo3d = _abut_seat_z(cao_dd, d.get("_pier_model"))
+                # Bám ĐƯỜNG ĐỎ TẠI MỐ (xm), KHÔNG dùng cao_dd đỉnh → khớp trắc dọc/MCN.
+                _soffit_mo3d = _zred_fn(xm) - t_ban - H_dam
+                _seat_mo3d = _abut_seat_z(_soffit_mo3d, d.get("_pier_model"))
                 _Htru_mo  = max(0.5, _seat_mo3d - _zbase_mo)    # đỉnh mố = đáy dầm mố
                 _xf_mo3d  = xm - sgn * (KHO_HO_DAM_MO
                                         + _PBm2.abut_backwall_u_m(_mo_model))  # hở 100mm
