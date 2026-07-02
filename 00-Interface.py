@@ -27,6 +27,23 @@ for _tpl_name in ("plotly_white", "plotly_dark", "plotly", "none"):
     except Exception:
         pass
 
+# ── CẢM ỨNG (điện thoại): bật cử chỉ chạm cho MỌI biểu đồ ────────────────────
+# Bọc st.plotly_chart để mọi biểu đồ đều có:
+#   • scrollZoom=True  → 2D & 3D: chụm/xoè 2 ngón để phóng to/thu nhỏ (pinch).
+#   • 2D dragmode=pan (template) → 1 ngón trượt để pan.
+#   • 3D (Plotly gốc)  → 1 ngón xoay, 2 ngón chụm zoom, 2 ngón kéo pan.
+#   • displayModeBar   → có thanh nút (pan/xoay/zoom/reset) hỗ trợ khi cần.
+_orig_plotly_chart = st.plotly_chart
+def _plotly_chart_touch(fig, *a, **kw):
+    _cfg = dict(kw.get("config") or {})
+    _cfg.setdefault("scrollZoom", True)
+    _cfg.setdefault("displayModeBar", True)
+    _cfg.setdefault("doubleClick", "reset")          # chạm 2 lần = về mặc định
+    _cfg.setdefault("displaylogo", False)
+    kw["config"] = _cfg
+    return _orig_plotly_chart(fig, *a, **kw)
+st.plotly_chart = _plotly_chart_touch
+
 # --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
 st.set_page_config(page_title="Hệ thống thiết kế cầu - UTH", layout="wide", page_icon="🏗️")
 
