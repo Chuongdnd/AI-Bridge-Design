@@ -1568,6 +1568,21 @@ def dialog_step1():
 @st.dialog("🛣️ BƯỚC 2 / 3 — Yếu tố hình học", width="large")
 def dialog_step2():
     draft = st.session_state.wizard_draft
+    # Khôi phục ô SỐ / LỰA CHỌN người dùng đã nhập (từ lần khai báo trước) — kẹp
+    # trong [min,max] theo tiêu chuẩn hiện hành để không lỗi khi tiêu chuẩn đổi.
+    _ov = dict(draft.get('mcn_oto_override') or {})
+    def _ov_num(key, std, lo, hi=None):
+        try:
+            v = float(_ov.get(key, std))
+        except (TypeError, ValueError):
+            v = float(std)
+        v = max(float(lo), v)
+        if hi is not None:
+            v = min(float(hi), v)
+        return v
+    def _ov_idx(key, opts, dflt=0):
+        val = _ov.get(key)
+        return opts.index(val) if val in opts else dflt
 
     st.markdown(
         DS.section_header(
@@ -1631,6 +1646,7 @@ def dialog_step2():
         loai_dpc_ct = st.selectbox(
             "Cấu tạo dải giữa:",
             options=list(_dpc_ct_labels.keys()),
+            index=_ov_idx('loai_dpc_ct', list(_dpc_ct_labels.keys())),
             format_func=lambda k: _dpc_ct_labels[k],
             help="Theo Điều 6.5 — xác định chiều rộng dải phân cách lõi."
         )
@@ -1654,7 +1670,8 @@ def dialog_step2():
                 n_lan_ct = st.number_input(
                     f"Số làn xe mỗi chiều — tối thiểu {tra_ct['n_lan_moi_chieu_min']} làn/chiều:",
                     min_value=int(tra_ct["n_lan_moi_chieu_min"]),
-                    value=int(tra_ct["n_lan_moi_chieu_min"]),
+                    value=int(_ov_num('n_lan_moi_chieu', tra_ct["n_lan_moi_chieu_min"],
+                                      tra_ct["n_lan_moi_chieu_min"])),
                     step=1,
                     help=f"Tối thiểu {tra_ct['n_lan_moi_chieu_min']} làn/chiều (Bảng 1, "
                          "TCVN 5729:2012). Không được nhập ít hơn mức tối thiểu. "
@@ -1663,7 +1680,7 @@ def dialog_step2():
                 w_le_dat_ct = st.number_input(
                     "Chiều rộng lề gia cố / dải AT (m):",
                     min_value=float(tra_ct["w_le_dat_min"]),
-                    value=float(tra_ct["w_le_dat_min"]),
+                    value=_ov_num('w_le_dat', tra_ct["w_le_dat_min"], tra_ct["w_le_dat_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_ct['w_le_dat_min']:g}m theo Bảng 1."
                 )
@@ -1671,14 +1688,15 @@ def dialog_step2():
                 w_dat_at_dg_ct = st.number_input(
                     "Dải an toàn trong dải giữa (m):",
                     min_value=float(tra_ct["w_dat_an_toan_dg_min"]),
-                    value=float(tra_ct["w_dat_an_toan_dg_min"]),
+                    value=_ov_num('w_dat_an_toan_dg', tra_ct["w_dat_an_toan_dg_min"],
+                                  tra_ct["w_dat_an_toan_dg_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_ct['w_dat_an_toan_dg_min']:g}m mỗi bên (Bảng 1)."
                 )
                 w_dpc_core_ct = st.number_input(
                     "Chiều rộng dải phân cách lõi (m):",
                     min_value=float(tra_ct["w_dpc_core_min"]),
-                    value=float(tra_ct["w_dpc_core_min"]),
+                    value=_ov_num('w_dpc_core', tra_ct["w_dpc_core_min"], tra_ct["w_dpc_core_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_ct['w_dpc_core_min']:g}m theo Bảng 1 (loại đã chọn)."
                 )
@@ -1724,13 +1742,16 @@ def dialog_step2():
             with c_mcn1:
                 so_lan_oto = st.number_input(
                     f"Số làn xe thiết kế — tối thiểu {tra_mcn['so_lan_min']:g} làn:",
-                    min_value=int(tra_mcn["so_lan_min"]), value=int(tra_mcn["so_lan_min"]), step=1,
+                    min_value=int(tra_mcn["so_lan_min"]),
+                    value=int(_ov_num('so_lan', tra_mcn["so_lan_min"], tra_mcn["so_lan_min"])),
+                    step=1,
                     help=f"Tối thiểu {tra_mcn['so_lan_min']:g} làn theo TCVN 4054:2005. "
                          "Không được nhập ít hơn mức tối thiểu."
                 )
                 w_lan_oto = st.number_input(
                     f"Chiều rộng 1 làn xe (m) — tối thiểu {tra_mcn['w_lan_min']:g}m:",
-                    min_value=float(tra_mcn["w_lan_min"]), value=float(tra_mcn["w_lan_min"]),
+                    min_value=float(tra_mcn["w_lan_min"]),
+                    value=_ov_num('w_lan', tra_mcn["w_lan_min"], tra_mcn["w_lan_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_mcn['w_lan_min']:g}m theo TCVN 4054:2005. "
                          "Không được nhập nhỏ hơn mức tối thiểu."
@@ -1738,13 +1759,15 @@ def dialog_step2():
             with c_mcn2:
                 w_le_oto = st.number_input(
                     "Chiều rộng lề đường (m):",
-                    min_value=float(tra_mcn["w_le_min"]), value=float(tra_mcn["w_le_min"]),
+                    min_value=float(tra_mcn["w_le_min"]),
+                    value=_ov_num('w_le', tra_mcn["w_le_min"], tra_mcn["w_le_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_mcn['w_le_min']:g}m theo TCVN 4054:2005."
                 )
                 w_dpc_oto = st.number_input(
                     "Chiều rộng dải phân cách giữa (m):",
-                    min_value=float(tra_mcn["w_dpc_min"]), value=float(tra_mcn["w_dpc_min"]),
+                    min_value=float(tra_mcn["w_dpc_min"]),
+                    value=_ov_num('w_dpc', tra_mcn["w_dpc_min"], tra_mcn["w_dpc_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_mcn['w_dpc_min']:g}m theo TCVN 4054:2005"
                          + (" (cấp này không bắt buộc có dải phân cách)." if tra_mcn['w_dpc_min'] == 0 else ".")
@@ -1760,6 +1783,7 @@ def dialog_step2():
                 loai_dpc_oto = st.selectbox(
                     "Loại cấu tạo dải phân cách:",
                     options=_dpc_keys,
+                    index=_ov_idx('loai_dpc', _dpc_keys),
                     format_func=lambda k: _dpc_labels[k],
                     help="Theo Điều 4.4.1 – chỉ bố trí khi đường có ≥ 4 làn xe."
                 )
@@ -1787,6 +1811,7 @@ def dialog_step2():
             loai_mat_duong_oto = st.selectbox(
                 "Loại mặt đường (ảnh hưởng độ dốc ngang):",
                 options=list(_mat_labels.keys()),
+                index=_ov_idx('loai_mat_duong', list(_mat_labels.keys())),
                 format_func=lambda k: _mat_labels[k],
             )
             _b9 = YTHH.tra_cuu_doc_ngang(loai_mat_duong_oto)
@@ -1799,7 +1824,7 @@ def dialog_step2():
                 "Độ dốc ngang thiết kế i (%):",
                 min_value=float(_b9["i_min"]),
                 max_value=float(_b9["i_max"]),
-                value=float(_b9["i_goi_y"]),
+                value=_ov_num('i_doc_ngang', _b9["i_goi_y"], _b9["i_min"], _b9["i_max"]),
                 step=0.5, format="%.1f",
                 help=f"TCVN 4054:2005 Bảng 9: {_b9['i_min']:g}% – {_b9['i_max']:g}% cho loại mặt đường này."
             )
