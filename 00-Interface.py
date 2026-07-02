@@ -2294,7 +2294,7 @@ def dialog_step3():
                 )
                 _ph = MOT.estimate_pier_height(
                     MNCN=h1, H_tinh_khong=res.get('H', 3.5),
-                    H_dam=H_dam_est, MNTN=h98,
+                    H_dam=H_dam_est, MNTN=h98, MNTT=h5,
                     # Đỉnh bệ bám ĐƯỜNG TỰ NHIÊN (đỉnh bệ = ĐTN − 0.5m), không
                     # theo MNTN. Đây là giá trị đại diện (CĐTN trung bình); bản vẽ
                     # bố trí chung tính lại đỉnh bệ TỪNG trụ theo địa hình thực.
