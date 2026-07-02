@@ -771,21 +771,10 @@ class PipelineTracker:
         self._ph_grid  = None
 
     def setup(self):
-        st.markdown(
-            "<div style='background:#141420;border:1px solid #333366;"
-            "border-radius:12px;padding:16px;margin:8px 0'>",
-            unsafe_allow_html=True,
-        )
-        st.markdown(
-            "<p style='font-size:13px;font-weight:600;color:#4fc3f7;"
-            "margin:0 0 8px'>🤖 Pipeline AI đang chạy...</p>",
-            unsafe_allow_html=True,
-        )
-        self._ph_label = st.empty()
-        self._ph_bar   = st.empty()
-        self._ph_grid  = st.empty()
-        st.markdown("</div>", unsafe_allow_html=True)
-        self._render()
+        # Ẩn bảng tiến trình: nhấn CHẠY HỆ THỐNG là ra kết quả luôn, không hiện
+        # panel "Pipeline AI đang chạy…". Vẫn theo dõi trạng thái/thời gian trong
+        # bộ nhớ để đếm lỗi. (Muốn hiện lại: bỏ no-op ở setup/_render.)
+        return
 
     def start(self, step_id: str):
         self.statuses[step_id] = self.STATUS_RUNNING
@@ -818,6 +807,8 @@ class PipelineTracker:
         self._render()
 
     def render_timing_summary(self):
+        # No-op: không hiện bảng thời gian chi tiết (xem setup()).
+        return
         total = sum(self.timings.values())
         rows  = []
         for s in self.steps:
@@ -847,6 +838,8 @@ class PipelineTracker:
             )
 
     def _render(self):
+        # No-op: không vẽ bảng tiến trình (xem setup()).
+        return
         running_id = next(
             (sid for sid, st_ in self.statuses.items() if st_ == self.STATUS_RUNNING), None
         )
@@ -2497,7 +2490,7 @@ def dialog_step3():
             else:
                 st.warning(
                     f"⚠️ Hoàn thành với {n_errors} bước có cảnh báo. "
-                    "Kết quả vẫn được lưu — xem chi tiết ở trên."
+                    "Kết quả vẫn được lưu."
                 )
                 try:
                     st.toast(f"⚠️ Hoàn thành ({n_errors} cảnh báo).", icon="⚠️")
