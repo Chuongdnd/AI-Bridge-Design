@@ -7519,18 +7519,69 @@ with _col_main:
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt bằng kết cấu: {_e}")
-                    # Mặt cắt DẦM THỰC từ thư viện (dùng chung cả hệ thống) → vẽ đúng
-                    # dầm trên MCN mố/trụ thay 'dầm hộp' tham số cũ.
+                    # DẦM = LÁT CẮT THẬT của 3D: overlay get_mcn_overlay_traces
+                    # (which="end" = mặt cắt ĐẦU DẦM KHẤC + đã cắt cánh 10mm) lên MCN
+                    # vị trí, dời theo ĐƯỜNG ĐỎ tại lý trình cắt (đỉnh bản = z_red),
+                    # nới theo góc xiên. Thiếu mặt cắt thư viện → fallback dầm cũ.
+                    try:
+                        _fit_ctr = BBUI.mcn_beam_centers(d, pfx="spt", which="end")
+                    except Exception:
+                        _fit_ctr = None
+                    try:
+                        _ov_end = BBUI.get_mcn_overlay_traces(
+                            d, "spt", which="end") or []
+                    except Exception:
+                        _ov_end = []
+                    _draw_own = (len(_ov_end) == 0)   # không có dầm thư viện → vẽ cũ
                     try:
                         _beam_mcn = BBUI.get_beam_mcn_outer(d, pfx="spt")
                     except Exception:
                         _beam_mcn = None
+
+                    def _overlay_real_beams(_fig, _x_cut, _projected=False):
+                        # _projected=True (TRỤ): mặt cắt tại TIM trụ cắt qua Ụ GIỮA xà
+                        # mũ → đầu dầm khấc nằm SAU mặt cắt → vẽ nét ĐỨT (chiếu) để
+                        # KHỐI GIỮA xà mũ (solid) hiện đầy đủ phía trước.
+                        if _draw_own:
+                            return
+                        try:
+                            _wsk_v = BVK._skew_widen(d)
+                            _zred_v = BVK.make_red_line(d)[0]
+                            _sh = float(_zred_v(_x_cut))       # đỉnh bản tại lý trình
+                            _first = True
+                            for _tb in (BBUI.get_mcn_overlay_traces(
+                                    d, "spt", which="end") or []):
+                                _tb.x = tuple(None if v is None else v * _wsk_v
+                                              for v in _tb.x)
+                                _tb.y = tuple(None if v is None else v + _sh
+                                              for v in _tb.y)
+                                if _projected:
+                                    _tb.fill = None
+                                    _tb.fillcolor = "rgba(0,0,0,0)"
+                                    try:
+                                        _tb.line.dash = "dot"; _tb.line.width = 1.1
+                                        _tb.line.color = "#1e7d4f"
+                                    except Exception:
+                                        pass
+                                    _tb.name = ("Đầu dầm khấc (chiếu)"
+                                                if _first else "")
+                                    _tb.showlegend = _first
+                                    _first = False
+                                _fig.add_trace(_tb)
+                        except Exception:
+                            pass
+
                     try:
                         _f_mcnvt = BVK.ve_mcn_vi_tri(
                             d, vi_tri=_selected_vt, df_geology=_df_geo,
                             pier_assembly=_pa_tru, x_half=_xh,
                             abutment_assembly=_resolve_assembly(d, "mo"),
-                            mo_view='truoc', beam_mcn_outer=_beam_mcn)
+                            mo_view='truoc', df_tim_line=_df_tim,
+                            beam_mcn_outer=(_beam_mcn if _draw_own else None),
+                            beam_centers=_fit_ctr, draw_own_beams=_draw_own)
+                        _overlay_real_beams(
+                            _f_mcnvt, _x_cut_show,
+                            _projected=_selected_vt.startswith("tru"))
                         PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
                         st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,
@@ -7544,7 +7595,10 @@ with _col_main:
                                 d, vi_tri=_selected_vt, df_geology=_df_geo,
                                 pier_assembly=_pa_tru, x_half=_xh,
                                 abutment_assembly=_resolve_assembly(d, "mo"),
-                                mo_view='sau', beam_mcn_outer=_beam_mcn)
+                                mo_view='sau', df_tim_line=_df_tim,
+                                beam_mcn_outer=(_beam_mcn if _draw_own else None),
+                                beam_centers=_fit_ctr, draw_own_beams=_draw_own)
+                            _overlay_real_beams(_f_mcnvt_s, _x_cut_show)
                             PLOT.aspect_control(_f_mcnvt_s, "mcn_vitri_sau")
                             st.plotly_chart(_f_mcnvt_s,
                                             use_container_width=True,
@@ -7563,7 +7617,8 @@ with _col_main:
                     try:
                         _f_mcd = BVK.ve_mat_cat_doc_vi_tri(
                             d, vi_tri=_selected_vt, pier_assembly=_pa_tru,
-                            abutment_assembly=_resolve_assembly(d, "mo"))
+                            abutment_assembly=_resolve_assembly(d, "mo"),
+                            df_geology=_df_geo, df_tim_line=_df_tim)
                         PLOT.aspect_control(_f_mcd, "mc_doc_vitri")
                         st.plotly_chart(_f_mcd,
                                         use_container_width=True,
@@ -7911,7 +7966,9 @@ with _col_main:
                     def _tru_dxf_bytes():
                         _fig = BVK.ve_mcn_vi_tri(
                             d, vi_tri="tru_1",
-                            pier_assembly=_resolve_assembly(d, "tru"))
+                            pier_assembly=_resolve_assembly(d, "tru"),
+                            df_geology=st.session_state.get("df_geology"),
+                            df_tim_line=st.session_state.get("df_tim_line"))
                         return EXP.fig_to_dxf_bytes(_fig, "TRU - MAT CAT NGANG")
 
                     # Cây xuất 3 cấp: (thư mục, dir, [ (cấu kiện, sub_dir,
