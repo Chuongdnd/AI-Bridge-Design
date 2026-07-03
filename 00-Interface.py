@@ -484,10 +484,13 @@ _cc_theme.html(
           if(nd < 10) return;
           var r = nd / g.lastD;
           if(Math.abs(r - 1) < 0.01) return;
-          try{ (d.elementFromPoint(nm.x, nm.y) || g.tgt).dispatchEvent(
-            new WheelEvent('wheel', {bubbles:true, cancelable:true,
+          try{
+            var we = new WheelEvent('wheel', {bubbles:true, cancelable:true,
               view:d.defaultView, clientX:nm.x, clientY:nm.y,
-              deltaY:-Math.log(r)*300, deltaMode:0})); }catch(err){}
+              deltaY:-Math.log(r)*300, deltaMode:0});
+            we._cau = true;   // đánh dấu: KHÔNG giảm tốc lần nữa
+            (d.elementFromPoint(nm.x, nm.y) || g.tgt).dispatchEvent(we);
+          }catch(err){}
           g.lastD = nd;
         } else {
           fire(g.tgt, 'mousemove', nm.x, nm.y, 1);
@@ -550,6 +553,23 @@ _cc_theme.html(
       addBtns();
       try{ new MutationObserver(addBtns).observe(d.body,
              {childList:true, subtree:true}); }catch(e){}
+
+      // ── GIẢM TỐC ĐỘ ZOOM 3D bằng con lăn chuột (máy tính) ────────────────
+      // Plotly gl3d zoom theo nguyên deltaY → quá nhanh. Bắt wheel trên biểu đồ
+      // 3D, chặn bản gốc, phát lại với deltaY × 0.25 (đánh dấu _cau tránh lặp).
+      d.addEventListener('wheel', function(e){
+        if(e._cau) return;                       // sự kiện đã xử lý/pinch mobile
+        var gd = e.target.closest && e.target.closest('.js-plotly-plot');
+        if(!gd || !gd.querySelector('.gl-container')) return;   // chỉ 3D
+        e.preventDefault(); e.stopImmediatePropagation();
+        try{
+          var ev = new WheelEvent('wheel', {bubbles:true, cancelable:true,
+            view:d.defaultView, clientX:e.clientX, clientY:e.clientY,
+            deltaY:e.deltaY * 0.25, deltaMode:e.deltaMode});
+          ev._cau = true;
+          e.target.dispatchEvent(ev);
+        }catch(err){}
+      }, {capture:true, passive:false});
     })();
     </script>""", height=0)
 
