@@ -5185,6 +5185,12 @@ def _resolve_assembly(d, kind: str) -> dict:
                 return _ap_pier(PB.build_pier_from_parts(
                     cap, stem, foot, ten=pp.get("ten", "Trụ lắp ghép")))
     items = st.session_state.get(cfg["ss"]) or cfg["load"]()
+    # PHƯƠNG ÁN quyết định LOẠI trụ mặc định (PA1→thân cột, PA2→đặc thân hẹp,
+    # H_thân>10m→thay đổi tiết diện). ƯU TIÊN hơn gán id chung để 2 PA khác loại
+    # rõ; người dùng muốn trụ riêng thì GHÉP TRỤ TỔNG (pp — đã xử lý ở trên).
+    if kind == "tru" and (d or {}).get("_clearance_mode") in ("fewest", "straddle") \
+            and items:
+        return _ap_pier(_auto_pick_pier(items))
     rid = (d or {}).get(cfg["id_key"])
     if not rid:
         # MỐ MẶC ĐỊNH = mố THƯ VIỆN đầu tiên (vd "Mố chữ U") thay khối mố generic cũ.
@@ -7056,6 +7062,11 @@ with _col_main:
             _auto_pier_on_beam_change(d, selected_ribbon)
         except Exception:
             pass
+        # Gắn _clearance_mode + PA TRƯỚC khi resolve trụ → phương án quyết định
+        # LOẠI trụ (PA1 cột / PA2 đặc). Nếu không, _pier_model resolve khi d chưa
+        # có _clearance_mode → luôn ra trụ đầu tiên (cột).
+        d["_clearance_mode"] = _clearance_mode_for(selected_ribbon)
+        d["_pa_ribbon"]      = selected_ribbon
         # Mô hình trụ/mố lắp ghép → để KHỐI LƯỢNG tính theo mô hình mới (nếu có)
         try:
             d["_pier_model"] = _resolve_assembly(d, "tru")
@@ -7752,18 +7763,20 @@ with _col_main:
                         _stype, _sval = (None, 0.0)
                     if _stype == "2cot":
                         _cur = float(d.get("pier_col_spacing_m") or _sval or 9.0)
+                        _cur = min(max(_cur, 0.5), 30.0)      # kẹp trong [min,max]
                         _new = st.number_input(
                             "↔️ Khoảng cách 2 cột trụ (m) — áp cho MỌI trụ 2 thân",
-                            min_value=0.5, max_value=20.0, value=round(_cur, 2),
+                            min_value=0.5, max_value=30.0, value=round(_cur, 2),
                             step=0.1, key="pier_col_spacing_in",
                             help="Khai báo 1 lần → cập nhật mọi trụ 2 thân trên cầu.")
                         d["pier_col_spacing_m"] = float(_new)
                         st.session_state.design_data["pier_col_spacing_m"] = float(_new)
                     elif _stype == "dac":
                         _cur = float(d.get("pier_solid_width_m") or _sval or 2.0)
+                        _cur = min(max(_cur, 0.3), 30.0)      # kẹp (thân đặc = bc−6 có thể lớn)
                         _new = st.number_input(
                             "↔️ Bề rộng thân trụ (m) — áp cho MỌI trụ đặc thân hẹp",
-                            min_value=0.3, max_value=10.0, value=round(_cur, 2),
+                            min_value=0.3, max_value=30.0, value=round(_cur, 2),
                             step=0.1, key="pier_solid_width_in",
                             help="Khai báo 1 lần → cập nhật mọi trụ đặc thân hẹp trên cầu.")
                         d["pier_solid_width_m"] = float(_new)
