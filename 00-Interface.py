@@ -390,6 +390,83 @@ _cc_theme.html(
     })();
     </script>""", height=0)
 
+# ── CẢM ỨNG BIỂU ĐỒ trên ĐIỆN THOẠI (pinch zoom 2D & 3D, chạm 2 lần reset) ────
+# (1) touch-action:none trên vùng plot → trình duyệt KHÔNG cướp cử chỉ (1 ngón
+#     không cuộn trang, 2 ngón không zoom cả trang) → Plotly nhận đủ sự kiện:
+#     2D 1 ngón = pan (dragmode pan), 3D 1 ngón = xoay, 2 ngón = pan.
+# (2) Plotly 2D KHÔNG có pinch-zoom gốc → quy đổi cử chỉ CHỤM/XOÈ 2 ngón thành
+#     sự kiện LĂN CHUỘT (wheel) tại trung điểm 2 ngón — Plotly đã bật scrollZoom
+#     nên zoom đúng tâm. Áp cho cả 3D (đồng nhất).
+# (3) Chạm 2 lần nhanh = dblclick → về khung hình mặc định (doubleClick reset).
+_cc_theme.html(
+    """<script>
+    (function(){
+      var d = window.parent.document;
+      if(d._cauTouchPlot) return; d._cauTouchPlot = true;
+      var stl = d.createElement('style');
+      stl.textContent =
+        '.js-plotly-plot, .js-plotly-plot .plot-container, '
+        +'.js-plotly-plot .svg-container, .js-plotly-plot canvas'
+        +'{touch-action:none !important; -ms-touch-action:none !important}';
+      d.head.appendChild(stl);
+
+      function mid(ts){ return {x:(ts[0].clientX+ts[1].clientX)/2,
+                                y:(ts[0].clientY+ts[1].clientY)/2}; }
+      function dist(ts){ var dx=ts[0].clientX-ts[1].clientX,
+                             dy=ts[0].clientY-ts[1].clientY;
+                         return Math.sqrt(dx*dx+dy*dy); }
+      var pinch = null, lastTap = 0, lastTapXY = null;
+
+      d.addEventListener('touchstart', function(e){
+        var gd = e.target.closest && e.target.closest('.js-plotly-plot');
+        if(!gd) { pinch = null; return; }
+        if(e.touches.length === 2){
+          pinch = {gd: gd, d: dist(e.touches)};
+          e.preventDefault();          // chặn zoom trang
+        }
+      }, {capture:true, passive:false});
+
+      d.addEventListener('touchmove', function(e){
+        if(!pinch || e.touches.length !== 2) return;
+        e.preventDefault();
+        var nd = dist(e.touches);
+        if(nd < 10) return;
+        var ratio = nd / pinch.d;
+        if(Math.abs(ratio - 1) < 0.01) return;
+        var m = mid(e.touches);
+        // Quy đổi tỉ lệ chụm → deltaY wheel (âm = phóng to). Hệ số 300 cho mượt.
+        var dy = -Math.log(ratio) * 300;
+        var tgt = d.elementFromPoint(m.x, m.y) || pinch.gd;
+        try{
+          tgt.dispatchEvent(new WheelEvent('wheel', {
+            bubbles:true, cancelable:true, view:d.defaultView,
+            clientX:m.x, clientY:m.y, deltaY:dy, deltaMode:0}));
+        }catch(err){}
+        pinch.d = nd;
+      }, {capture:true, passive:false});
+
+      d.addEventListener('touchend', function(e){
+        if(e.touches.length < 2) pinch = null;
+        // Chạm 2 lần nhanh (cùng chỗ ±40px) → dblclick = reset khung hình
+        if(e.touches.length === 0 && e.changedTouches.length === 1){
+          var gd = e.target.closest && e.target.closest('.js-plotly-plot');
+          if(!gd) return;
+          var t = e.changedTouches[0], now = Date.now();
+          if(now - lastTap < 350 && lastTapXY &&
+             Math.abs(t.clientX-lastTapXY.x) < 40 &&
+             Math.abs(t.clientY-lastTapXY.y) < 40){
+            try{
+              (d.elementFromPoint(t.clientX, t.clientY) || gd).dispatchEvent(
+                new MouseEvent('dblclick', {bubbles:true, cancelable:true,
+                  view:d.defaultView, clientX:t.clientX, clientY:t.clientY}));
+            }catch(err){}
+            lastTap = 0; lastTapXY = null;
+          } else { lastTap = now; lastTapXY = {x:t.clientX, y:t.clientY}; }
+        }
+      }, {capture:true, passive:false});
+    })();
+    </script>""", height=0)
+
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
 _auth_spec = _iutil.spec_from_file_location("auth00", os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-Auth.py"))
@@ -4893,17 +4970,40 @@ def _resolve_assembly(d, kind: str) -> dict:
     cfg = _asm_cfg(kind)
 
     def _ap_pier(rec):
-        """Áp khai báo THÂN trụ (khoảng cách 2 cột / bề rộng thân) cho mọi vị trí."""
+        """Áp THÂN trụ: KHAI BÁO TAY (spacing/width) ưu tiên; nếu không → QUY TẮC
+        MẶC ĐỊNH: mép ngoài thân LÙI 3m so xà mũ + tự thêm cột giữa khi thông thủy
+        2 cột > 10m (apply_pier_stem_layout)."""
         if not rec:
             return rec
         _sp = (d or {}).get("pier_col_spacing_m")
         _wd = (d or {}).get("pier_solid_width_m")
-        if _sp or _wd:
-            try:
+        try:
+            if _sp or _wd:
                 rec = PB.apply_stem_params(rec, spacing_m=_sp, width_m=_wd)
-            except Exception:
-                pass
+            else:
+                rec = PB.apply_pier_stem_layout(rec, float((d or {}).get("bc", 12.0)))
+        except Exception:
+            pass
         return rec
+
+    def _auto_pick_pier(items):
+        """Chọn TRỤ mặc định theo phương án + chiều cao thân (từ _clearance_mode):
+        PA1(fewest)→trụ THÂN CỘT (2 thân); PA2(straddle)→trụ ĐẶC thân hẹp, H_thân
+        >10m→trụ THAY ĐỔI TIẾT DIỆN (đặc, vát) tiết kiệm."""
+        if not items:
+            return None
+        _mode = (d or {}).get("_clearance_mode")
+        _Hs = float((d or {}).get("H_tru_est", 5.0) or 5.0)
+        def _find(*kw):
+            return next((it for it in items
+                         if all(k in str(it.get("ten", "")).lower() for k in kw)), None)
+        if _mode == "straddle":        # PA2 = đặc
+            if _Hs > 10.0:
+                return _find("thay đổi") or _find("đặc") or items[0]
+            return _find("đặc") or items[0]
+        if _mode == "fewest":          # PA1 = thân cột
+            return _find("2 thân") or _find("cột") or items[0]
+        return items[0]
 
     if kind == "tru":
         pp = _current_pier_parts()
@@ -4925,6 +5025,9 @@ def _resolve_assembly(d, kind: str) -> dict:
         # MỐ MẶC ĐỊNH = mố THƯ VIỆN đầu tiên (vd "Mố chữ U") thay khối mố generic cũ.
         if kind == "mo" and items:
             return items[0]
+        # TRỤ MẶC ĐỊNH = tự chọn theo phương án + chiều cao (PA1 cột / PA2 đặc).
+        if kind == "tru" and items:
+            return _ap_pier(_auto_pick_pier(items))
         return None
     _rec = cfg["get"](items, rid) or (items[0] if kind == "mo" and items else None)
     return _ap_pier(_rec) if kind == "tru" else _rec
