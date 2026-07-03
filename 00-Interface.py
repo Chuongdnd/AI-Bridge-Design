@@ -7617,7 +7617,16 @@ with _col_main:
                     try:
                         # DẦM mặt cắt dọc = profil dầm THẬT (đầu khấc) — CÙNG traces
                         # với trắc dọc (get_elevation_profile_traces), dời về tim
-                        # trụ (x−x_cut) → khớp tuyệt đối bố trí chung & 3D.
+                        # trụ (x−x_cut) → khớp tuyệt đối bố trí chung & 3D. Bảo đảm
+                        # cap_gap_m (khe ụ giữa) đã đặt → 2 đầu dầm LÙI chừa ụ giữa
+                        # ĐÚNG như trắc dọc (nếu chưa đặt thì tính lại tại đây).
+                        if d.get("cap_gap_m") is None:
+                            try:
+                                _gm = (BVK._get_PB().cap_mid_gap_m(_pa_tru)
+                                       if _pa_tru else 0.0)
+                                d["cap_gap_m"] = (_gm + 0.2) if _gm > 1e-6 else 0.0
+                            except Exception:
+                                d["cap_gap_m"] = 0.0
                         try:
                             _ep = BBUI.get_elevation_profile_traces(
                                 d, pfx="spt") or []
