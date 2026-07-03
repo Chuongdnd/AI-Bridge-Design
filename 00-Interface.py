@@ -5091,6 +5091,7 @@ def _resolve_assembly(d, kind: str) -> dict:
         try:
             if _sp or _wd:
                 rec = PB.apply_stem_params(rec, spacing_m=_sp, width_m=_wd)
+                rec = PB.widen_footing_to_cover_stem(rec)   # bệ phủ hết cột (tay)
             else:
                 rec = PB.apply_pier_stem_layout(rec, float((d or {}).get("bc", 12.0)))
         except Exception:
