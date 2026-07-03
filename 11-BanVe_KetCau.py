@@ -4963,9 +4963,10 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
     _use_mo  = bool(abutment_assembly) and g["is_mo"]
 
     if _use_asm:
-        # TRỤ LẮP GHÉP: vẽ footprint thật (bệ/thân/xà mũ, kể cả nhiều khối).
+        # TRỤ LẮP GHÉP: vẽ footprint thật (bệ/thân/xà mũ) + NÉT khối giữa (ụ giữa)
+        # và tường tai (detail=True) → mặt bằng xà mũ thể hiện đủ các khối.
         _PBm = _get_PB()
-        _polys = _PBm.pier_plan_polys(pier_assembly, target_width=bc)
+        _polys = _PBm.pier_plan_polys(pier_assembly, target_width=bc, detail=True)
         _seen = set()
         for _pl in _polys:
             _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
@@ -5078,16 +5079,26 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
         name="Địa hình"))
 
     if pier_assembly and not g["is_mo"]:
-        # TRỤ LẮP GHÉP: mặt cắt dọc thật (bệ/thân/xà mũ) từ hệ trụ mới.
+        # TRỤ: HÌNH CHIẾU ĐỨNG thật của LƯỚI 3D (project axis='y') — CÙNG NGUỒN &
+        # CÙNG cách neo với 3D và trắc dọc (bố trí chung): ĐỈNH ụ giữa = ĐÁY BẢN,
+        # đáy bệ = g["z_beb"], nới ụ giữa theo _pier_cap_widen. Nhờ vậy xà mũ bậc
+        # (ụ giữa/vai kê) + trụ 2 thân hiện ĐÚNG như trắc dọc, thay pier_elevation_rects.
         _PBm = _get_PB()
+        _z_ugiua = g["cao_dd"] + g["H_dam"]      # đỉnh ụ giữa = đáy bản mặt cầu
+        _z_beb   = g["z_beb"]
+        _wmap = (d or {}).get("_pier_cap_widen") or {}
+        _w0   = float((d or {}).get("_pier_cap_W0", 0) or 0)
+        _mid_extra = max(0.0, _wmap.get(round(g["x_cut"], 3), _w0) - _w0)
+        _ptr = _PBm.build_pier_mesh_traces(
+            pier_assembly, H_tru=(_z_ugiua - _z_beb),
+            x_ctr=0.0, z_base=_z_beb, cap_width=None, cap_mid_extra=_mid_extra)
         _seen = set()
-        for _rc in _PBm.pier_elevation_rects(
-                pier_assembly, H_tru=(g["z_cap_t"] - g["z_beb"]),
-                x_ctr=0.0, z_base=g["z_beb"]):
-            _nm = _rc["name"]; _sl = _nm not in _seen; _seen.add(_nm)
-            _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["be_dk"],
+        for _rc in project_mesh_traces(_ptr, axis="y"):
+            _nm = _rc["name"].split(" #")[0]
+            _sl = _nm not in _seen; _seen.add(_nm)
+            _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["dam_dk"],
                   _nm if _sl else "", showlegend=_sl)
-        z_top_pile = g["z_beb"]
+        z_top_pile = _z_beb
     elif g["is_mo"] and abutment_assembly:
         # MỐ THƯ VIỆN: mặt cắt DỌC thật (vai kê = đáy dầm, đáy bệ = ĐTN−0.5).
         _PBa = _get_PB()
@@ -5097,8 +5108,8 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
         # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn cùng nét THẤY, 1 chú giải "Mố"
         # (cánh trước, thân sau → thân nổi trên, dầm kê đúng vai kê thân).
         _el_pl = _PBa.abutment_elevation_polys(
-            abutment_assembly, x_face=0.0, out_dir=1.0, z_base=_zb_mo,
-            seat_z=_seat_mo)
+            abutment_assembly, H_tru=(_seat_mo - _zb_mo),
+            x_face=0.0, out_dir=1.0, z_base=_zb_mo, seat_z=_seat_mo)
         _el_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
         _seen = False
         for _pl in _el_pl:
