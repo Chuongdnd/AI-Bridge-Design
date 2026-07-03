@@ -4511,48 +4511,42 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         z_beb  = z_shb - be_H
 
         if pier_assembly:
-            # TRỤ LẮP GHÉP: vẽ MCN thật; neo z_top = ĐÁY DẦM (vai kê) → model tự
-            # nhô ụ giữa lên đỡ bản (KHÔNG cộng khấc vào z_top, tránh dìm dầm).
+            # TRỤ LẮP GHÉP: MCN = LÁT CẮT NGANG THẬT của LƯỚI 3D (cùng
+            # build_pier_mesh_traces với 3D & trắc dọc), cắt tại tim trụ
+            # (cut_mesh_traces axis="x") → xà mũ (ụ giữa đỡ bản) + 2 thân + bệ hiện
+            # ĐÚNG như 3D. Cap co bề rộng = bc; ĐỈNH ụ giữa neo ĐÁY BẢN (z_ban_b).
             _PBm = _get_PB()
-            _polys = _PBm.pier_mcn_polys(pier_assembly, z_top=_z_beam_soffit,
-                                         H_than=H_tru, target_width=bc, seat_view=True)
+            _wmap = (d or {}).get("_pier_cap_widen") or {}
+            _w0   = float((d or {}).get("_pier_cap_W0", 0) or 0)
+            _mid_extra = max(0.0, _wmap.get(round(x_cut, 3), _w0) - _w0)
+            _ptr = _PBm.build_pier_mesh_traces(
+                pier_assembly, H_tru=(z_ban_b - z_beb), x_ctr=0.0, z_base=z_beb,
+                cap_width=bc, cap_mid_extra=_mid_extra)
+            _polys = cut_mesh_traces(_ptr, axis="x", value=0.0)  # ngang: (y,z)
             _seen = set()
             for _pl in _polys:
-                _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
-                _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["btong_dk"],
+                _nm = _pl["name"].split(" #")[0]
+                _sl = _nm not in _seen; _seen.add(_nm)
+                _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["btong_dk"],
                       _nm if _sl else "", showlegend=_sl)
-            # KHỐI GIỮA (ụ giữa) đỡ bản mặt cầu — mặt cắt NGANG THẬT của cấu kiện xà
-            # mũ (đoạn CAO NHẤT, seat_view=False), KHÔNG bịa khối. ĐỈNH ụ giữa neo
-            # tại ĐÁY BẢN (z_ban_b) để ĐỠ BẢN — đồng bộ 3D (anchor_top = đáy bản).
-            try:
-                _polys_ug = _PBm.pier_mcn_polys(
-                    pier_assembly, z_top=_z_beam_soffit, H_than=H_tru,
-                    target_width=bc, seat_view=False)
-                _ug_caps = [pl for pl in _polys_ug if pl.get("name") == "Xà mũ"]
-                _ug_top = max((y for pl in _ug_caps for y in pl["ys"]),
-                              default=None)
-                _dz_ug = (z_ban_b - _ug_top) if _ug_top is not None else 0.0
-                _ug1 = True
-                for _pl in _ug_caps:
-                    _poly(fig, _pl["xs"], [y + _dz_ug for y in _pl["ys"]],
-                          _pl["color"], _C["btong_dk"],
-                          "Ụ giữa xà mũ (đỡ bản)" if _ug1 else "", showlegend=_ug1)
-                    _ug1 = False
-            except Exception:
-                pass
             _allx = [x for pl in _polys for x in pl["xs"]]
             if _allx:
                 be_W = max(be_W, abs(min(_allx)), abs(max(_allx)))
-            _capx = [x for pl in _polys if pl["name"] == "Xà mũ" for x in pl["xs"]]
-            _capy = [y for pl in _polys if pl["name"] == "Xà mũ" for y in pl["ys"]]
-            _bex  = [x for pl in _polys if pl["name"] == "Bệ trụ" for x in pl["xs"]]
-            _bey  = [y for pl in _polys if pl["name"] == "Bệ trụ" for y in pl["ys"]]
-            _thy  = [y for pl in _polys if pl["name"] == "Thân trụ" for y in pl["ys"]]
+            _capx = [x for pl in _polys if pl["name"].split(" #")[0] in ("Xà mũ",)
+                     for x in pl["xs"]]
+            _capy = [y for pl in _polys if pl["name"].split(" #")[0] in ("Xà mũ",)
+                     for y in pl["zs"]]
+            _bex  = [x for pl in _polys if pl["name"].split(" #")[0] == "Bệ trụ"
+                     for x in pl["xs"]]
+            _bey  = [y for pl in _polys if pl["name"].split(" #")[0] == "Bệ trụ"
+                     for y in pl["zs"]]
+            _thy  = [y for pl in _polys if pl["name"].split(" #")[0] == "Thân trụ"
+                     for y in pl["zs"]]
             if _capx:
                 cap_W = max(abs(min(_capx)), abs(max(_capx)))
-            _ally = [y for pl in _polys for y in pl["ys"]]
+            _ally = [y for pl in _polys for y in pl["zs"]]
             if _ally:
-                z_beb = min(_ally)
+                z_beb = min(z_beb, min(_ally))
             # (Dầm ĐẦU KHẤC lọt thẳng vào khấc xà mũ — KHÔNG vẽ đá kê gối riêng.)
             # KÍCH THƯỚC trụ lắp ghép: bề rộng & chiều cao từng bộ phận
             _xd = (max(_capx) if _capx else cap_W) + 0.9
