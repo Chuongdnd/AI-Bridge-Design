@@ -65,6 +65,28 @@ footer                            { display: none !important; }
    bằng ribbon ở trên cùng */
 [data-testid="stSidebarNav"]      { display: none !important; }
 
+/* ── ĐIỆN THOẠI: các CỘT trong hộp khai báo & nội dung chính XẾP CHỒNG DỌC ──
+   Màn hẹp mà giữ tỉ lệ cột ngang → cột phải bị ép còn 1 ký tự/dòng. */
+@media (max-width: 700px){
+  [data-testid="stDialog"] [data-testid="stHorizontalBlock"],
+  section.main [data-testid="stHorizontalBlock"],
+  [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
+    flex-wrap: wrap !important;
+  }
+  [data-testid="stDialog"] [data-testid="stColumn"],
+  section.main [data-testid="stColumn"],
+  [data-testid="stMain"] [data-testid="stColumn"] {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+  /* Biểu đồ trên điện thoại: ẨN chú giải (ẩn/hiện cấu kiện) + thanh CAO ĐỘ
+     (colorbar) — chiếm gần hết khung nhìn nhỏ. Máy tính vẫn hiển thị đủ. */
+  .js-plotly-plot .legend { display: none !important; }
+  .js-plotly-plot .infolayer g[class*="colorbar"],
+  .js-plotly-plot .infolayer g[class^="cb"] { display: none !important; }
+}
+
 /* ── Metrics ── */
 [data-testid="stMetric"] {
     background: #1a1a2a; border: 1px solid #333355;
@@ -390,80 +412,102 @@ _cc_theme.html(
     })();
     </script>""", height=0)
 
-# ── CẢM ỨNG BIỂU ĐỒ trên ĐIỆN THOẠI (pinch zoom 2D & 3D, chạm 2 lần reset) ────
-# (1) touch-action:none trên vùng plot → trình duyệt KHÔNG cướp cử chỉ (1 ngón
-#     không cuộn trang, 2 ngón không zoom cả trang) → Plotly nhận đủ sự kiện:
-#     2D 1 ngón = pan (dragmode pan), 3D 1 ngón = xoay, 2 ngón = pan.
-# (2) Plotly 2D KHÔNG có pinch-zoom gốc → quy đổi cử chỉ CHỤM/XOÈ 2 ngón thành
-#     sự kiện LĂN CHUỘT (wheel) tại trung điểm 2 ngón — Plotly đã bật scrollZoom
-#     nên zoom đúng tâm. Áp cho cả 3D (đồng nhất).
-# (3) Chạm 2 lần nhanh = dblclick → về khung hình mặc định (doubleClick reset).
+# ── CẢM ỨNG BIỂU ĐỒ trên ĐIỆN THOẠI ──────────────────────────────────────────
+# Nguyên tắc: 1 NGÓN = CUỘN TRANG như bình thường (không đụng biểu đồ) — cuộn
+# thoải mái. MỌI thao tác biểu đồ dùng 2 NGÓN (giả lập chuột vì Plotly mobile
+# không tự hỗ trợ): chụm/xoè = ZOOM (wheel tại trung điểm, scrollZoom xử lý);
+# kéo song song = kéo-chuột-trái → PAN bản vẽ 2D (dragmode=pan) / XOAY mô hình
+# 3D. Chạm 2 lần nhanh = dblclick → về khung hình mặc định.
 _cc_theme.html(
     """<script>
     (function(){
       var d = window.parent.document;
-      if(d._cauTouchPlot) return; d._cauTouchPlot = true;
+      if(d._cauTouchPlot2) return; d._cauTouchPlot2 = true;
+      // pan-y: 1 ngón vẫn cuộn dọc trang; 2 ngón do ta xử lý (preventDefault).
       var stl = d.createElement('style');
       stl.textContent =
-        '.js-plotly-plot, .js-plotly-plot .plot-container, '
+        '.js-plotly-plot, .js-plotly-plot .plot-container,'
         +'.js-plotly-plot .svg-container, .js-plotly-plot canvas'
-        +'{touch-action:none !important; -ms-touch-action:none !important}';
+        +'{touch-action:pan-y !important}';
       d.head.appendChild(stl);
 
       function mid(ts){ return {x:(ts[0].clientX+ts[1].clientX)/2,
                                 y:(ts[0].clientY+ts[1].clientY)/2}; }
       function dist(ts){ var dx=ts[0].clientX-ts[1].clientX,
                              dy=ts[0].clientY-ts[1].clientY;
-                         return Math.sqrt(dx*dx+dy*dy); }
-      var pinch = null, lastTap = 0, lastTapXY = null;
+                         return Math.hypot(dx,dy); }
+      function fire(tgt, type, x, y, btn){
+        try{ tgt.dispatchEvent(new MouseEvent(type, {bubbles:true,
+          cancelable:true, view:d.defaultView, clientX:x, clientY:y,
+          button:0, buttons:(btn===undefined?1:btn)})); }catch(err){}
+      }
+      var g = null, lastTap = 0, lastXY = null;
 
       d.addEventListener('touchstart', function(e){
         var gd = e.target.closest && e.target.closest('.js-plotly-plot');
-        if(!gd) { pinch = null; return; }
+        if(!gd){ g = null; return; }
         if(e.touches.length === 2){
-          pinch = {gd: gd, d: dist(e.touches)};
-          e.preventDefault();          // chặn zoom trang
+          e.preventDefault(); e.stopPropagation();
+          var m = mid(e.touches);
+          g = {gd:gd, mode:null, d0:dist(e.touches), m0:m,
+               lastD:dist(e.touches), lastM:m,
+               tgt:(d.elementFromPoint(m.x, m.y) || gd), drag:false};
         }
       }, {capture:true, passive:false});
 
       d.addEventListener('touchmove', function(e){
-        if(!pinch || e.touches.length !== 2) return;
-        e.preventDefault();
-        var nd = dist(e.touches);
-        if(nd < 10) return;
-        var ratio = nd / pinch.d;
-        if(Math.abs(ratio - 1) < 0.01) return;
-        var m = mid(e.touches);
-        // Quy đổi tỉ lệ chụm → deltaY wheel (âm = phóng to). Hệ số 300 cho mượt.
-        var dy = -Math.log(ratio) * 300;
-        var tgt = d.elementFromPoint(m.x, m.y) || pinch.gd;
-        try{
-          tgt.dispatchEvent(new WheelEvent('wheel', {
-            bubbles:true, cancelable:true, view:d.defaultView,
-            clientX:m.x, clientY:m.y, deltaY:dy, deltaMode:0}));
-        }catch(err){}
-        pinch.d = nd;
+        if(!g || e.touches.length !== 2) return;
+        e.preventDefault(); e.stopPropagation();
+        var nd = dist(e.touches), nm = mid(e.touches);
+        if(!g.mode){                     // phân loại cử chỉ sau ngưỡng 12px
+          var dd = Math.abs(nd - g.d0);
+          var dm = Math.hypot(nm.x - g.m0.x, nm.y - g.m0.y);
+          if(dd < 12 && dm < 12) return;
+          g.mode = (dd > dm) ? 'zoom' : 'drag';
+          if(g.mode === 'drag'){         // bắt đầu kéo-chuột-trái tại trung điểm
+            fire(g.tgt, 'mousedown', g.m0.x, g.m0.y, 1);
+            g.drag = true; g.lastM = g.m0;
+          }
+        }
+        if(g.mode === 'zoom'){
+          if(nd < 10) return;
+          var r = nd / g.lastD;
+          if(Math.abs(r - 1) < 0.01) return;
+          try{ (d.elementFromPoint(nm.x, nm.y) || g.tgt).dispatchEvent(
+            new WheelEvent('wheel', {bubbles:true, cancelable:true,
+              view:d.defaultView, clientX:nm.x, clientY:nm.y,
+              deltaY:-Math.log(r)*300, deltaMode:0})); }catch(err){}
+          g.lastD = nd;
+        } else {
+          fire(g.tgt, 'mousemove', nm.x, nm.y, 1);
+          g.lastM = nm;
+        }
       }, {capture:true, passive:false});
 
-      d.addEventListener('touchend', function(e){
-        if(e.touches.length < 2) pinch = null;
-        // Chạm 2 lần nhanh (cùng chỗ ±40px) → dblclick = reset khung hình
-        if(e.touches.length === 0 && e.changedTouches.length === 1){
+      function endGesture(e){
+        if(g && e.touches.length < 2){
+          if(g.drag) fire(g.tgt, 'mouseup', g.lastM.x, g.lastM.y, 0);
+          g = null;
+        }
+        // Chạm 2 lần nhanh (±40px) → dblclick reset
+        if(e.touches.length === 0 && e.changedTouches &&
+           e.changedTouches.length === 1){
           var gd = e.target.closest && e.target.closest('.js-plotly-plot');
           if(!gd) return;
           var t = e.changedTouches[0], now = Date.now();
-          if(now - lastTap < 350 && lastTapXY &&
-             Math.abs(t.clientX-lastTapXY.x) < 40 &&
-             Math.abs(t.clientY-lastTapXY.y) < 40){
-            try{
-              (d.elementFromPoint(t.clientX, t.clientY) || gd).dispatchEvent(
-                new MouseEvent('dblclick', {bubbles:true, cancelable:true,
-                  view:d.defaultView, clientX:t.clientX, clientY:t.clientY}));
+          if(now - lastTap < 350 && lastXY &&
+             Math.abs(t.clientX-lastXY.x) < 40 &&
+             Math.abs(t.clientY-lastXY.y) < 40){
+            try{ (d.elementFromPoint(t.clientX, t.clientY) || gd).dispatchEvent(
+              new MouseEvent('dblclick', {bubbles:true, cancelable:true,
+                view:d.defaultView, clientX:t.clientX, clientY:t.clientY}));
             }catch(err){}
-            lastTap = 0; lastTapXY = null;
-          } else { lastTap = now; lastTapXY = {x:t.clientX, y:t.clientY}; }
+            lastTap = 0; lastXY = null;
+          } else { lastTap = now; lastXY = {x:t.clientX, y:t.clientY}; }
         }
-      }, {capture:true, passive:false});
+      }
+      d.addEventListener('touchend', endGesture, {capture:true, passive:false});
+      d.addEventListener('touchcancel', endGesture, {capture:true, passive:false});
     })();
     </script>""", height=0)
 
