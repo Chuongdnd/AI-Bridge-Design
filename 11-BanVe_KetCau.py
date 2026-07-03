@@ -4521,6 +4521,25 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                 _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
                 _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["btong_dk"],
                       _nm if _sl else "", showlegend=_sl)
+            # KHỐI GIỮA (ụ giữa) đỡ bản mặt cầu — mặt cắt NGANG THẬT của cấu kiện xà
+            # mũ (đoạn CAO NHẤT, seat_view=False), KHÔNG bịa khối. ĐỈNH ụ giữa neo
+            # tại ĐÁY BẢN (z_ban_b) để ĐỠ BẢN — đồng bộ 3D (anchor_top = đáy bản).
+            try:
+                _polys_ug = _PBm.pier_mcn_polys(
+                    pier_assembly, z_top=_z_beam_soffit, H_than=H_tru,
+                    target_width=bc, seat_view=False)
+                _ug_caps = [pl for pl in _polys_ug if pl.get("name") == "Xà mũ"]
+                _ug_top = max((y for pl in _ug_caps for y in pl["ys"]),
+                              default=None)
+                _dz_ug = (z_ban_b - _ug_top) if _ug_top is not None else 0.0
+                _ug1 = True
+                for _pl in _ug_caps:
+                    _poly(fig, _pl["xs"], [y + _dz_ug for y in _pl["ys"]],
+                          _pl["color"], _C["btong_dk"],
+                          "Ụ giữa xà mũ (đỡ bản)" if _ug1 else "", showlegend=_ug1)
+                    _ug1 = False
+            except Exception:
+                pass
             _allx = [x for pl in _polys for x in pl["xs"]]
             if _allx:
                 be_W = max(be_W, abs(min(_allx)), abs(max(_allx)))
@@ -4572,18 +4591,6 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                   [z_capb, z_capb, z_cap_t, z_cap_t],
                   _C["btong"], _C["dam_dk"], "Xà mũ")
 
-        # ── Ụ GIỮA xà mũ tại TIM TRỤ: khối bê tông GIỮA 2 đầu dầm khấc, kê trên
-        #    vai kê (= đáy dầm) và VƯƠN LÊN đỡ BẢN mặt cầu (đỉnh = đáy bản). Đây là
-        #    KHỐI GIỮA của xà mũ (2 bên là vai kê đỡ đầu dầm khấc) — hợp cùng thân
-        #    xà mũ thành TOÀN BỘ khối xà mũ. Vẽ SOLID nổi rõ; dầm khấc chiếu (nét
-        #    đứt) phía sau nên ụ giữa hiện đầy đủ.
-        if _beam_cx:
-            _ux0 = min(_beam_cx) - 0.15; _ux1 = max(_beam_cx) + 0.15
-            _tpx = [_ux0] + ([0.0] if _ux0 < 0 < _ux1 else []) + [_ux1]
-            _poly(fig, _tpx + _tpx[::-1],
-                  [z_ban_b + _off(x) for x in _tpx]
-                  + [_z_beam_soffit for _ in _tpx],
-                  _C["btong"], _C["btong_dk"], "Ụ giữa xà mũ (đỡ bản)", lw=1.8)
 
         # Cọc — ưu tiên sơ đồ cọc khai báo từ DXF (mặt cắt ngang: chiếu trục ngang)
         _piles_vt = _layout_piles(d, vi_tri)
@@ -4956,9 +4963,10 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
     _use_mo  = bool(abutment_assembly) and g["is_mo"]
 
     if _use_asm:
-        # TRỤ LẮP GHÉP: vẽ footprint thật (bệ/thân/xà mũ, kể cả nhiều khối).
+        # TRỤ LẮP GHÉP: vẽ footprint thật (bệ/thân/xà mũ) + NÉT khối giữa (ụ giữa)
+        # và tường tai (detail=True) → mặt bằng xà mũ thể hiện đủ các khối.
         _PBm = _get_PB()
-        _polys = _PBm.pier_plan_polys(pier_assembly, target_width=bc)
+        _polys = _PBm.pier_plan_polys(pier_assembly, target_width=bc, detail=True)
         _seen = set()
         for _pl in _polys:
             _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
@@ -5049,11 +5057,13 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
 
 def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
                           abutment_assembly=None, df_geology=None,
-                          df_tim_line=None):
+                          df_tim_line=None, draw_own_beams=True):
     """MẶT CẮT DỌC tại vị trí — cắt dọc tim cầu qua mố/trụ: x = dọc cầu, y = cao độ.
     abutment_assembly: mố lắp ghép → vẽ mặt cắt dọc theo mố thực (nét thấy/khuất).
     df_geology/df_tim_line: khảo sát → dầm bám đường đỏ + móng bám địa hình (đồng
-    bộ 3D & trắc dọc)."""
+    bộ 3D & trắc dọc).
+    draw_own_beams=False → nơi gọi OVERLAY profil dầm THẬT (get_elevation_profile_
+    traces dời về tim trụ) = ĐÚNG như trắc dọc; hàm KHÔNG vẽ dầm hộp tham số."""
     g = _pos_geometry(d, vi_tri, pier_assembly, df_geology=df_geology,
                       df_tim_line=df_tim_line)
     fig = go.Figure()
@@ -5071,16 +5081,26 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
         name="Địa hình"))
 
     if pier_assembly and not g["is_mo"]:
-        # TRỤ LẮP GHÉP: mặt cắt dọc thật (bệ/thân/xà mũ) từ hệ trụ mới.
+        # TRỤ: HÌNH CHIẾU ĐỨNG thật của LƯỚI 3D (project axis='y') — CÙNG NGUỒN &
+        # CÙNG cách neo với 3D và trắc dọc (bố trí chung): ĐỈNH ụ giữa = ĐÁY BẢN,
+        # đáy bệ = g["z_beb"], nới ụ giữa theo _pier_cap_widen. Nhờ vậy xà mũ bậc
+        # (ụ giữa/vai kê) + trụ 2 thân hiện ĐÚNG như trắc dọc, thay pier_elevation_rects.
         _PBm = _get_PB()
+        _z_ugiua = g["cao_dd"] + g["H_dam"]      # đỉnh ụ giữa = đáy bản mặt cầu
+        _z_beb   = g["z_beb"]
+        _wmap = (d or {}).get("_pier_cap_widen") or {}
+        _w0   = float((d or {}).get("_pier_cap_W0", 0) or 0)
+        _mid_extra = max(0.0, _wmap.get(round(g["x_cut"], 3), _w0) - _w0)
+        _ptr = _PBm.build_pier_mesh_traces(
+            pier_assembly, H_tru=(_z_ugiua - _z_beb),
+            x_ctr=0.0, z_base=_z_beb, cap_width=None, cap_mid_extra=_mid_extra)
         _seen = set()
-        for _rc in _PBm.pier_elevation_rects(
-                pier_assembly, H_tru=(g["z_cap_t"] - g["z_beb"]),
-                x_ctr=0.0, z_base=g["z_beb"]):
-            _nm = _rc["name"]; _sl = _nm not in _seen; _seen.add(_nm)
-            _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["be_dk"],
+        for _rc in project_mesh_traces(_ptr, axis="y"):
+            _nm = _rc["name"].split(" #")[0]
+            _sl = _nm not in _seen; _seen.add(_nm)
+            _poly(fig, _rc["xs"], _rc["zs"], _rc["color"], _C["dam_dk"],
                   _nm if _sl else "", showlegend=_sl)
-        z_top_pile = g["z_beb"]
+        z_top_pile = _z_beb
     elif g["is_mo"] and abutment_assembly:
         # MỐ THƯ VIỆN: mặt cắt DỌC thật (vai kê = đáy dầm, đáy bệ = ĐTN−0.5).
         _PBa = _get_PB()
@@ -5090,8 +5110,8 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
         # MỐ = 1 KHỐI THỐNG NHẤT: vẽ mọi đoạn cùng nét THẤY, 1 chú giải "Mố"
         # (cánh trước, thân sau → thân nổi trên, dầm kê đúng vai kê thân).
         _el_pl = _PBa.abutment_elevation_polys(
-            abutment_assembly, x_face=0.0, out_dir=1.0, z_base=_zb_mo,
-            seat_z=_seat_mo)
+            abutment_assembly, H_tru=(_seat_mo - _zb_mo),
+            x_face=0.0, out_dir=1.0, z_base=_zb_mo, seat_z=_seat_mo)
         _el_pl.sort(key=lambda p: 0 if p.get("hidden") else 1)
         _seen = False
         for _pl in _el_pl:
@@ -5133,29 +5153,31 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
     # ── DẦM chủ (mặt cắt DỌC — hình chiếu cạnh) kê trên gối, vươn vào nhịp; ứng
     #    với bố trí chung toàn cầu. TRỤ: 2 đầu dầm 2 nhịp; MỐ: 1 đầu dầm vào nhịp.
     #    TRỤ có khấc → ụ giữa (tường tai) nhô cao hơn đáy dầm đúng độ sâu khấc.
-    _z_sof = g["cao_dd"]                       # đáy dầm (kê trên gối)
-    _z_topd = g["cao_dd"] + g["H_dam"]         # đỉnh dầm = đáy bản
-    try:
-        _notch_d = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
-                    if (pier_assembly and not g["is_mo"]) else 0.0) or 0.0
-    except Exception:
-        _notch_d = 0.0
-    _gap_d = max(0.12, _notch_d * 0.6)         # khe co giãn giữa 2 đầu dầm
-    _sides = ([-1, 1] if not g["is_mo"] else [1])   # mố: dầm vào nhịp (+x)
-    _leg_d = True
-    for _sg in _sides:
-        _xn = _sg * _gap_d
-        _xf = _sg * (x_span - 0.05)
-        _poly(fig, [_xn, _xf, _xf, _xn],
-              [_z_sof, _z_sof, _z_topd, _z_topd],
-              _C["dam"], _C["dam_dk"],
-              "Dầm chủ" if _leg_d else "", showlegend=_leg_d)
-        _leg_d = False
-    # Ụ giữa / tường tai (khấc) giữa 2 đầu dầm ở TRỤ có khấc.
-    if not g["is_mo"] and _notch_d > 1e-3:
-        _poly(fig, [-_gap_d, _gap_d, _gap_d, -_gap_d],
-              [_z_sof, _z_sof, _z_sof + _notch_d, _z_sof + _notch_d],
-              _C["btong"], _C["dam_dk"], "Ụ giữa (khấc)", showlegend=True)
+    #    draw_own_beams=False → nơi gọi overlay profil dầm THẬT (đầu khấc) khớp trắc dọc.
+    if draw_own_beams:
+        _z_sof = g["cao_dd"]                       # đáy dầm (kê trên gối)
+        _z_topd = g["cao_dd"] + g["H_dam"]         # đỉnh dầm = đáy bản
+        try:
+            _notch_d = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
+                        if (pier_assembly and not g["is_mo"]) else 0.0) or 0.0
+        except Exception:
+            _notch_d = 0.0
+        _gap_d = max(0.12, _notch_d * 0.6)         # khe co giãn giữa 2 đầu dầm
+        _sides = ([-1, 1] if not g["is_mo"] else [1])   # mố: dầm vào nhịp (+x)
+        _leg_d = True
+        for _sg in _sides:
+            _xn = _sg * _gap_d
+            _xf = _sg * (x_span - 0.05)
+            _poly(fig, [_xn, _xf, _xf, _xn],
+                  [_z_sof, _z_sof, _z_topd, _z_topd],
+                  _C["dam"], _C["dam_dk"],
+                  "Dầm chủ" if _leg_d else "", showlegend=_leg_d)
+            _leg_d = False
+        # Ụ giữa / tường tai (khấc) giữa 2 đầu dầm ở TRỤ có khấc.
+        if not g["is_mo"] and _notch_d > 1e-3:
+            _poly(fig, [-_gap_d, _gap_d, _gap_d, -_gap_d],
+                  [_z_sof, _z_sof, _z_sof + _notch_d, _z_sof + _notch_d],
+                  _C["btong"], _C["dam_dk"], "Ụ giữa (khấc)", showlegend=True)
 
     # Cọc (chiếu lên mặt phẳng dọc, có độ xiên ix)
     _piles = g["piles"] or _auto_pile_grid(g)

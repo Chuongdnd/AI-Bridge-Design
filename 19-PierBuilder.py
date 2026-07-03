@@ -441,6 +441,98 @@ def apply_stem_params(pier: dict, spacing_m: float = None,
 
 
 
+def _stem_col_width_m(pier: dict) -> float:
+    """Bề rộng NGANG (m) 1 cột/khối thân trụ (từ mặt cắt thư viện)."""
+    p = migrate_pier(pier or {})
+    lays = stem_layers_of(p.get("parts", {}).get("than", {}))
+    if not lays:
+        return 1.4
+    sol = _section_solids(lays[0]["section"])
+    if not sol:
+        return 1.4
+    us = [u for (u, _v) in sol[0]["outer"]]
+    return ((max(us) - min(us)) * MM) if us else 1.4
+
+
+def _add_middle_column(pier: dict) -> dict:
+    """Thêm 1 CỘT GIỮA (căn u=0) cho trụ 2 thân → 3 cột. Nhân bản khối cột (giữ
+    bề rộng thư viện), dịch tâm về 0. Trả pier mới."""
+    import copy
+    p = copy.deepcopy(migrate_pier(pier or {}))
+    than = p.get("parts", {}).get("than", {})
+    lays = stem_layers_of(than)
+    new_lays = []
+    for lay in lays:
+        sec = dict(lay.get("section") or {})
+        sol = _section_solids(sec)
+        if len(sol) >= 2:
+            c = _poly_centroid_u(sol[0]["outer"])
+            mid = {"outer": [[u - c, v] for (u, v) in sol[0]["outer"]],
+                   "holes": [[[u - c, v] for (u, v) in h]
+                             for h in sol[0].get("holes", [])]}
+            sec["solids"] = list(sol) + [mid]
+        new_lays.append({**lay, "section": sec})
+    than = dict(than); than["layers"] = new_lays
+    p["parts"] = dict(p["parts"]); p["parts"]["than"] = than
+    return p
+
+
+def apply_pier_stem_layout(pier: dict, bc: float, overhang: float = 3.0,
+                           clear_limit: float = 10.0) -> dict:
+    """QUY TẮC MẶC ĐỊNH vị trí thân trụ theo bề rộng cầu bc:
+      • MỌI loại: mép ngoài thân trụ LÙI `overhang` (=3m) so với mép xà mũ (±bc/2)
+        → mép ngoài thân = ±(bc/2 − overhang). Giữ bề rộng cột theo thư viện.
+      • Trụ 2 thân: nếu THÔNG THỦY 2 cột (mép trong ↔ mép trong) > clear_limit
+        (=10m) → THÊM 1 cột GIỮA (3 cột đều).
+    Trả pier mới (không đổi gốc)."""
+    kind, _ = pier_stem_info(pier)
+    target = float(bc) / 2.0 - float(overhang)     # mép ngoài thân (m)
+    if target <= 0.3:
+        return pier
+    b_col = _stem_col_width_m(pier)
+    if kind == "2cot":
+        # tim-tim để mép ngoài cột ngoài = ±target
+        spacing = max(0.5, 2.0 * target - b_col)
+        p = apply_stem_params(pier, spacing_m=spacing)
+        clear = 2.0 * target - 2.0 * b_col          # thông thủy = bc − 6 − 2·b_col
+        if clear > clear_limit + 1e-6:
+            p = _add_middle_column(p)
+            # 3 cột ĐỀU: giãn về ±target (mép ngoài), cột giữa tại 0 (đã căn)
+            p = _spread_columns_even(p, target, b_col)
+        return p
+    if kind == "dac":
+        return apply_stem_params(pier, width_m=max(0.5, 2.0 * target))  # = bc − 2·overhang
+    return pier
+
+
+def _spread_columns_even(pier: dict, target: float, b_col: float) -> dict:
+    """Căn ĐỀU các cột: 2 cột ngoài mép ngoài = ±target, cột giữa u=0."""
+    import copy
+    p = copy.deepcopy(migrate_pier(pier or {}))
+    than = p.get("parts", {}).get("than", {})
+    out_c = (target - b_col / 2.0) / MM              # tâm cột ngoài (mm)
+    new_lays = []
+    for lay in stem_layers_of(than):
+        sec = dict(lay.get("section") or {})
+        sol = _section_solids(sec)
+        cs = sorted(sol, key=lambda s: _poly_centroid_u(s["outer"]))
+        n = len(cs)
+        if n >= 3:
+            tgt = [(-out_c + i * (2 * out_c) / (n - 1)) for i in range(n)]
+            ns = []
+            for s, tu in zip(cs, tgt):
+                c = _poly_centroid_u(s["outer"])
+                ns.append({"outer": [[u + (tu - c), v] for (u, v) in s["outer"]],
+                           "holes": [[[u + (tu - c), v] for (u, v) in h]
+                                     for h in s.get("holes", [])]})
+            sec["solids"] = ns
+            sec["outer"] = ns[0]["outer"]; sec["holes"] = ns[0].get("holes", [])
+        new_lays.append({**lay, "section": sec})
+    than = dict(than); than["layers"] = new_lays
+    p["parts"] = dict(p["parts"]); p["parts"]["than"] = than
+    return p
+
+
 def _plan_mesh(section, z0, H, x_ctr, color, name):
     """Bệ/thân: section (u,v) mm → mặt bằng (x=v dọc, y=u ngang), đùn z.
     Hỗ trợ NHIỀU khối rời (vd thân trụ 2 cột) → gộp thành 1 mesh."""
@@ -824,11 +916,13 @@ def pier_total_height(pier: dict, H_tru: float = None) -> float:
 
 
 def pier_plan_polys(pier: dict, target_width: float = None,
-                    cap_mid_extra: float = 0.0) -> list:
+                    cap_mid_extra: float = 0.0, detail: bool = False) -> list:
     """Hình chiếu MẶT BẰNG (ngang u × dọc v) của trụ lắp ghép → list
     {name,color,xs(ngang m),ys(dọc m)}. Thân/bệ giữ footprint thật (kể cả
     nhiều khối); xà mũ = chữ nhật ngang(co theo cầu) × sâu tổng các đoạn.
-    cap_mid_extra>0 → xà mũ NỚI RỘNG dọc (nhịp SPT vượt tĩnh không)."""
+    cap_mid_extra>0 → xà mũ NỚI RỘNG dọc (nhịp SPT vượt tĩnh không).
+    detail=True → tách TỪNG ĐOẠN xà mũ (vai kê / ụ giữa) thành band riêng + vẽ nét
+    KHỐI GIỮA (ụ giữa) và TƯỜNG TAI (2 tường đầu, ngoài khấc kê dầm)."""
     p = migrate_pier(pier or {})
     parts = p.get("parts", {})
     be, than, cap = parts.get("be", {}), parts.get("than", {}), parts.get("xa_mu", {})
@@ -848,15 +942,46 @@ def pier_plan_polys(pier: dict, target_width: float = None,
     _footprint(than, "Thân trụ", _COL["than"])
     cap_secs = _cap_layers(cap)
     if cap_secs:
-        total_D = (sum(float(l.get("D", 1.8) or 1.8) for l in cap_secs) or 1.8) \
-            + max(0.0, float(cap_mid_extra or 0.0))     # nới ụ giữa (dọc)
-        sec = max(cap_secs, key=lambda l: _sec_v_extent(l["section"]))["section"]
-        if target_width:
-            sec = _scale_section_u(sec, target_width)
-        umin, umax, _, _ = _solids_bbox(_section_solids(sec))
-        out.append({"name": "Xà mũ", "color": _COL["xa_mu"],
-                    "xs": [umin * MM, umax * MM, umax * MM, umin * MM],
-                    "ys": [-total_D / 2, -total_D / 2, total_D / 2, total_D / 2]})
+        _Ds = [float(l.get("D", 1.8) or 1.8) for l in cap_secs]
+        _hs = [_sec_v_extent(l["section"]) for l in cap_secs]
+        _hi = max(range(len(cap_secs)), key=lambda i: _hs[i])  # đoạn ụ giữa (cao nhất)
+        _Ds_eff = list(_Ds); _Ds_eff[_hi] += max(0.0, float(cap_mid_extra or 0.0))
+        total_D = sum(_Ds_eff) or 1.8
+        if detail and len(cap_secs) >= 2:
+            # TỪNG ĐOẠN xà mũ thành band dọc + nét ụ giữa / tường tai.
+            _v0 = -total_D / 2.0
+            for _i, (l, _Dv) in enumerate(zip(cap_secs, _Ds_eff)):
+                _sec = l["section"]
+                if target_width:
+                    _sec = _scale_section_u(_sec, target_width)
+                _um, _uM, _, _ = _solids_bbox(_section_solids(_sec))
+                _v1 = _v0 + _Dv
+                _is_mid = (_i == _hi)
+                out.append({
+                    "name": "Ụ giữa xà mũ" if _is_mid else "Vai kê xà mũ",
+                    "color": _COL["xa_mu"],
+                    "xs": [_um * MM, _uM * MM, _uM * MM, _um * MM],
+                    "ys": [_v0, _v0, _v1, _v1]})
+                if not _is_mid:      # đoạn vai kê → nét TƯỜNG TAI 2 đầu (ngoài khấc)
+                    _sh = _cap_seat_half_m(_sec)
+                    _ue = max(abs(_um), abs(_uM)) * MM
+                    if _sh is not None and _ue - _sh > 0.02:
+                        for _sgn in (-1.0, 1.0):
+                            _a = _sgn * _sh; _b = _sgn * _ue
+                            out.append({
+                                "name": "Tường tai xà mũ",
+                                "color": _COL["xa_mu"],
+                                "xs": [_a, _b, _b, _a],
+                                "ys": [_v0, _v0, _v1, _v1]})
+                _v0 = _v1
+        else:
+            sec = cap_secs[_hi]["section"]
+            if target_width:
+                sec = _scale_section_u(sec, target_width)
+            umin, umax, _, _ = _solids_bbox(_section_solids(sec))
+            out.append({"name": "Xà mũ", "color": _COL["xa_mu"],
+                        "xs": [umin * MM, umax * MM, umax * MM, umin * MM],
+                        "ys": [-total_D / 2, -total_D / 2, total_D / 2, total_D / 2]})
     return out
 
 
@@ -867,6 +992,25 @@ def _sec_v_extent(section: dict) -> float:
         return 0.0
     _, _, vmin, vmax = _solids_bbox(sl)
     return (vmax - vmin) * MM
+
+
+def _cap_seat_half_m(section: dict):
+    """Nửa bề rộng KHẤC KÊ DẦM (m) của 1 đoạn xà mũ = |u| lớn nhất của vùng ĐỈNH
+    bị HẠ THẤP (khấc) so với đỉnh tường tai. Ngoài |u| này là TƯỜNG TAI (đỉnh cao).
+    Trả None nếu đỉnh phẳng (không có khấc/tường tai)."""
+    sols = _section_solids(section)
+    if not sols:
+        return None
+    umin, umax, vmin, vmax = _solids_bbox(sols)
+    h = vmax - vmin
+    if h <= 1e-6:
+        return None
+    vc  = (vmin + vmax) / 2.0
+    thr = vmax - 0.25 * h                 # thấp hơn đỉnh ≥25% chiều cao → là khấc
+    us  = [abs(u) for s in sols for (u, v) in s["outer"] if v > vc and v <= thr]
+    if not us:
+        return None
+    return max(us) * MM
 
 
 def cap_mid_gap_m(pier: dict) -> float:
