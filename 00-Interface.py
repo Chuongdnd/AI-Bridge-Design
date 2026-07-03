@@ -5185,6 +5185,12 @@ def _resolve_assembly(d, kind: str) -> dict:
                 return _ap_pier(PB.build_pier_from_parts(
                     cap, stem, foot, ten=pp.get("ten", "Trụ lắp ghép")))
     items = st.session_state.get(cfg["ss"]) or cfg["load"]()
+    # PHƯƠNG ÁN quyết định LOẠI trụ mặc định (PA1→thân cột, PA2→đặc thân hẹp,
+    # H_thân>10m→thay đổi tiết diện). ƯU TIÊN hơn gán id chung để 2 PA khác loại
+    # rõ; người dùng muốn trụ riêng thì GHÉP TRỤ TỔNG (pp — đã xử lý ở trên).
+    if kind == "tru" and (d or {}).get("_clearance_mode") in ("fewest", "straddle") \
+            and items:
+        return _ap_pier(_auto_pick_pier(items))
     rid = (d or {}).get(cfg["id_key"])
     if not rid:
         # MỐ MẶC ĐỊNH = mố THƯ VIỆN đầu tiên (vd "Mố chữ U") thay khối mố generic cũ.
