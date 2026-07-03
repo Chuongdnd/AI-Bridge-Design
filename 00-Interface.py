@@ -65,6 +65,23 @@ footer                            { display: none !important; }
    bằng ribbon ở trên cùng */
 [data-testid="stSidebarNav"]      { display: none !important; }
 
+/* ── ĐIỆN THOẠI: các CỘT trong hộp khai báo & nội dung chính XẾP CHỒNG DỌC ──
+   Màn hẹp mà giữ tỉ lệ cột ngang → cột phải bị ép còn 1 ký tự/dòng. */
+@media (max-width: 700px){
+  [data-testid="stDialog"] [data-testid="stHorizontalBlock"],
+  section.main [data-testid="stHorizontalBlock"],
+  [data-testid="stMain"] [data-testid="stHorizontalBlock"] {
+    flex-wrap: wrap !important;
+  }
+  [data-testid="stDialog"] [data-testid="stColumn"],
+  section.main [data-testid="stColumn"],
+  [data-testid="stMain"] [data-testid="stColumn"] {
+    flex: 1 1 100% !important;
+    width: 100% !important;
+    min-width: 100% !important;
+  }
+}
+
 /* ── Metrics ── */
 [data-testid="stMetric"] {
     background: #1a1a2a; border: 1px solid #333355;
