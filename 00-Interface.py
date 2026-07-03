@@ -2410,7 +2410,7 @@ def dialog_step3():
     with run_col:
         st.markdown(
             "<p style='font-size:11px;color:#888;margin-bottom:4px'>"
-            "🤖 Pipeline AI: TK → Hình học → KCN → Trụ → Móng → Lớp phủ → Bản vẽ → So sánh PA</p>",
+            "🤖 Pipeline AI: Địa chất → TK → Hình học → KCN → Trụ → Móng → Lớp phủ → Bản vẽ → So sánh PA</p>",
             unsafe_allow_html=True,
         )
         # on_click callback: bắt cú nhấn TIN CẬY ngay cả khi vừa sửa ô nhập
