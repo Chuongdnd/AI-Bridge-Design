@@ -1010,6 +1010,7 @@ if 'panel_widths' not in st.session_state:
 
 # ── Metadata 8 bước pipeline AI ──────────────────────────────────────────────
 PIPELINE_STEPS = [
+    {"id": "DC",   "label": "Địa hình & Địa chất", "desc": "Kiểm tra dữ liệu khảo sát tim tuyến + hố khoan đã khai báo",  "icon": "🪨", "weight": 5},
     {"id": "TK",   "label": "Tĩnh không ỐTN",    "desc": "Tra cứu tĩnh không thông thuyền theo TCVN 8818:2022",         "icon": "🌊", "weight": 5},
     {"id": "YTHH", "label": "Yếu tố hình học",     "desc": "Tính MCN, chiều rộng cầu, độ dốc dọc ngang",                  "icon": "📐", "weight": 10},
     {"id": "KCN",  "label": "AI kết cấu nhịp",     "desc": "Dự báo loại dầm, số nhịp, chiều dài, chiều cao",              "icon": "🤖", "weight": 20},
@@ -1017,7 +1018,7 @@ PIPELINE_STEPS = [
     {"id": "MONG", "label": "AI móng cầu",          "desc": "Dự báo loại móng, đường kính cọc, chiều sâu",                 "icon": "⚙️", "weight": 20},
     {"id": "LPC",  "label": "Lớp phủ mặt cầu",     "desc": "Tư vấn cấu tạo lớp phủ theo TCVN 8819:2011",                 "icon": "🛣️", "weight": 5},
     {"id": "BVK",  "label": "Bản vẽ kết cấu",      "desc": "Sinh bản vẽ trắc dọc, mặt cắt ngang, mố trụ",                "icon": "📋", "weight": 10},
-    {"id": "SSP",  "label": "So sánh phương án",   "desc": "Sinh và đánh giá 3 phương án loại dầm",                       "icon": "📊", "weight": 10},
+    {"id": "SSP",  "label": "So sánh phương án",   "desc": "Sinh và đánh giá 3 phương án loại dầm",                       "icon": "📊", "weight": 5},
 ]
 assert sum(s["weight"] for s in PIPELINE_STEPS) == 100
 
@@ -2469,6 +2470,32 @@ def dialog_step3():
         kcn_models  = None
         pier_models = None
         fnd_models  = None
+
+        # ── DC — ĐỊA HÌNH & ĐỊA CHẤT (bước ĐẦU pipeline) ────────────────
+        # Kiểm tra dữ liệu khảo sát người dùng đã khai (hộp Địa hình & Địa
+        # chất): tim tuyến (df_tim_line) + hố khoan (dia_chat_data). Thiếu →
+        # cảnh báo (không chặn pipeline — hệ dùng giá trị mặc định).
+        tracker.start("DC")
+        try:
+            _dc_terr_ok = lt_diahinh_arr is not None
+            _dc_geo     = st.session_state.get('dia_chat_data')
+            _n_hk = 0
+            try:
+                _n_hk = len((_dc_geo or {}).get('ho_khoan')
+                            or (_dc_geo or {}).get('hk') or _dc_geo or [])
+            except Exception:
+                pass
+            if _dc_terr_ok and _dc_geo:
+                tracker.done("DC", f"Tim tuyến {len(lt_diahinh_arr)} điểm · "
+                                    f"{_n_hk} hố khoan · CĐTN_tb≈{h_tn_tb:.2f}m")
+            elif _dc_terr_ok:
+                tracker.done("DC", f"Tim tuyến {len(lt_diahinh_arr)} điểm · "
+                                    f"CĐTN_tb≈{h_tn_tb:.2f}m (chưa có địa chất)")
+            else:
+                tracker.error("DC", "Chưa nạp Địa hình & Địa chất — dùng cao độ "
+                                     "mặc định. Khai báo ở hộp 🪨 để chính xác.")
+        except Exception as _e:
+            tracker.error("DC", str(_e))
 
         # ── TK ──────────────────────────────────────────────────────────
         tracker.start("TK")
