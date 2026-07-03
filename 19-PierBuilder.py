@@ -939,6 +939,30 @@ def pier_elevation_rects(pier: dict, H_tru: float = None,
     return rects
 
 
+def cap_seat_x_centers(pier: dict, x_ctr: float = 0.0,
+                       cap_mid_extra: float = 0.0) -> list:
+    """Lý trình TÂM (m) các đoạn VAI KÊ (khối GÁC DẦM — thấp hơn ụ giữa) của xà mũ,
+    dùng để CẮT lấy mặt cắt ngang khối gác dầm. Trả [] nếu xà mũ 1 đoạn (không có
+    ụ giữa / vai kê riêng)."""
+    p = migrate_pier(pier or {})
+    caps = _cap_layers(p.get("parts", {}).get("xa_mu", {}))
+    if len(caps) < 2:
+        return []
+    Ds = [float(l.get("D", 1.8) or 1.8) for l in caps]
+    hs = [_sec_v_extent(l["section"]) for l in caps]
+    hi = max(range(len(caps)), key=lambda i: hs[i])
+    Ds[hi] += max(0.0, float(cap_mid_extra or 0.0))
+    total = sum(Ds) or 1.8
+    x = x_ctr - total / 2.0
+    out = []
+    for i, Dv in enumerate(Ds):
+        xc = x + Dv / 2.0
+        if i != hi and hs[i] < hs[hi] - 1e-6:      # đoạn THẤP hơn ụ giữa = vai kê
+            out.append(xc)
+        x += Dv
+    return out
+
+
 def pier_total_height(pier: dict, H_tru: float = None) -> float:
     p = migrate_pier(pier or {})
     parts = p.get("parts", {})

@@ -3352,10 +3352,16 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             _ag(_abox(xL_water, xR_water, -yw_local, yw_local,
                                 z_w - 0.05 * hz, z_w, clr, op, lbl, skew=False))
 
-        # Khung tĩnh không B×H (dây đỏ)
+        # Khung tĩnh không B×H (dây đỏ) — bề rộng B_tk VUÔNG GÓC SÔNG; sông cắt
+        # tuyến theo GÓC GIAO nên khung XIÊN theo góc như mố/trụ/mặt cầu (góc=90°
+        # → dọc tuyến như cũ). Hướng sông = hướng trụ xiên (_vn tại tim, off 0→1).
         _grp_state["g"] = "Tĩnh không"
-        xL_tk = x_tim - B_tk/2; xR_tk = x_tim + B_tk/2
-        xrL, yrL = _vn(xL_tk, 0); xrR, yrR = _vn(xR_tk, 0)
+        _ck0 = _vn(x_tim, 0.0); _ck1 = _vn(x_tim, 1.0)
+        _rvx = _ck1[0] - _ck0[0]; _rvy = _ck1[1] - _ck0[1]
+        _rvn = (_rvx * _rvx + _rvy * _rvy) ** 0.5 or 1.0
+        _pux = -_rvy / _rvn; _puy = _rvx / _rvn      # vuông góc sông = hướng B_tk
+        xrL = _ck0[0] - _pux * (B_tk / 2); yrL = _ck0[1] - _puy * (B_tk / 2)
+        xrR = _ck0[0] + _pux * (B_tk / 2); yrR = _ck0[1] + _puy * (B_tk / 2)
         z_tkb = MNCN * hz; z_tkt = (MNCN + H_tk) * hz
         for xs, ys, xe, ye, z0, z1, nm in [
             (xrL,yrL, xrR,yrR, z_tkb,z_tkb, "Đáy TK"),
@@ -3825,10 +3831,10 @@ def _ve_binh_do_cong(d, df_geology):
     _ns = max(24, int(L_cau / 2))
     ss  = np.linspace(x0, x_end, _ns)
 
-    # ── Khung tĩnh không (sông) — vuông góc tuyến tại tim tĩnh không ─────────
+    # ── Khung tĩnh không (sông) — BÁM GÓC XIÊN (sông cắt tuyến theo góc giao) ──
     ss_tk = np.linspace(x_tim - B_tk/2, x_tim + B_tk/2, 8)
-    _la = [_vn(s, -B_tk*0.7, skew=False) for s in ss_tk]
-    _ra = [_vn(s, +B_tk*0.7, skew=False) for s in ss_tk]
+    _la = [_vn(s, -B_tk*0.7) for s in ss_tk]     # skew=True → sông xiên theo góc
+    _ra = [_vn(s, +B_tk*0.7) for s in ss_tk]
     _px, _py = _xy(_la + _ra[::-1] + [_la[0]])
     fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
         fillcolor="rgba(52,152,219,0.15)", mode="lines",
@@ -3860,13 +3866,14 @@ def _ve_binh_do_cong(d, df_geology):
             name=(_nmk if _tkp_first else ""), showlegend=_tkp_first))
         _tkp_first = False
 
-    # ── Đường đầu cầu (2 đầu, kéo dài ngoài mố, KHÔNG xiên) + mái TALUY ──────
+    # ── Đường đầu cầu (2 đầu, kéo dài ngoài mố) — BÁM góc xiên như MẶT CẦU & 3D
+    #    (add_all_to_terrain_fig dùng _vn_ext skew=True) + mái TALUY ──────────
     _h_dap_tb = max(1.5, float(d.get("H_tru_est", 5.0)) * 0.4)   # chiều cao đắp ước tính
     _taluy_w  = 1.5 * _h_dap_tb                                   # bề rộng chân taluy 1:1.5
     for s_m, od, lbl in [(x0, -1.0, "Đường đầu cầu"), (x_end, 1.0, None)]:
         ss_a = np.linspace(s_m, s_m + od*mg, 14)
-        _la = [_vn(s, -bc/2, skew=False) for s in ss_a]
-        _ra = [_vn(s, +bc/2, skew=False) for s in ss_a]
+        _la = [_vn(s, -bc/2) for s in ss_a]      # skew=True → xiên theo góc giao
+        _ra = [_vn(s, +bc/2) for s in ss_a]
         _px, _py = _xy(_la + _ra[::-1] + [_la[0]])
         fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
             fillcolor="rgba(196,164,107,0.28)", mode="lines",
@@ -3874,7 +3881,7 @@ def _ve_binh_do_cong(d, df_geology):
             name=lbl or "", showlegend=bool(lbl)))
         # Mái taluy: chân taluy = mép đường + bề rộng taluy (nét đứt 2 bên)
         for _sgn in (-1, 1):
-            _toe = [_vn(s, _sgn*(bc/2 + _taluy_w), skew=False) for s in ss_a]
+            _toe = [_vn(s, _sgn*(bc/2 + _taluy_w)) for s in ss_a]
             _px, _py = _xy(_toe)
             fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
                 line=dict(color="#a5866b", width=1.0, dash="dot"),
@@ -3882,8 +3889,8 @@ def _ve_binh_do_cong(d, df_geology):
                 showlegend=bool(lbl and _sgn == -1)))
             # gạch mái taluy (đường xiên từ mép đường ra chân taluy)
             for _st in np.linspace(ss_a[0], ss_a[-1], 6):
-                _e0 = _vn(_st, _sgn*bc/2, skew=False)
-                _e1 = _vn(_st, _sgn*(bc/2 + _taluy_w), skew=False)
+                _e0 = _vn(_st, _sgn*bc/2)
+                _e1 = _vn(_st, _sgn*(bc/2 + _taluy_w))
                 fig.add_trace(go.Scatter(x=[_e0[0], _e1[0]], y=[_e0[1], _e1[1]],
                     mode="lines", line=dict(color="#c4a76b", width=0.6),
                     showlegend=False, hoverinfo="skip"))
@@ -4511,48 +4518,59 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
         z_beb  = z_shb - be_H
 
         if pier_assembly:
-            # TRỤ LẮP GHÉP: vẽ MCN thật; neo z_top = ĐÁY DẦM (vai kê) → model tự
-            # nhô ụ giữa lên đỡ bản (KHÔNG cộng khấc vào z_top, tránh dìm dầm).
+            # TRỤ LẮP GHÉP: MCN = LÁT CẮT NGANG THẬT của LƯỚI 3D (cùng
+            # build_pier_mesh_traces với 3D & trắc dọc), cắt tại tim trụ
+            # (cut_mesh_traces axis="x") → xà mũ (ụ giữa đỡ bản) + 2 thân + bệ hiện
+            # ĐÚNG như 3D. Cap co bề rộng = bc; ĐỈNH ụ giữa neo ĐÁY BẢN (z_ban_b).
             _PBm = _get_PB()
-            _polys = _PBm.pier_mcn_polys(pier_assembly, z_top=_z_beam_soffit,
-                                         H_than=H_tru, target_width=bc, seat_view=True)
+            _wmap = (d or {}).get("_pier_cap_widen") or {}
+            _w0   = float((d or {}).get("_pier_cap_W0", 0) or 0)
+            _mid_extra = max(0.0, _wmap.get(round(x_cut, 3), _w0) - _w0)
+            _ptr = _PBm.build_pier_mesh_traces(
+                pier_assembly, H_tru=(z_ban_b - z_beb), x_ctr=0.0, z_base=z_beb,
+                cap_width=bc, cap_mid_extra=_mid_extra)
+            _polys = cut_mesh_traces(_ptr, axis="x", value=0.0)  # ngang: (y,z)
             _seen = set()
             for _pl in _polys:
-                _nm = _pl["name"]; _sl = _nm not in _seen; _seen.add(_nm)
-                _poly(fig, _pl["xs"], _pl["ys"], _pl["color"], _C["btong_dk"],
+                _nm = _pl["name"].split(" #")[0]
+                _sl = _nm not in _seen; _seen.add(_nm)
+                _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["btong_dk"],
                       _nm if _sl else "", showlegend=_sl)
-            # KHỐI GIỮA (ụ giữa) đỡ bản mặt cầu — mặt cắt NGANG THẬT của cấu kiện xà
-            # mũ (đoạn CAO NHẤT, seat_view=False), KHÔNG bịa khối. ĐỈNH ụ giữa neo
-            # tại ĐÁY BẢN (z_ban_b) để ĐỠ BẢN — đồng bộ 3D (anchor_top = đáy bản).
+            # KHỐI GÁC DẦM (vai kê): cắt lưới tại đoạn VAI KÊ (thấp hơn ụ giữa, lệch
+            # tim theo dọc cầu) → thấy mức kê đầu dầm khấc. Vẽ NÉT LIỀN BÊ TÔNG (đầu
+            # dầm khấc kê lên). CÙNG lưới 3D nên khớp tuyệt đối.
             try:
-                _polys_ug = _PBm.pier_mcn_polys(
-                    pier_assembly, z_top=_z_beam_soffit, H_than=H_tru,
-                    target_width=bc, seat_view=False)
-                _ug_caps = [pl for pl in _polys_ug if pl.get("name") == "Xà mũ"]
-                _ug_top = max((y for pl in _ug_caps for y in pl["ys"]),
-                              default=None)
-                _dz_ug = (z_ban_b - _ug_top) if _ug_top is not None else 0.0
-                _ug1 = True
-                for _pl in _ug_caps:
-                    _poly(fig, _pl["xs"], [y + _dz_ug for y in _pl["ys"]],
-                          _pl["color"], _C["btong_dk"],
-                          "Ụ giữa xà mũ (đỡ bản)" if _ug1 else "", showlegend=_ug1)
-                    _ug1 = False
+                _seat_leg = True
+                for _sx in _PBm.cap_seat_x_centers(
+                        pier_assembly, x_ctr=0.0, cap_mid_extra=_mid_extra):
+                    for _rc in cut_mesh_traces(_ptr, axis="x", value=_sx):
+                        if _rc["name"].split(" #")[0] != "Xà mũ":
+                            continue
+                        _poly(fig, _rc["xs"], _rc["zs"], _C["btong"],
+                              _C["btong_dk"],
+                              "Vai kê gác dầm" if _seat_leg else "",
+                              showlegend=_seat_leg, lw=1.3)
+                        _seat_leg = False
             except Exception:
                 pass
             _allx = [x for pl in _polys for x in pl["xs"]]
             if _allx:
                 be_W = max(be_W, abs(min(_allx)), abs(max(_allx)))
-            _capx = [x for pl in _polys if pl["name"] == "Xà mũ" for x in pl["xs"]]
-            _capy = [y for pl in _polys if pl["name"] == "Xà mũ" for y in pl["ys"]]
-            _bex  = [x for pl in _polys if pl["name"] == "Bệ trụ" for x in pl["xs"]]
-            _bey  = [y for pl in _polys if pl["name"] == "Bệ trụ" for y in pl["ys"]]
-            _thy  = [y for pl in _polys if pl["name"] == "Thân trụ" for y in pl["ys"]]
+            _capx = [x for pl in _polys if pl["name"].split(" #")[0] in ("Xà mũ",)
+                     for x in pl["xs"]]
+            _capy = [y for pl in _polys if pl["name"].split(" #")[0] in ("Xà mũ",)
+                     for y in pl["zs"]]
+            _bex  = [x for pl in _polys if pl["name"].split(" #")[0] == "Bệ trụ"
+                     for x in pl["xs"]]
+            _bey  = [y for pl in _polys if pl["name"].split(" #")[0] == "Bệ trụ"
+                     for y in pl["zs"]]
+            _thy  = [y for pl in _polys if pl["name"].split(" #")[0] == "Thân trụ"
+                     for y in pl["zs"]]
             if _capx:
                 cap_W = max(abs(min(_capx)), abs(max(_capx)))
-            _ally = [y for pl in _polys for y in pl["ys"]]
+            _ally = [y for pl in _polys for y in pl["zs"]]
             if _ally:
-                z_beb = min(_ally)
+                z_beb = min(z_beb, min(_ally))
             # (Dầm ĐẦU KHẤC lọt thẳng vào khấc xà mũ — KHÔNG vẽ đá kê gối riêng.)
             # KÍCH THƯỚC trụ lắp ghép: bề rộng & chiều cao từng bộ phận
             _xd = (max(_capx) if _capx else cap_W) + 0.9
