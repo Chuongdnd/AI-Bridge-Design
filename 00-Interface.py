@@ -27,6 +27,23 @@ for _tpl_name in ("plotly_white", "plotly_dark", "plotly", "none"):
     except Exception:
         pass
 
+# ── CẢM ỨNG (điện thoại): bật cử chỉ chạm cho MỌI biểu đồ ────────────────────
+# Bọc st.plotly_chart để mọi biểu đồ đều có:
+#   • scrollZoom=True  → 2D & 3D: chụm/xoè 2 ngón để phóng to/thu nhỏ (pinch).
+#   • 2D dragmode=pan (template) → 1 ngón trượt để pan.
+#   • 3D (Plotly gốc)  → 1 ngón xoay, 2 ngón chụm zoom, 2 ngón kéo pan.
+#   • displayModeBar   → có thanh nút (pan/xoay/zoom/reset) hỗ trợ khi cần.
+_orig_plotly_chart = st.plotly_chart
+def _plotly_chart_touch(fig, *a, **kw):
+    _cfg = dict(kw.get("config") or {})
+    _cfg.setdefault("scrollZoom", True)
+    _cfg.setdefault("displayModeBar", True)
+    _cfg.setdefault("doubleClick", "reset")          # chạm 2 lần = về mặc định
+    _cfg.setdefault("displaylogo", False)
+    kw["config"] = _cfg
+    return _orig_plotly_chart(fig, *a, **kw)
+st.plotly_chart = _plotly_chart_touch
+
 # --- THIẾT LẬP TRANG (CHỈ MỘT LẦN) ---
 st.set_page_config(page_title="Hệ thống thiết kế cầu - UTH", layout="wide", page_icon="🏗️")
 
@@ -290,6 +307,86 @@ _cc_theme.html(
              window.parent.document.documentElement,
              {attributes:true, attributeFilter:['style','class']}); }catch(e){}
       try{ setInterval(apply, 2500); }catch(e){}
+    })();
+    </script>""", height=0)
+
+# ── CHẶN THAO TÁC KHI STREAMLIT ĐANG CHẠY (tránh bấm lặp) ─────────────────────
+# Lớp phủ trong suốt bật/tắt theo TRẠNG THÁI CHẠY THỰC (stStatusWidget hiện khi
+# đang chạy, mất khi xong) → chặn chuột/phím trong lúc chờ, tự mở lại khi xong,
+# không bao giờ kẹt. Con trỏ "progress" báo hệ thống đang bận.
+_cc_theme.html(
+    """<script>
+    (function(){
+      var d = window.parent.document;
+      if(d.getElementById('cau-busy-block')) return;   // gắn 1 lần
+      var stl = d.createElement('style');
+      stl.textContent =
+        '#cau-busy-block{position:fixed;inset:0;z-index:2147483000;display:none;'
+        +'background:transparent;cursor:progress}'
+        +'#cau-busy-block.on{display:block}';
+      d.head.appendChild(stl);
+      var bl = d.createElement('div');
+      bl.id = 'cau-busy-block';
+      d.body.appendChild(bl);
+      function busy(){ return bl.classList.contains('on'); }
+      // Chặn chuột/cảm ứng (overlay đã phủ) + phím (bắt ở document khi đang bận)
+      ['mousedown','mouseup','click','dblclick','wheel','touchstart','touchend',
+       'keydown','keypress','keyup'].forEach(function(ev){
+        d.addEventListener(ev, function(e){
+          if(!busy()) return;
+          if(e.target && e.target.closest &&
+             e.target.closest('[data-testid="stStatusWidget"]')) return;
+          e.stopPropagation(); e.preventDefault();
+        }, true);
+      });
+      function running(){
+        var w = d.querySelector('[data-testid="stStatusWidget"]');
+        if(!w) return false;
+        var cs = getComputedStyle(w);
+        if(cs.display==='none' || cs.visibility==='hidden'
+           || parseFloat(cs.opacity||'1') < 0.1) return false;
+        return true;
+      }
+      function tick(){ bl.classList.toggle('on', running()); }
+      setInterval(tick, 120);
+      try{ new MutationObserver(tick).observe(d.body,
+             {childList:true, subtree:true}); }catch(e){}
+      tick();
+    })();
+    </script>""", height=0)
+
+# ── KHÔNG cho CLICK RA NGOÀI / ESC đóng hộp khai báo (tránh mất thông số) ─────
+# Chỉ đóng bằng nút trong hộp (Bước/Áp dụng/X). Chặn click nền mờ + phím Esc.
+_cc_theme.html(
+    """<script>
+    (function(){
+      var d = window.parent.document;
+      if(d._cauDlgGuard) return; d._cauDlgGuard = true;
+      function box(){
+        var dlg = d.querySelector('[data-testid="stDialog"]');
+        if(!dlg) return null;
+        return {dlg: dlg,
+                inner: dlg.querySelector('[role="dialog"]') || dlg.firstElementChild};
+      }
+      // Chặn thao tác chuột trên NỀN MỜ (vùng trong stDialog nhưng NGOÀI khung
+      // hộp). KHÔNG chặn dropdown/menu (render portal ở body, ngoài stDialog) để
+      // vẫn chọn được các lựa chọn xổ xuống.
+      ['pointerdown','mousedown','mouseup','click'].forEach(function(ev){
+        d.addEventListener(ev, function(e){
+          var b = box(); if(!b || !b.inner) return;
+          var inDlg = e.target.closest && e.target.closest('[data-testid="stDialog"]');
+          if(inDlg === b.dlg && !b.inner.contains(e.target)){  // đúng nền mờ
+            e.stopPropagation(); e.preventDefault();
+          }
+        }, true);
+      });
+      // Chặn phím Esc khi hộp đang mở
+      d.addEventListener('keydown', function(e){
+        if((e.key === 'Escape' || e.keyCode === 27) &&
+           d.querySelector('[data-testid="stDialog"]')){
+          e.stopPropagation(); e.preventDefault();
+        }
+      }, true);
     })();
     </script>""", height=0)
 
@@ -1488,6 +1585,21 @@ def dialog_step1():
 @st.dialog("🛣️ BƯỚC 2 / 3 — Yếu tố hình học", width="large")
 def dialog_step2():
     draft = st.session_state.wizard_draft
+    # Khôi phục ô SỐ / LỰA CHỌN người dùng đã nhập (từ lần khai báo trước) — kẹp
+    # trong [min,max] theo tiêu chuẩn hiện hành để không lỗi khi tiêu chuẩn đổi.
+    _ov = dict(draft.get('mcn_oto_override') or {})
+    def _ov_num(key, std, lo, hi=None):
+        try:
+            v = float(_ov.get(key, std))
+        except (TypeError, ValueError):
+            v = float(std)
+        v = max(float(lo), v)
+        if hi is not None:
+            v = min(float(hi), v)
+        return v
+    def _ov_idx(key, opts, dflt=0):
+        val = _ov.get(key)
+        return opts.index(val) if val in opts else dflt
 
     st.markdown(
         DS.section_header(
@@ -1551,6 +1663,7 @@ def dialog_step2():
         loai_dpc_ct = st.selectbox(
             "Cấu tạo dải giữa:",
             options=list(_dpc_ct_labels.keys()),
+            index=_ov_idx('loai_dpc_ct', list(_dpc_ct_labels.keys())),
             format_func=lambda k: _dpc_ct_labels[k],
             help="Theo Điều 6.5 — xác định chiều rộng dải phân cách lõi."
         )
@@ -1574,7 +1687,8 @@ def dialog_step2():
                 n_lan_ct = st.number_input(
                     f"Số làn xe mỗi chiều — tối thiểu {tra_ct['n_lan_moi_chieu_min']} làn/chiều:",
                     min_value=int(tra_ct["n_lan_moi_chieu_min"]),
-                    value=int(tra_ct["n_lan_moi_chieu_min"]),
+                    value=int(_ov_num('n_lan_moi_chieu', tra_ct["n_lan_moi_chieu_min"],
+                                      tra_ct["n_lan_moi_chieu_min"])),
                     step=1,
                     help=f"Tối thiểu {tra_ct['n_lan_moi_chieu_min']} làn/chiều (Bảng 1, "
                          "TCVN 5729:2012). Không được nhập ít hơn mức tối thiểu. "
@@ -1583,7 +1697,7 @@ def dialog_step2():
                 w_le_dat_ct = st.number_input(
                     "Chiều rộng lề gia cố / dải AT (m):",
                     min_value=float(tra_ct["w_le_dat_min"]),
-                    value=float(tra_ct["w_le_dat_min"]),
+                    value=_ov_num('w_le_dat', tra_ct["w_le_dat_min"], tra_ct["w_le_dat_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_ct['w_le_dat_min']:g}m theo Bảng 1."
                 )
@@ -1591,14 +1705,15 @@ def dialog_step2():
                 w_dat_at_dg_ct = st.number_input(
                     "Dải an toàn trong dải giữa (m):",
                     min_value=float(tra_ct["w_dat_an_toan_dg_min"]),
-                    value=float(tra_ct["w_dat_an_toan_dg_min"]),
+                    value=_ov_num('w_dat_an_toan_dg', tra_ct["w_dat_an_toan_dg_min"],
+                                  tra_ct["w_dat_an_toan_dg_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_ct['w_dat_an_toan_dg_min']:g}m mỗi bên (Bảng 1)."
                 )
                 w_dpc_core_ct = st.number_input(
                     "Chiều rộng dải phân cách lõi (m):",
                     min_value=float(tra_ct["w_dpc_core_min"]),
-                    value=float(tra_ct["w_dpc_core_min"]),
+                    value=_ov_num('w_dpc_core', tra_ct["w_dpc_core_min"], tra_ct["w_dpc_core_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_ct['w_dpc_core_min']:g}m theo Bảng 1 (loại đã chọn)."
                 )
@@ -1644,13 +1759,16 @@ def dialog_step2():
             with c_mcn1:
                 so_lan_oto = st.number_input(
                     f"Số làn xe thiết kế — tối thiểu {tra_mcn['so_lan_min']:g} làn:",
-                    min_value=int(tra_mcn["so_lan_min"]), value=int(tra_mcn["so_lan_min"]), step=1,
+                    min_value=int(tra_mcn["so_lan_min"]),
+                    value=int(_ov_num('so_lan', tra_mcn["so_lan_min"], tra_mcn["so_lan_min"])),
+                    step=1,
                     help=f"Tối thiểu {tra_mcn['so_lan_min']:g} làn theo TCVN 4054:2005. "
                          "Không được nhập ít hơn mức tối thiểu."
                 )
                 w_lan_oto = st.number_input(
                     f"Chiều rộng 1 làn xe (m) — tối thiểu {tra_mcn['w_lan_min']:g}m:",
-                    min_value=float(tra_mcn["w_lan_min"]), value=float(tra_mcn["w_lan_min"]),
+                    min_value=float(tra_mcn["w_lan_min"]),
+                    value=_ov_num('w_lan', tra_mcn["w_lan_min"], tra_mcn["w_lan_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_mcn['w_lan_min']:g}m theo TCVN 4054:2005. "
                          "Không được nhập nhỏ hơn mức tối thiểu."
@@ -1658,13 +1776,15 @@ def dialog_step2():
             with c_mcn2:
                 w_le_oto = st.number_input(
                     "Chiều rộng lề đường (m):",
-                    min_value=float(tra_mcn["w_le_min"]), value=float(tra_mcn["w_le_min"]),
+                    min_value=float(tra_mcn["w_le_min"]),
+                    value=_ov_num('w_le', tra_mcn["w_le_min"], tra_mcn["w_le_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_mcn['w_le_min']:g}m theo TCVN 4054:2005."
                 )
                 w_dpc_oto = st.number_input(
                     "Chiều rộng dải phân cách giữa (m):",
-                    min_value=float(tra_mcn["w_dpc_min"]), value=float(tra_mcn["w_dpc_min"]),
+                    min_value=float(tra_mcn["w_dpc_min"]),
+                    value=_ov_num('w_dpc', tra_mcn["w_dpc_min"], tra_mcn["w_dpc_min"]),
                     step=0.25, format="%.2f",
                     help=f"Tối thiểu {tra_mcn['w_dpc_min']:g}m theo TCVN 4054:2005"
                          + (" (cấp này không bắt buộc có dải phân cách)." if tra_mcn['w_dpc_min'] == 0 else ".")
@@ -1680,6 +1800,7 @@ def dialog_step2():
                 loai_dpc_oto = st.selectbox(
                     "Loại cấu tạo dải phân cách:",
                     options=_dpc_keys,
+                    index=_ov_idx('loai_dpc', _dpc_keys),
                     format_func=lambda k: _dpc_labels[k],
                     help="Theo Điều 4.4.1 – chỉ bố trí khi đường có ≥ 4 làn xe."
                 )
@@ -1707,6 +1828,7 @@ def dialog_step2():
             loai_mat_duong_oto = st.selectbox(
                 "Loại mặt đường (ảnh hưởng độ dốc ngang):",
                 options=list(_mat_labels.keys()),
+                index=_ov_idx('loai_mat_duong', list(_mat_labels.keys())),
                 format_func=lambda k: _mat_labels[k],
             )
             _b9 = YTHH.tra_cuu_doc_ngang(loai_mat_duong_oto)
@@ -1719,7 +1841,7 @@ def dialog_step2():
                 "Độ dốc ngang thiết kế i (%):",
                 min_value=float(_b9["i_min"]),
                 max_value=float(_b9["i_max"]),
-                value=float(_b9["i_goi_y"]),
+                value=_ov_num('i_doc_ngang', _b9["i_goi_y"], _b9["i_min"], _b9["i_max"]),
                 step=0.5, format="%.1f",
                 help=f"TCVN 4054:2005 Bảng 9: {_b9['i_min']:g}% – {_b9['i_max']:g}% cho loại mặt đường này."
             )
@@ -7423,18 +7545,69 @@ with _col_main:
                                         config={"scrollZoom": True, "displayModeBar": True})
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt bằng kết cấu: {_e}")
-                    # Mặt cắt DẦM THỰC từ thư viện (dùng chung cả hệ thống) → vẽ đúng
-                    # dầm trên MCN mố/trụ thay 'dầm hộp' tham số cũ.
+                    # DẦM = LÁT CẮT THẬT của 3D: overlay get_mcn_overlay_traces
+                    # (which="end" = mặt cắt ĐẦU DẦM KHẤC + đã cắt cánh 10mm) lên MCN
+                    # vị trí, dời theo ĐƯỜNG ĐỎ tại lý trình cắt (đỉnh bản = z_red),
+                    # nới theo góc xiên. Thiếu mặt cắt thư viện → fallback dầm cũ.
+                    try:
+                        _fit_ctr = BBUI.mcn_beam_centers(d, pfx="spt", which="end")
+                    except Exception:
+                        _fit_ctr = None
+                    try:
+                        _ov_end = BBUI.get_mcn_overlay_traces(
+                            d, "spt", which="end") or []
+                    except Exception:
+                        _ov_end = []
+                    _draw_own = (len(_ov_end) == 0)   # không có dầm thư viện → vẽ cũ
                     try:
                         _beam_mcn = BBUI.get_beam_mcn_outer(d, pfx="spt")
                     except Exception:
                         _beam_mcn = None
+
+                    def _overlay_real_beams(_fig, _x_cut, _projected=False):
+                        # _projected=True (TRỤ): mặt cắt tại TIM trụ cắt qua Ụ GIỮA xà
+                        # mũ → đầu dầm khấc nằm SAU mặt cắt → vẽ nét ĐỨT (chiếu) để
+                        # KHỐI GIỮA xà mũ (solid) hiện đầy đủ phía trước.
+                        if _draw_own:
+                            return
+                        try:
+                            _wsk_v = BVK._skew_widen(d)
+                            _zred_v = BVK.make_red_line(d)[0]
+                            _sh = float(_zred_v(_x_cut))       # đỉnh bản tại lý trình
+                            _first = True
+                            for _tb in (BBUI.get_mcn_overlay_traces(
+                                    d, "spt", which="end") or []):
+                                _tb.x = tuple(None if v is None else v * _wsk_v
+                                              for v in _tb.x)
+                                _tb.y = tuple(None if v is None else v + _sh
+                                              for v in _tb.y)
+                                if _projected:
+                                    _tb.fill = None
+                                    _tb.fillcolor = "rgba(0,0,0,0)"
+                                    try:
+                                        _tb.line.dash = "dot"; _tb.line.width = 1.1
+                                        _tb.line.color = "#1e7d4f"
+                                    except Exception:
+                                        pass
+                                    _tb.name = ("Đầu dầm khấc (chiếu)"
+                                                if _first else "")
+                                    _tb.showlegend = _first
+                                    _first = False
+                                _fig.add_trace(_tb)
+                        except Exception:
+                            pass
+
                     try:
                         _f_mcnvt = BVK.ve_mcn_vi_tri(
                             d, vi_tri=_selected_vt, df_geology=_df_geo,
                             pier_assembly=_pa_tru, x_half=_xh,
                             abutment_assembly=_resolve_assembly(d, "mo"),
-                            mo_view='truoc', beam_mcn_outer=_beam_mcn)
+                            mo_view='truoc', df_tim_line=_df_tim,
+                            beam_mcn_outer=(_beam_mcn if _draw_own else None),
+                            beam_centers=_fit_ctr, draw_own_beams=_draw_own)
+                        _overlay_real_beams(
+                            _f_mcnvt, _x_cut_show,
+                            _projected=_selected_vt.startswith("tru"))
                         PLOT.aspect_control(_f_mcnvt, "mcn_vitri")
                         st.plotly_chart(_f_mcnvt,
                                         use_container_width=True,
@@ -7448,7 +7621,10 @@ with _col_main:
                                 d, vi_tri=_selected_vt, df_geology=_df_geo,
                                 pier_assembly=_pa_tru, x_half=_xh,
                                 abutment_assembly=_resolve_assembly(d, "mo"),
-                                mo_view='sau', beam_mcn_outer=_beam_mcn)
+                                mo_view='sau', df_tim_line=_df_tim,
+                                beam_mcn_outer=(_beam_mcn if _draw_own else None),
+                                beam_centers=_fit_ctr, draw_own_beams=_draw_own)
+                            _overlay_real_beams(_f_mcnvt_s, _x_cut_show)
                             PLOT.aspect_control(_f_mcnvt_s, "mcn_vitri_sau")
                             st.plotly_chart(_f_mcnvt_s,
                                             use_container_width=True,
@@ -7465,9 +7641,34 @@ with _col_main:
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt bằng cọc: {_e}")
                     try:
+                        # DẦM mặt cắt dọc = profil dầm THẬT (đầu khấc) — CÙNG traces
+                        # với trắc dọc (get_elevation_profile_traces), dời về tim
+                        # trụ (x−x_cut) → khớp tuyệt đối bố trí chung & 3D. Bảo đảm
+                        # cap_gap_m (khe ụ giữa) đã đặt → 2 đầu dầm LÙI chừa ụ giữa
+                        # ĐÚNG như trắc dọc (nếu chưa đặt thì tính lại tại đây).
+                        if d.get("cap_gap_m") is None:
+                            try:
+                                _gm = (BVK._get_PB().cap_mid_gap_m(_pa_tru)
+                                       if _pa_tru else 0.0)
+                                d["cap_gap_m"] = (_gm + 0.2) if _gm > 1e-6 else 0.0
+                            except Exception:
+                                d["cap_gap_m"] = 0.0
+                        try:
+                            _ep = BBUI.get_elevation_profile_traces(
+                                d, pfx="spt") or []
+                        except Exception:
+                            _ep = []
+                        _mcd_own = (len(_ep) == 0)
                         _f_mcd = BVK.ve_mat_cat_doc_vi_tri(
                             d, vi_tri=_selected_vt, pier_assembly=_pa_tru,
-                            abutment_assembly=_resolve_assembly(d, "mo"))
+                            abutment_assembly=_resolve_assembly(d, "mo"),
+                            df_geology=_df_geo, df_tim_line=_df_tim,
+                            draw_own_beams=_mcd_own)
+                        if not _mcd_own:
+                            for _te in _ep:
+                                _te.x = tuple(None if v is None else v - _x_cut_show
+                                              for v in _te.x)
+                                _f_mcd.add_trace(_te)
                         PLOT.aspect_control(_f_mcd, "mc_doc_vitri")
                         st.plotly_chart(_f_mcd,
                                         use_container_width=True,
@@ -7815,7 +8016,9 @@ with _col_main:
                     def _tru_dxf_bytes():
                         _fig = BVK.ve_mcn_vi_tri(
                             d, vi_tri="tru_1",
-                            pier_assembly=_resolve_assembly(d, "tru"))
+                            pier_assembly=_resolve_assembly(d, "tru"),
+                            df_geology=st.session_state.get("df_geology"),
+                            df_tim_line=st.session_state.get("df_tim_line"))
                         return EXP.fig_to_dxf_bytes(_fig, "TRU - MAT CAT NGANG")
 
                     # Cây xuất 3 cấp: (thư mục, dir, [ (cấu kiện, sub_dir,
