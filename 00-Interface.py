@@ -2218,38 +2218,22 @@ def dialog_step2():
         help="Bề rộng gờ lan can (tính tới mép ngoài cùng). Cầu có lan can đối xứng 2 bên.",
     )
 
+    # LUÔN TỰ ĐỘNG: khai báo làn xe/lề/DPC ở trên xong là Bc tính & cập nhật
+    # ngay tại đây — không checkbox, không ô nhập tay.
     _tinh_ban, _bd_parts = _calc_be_rong_ban(l_hinhhoc, mcn_oto_override, w_lan_can)
     if _tinh_ban > 0:
         import math as _math
         _bc_goi_y = _math.ceil(_tinh_ban * 2) / 2.0   # làm tròn lên bội số 0.5m
-        st.caption(
-            "Σ = " + " + ".join(_bd_parts)
-            + f" + Lan can 2×{w_lan_can:g} = **{_tinh_ban:.2f} m** "
-            + f"→ đề xuất Bc = **{_bc_goi_y:.2f} m** (làm tròn lên 0.5m)"
-        )
-    else:
-        _bc_goi_y = float(draft.get('b_cau', st.session_state.design_data.get('bc', 12.0)))
-        st.caption("ℹ️ Chưa đủ dữ liệu MCN để tính tự động — nhập bề rộng cầu thủ công.")
-
-    _auto_bc = st.checkbox(
-        "Tự động lấy bề rộng theo MCN tối thiểu",
-        value=bool(draft.get('auto_bc', _tinh_ban > 0)),
-        help="Bỏ chọn để nhập bề rộng Bc thủ công.",
-        key="d2_auto_bc",
-    )
-    if _auto_bc and _tinh_ban > 0:
         b_cau = _bc_goi_y
-        st.number_input(
-            "Bề rộng Bc mặt cắt cầu (m) — tự động:",
-            value=float(b_cau), disabled=True, key="d2_bc_auto_disp",
-        )
+        st.caption("Σ = " + " + ".join(_bd_parts)
+                   + f" + Lan can 2×{w_lan_can:g} = **{_tinh_ban:.2f} m**")
+        st.success(f"📐 Bề rộng bản mặt cầu **Bc = {b_cau:.2f} m** "
+                   "(tự tính từ MCN đã khai báo, làm tròn lên 0.5m)")
     else:
-        b_cau = st.number_input(
-            "Bề rộng Bc mặt cắt cầu (m):",
-            min_value=6.0,
-            value=float(draft.get('b_cau', _bc_goi_y)),
-            step=0.5, key="d2_bc_manual",
-        )
+        b_cau = float(draft.get('b_cau', st.session_state.design_data.get('bc', 12.0)))
+        st.info(f"ℹ️ Chưa đủ dữ liệu MCN để tính — tạm dùng Bc = {b_cau:.2f} m "
+                "(khai báo đủ làn xe/lề ở trên để hệ thống tự tính).")
+    _auto_bc = True
 
     # Bề dày bản mặt cầu — chuyển từ hộp Thủy văn sang, đặt DƯỚI bề rộng.
     t_ban_mm = st.number_input(
@@ -3130,7 +3114,17 @@ _render_topbar(st.session_state.design_data, _cur_tab)
 # ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
 #    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
 _has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
-_dk1, _dk2, _dk4, _dk3 = st.columns(4)
+# Thứ tự khai báo: ĐỊA HÌNH & ĐỊA CHẤT trước (nền tảng vị trí/cao độ) → Thủy văn
+# → Hình học → Tổng hợp.
+_dk4, _dk1, _dk2, _dk3 = st.columns(4)
+with _dk4:
+    _has_geo = bool(st.session_state.get("df_geology") is not None
+                    or st.session_state.get("dia_chat_frames"))
+    if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
+                 use_container_width=True, key="declbtn_geodata",
+                 help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
+        st.session_state.open_dialog = "geodata"
+        st.rerun()
 with _dk1:
     if st.button("🌊 Thông số thủy văn & vị trí cầu",
                  use_container_width=True, key="declbtn_step1",
@@ -3146,14 +3140,6 @@ with _dk2:
                  use_container_width=True, key="declbtn_step2",
                  help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
         st.session_state.open_dialog = "step2"
-        st.rerun()
-with _dk4:
-    _has_geo = bool(st.session_state.get("df_geology") is not None
-                    or st.session_state.get("dia_chat_frames"))
-    if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
-                 use_container_width=True, key="declbtn_geodata",
-                 help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
-        st.session_state.open_dialog = "geodata"
         st.rerun()
 with _dk3:
     if st.button("✅ Tổng hợp các thông số",
