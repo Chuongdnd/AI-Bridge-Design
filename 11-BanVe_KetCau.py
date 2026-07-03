@@ -4529,9 +4529,9 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                 _sl = _nm not in _seen; _seen.add(_nm)
                 _poly(fig, _pl["xs"], _pl["zs"], _pl["color"], _C["btong_dk"],
                       _nm if _sl else "", showlegend=_sl)
-            # NÉT KHỐI GÁC DẦM (vai kê): cắt lưới tại đoạn VAI KÊ (thấp hơn ụ giữa,
-            # lệch tim theo dọc cầu) → thấy mức kê đầu dầm khấc. Nét ĐỨT (nằm SAU
-            # mặt cắt tim). CÙNG lưới 3D nên khớp tuyệt đối.
+            # KHỐI GÁC DẦM (vai kê): cắt lưới tại đoạn VAI KÊ (thấp hơn ụ giữa, lệch
+            # tim theo dọc cầu) → thấy mức kê đầu dầm khấc. Vẽ NÉT LIỀN BÊ TÔNG (đầu
+            # dầm khấc kê lên). CÙNG lưới 3D nên khớp tuyệt đối.
             try:
                 _seat_leg = True
                 for _sx in _PBm.cap_seat_x_centers(
@@ -4539,9 +4539,10 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                     for _rc in cut_mesh_traces(_ptr, axis="x", value=_sx):
                         if _rc["name"].split(" #")[0] != "Xà mũ":
                             continue
-                        _poly(fig, _rc["xs"], _rc["zs"], "rgba(0,0,0,0)",
-                              "#8e44ad", "Vai kê gác dầm" if _seat_leg else "",
-                              showlegend=_seat_leg, dash="dash", lw=1.3)
+                        _poly(fig, _rc["xs"], _rc["zs"], _C["btong"],
+                              _C["btong_dk"],
+                              "Vai kê gác dầm" if _seat_leg else "",
+                              showlegend=_seat_leg, lw=1.3)
                         _seat_leg = False
             except Exception:
                 pass
