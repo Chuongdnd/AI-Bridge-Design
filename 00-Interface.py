@@ -4143,6 +4143,7 @@ def _build_pa_d(base_d: dict, ribbon: str) -> dict:
     d["span_layout"] = _pa_span_layout(ribbon)
     d["railings"] = _resolve_railings_for_pa(ribbon)
     d["_clearance_mode"] = _clearance_mode_for(ribbon)
+    d["_pa_ribbon"] = ribbon
     return d
 
 
@@ -5003,21 +5004,51 @@ def _pier_options():
     return [o for o, _ in pairs], dict(pairs)
 
 
-def _current_pier_parts():
+def _pier_sel_key(ribbon=None):
+    """Key widget picker trụ THEO PHƯƠNG ÁN — mỗi PA nhớ lựa chọn riêng, nên
+    mặc định PA1 (thân cột) ≠ PA2 (đặc thân hẹp) không đè lên nhau."""
+    return f"tru_preset_sel_{ribbon}" if ribbon else "tru_preset_sel"
+
+
+def _default_pier_opt(opts, meta, mode):
+    """Nhãn TRỤ MẶC ĐỊNH theo phương án khi người dùng CHƯA chọn tay:
+      • PA2 (straddle) → trụ ĐẶC (thân hẹp).
+      • PA1 (fewest)/khác → trụ 2 THÂN (thân cột).
+    Ưu tiên TRỤ TỔNG đã lưu (saved) rồi tới preset. opts[0] nếu không khớp."""
+    if not opts:
+        return None
+    want = ("đặc",) if mode == "straddle" else ("2 thân",)
+    alt  = ("thân đặc", "đặc") if mode == "straddle" else ("cột", "2 cột")
+
+    def _hit(kws):
+        for pref in ("saved", "preset"):          # ưu tiên trụ tổng đã lưu
+            for o in opts:
+                if meta.get(o, (None,))[0] != pref:
+                    continue
+                s = str(o).lower()
+                if any(k in s for k in kws):
+                    return o
+        return None
+    return _hit(want) or _hit(alt) or opts[0]
+
+
+def _current_pier_parts(ribbon=None):
     """Lựa chọn trụ HIỆN TẠI — đọc TRỰC TIẾP từ session_state của widget picker.
 
     Trả: {"pier_id": id} nếu chọn TRỤ TỔNG đã lưu; ngược lại
     {"ten","cap_id","stem_id","footing_id"} (preset/tùy chỉnh). None nếu trống.
-    Đọc widget state để mọi bản vẽ (kể cả vẽ TRƯỚC picker) thấy ngay → KHÔNG rerun."""
+    Đọc widget state để mọi bản vẽ (kể cả vẽ TRƯỚC picker) thấy ngay → KHÔNG rerun.
+    Chưa chọn tay → TRỤ MẶC ĐỊNH theo phương án (PA1 thân cột / PA2 đặc thân hẹp)."""
     caps, stems, foots = _pier_part_libs()
     piers = _saved_piers()
     if not (caps or stems or foots or piers):
         return None
     opts, meta = _pier_options()
-    sel = st.session_state.get("tru_preset_sel")
+    sel = st.session_state.get(_pier_sel_key(ribbon))
     kind_sel, ref = meta.get(sel, (None, None))
-    if kind_sel is None and opts:                 # chưa chọn → mục đầu tiên
-        kind_sel, ref = meta[opts[0]]
+    if kind_sel is None and opts:                 # chưa chọn → mặc định theo PA
+        _def = _default_pier_opt(opts, meta, _clearance_mode_for(ribbon or ""))
+        kind_sel, ref = meta.get(_def, meta[opts[0]])
     if kind_sel == "saved":
         return {"pier_id": ref}
     if kind_sel == "preset":
@@ -5080,7 +5111,7 @@ def _auto_pier_on_beam_change(d, ribbon):
     if not want_cap:
         return                                  # loại dầm không ràng buộc (bản rỗng…)
     piers = _saved_piers()
-    cur = _current_pier_parts() or {}
+    cur = _current_pier_parts(ribbon) or {}
     cur_cap, cur_stem = cur.get("cap_id"), cur.get("stem_id")
     if cur.get("pier_id"):
         src = (CLIB.get_pier(piers, cur["pier_id"]) or {}).get("source") or {}
@@ -5097,7 +5128,7 @@ def _auto_pier_on_beam_change(d, ribbon):
     _opts, meta = _pier_options()
     for lbl, (kind_sel, ref) in meta.items():
         if kind_sel == "saved" and ref == match["id"]:
-            st.session_state["tru_preset_sel"] = lbl
+            st.session_state[_pier_sel_key(ribbon)] = lbl
             break
 
 
@@ -5140,7 +5171,7 @@ def _resolve_assembly(d, kind: str) -> dict:
         return _find("2 thân") or _find("cột") or items[0]
 
     if kind == "tru":
-        pp = _current_pier_parts()
+        pp = _current_pier_parts((d or {}).get("_pa_ribbon"))
         if pp and pp.get("pier_id"):              # TRỤ TỔNG đã lưu
             rec = CLIB.get_pier(_saved_piers(), pp["pier_id"])
             if rec:
@@ -5240,9 +5271,10 @@ def _pier_parts_label(pp, caps, stems, foots) -> str:
             f"🟫 {(_f or {}).get('ten','—')}")
 
 
-def _pier_assembler(d) -> None:
+def _pier_assembler(d, ribbon=None) -> None:
     """Chọn 1 TRỤ điển hình có sẵn, hoặc tự ghép từ 3 bộ phận (xà mũ/thân/bệ).
-    Khi gắn vào cầu: xà mũ tự co bề rộng theo cầu, thân tự co chiều cao tĩnh không."""
+    Khi gắn vào cầu: xà mũ tự co bề rộng theo cầu, thân tự co chiều cao tĩnh không.
+    Picker keyed THEO PHƯƠNG ÁN → PA1 mặc định thân cột, PA2 mặc định đặc thân hẹp."""
     caps, stems, foots = _pier_part_libs()
     piers = _saved_piers()
     if not (caps or stems or foots or piers):
@@ -5252,8 +5284,8 @@ def _pier_assembler(d) -> None:
         return
     _opts, _meta = _pier_options()
     cur = d.get("pier_parts") or {}
-    # Khôi phục index theo lựa chọn đang lưu trong d
-    _idx = 0
+    # Khôi phục index theo lựa chọn đang lưu trong d; chưa có → mặc định theo PA.
+    _idx = None
     if cur.get("pier_id"):
         for i, o in enumerate(_opts):
             if _meta[o] == ("saved", cur["pier_id"]):
@@ -5265,8 +5297,11 @@ def _pier_assembler(d) -> None:
                 _idx = _opts.index(p["ten"]); break
         else:
             _idx = _opts.index(_PIER_CUSTOM_OPT)
+    if _idx is None:                              # mặc định theo phương án
+        _def = _default_pier_opt(_opts, _meta, _clearance_mode_for(ribbon or ""))
+        _idx = _opts.index(_def) if _def in _opts else 0
     _sel = st.selectbox(
-        "🏗️ Trụ áp dụng cho cầu", _opts, index=_idx, key="tru_preset_sel",
+        "🏗️ Trụ áp dụng cho cầu", _opts, index=_idx, key=_pier_sel_key(ribbon),
         help="Chọn 1 TRỤ TỔNG đã ghép (THƯ VIỆN → Trụ → Trụ tổng), 1 trụ điển "
              "hình, hoặc 'Tùy chỉnh' để ghép nhanh. Khi gắn vào cầu, xà mũ tự co "
              "bề rộng theo cầu, thân tự co chiều cao theo tĩnh không.")
@@ -5296,14 +5331,14 @@ def _pier_assembler(d) -> None:
         with _c3:
             _pick("🟫 Bệ trụ", foots, "tru_footing_sel", cur.get("footing_id"))
     # Nguồn sự thật là widget state (đọc qua _current_pier_parts) → KHÔNG rerun.
-    d["pier_parts"] = _current_pier_parts()
+    d["pier_parts"] = _current_pier_parts(ribbon)
 
 
 
-def _assembly_picker(d, kind: str) -> None:
+def _assembly_picker(d, kind: str, ribbon=None) -> None:
     """Selectbox chọn trụ/mố lắp ghép áp dụng cho cầu (lưu d[id_key])."""
     if kind == "tru":
-        _pier_assembler(d)
+        _pier_assembler(d, ribbon)
         return
     cfg = _asm_cfg(kind); lab = cfg["label"]
     items = st.session_state.get(cfg["ss"])
@@ -7055,7 +7090,8 @@ with _col_main:
             # Nạp bố trí nhịp (2 tầng) của PA vào d → mọi bản vẽ đồng bộ
             d = {**d, "span_layout": _pa_span_layout(selected_ribbon),
                  "railings": _resolve_railings_for_pa(selected_ribbon),
-                 "_clearance_mode": _clearance_mode_for(selected_ribbon)}
+                 "_clearance_mode": _clearance_mode_for(selected_ribbon),
+                 "_pa_ribbon": selected_ribbon}
 
             # Chưa khai báo dầm → tự lấy dầm phù hợp theo nhịp từ THƯ VIỆN người
             # dùng (nếu có DXF); không có thì các mặt cắt sinh hình tham số đúng
@@ -7480,7 +7516,7 @@ with _col_main:
                     if not _pa3:        # PA3: cấu kiện do AI dự báo, không cho chọn
                         _pck1, _pck2, _pck3 = st.columns([2, 2, 1.4])
                         with _pck1:
-                            _assembly_picker(d, "tru")
+                            _assembly_picker(d, "tru", selected_ribbon)
                             _auto_cap = st.checkbox(
                                 "🔗 Tự chọn xà mũ theo loại dầm", value=bool(
                                     st.session_state.design_data.get("_auto_pier_cap", True)),
