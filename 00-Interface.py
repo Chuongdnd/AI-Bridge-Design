@@ -7507,7 +7507,7 @@ with _col_main:
                                 _save_design_inputs(st.session_state.design_data)
                             else:
                                 d["h_goi_m"] = float(_hg)
-                    _pa_obj = _resolve_assembly(d, "tru")
+                    _pa_obj = d.get("_pier_model") or _resolve_assembly(d, "tru")
                     _ab_obj = _resolve_assembly(d, "mo")
                     _dc_data = st.session_state.get("dia_chat_data")
                     # Loại dầm THỰC đang áp dụng (thư viện) → tiêu đề sơ đồ đúng loại
@@ -7563,7 +7563,7 @@ with _col_main:
                     _y_bot_btc = -(_H_dam_btc + _t_ban_btc + 0.15)   # ngay dưới đáy dầm
                     _y_top_btc = _t_phu_btc + 1.40                    # trên đỉnh lan can
 
-                    _pa_tru_mcn = _resolve_assembly(d, "tru")
+                    _pa_tru_mcn = d.get("_pier_model") or _resolve_assembly(d, "tru")
 
                     # Từ khoá nhận diện trace/dim của KẾT CẤU DƯỚI (trụ/bệ/cọc)
                     _SUB_KW = ("Xà mũ", "xà mũ", "Thân trụ", "Bệ cọc", "Bệ ",
@@ -7743,7 +7743,10 @@ with _col_main:
                 st.markdown(
                     f"**Bố trí {_vt_label_cur}** — TRÁI: mặt bằng kết cấu · mặt cắt "
                     "ngang (thẳng trục Ngang cầu) | PHẢI: mặt bằng cọc · mặt cắt dọc")
-                _pa_tru = _resolve_assembly(d, "tru")   # dựng 1 lần, dùng lại
+                # DÙNG CHUNG 1 NGUỒN trụ với bình đồ + 3D toàn cầu (d["_pier_model"])
+                # → mặt cắt ngang chi tiết trụ khớp tuyệt đối (3 cột / bệ nới / xà
+                # mũ) thay vì resolve riêng dễ lệch.
+                _pa_tru = d.get("_pier_model") or _resolve_assembly(d, "tru")
                 # Tầm nhìn ngang CHUNG cho 2 hình cột TRÁI → thẳng trục Ngang cầu
                 _xh = max(float(d.get("bc", 12.0)) / 2.0 + 4.0, 11.0)
                 # Cột TRÁI rộng (~67%): mặt bằng kết cấu trên · mặt cắt ngang dưới.
