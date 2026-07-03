@@ -2330,6 +2330,29 @@ def _beam_end_section_name(vpfx: str):
     return None
 
 
+def _end_section_from_model(pfx: str):
+    """Mặt cắt ĐẦU DẦM KHẤC (đoạn segment ĐẦU) lấy TỪ MÔ HÌNH dầm — CÙNG nguồn với
+    3D (_build_notch_rings/_build_notch_profiles). Trả CrossSection hoặc None nếu
+    đầu dầm = thân (không khấc). Nhờ vậy MCN chi tiết trụ dùng ĐÚNG mặt cắt đầu
+    khấc như 3D, thay vì đọc state biến thể (có thể trống → rơi về thân dầm)."""
+    try:
+        L_mm = float(st.session_state.get("spt_L_m", 38.0)) * 1000.0
+        bm = _beam_model_from_pfx(pfx, L_mm)
+        if bm is None:
+            return None
+        full = _get_bb()._resolve_segments(bm)
+        if not full:
+            return None
+        _en = full[0].get("section")
+        _, _fill = _resolve_beam_sections(pfx)
+        if not _en or _en == _fill:
+            return None                 # đầu = thân → không có khấc riêng
+        _sec = bm.sections.get(_en)
+        return _sec if (_sec and getattr(_sec, "outer", None)) else None
+    except Exception:
+        return None
+
+
 def _fit_beam_centers(bc: float, n_dam: int, kc_dam: float,
                       bw_half: float, cover: float = 0.10,
                       lan_can_w: float = 0.0, min_gap: float = 0.01) -> list:
@@ -2425,11 +2448,15 @@ def get_mcn_overlay_traces(d: dict, pfx: str = "spt", which: str = "mid") -> lis
         sec, mir = _cell_section(pfx, active, secmap, 1, 3, i_dam, n_dam)
         _drop_holes = False
         if which == "end":
-            _T = "B" if (i_dam == 0 or i_dam == n_dam - 1) else "G"
-            _vpfx = _variant_pfx(pfx, "G", _T, active)
-            _secs_v, _fill_v = _resolve_beam_sections(_vpfx)
-            _en = _beam_end_section_name(_vpfx)
-            _sec_end = (_secs_v or {}).get(_en) if _en else None
+            # MẶT CẮT ĐẦU DẦM KHẤC — ưu tiên lấy TỪ MÔ HÌNH (CÙNG nguồn với 3D),
+            # thiếu → thử state biến thể; thiếu nữa → thân bỏ lỗ.
+            _sec_end = _end_section_from_model(pfx)
+            if _sec_end is None:
+                _T = "B" if (i_dam == 0 or i_dam == n_dam - 1) else "G"
+                _vpfx = _variant_pfx(pfx, "G", _T, active)
+                _secs_v, _fill_v = _resolve_beam_sections(_vpfx)
+                _en = _beam_end_section_name(_vpfx)
+                _sec_end = (_secs_v or {}).get(_en) if _en else None
             if _sec_end is not None and getattr(_sec_end, "outer", None):
                 sec = _sec_end
             else:
