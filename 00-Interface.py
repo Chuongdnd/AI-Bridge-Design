@@ -5124,23 +5124,20 @@ def _resolve_assembly(d, kind: str) -> dict:
         return rec
 
     def _auto_pick_pier(items):
-        """Chọn TRỤ mặc định theo phương án + chiều cao thân (từ _clearance_mode):
-        PA1(fewest)→trụ THÂN CỘT (2 thân); PA2(straddle)→trụ ĐẶC thân hẹp, H_thân
-        >10m→trụ THAY ĐỔI TIẾT DIỆN (đặc, vát) tiết kiệm."""
+        """TRỤ MẶC ĐỊNH theo phương án (từ _clearance_mode):
+          • PA1 (fewest)   → trụ THÂN CỘT (2 thân).
+          • PA2 (straddle) → trụ ĐẶC THÂN HẸP.
+        Không có mode → PA1 (thân cột) làm mặc định chung."""
         if not items:
             return None
         _mode = (d or {}).get("_clearance_mode")
-        _Hs = float((d or {}).get("H_tru_est", 5.0) or 5.0)
         def _find(*kw):
             return next((it for it in items
                          if all(k in str(it.get("ten", "")).lower() for k in kw)), None)
-        if _mode == "straddle":        # PA2 = đặc
-            if _Hs > 10.0:
-                return _find("thay đổi") or _find("đặc") or items[0]
+        if _mode == "straddle":        # PA2 = trụ ĐẶC THÂN HẸP
             return _find("đặc") or items[0]
-        if _mode == "fewest":          # PA1 = thân cột
-            return _find("2 thân") or _find("cột") or items[0]
-        return items[0]
+        # PA1 (fewest) hoặc mặc định = trụ THÂN CỘT (2 thân)
+        return _find("2 thân") or _find("cột") or items[0]
 
     if kind == "tru":
         pp = _current_pier_parts()
