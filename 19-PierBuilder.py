@@ -478,12 +478,13 @@ def _add_middle_column(pier: dict) -> dict:
 
 
 def apply_pier_stem_layout(pier: dict, bc: float, overhang: float = 3.0,
-                           clear_limit: float = 10.0) -> dict:
+                           clear_limit: float = 10.0, foot_margin: float = 1.0) -> dict:
     """QUY TẮC MẶC ĐỊNH vị trí thân trụ theo bề rộng cầu bc:
       • MỌI loại: mép ngoài thân trụ LÙI `overhang` (=3m) so với mép xà mũ (±bc/2)
         → mép ngoài thân = ±(bc/2 − overhang). Giữ bề rộng cột theo thư viện.
       • Trụ 2 thân: nếu THÔNG THỦY 2 cột (mép trong ↔ mép trong) > clear_limit
         (=10m) → THÊM 1 cột GIỮA (3 cột đều).
+      • BỆ trụ tự NỚI RỘNG phủ hết cột (mép ngoài cột + foot_margin).
     Trả pier mới (không đổi gốc)."""
     kind, _ = pier_stem_info(pier)
     target = float(bc) / 2.0 - float(overhang)     # mép ngoài thân (m)
@@ -499,10 +500,59 @@ def apply_pier_stem_layout(pier: dict, bc: float, overhang: float = 3.0,
             p = _add_middle_column(p)
             # 3 cột ĐỀU: giãn về ±target (mép ngoài), cột giữa tại 0 (đã căn)
             p = _spread_columns_even(p, target, b_col)
+    elif kind == "dac":
+        p = apply_stem_params(pier, width_m=max(0.5, 2.0 * target))  # = bc − 2·overhang
+    else:
+        return pier
+    # NỚI BỆ: phủ hết cột (mép ngoài thân = ±target) + margin mỗi bên.
+    return _widen_footing(p, target + float(foot_margin))
+
+
+def widen_footing_to_cover_stem(pier: dict, margin: float = 1.0) -> dict:
+    """Nới BỆ phủ hết THÂN (mép ngoài thân + margin) — dùng sau khi chỉnh thân
+    (khai báo TAY spacing/width) để cột ngoài LUÔN có bệ đỡ. Trả pier mới."""
+    p = migrate_pier(pier or {})
+    edge = 0.0
+    for lay in stem_layers_of(p.get("parts", {}).get("than", {})):
+        for s in _section_solids(lay["section"]):
+            us = [u for (u, _v) in s["outer"]]
+            if us:
+                edge = max(edge, max(abs(min(us)), abs(max(us))) * MM)
+    if edge <= 1e-6:
         return p
-    if kind == "dac":
-        return apply_stem_params(pier, width_m=max(0.5, 2.0 * target))  # = bc − 2·overhang
-    return pier
+    return _widen_footing(p, edge + float(margin))
+
+
+def _widen_footing(pier: dict, half_m: float) -> dict:
+    """Nới BỆ trụ theo NGANG (u) để nửa bề rộng ≥ half_m → phủ hết cột. CHỈ nới
+    rộng (không thu), giữ chiều cao & phương dọc. Trả pier mới."""
+    import copy
+    p = copy.deepcopy(migrate_pier(pier or {}))
+    be = p.get("parts", {}).get("be", {})
+    lays = stem_layers_of(be)
+    if not lays:
+        return p
+    cur_half = 0.0
+    for lay in lays:
+        for s in _section_solids(lay["section"]):
+            us = [u for (u, _v) in s["outer"]]
+            if us:
+                cur_half = max(cur_half, max(abs(min(us)), abs(max(us))) * MM)
+    if cur_half >= half_m - 1e-6 or cur_half < 1e-6:
+        return p                                    # bệ đã đủ rộng
+    f = half_m / cur_half                            # hệ số nới ngang
+    new_lays = []
+    for lay in lays:
+        sec = dict(lay.get("section") or {})
+        ns = [{"outer": [[u * f, v] for (u, v) in s["outer"]],
+               "holes": [[[u * f, v] for (u, v) in h] for h in s.get("holes", [])]}
+              for s in _section_solids(sec)]
+        sec["solids"] = ns
+        sec["outer"] = ns[0]["outer"]; sec["holes"] = ns[0].get("holes", [])
+        new_lays.append({**lay, "section": sec})
+    be = dict(be); be["layers"] = new_lays
+    p["parts"] = dict(p["parts"]); p["parts"]["be"] = be
+    return p
 
 
 def _spread_columns_even(pier: dict, target: float, b_col: float) -> dict:
