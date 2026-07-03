@@ -3352,10 +3352,16 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             _ag(_abox(xL_water, xR_water, -yw_local, yw_local,
                                 z_w - 0.05 * hz, z_w, clr, op, lbl, skew=False))
 
-        # Khung tĩnh không B×H (dây đỏ)
+        # Khung tĩnh không B×H (dây đỏ) — bề rộng B_tk VUÔNG GÓC SÔNG; sông cắt
+        # tuyến theo GÓC GIAO nên khung XIÊN theo góc như mố/trụ/mặt cầu (góc=90°
+        # → dọc tuyến như cũ). Hướng sông = hướng trụ xiên (_vn tại tim, off 0→1).
         _grp_state["g"] = "Tĩnh không"
-        xL_tk = x_tim - B_tk/2; xR_tk = x_tim + B_tk/2
-        xrL, yrL = _vn(xL_tk, 0); xrR, yrR = _vn(xR_tk, 0)
+        _ck0 = _vn(x_tim, 0.0); _ck1 = _vn(x_tim, 1.0)
+        _rvx = _ck1[0] - _ck0[0]; _rvy = _ck1[1] - _ck0[1]
+        _rvn = (_rvx * _rvx + _rvy * _rvy) ** 0.5 or 1.0
+        _pux = -_rvy / _rvn; _puy = _rvx / _rvn      # vuông góc sông = hướng B_tk
+        xrL = _ck0[0] - _pux * (B_tk / 2); yrL = _ck0[1] - _puy * (B_tk / 2)
+        xrR = _ck0[0] + _pux * (B_tk / 2); yrR = _ck0[1] + _puy * (B_tk / 2)
         z_tkb = MNCN * hz; z_tkt = (MNCN + H_tk) * hz
         for xs, ys, xe, ye, z0, z1, nm in [
             (xrL,yrL, xrR,yrR, z_tkb,z_tkb, "Đáy TK"),
@@ -3825,10 +3831,10 @@ def _ve_binh_do_cong(d, df_geology):
     _ns = max(24, int(L_cau / 2))
     ss  = np.linspace(x0, x_end, _ns)
 
-    # ── Khung tĩnh không (sông) — vuông góc tuyến tại tim tĩnh không ─────────
+    # ── Khung tĩnh không (sông) — BÁM GÓC XIÊN (sông cắt tuyến theo góc giao) ──
     ss_tk = np.linspace(x_tim - B_tk/2, x_tim + B_tk/2, 8)
-    _la = [_vn(s, -B_tk*0.7, skew=False) for s in ss_tk]
-    _ra = [_vn(s, +B_tk*0.7, skew=False) for s in ss_tk]
+    _la = [_vn(s, -B_tk*0.7) for s in ss_tk]     # skew=True → sông xiên theo góc
+    _ra = [_vn(s, +B_tk*0.7) for s in ss_tk]
     _px, _py = _xy(_la + _ra[::-1] + [_la[0]])
     fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
         fillcolor="rgba(52,152,219,0.15)", mode="lines",
@@ -3860,13 +3866,14 @@ def _ve_binh_do_cong(d, df_geology):
             name=(_nmk if _tkp_first else ""), showlegend=_tkp_first))
         _tkp_first = False
 
-    # ── Đường đầu cầu (2 đầu, kéo dài ngoài mố, KHÔNG xiên) + mái TALUY ──────
+    # ── Đường đầu cầu (2 đầu, kéo dài ngoài mố) — BÁM góc xiên như MẶT CẦU & 3D
+    #    (add_all_to_terrain_fig dùng _vn_ext skew=True) + mái TALUY ──────────
     _h_dap_tb = max(1.5, float(d.get("H_tru_est", 5.0)) * 0.4)   # chiều cao đắp ước tính
     _taluy_w  = 1.5 * _h_dap_tb                                   # bề rộng chân taluy 1:1.5
     for s_m, od, lbl in [(x0, -1.0, "Đường đầu cầu"), (x_end, 1.0, None)]:
         ss_a = np.linspace(s_m, s_m + od*mg, 14)
-        _la = [_vn(s, -bc/2, skew=False) for s in ss_a]
-        _ra = [_vn(s, +bc/2, skew=False) for s in ss_a]
+        _la = [_vn(s, -bc/2) for s in ss_a]      # skew=True → xiên theo góc giao
+        _ra = [_vn(s, +bc/2) for s in ss_a]
         _px, _py = _xy(_la + _ra[::-1] + [_la[0]])
         fig.add_trace(go.Scatter(x=_px, y=_py, fill="toself",
             fillcolor="rgba(196,164,107,0.28)", mode="lines",
@@ -3874,7 +3881,7 @@ def _ve_binh_do_cong(d, df_geology):
             name=lbl or "", showlegend=bool(lbl)))
         # Mái taluy: chân taluy = mép đường + bề rộng taluy (nét đứt 2 bên)
         for _sgn in (-1, 1):
-            _toe = [_vn(s, _sgn*(bc/2 + _taluy_w), skew=False) for s in ss_a]
+            _toe = [_vn(s, _sgn*(bc/2 + _taluy_w)) for s in ss_a]
             _px, _py = _xy(_toe)
             fig.add_trace(go.Scatter(x=_px, y=_py, mode="lines",
                 line=dict(color="#a5866b", width=1.0, dash="dot"),
@@ -3882,8 +3889,8 @@ def _ve_binh_do_cong(d, df_geology):
                 showlegend=bool(lbl and _sgn == -1)))
             # gạch mái taluy (đường xiên từ mép đường ra chân taluy)
             for _st in np.linspace(ss_a[0], ss_a[-1], 6):
-                _e0 = _vn(_st, _sgn*bc/2, skew=False)
-                _e1 = _vn(_st, _sgn*(bc/2 + _taluy_w), skew=False)
+                _e0 = _vn(_st, _sgn*bc/2)
+                _e1 = _vn(_st, _sgn*(bc/2 + _taluy_w))
                 fig.add_trace(go.Scatter(x=[_e0[0], _e1[0]], y=[_e0[1], _e1[1]],
                     mode="lines", line=dict(color="#c4a76b", width=0.6),
                     showlegend=False, hoverinfo="skip"))
