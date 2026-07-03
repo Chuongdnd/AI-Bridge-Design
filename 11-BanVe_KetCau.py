@@ -449,13 +449,15 @@ def _dim_h(fig, y, x0, x1, text, color=None, dy=0):
     ya = y + dy
     _rec_dim(fig, "h", x0, x1, ya, text)
     # đường dim + mũi tên 2 đầu (head ở x0 và x1, hướng ra ngoài)
+    # name="DIM" → nút "Ẩn DIM" lọc được (an_dim_text).
     for xh, xt in ((x0, x1), (x1, x0)):
         fig.add_annotation(x=xh, y=ya, ax=xt, ay=ya, xref="x", yref="y",
                            axref="x", ayref="y", showarrow=True, arrowhead=3,
-                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color)
+                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color,
+                           name="DIM")
     fig.add_annotation(x=(x0+x1)/2, y=ya+0.05, text=text, showarrow=False,
                        font=dict(size=_DIM_TXT, color=color), yanchor="bottom",
-                       bgcolor="rgba(255,255,255,0.85)")
+                       bgcolor="rgba(255,255,255,0.85)", name="DIM")
 
 def _dim_v(fig, x, y0, y1, text, color=None, dx=0.4):
     """Đường kích thước ĐỨNG — nét DIM xanh nhạt + 2 mũi tên closed filled."""
@@ -465,10 +467,31 @@ def _dim_v(fig, x, y0, y1, text, color=None, dx=0.4):
     for yh, yt in ((y0, y1), (y1, y0)):
         fig.add_annotation(x=xa, y=yh, ax=xa, ay=yt, xref="x", yref="y",
                            axref="x", ayref="y", showarrow=True, arrowhead=3,
-                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color)
+                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color,
+                           name="DIM")
     fig.add_annotation(x=xa+0.08, y=(y0+y1)/2, text=text, showarrow=False,
                        font=dict(size=_DIM_TXT, color=color), xanchor="left",
-                       textangle=-90, bgcolor="rgba(255,255,255,0.85)")
+                       textangle=-90, bgcolor="rgba(255,255,255,0.85)", name="DIM")
+
+
+def an_dim_text(fig, an_dim=False, an_text=False):
+    """Ẩn KÍCH THƯỚC (DIM) và/hoặc CHỮ ghi chú trên bản vẽ 2D theo tùy chọn.
+    - an_dim : bỏ mọi annotation name="DIM" (đường dim + mũi tên + nhãn số).
+    - an_text: bỏ mọi annotation chữ còn lại (nhãn Z=, tên cấu kiện, ghi chú…).
+    Trả về fig (sửa tại chỗ) — gọi SAU khi hình đã dựng xong."""
+    try:
+        keep = []
+        for a in (fig.layout.annotations or ()):
+            is_dim = (str(getattr(a, "name", "") or "") == "DIM")
+            if an_dim and is_dim:
+                continue
+            if an_text and not is_dim:
+                continue
+            keep.append(a)
+        fig.layout.annotations = tuple(keep)
+    except Exception:
+        pass
+    return fig
 
 # ── Áp LAYER cho bản vẽ 2D (quy tắc thể hiện bản vẽ) ─────────────────────────
 def _apply_layers_2d(fig):

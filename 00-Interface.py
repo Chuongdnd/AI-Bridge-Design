@@ -7476,6 +7476,19 @@ with _col_main:
                         except Exception:
                             pass
 
+                # ── Tùy chỉnh hiển thị DIM/chữ trên bản vẽ 2D (trắc dọc + MCN) ──
+                _hd1, _hd2, _ = st.columns([1, 1, 2])
+                with _hd1:
+                    _an_dim = st.checkbox("📏 Ẩn DIM (kích thước)",
+                                          key=f"an_dim_{selected_ribbon}",
+                                          help="Ẩn toàn bộ đường/kích thước DIM "
+                                               "trên trắc dọc & mặt cắt ngang.")
+                with _hd2:
+                    _an_text = st.checkbox("🔤 Ẩn chữ ghi chú",
+                                           key=f"an_text_{selected_ribbon}",
+                                           help="Ẩn nhãn chữ (Z=, tên cấu kiện, "
+                                                "ghi chú…) trên trắc dọc & MCN.")
+
                 try:
                     # ── 1. Trắc dọc cầu ──────────────────────────────────────
                     st.markdown("**Trắc dọc cầu**")
@@ -7528,6 +7541,7 @@ with _col_main:
                         pass
                     try: BVK._hover2d(fig_td_btc)   # hover tên + cao độ (gồm dầm)
                     except Exception: pass
+                    BVK.an_dim_text(fig_td_btc, an_dim=_an_dim, an_text=_an_text)
                     PLOT.aspect_control(fig_td_btc, "td_btc")
                     st.plotly_chart(fig_td_btc, use_container_width=True,
                                     config={"scrollZoom": True, "displayModeBar": True})
@@ -7638,12 +7652,14 @@ with _col_main:
                             st.markdown(f"##### 🔹 Mặt cắt ngang — {_lbl_bt.capitalize()}")
                         st.caption("📍 MCN tại **đầu dầm** (trên gối)")
                         _fe = _build_mcn_fig("end", _pfx_bt)
+                        BVK.an_dim_text(_fe, an_dim=_an_dim, an_text=_an_text)
                         PLOT.aspect_control(_fe, f"mcn_btc_end_{_pfx_bt}")
                         st.plotly_chart(_fe, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True},
                                         key=f"mcn_btc_end_{_pfx_bt}")
                         st.caption("📍 MCN tại **giữa dầm** (giữa nhịp)")
                         _fm = _build_mcn_fig("mid", _pfx_bt)
+                        BVK.an_dim_text(_fm, an_dim=_an_dim, an_text=_an_text)
                         PLOT.aspect_control(_fm, f"mcn_btc_mid_{_pfx_bt}")
                         st.plotly_chart(_fm, use_container_width=True,
                                         config={"scrollZoom": True, "displayModeBar": True},
