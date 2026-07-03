@@ -7062,6 +7062,11 @@ with _col_main:
             _auto_pier_on_beam_change(d, selected_ribbon)
         except Exception:
             pass
+        # Gắn _clearance_mode + PA TRƯỚC khi resolve trụ → phương án quyết định
+        # LOẠI trụ (PA1 cột / PA2 đặc). Nếu không, _pier_model resolve khi d chưa
+        # có _clearance_mode → luôn ra trụ đầu tiên (cột).
+        d["_clearance_mode"] = _clearance_mode_for(selected_ribbon)
+        d["_pa_ribbon"]      = selected_ribbon
         # Mô hình trụ/mố lắp ghép → để KHỐI LƯỢNG tính theo mô hình mới (nếu có)
         try:
             d["_pier_model"] = _resolve_assembly(d, "tru")
