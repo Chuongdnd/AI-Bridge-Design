@@ -4771,17 +4771,40 @@ def _resolve_assembly(d, kind: str) -> dict:
     cfg = _asm_cfg(kind)
 
     def _ap_pier(rec):
-        """Áp khai báo THÂN trụ (khoảng cách 2 cột / bề rộng thân) cho mọi vị trí."""
+        """Áp THÂN trụ: KHAI BÁO TAY (spacing/width) ưu tiên; nếu không → QUY TẮC
+        MẶC ĐỊNH: mép ngoài thân LÙI 3m so xà mũ + tự thêm cột giữa khi thông thủy
+        2 cột > 10m (apply_pier_stem_layout)."""
         if not rec:
             return rec
         _sp = (d or {}).get("pier_col_spacing_m")
         _wd = (d or {}).get("pier_solid_width_m")
-        if _sp or _wd:
-            try:
+        try:
+            if _sp or _wd:
                 rec = PB.apply_stem_params(rec, spacing_m=_sp, width_m=_wd)
-            except Exception:
-                pass
+            else:
+                rec = PB.apply_pier_stem_layout(rec, float((d or {}).get("bc", 12.0)))
+        except Exception:
+            pass
         return rec
+
+    def _auto_pick_pier(items):
+        """Chọn TRỤ mặc định theo phương án + chiều cao thân (từ _clearance_mode):
+        PA1(fewest)→trụ THÂN CỘT (2 thân); PA2(straddle)→trụ ĐẶC thân hẹp, H_thân
+        >10m→trụ THAY ĐỔI TIẾT DIỆN (đặc, vát) tiết kiệm."""
+        if not items:
+            return None
+        _mode = (d or {}).get("_clearance_mode")
+        _Hs = float((d or {}).get("H_tru_est", 5.0) or 5.0)
+        def _find(*kw):
+            return next((it for it in items
+                         if all(k in str(it.get("ten", "")).lower() for k in kw)), None)
+        if _mode == "straddle":        # PA2 = đặc
+            if _Hs > 10.0:
+                return _find("thay đổi") or _find("đặc") or items[0]
+            return _find("đặc") or items[0]
+        if _mode == "fewest":          # PA1 = thân cột
+            return _find("2 thân") or _find("cột") or items[0]
+        return items[0]
 
     if kind == "tru":
         pp = _current_pier_parts()
@@ -4803,6 +4826,9 @@ def _resolve_assembly(d, kind: str) -> dict:
         # MỐ MẶC ĐỊNH = mố THƯ VIỆN đầu tiên (vd "Mố chữ U") thay khối mố generic cũ.
         if kind == "mo" and items:
             return items[0]
+        # TRỤ MẶC ĐỊNH = tự chọn theo phương án + chiều cao (PA1 cột / PA2 đặc).
+        if kind == "tru" and items:
+            return _ap_pier(_auto_pick_pier(items))
         return None
     _rec = cfg["get"](items, rid) or (items[0] if kind == "mo" and items else None)
     return _ap_pier(_rec) if kind == "tru" else _rec
