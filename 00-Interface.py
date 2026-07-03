@@ -2238,16 +2238,14 @@ def dialog_step2():
     )
 
     # LUÔN TỰ ĐỘNG: khai báo làn xe/lề/DPC ở trên xong là Bc tính & cập nhật
-    # ngay tại đây — không checkbox, không ô nhập tay.
+    # ngay tại đây — không checkbox, không ô nhập tay, KHÔNG làm tròn.
     _tinh_ban, _bd_parts = _calc_be_rong_ban(l_hinhhoc, mcn_oto_override, w_lan_can)
     if _tinh_ban > 0:
-        import math as _math
-        _bc_goi_y = _math.ceil(_tinh_ban * 2) / 2.0   # làm tròn lên bội số 0.5m
-        b_cau = _bc_goi_y
+        b_cau = float(_tinh_ban)                      # giữ nguyên giá trị tính
         st.caption("Σ = " + " + ".join(_bd_parts)
                    + f" + Lan can 2×{w_lan_can:g} = **{_tinh_ban:.2f} m**")
         st.success(f"📐 Bề rộng bản mặt cầu **Bc = {b_cau:.2f} m** "
-                   "(tự tính từ MCN đã khai báo, làm tròn lên 0.5m)")
+                   "(tự tính đúng tổng MCN đã khai báo)")
     else:
         b_cau = float(draft.get('b_cau', st.session_state.design_data.get('bc', 12.0)))
         st.info(f"ℹ️ Chưa đủ dữ liệu MCN để tính — tạm dùng Bc = {b_cau:.2f} m "
