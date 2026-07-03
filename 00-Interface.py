@@ -7615,10 +7615,25 @@ with _col_main:
                     except Exception as _e:
                         st.error(f"Lỗi vẽ mặt bằng cọc: {_e}")
                     try:
+                        # DẦM mặt cắt dọc = profil dầm THẬT (đầu khấc) — CÙNG traces
+                        # với trắc dọc (get_elevation_profile_traces), dời về tim
+                        # trụ (x−x_cut) → khớp tuyệt đối bố trí chung & 3D.
+                        try:
+                            _ep = BBUI.get_elevation_profile_traces(
+                                d, pfx="spt") or []
+                        except Exception:
+                            _ep = []
+                        _mcd_own = (len(_ep) == 0)
                         _f_mcd = BVK.ve_mat_cat_doc_vi_tri(
                             d, vi_tri=_selected_vt, pier_assembly=_pa_tru,
                             abutment_assembly=_resolve_assembly(d, "mo"),
-                            df_geology=_df_geo, df_tim_line=_df_tim)
+                            df_geology=_df_geo, df_tim_line=_df_tim,
+                            draw_own_beams=_mcd_own)
+                        if not _mcd_own:
+                            for _te in _ep:
+                                _te.x = tuple(None if v is None else v - _x_cut_show
+                                              for v in _te.x)
+                                _f_mcd.add_trace(_te)
                         PLOT.aspect_control(_f_mcd, "mc_doc_vitri")
                         st.plotly_chart(_f_mcd,
                                         use_container_width=True,

@@ -5057,11 +5057,13 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
 
 def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
                           abutment_assembly=None, df_geology=None,
-                          df_tim_line=None):
+                          df_tim_line=None, draw_own_beams=True):
     """MẶT CẮT DỌC tại vị trí — cắt dọc tim cầu qua mố/trụ: x = dọc cầu, y = cao độ.
     abutment_assembly: mố lắp ghép → vẽ mặt cắt dọc theo mố thực (nét thấy/khuất).
     df_geology/df_tim_line: khảo sát → dầm bám đường đỏ + móng bám địa hình (đồng
-    bộ 3D & trắc dọc)."""
+    bộ 3D & trắc dọc).
+    draw_own_beams=False → nơi gọi OVERLAY profil dầm THẬT (get_elevation_profile_
+    traces dời về tim trụ) = ĐÚNG như trắc dọc; hàm KHÔNG vẽ dầm hộp tham số."""
     g = _pos_geometry(d, vi_tri, pier_assembly, df_geology=df_geology,
                       df_tim_line=df_tim_line)
     fig = go.Figure()
@@ -5151,29 +5153,31 @@ def ve_mat_cat_doc_vi_tri(d, vi_tri='mo_trai', pier_assembly=None,
     # ── DẦM chủ (mặt cắt DỌC — hình chiếu cạnh) kê trên gối, vươn vào nhịp; ứng
     #    với bố trí chung toàn cầu. TRỤ: 2 đầu dầm 2 nhịp; MỐ: 1 đầu dầm vào nhịp.
     #    TRỤ có khấc → ụ giữa (tường tai) nhô cao hơn đáy dầm đúng độ sâu khấc.
-    _z_sof = g["cao_dd"]                       # đáy dầm (kê trên gối)
-    _z_topd = g["cao_dd"] + g["H_dam"]         # đỉnh dầm = đáy bản
-    try:
-        _notch_d = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
-                    if (pier_assembly and not g["is_mo"]) else 0.0) or 0.0
-    except Exception:
-        _notch_d = 0.0
-    _gap_d = max(0.12, _notch_d * 0.6)         # khe co giãn giữa 2 đầu dầm
-    _sides = ([-1, 1] if not g["is_mo"] else [1])   # mố: dầm vào nhịp (+x)
-    _leg_d = True
-    for _sg in _sides:
-        _xn = _sg * _gap_d
-        _xf = _sg * (x_span - 0.05)
-        _poly(fig, [_xn, _xf, _xf, _xn],
-              [_z_sof, _z_sof, _z_topd, _z_topd],
-              _C["dam"], _C["dam_dk"],
-              "Dầm chủ" if _leg_d else "", showlegend=_leg_d)
-        _leg_d = False
-    # Ụ giữa / tường tai (khấc) giữa 2 đầu dầm ở TRỤ có khấc.
-    if not g["is_mo"] and _notch_d > 1e-3:
-        _poly(fig, [-_gap_d, _gap_d, _gap_d, -_gap_d],
-              [_z_sof, _z_sof, _z_sof + _notch_d, _z_sof + _notch_d],
-              _C["btong"], _C["dam_dk"], "Ụ giữa (khấc)", showlegend=True)
+    #    draw_own_beams=False → nơi gọi overlay profil dầm THẬT (đầu khấc) khớp trắc dọc.
+    if draw_own_beams:
+        _z_sof = g["cao_dd"]                       # đáy dầm (kê trên gối)
+        _z_topd = g["cao_dd"] + g["H_dam"]         # đỉnh dầm = đáy bản
+        try:
+            _notch_d = (_get_PB().cap_seat_notch_depth_m(pier_assembly)
+                        if (pier_assembly and not g["is_mo"]) else 0.0) or 0.0
+        except Exception:
+            _notch_d = 0.0
+        _gap_d = max(0.12, _notch_d * 0.6)         # khe co giãn giữa 2 đầu dầm
+        _sides = ([-1, 1] if not g["is_mo"] else [1])   # mố: dầm vào nhịp (+x)
+        _leg_d = True
+        for _sg in _sides:
+            _xn = _sg * _gap_d
+            _xf = _sg * (x_span - 0.05)
+            _poly(fig, [_xn, _xf, _xf, _xn],
+                  [_z_sof, _z_sof, _z_topd, _z_topd],
+                  _C["dam"], _C["dam_dk"],
+                  "Dầm chủ" if _leg_d else "", showlegend=_leg_d)
+            _leg_d = False
+        # Ụ giữa / tường tai (khấc) giữa 2 đầu dầm ở TRỤ có khấc.
+        if not g["is_mo"] and _notch_d > 1e-3:
+            _poly(fig, [-_gap_d, _gap_d, _gap_d, -_gap_d],
+                  [_z_sof, _z_sof, _z_sof + _notch_d, _z_sof + _notch_d],
+                  _C["btong"], _C["dam_dk"], "Ụ giữa (khấc)", showlegend=True)
 
     # Cọc (chiếu lên mặt phẳng dọc, có độ xiên ix)
     _piles = g["piles"] or _auto_pile_grid(g)
