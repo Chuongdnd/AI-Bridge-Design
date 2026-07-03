@@ -508,6 +508,21 @@ def apply_pier_stem_layout(pier: dict, bc: float, overhang: float = 3.0,
     return _widen_footing(p, target + float(foot_margin))
 
 
+def widen_footing_to_cover_stem(pier: dict, margin: float = 1.0) -> dict:
+    """Nới BỆ phủ hết THÂN (mép ngoài thân + margin) — dùng sau khi chỉnh thân
+    (khai báo TAY spacing/width) để cột ngoài LUÔN có bệ đỡ. Trả pier mới."""
+    p = migrate_pier(pier or {})
+    edge = 0.0
+    for lay in stem_layers_of(p.get("parts", {}).get("than", {})):
+        for s in _section_solids(lay["section"]):
+            us = [u for (u, _v) in s["outer"]]
+            if us:
+                edge = max(edge, max(abs(min(us)), abs(max(us))) * MM)
+    if edge <= 1e-6:
+        return p
+    return _widen_footing(p, edge + float(margin))
+
+
 def _widen_footing(pier: dict, half_m: float) -> dict:
     """Nới BỆ trụ theo NGANG (u) để nửa bề rộng ≥ half_m → phủ hết cột. CHỈ nới
     rộng (không thu), giữ chiều cao & phương dọc. Trả pier mới."""

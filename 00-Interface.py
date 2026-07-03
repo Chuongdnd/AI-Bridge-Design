@@ -4143,6 +4143,7 @@ def _build_pa_d(base_d: dict, ribbon: str) -> dict:
     d["span_layout"] = _pa_span_layout(ribbon)
     d["railings"] = _resolve_railings_for_pa(ribbon)
     d["_clearance_mode"] = _clearance_mode_for(ribbon)
+    d["_pa_ribbon"] = ribbon
     return d
 
 
@@ -5003,21 +5004,51 @@ def _pier_options():
     return [o for o, _ in pairs], dict(pairs)
 
 
-def _current_pier_parts():
+def _pier_sel_key(ribbon=None):
+    """Key widget picker trụ THEO PHƯƠNG ÁN — mỗi PA nhớ lựa chọn riêng, nên
+    mặc định PA1 (thân cột) ≠ PA2 (đặc thân hẹp) không đè lên nhau."""
+    return f"tru_preset_sel_{ribbon}" if ribbon else "tru_preset_sel"
+
+
+def _default_pier_opt(opts, meta, mode):
+    """Nhãn TRỤ MẶC ĐỊNH theo phương án khi người dùng CHƯA chọn tay:
+      • PA2 (straddle) → trụ ĐẶC (thân hẹp).
+      • PA1 (fewest)/khác → trụ 2 THÂN (thân cột).
+    Ưu tiên TRỤ TỔNG đã lưu (saved) rồi tới preset. opts[0] nếu không khớp."""
+    if not opts:
+        return None
+    want = ("đặc",) if mode == "straddle" else ("2 thân",)
+    alt  = ("thân đặc", "đặc") if mode == "straddle" else ("cột", "2 cột")
+
+    def _hit(kws):
+        for pref in ("saved", "preset"):          # ưu tiên trụ tổng đã lưu
+            for o in opts:
+                if meta.get(o, (None,))[0] != pref:
+                    continue
+                s = str(o).lower()
+                if any(k in s for k in kws):
+                    return o
+        return None
+    return _hit(want) or _hit(alt) or opts[0]
+
+
+def _current_pier_parts(ribbon=None):
     """Lựa chọn trụ HIỆN TẠI — đọc TRỰC TIẾP từ session_state của widget picker.
 
     Trả: {"pier_id": id} nếu chọn TRỤ TỔNG đã lưu; ngược lại
     {"ten","cap_id","stem_id","footing_id"} (preset/tùy chỉnh). None nếu trống.
-    Đọc widget state để mọi bản vẽ (kể cả vẽ TRƯỚC picker) thấy ngay → KHÔNG rerun."""
+    Đọc widget state để mọi bản vẽ (kể cả vẽ TRƯỚC picker) thấy ngay → KHÔNG rerun.
+    Chưa chọn tay → TRỤ MẶC ĐỊNH theo phương án (PA1 thân cột / PA2 đặc thân hẹp)."""
     caps, stems, foots = _pier_part_libs()
     piers = _saved_piers()
     if not (caps or stems or foots or piers):
         return None
     opts, meta = _pier_options()
-    sel = st.session_state.get("tru_preset_sel")
+    sel = st.session_state.get(_pier_sel_key(ribbon))
     kind_sel, ref = meta.get(sel, (None, None))
-    if kind_sel is None and opts:                 # chưa chọn → mục đầu tiên
-        kind_sel, ref = meta[opts[0]]
+    if kind_sel is None and opts:                 # chưa chọn → mặc định theo PA
+        _def = _default_pier_opt(opts, meta, _clearance_mode_for(ribbon or ""))
+        kind_sel, ref = meta.get(_def, meta[opts[0]])
     if kind_sel == "saved":
         return {"pier_id": ref}
     if kind_sel == "preset":
@@ -5080,7 +5111,7 @@ def _auto_pier_on_beam_change(d, ribbon):
     if not want_cap:
         return                                  # loại dầm không ràng buộc (bản rỗng…)
     piers = _saved_piers()
-    cur = _current_pier_parts() or {}
+    cur = _current_pier_parts(ribbon) or {}
     cur_cap, cur_stem = cur.get("cap_id"), cur.get("stem_id")
     if cur.get("pier_id"):
         src = (CLIB.get_pier(piers, cur["pier_id"]) or {}).get("source") or {}
@@ -5097,7 +5128,7 @@ def _auto_pier_on_beam_change(d, ribbon):
     _opts, meta = _pier_options()
     for lbl, (kind_sel, ref) in meta.items():
         if kind_sel == "saved" and ref == match["id"]:
-            st.session_state["tru_preset_sel"] = lbl
+            st.session_state[_pier_sel_key(ribbon)] = lbl
             break
 
 
@@ -5116,6 +5147,7 @@ def _resolve_assembly(d, kind: str) -> dict:
         try:
             if _sp or _wd:
                 rec = PB.apply_stem_params(rec, spacing_m=_sp, width_m=_wd)
+                rec = PB.widen_footing_to_cover_stem(rec)   # bệ phủ hết cột (tay)
             else:
                 rec = PB.apply_pier_stem_layout(rec, float((d or {}).get("bc", 12.0)))
         except Exception:
@@ -5123,26 +5155,23 @@ def _resolve_assembly(d, kind: str) -> dict:
         return rec
 
     def _auto_pick_pier(items):
-        """Chọn TRỤ mặc định theo phương án + chiều cao thân (từ _clearance_mode):
-        PA1(fewest)→trụ THÂN CỘT (2 thân); PA2(straddle)→trụ ĐẶC thân hẹp, H_thân
-        >10m→trụ THAY ĐỔI TIẾT DIỆN (đặc, vát) tiết kiệm."""
+        """TRỤ MẶC ĐỊNH theo phương án (từ _clearance_mode):
+          • PA1 (fewest)   → trụ THÂN CỘT (2 thân).
+          • PA2 (straddle) → trụ ĐẶC THÂN HẸP.
+        Không có mode → PA1 (thân cột) làm mặc định chung."""
         if not items:
             return None
         _mode = (d or {}).get("_clearance_mode")
-        _Hs = float((d or {}).get("H_tru_est", 5.0) or 5.0)
         def _find(*kw):
             return next((it for it in items
                          if all(k in str(it.get("ten", "")).lower() for k in kw)), None)
-        if _mode == "straddle":        # PA2 = đặc
-            if _Hs > 10.0:
-                return _find("thay đổi") or _find("đặc") or items[0]
+        if _mode == "straddle":        # PA2 = trụ ĐẶC THÂN HẸP
             return _find("đặc") or items[0]
-        if _mode == "fewest":          # PA1 = thân cột
-            return _find("2 thân") or _find("cột") or items[0]
-        return items[0]
+        # PA1 (fewest) hoặc mặc định = trụ THÂN CỘT (2 thân)
+        return _find("2 thân") or _find("cột") or items[0]
 
     if kind == "tru":
-        pp = _current_pier_parts()
+        pp = _current_pier_parts((d or {}).get("_pa_ribbon"))
         if pp and pp.get("pier_id"):              # TRỤ TỔNG đã lưu
             rec = CLIB.get_pier(_saved_piers(), pp["pier_id"])
             if rec:
@@ -5156,6 +5185,12 @@ def _resolve_assembly(d, kind: str) -> dict:
                 return _ap_pier(PB.build_pier_from_parts(
                     cap, stem, foot, ten=pp.get("ten", "Trụ lắp ghép")))
     items = st.session_state.get(cfg["ss"]) or cfg["load"]()
+    # PHƯƠNG ÁN quyết định LOẠI trụ mặc định (PA1→thân cột, PA2→đặc thân hẹp,
+    # H_thân>10m→thay đổi tiết diện). ƯU TIÊN hơn gán id chung để 2 PA khác loại
+    # rõ; người dùng muốn trụ riêng thì GHÉP TRỤ TỔNG (pp — đã xử lý ở trên).
+    if kind == "tru" and (d or {}).get("_clearance_mode") in ("fewest", "straddle") \
+            and items:
+        return _ap_pier(_auto_pick_pier(items))
     rid = (d or {}).get(cfg["id_key"])
     if not rid:
         # MỐ MẶC ĐỊNH = mố THƯ VIỆN đầu tiên (vd "Mố chữ U") thay khối mố generic cũ.
@@ -5242,9 +5277,10 @@ def _pier_parts_label(pp, caps, stems, foots) -> str:
             f"🟫 {(_f or {}).get('ten','—')}")
 
 
-def _pier_assembler(d) -> None:
+def _pier_assembler(d, ribbon=None) -> None:
     """Chọn 1 TRỤ điển hình có sẵn, hoặc tự ghép từ 3 bộ phận (xà mũ/thân/bệ).
-    Khi gắn vào cầu: xà mũ tự co bề rộng theo cầu, thân tự co chiều cao tĩnh không."""
+    Khi gắn vào cầu: xà mũ tự co bề rộng theo cầu, thân tự co chiều cao tĩnh không.
+    Picker keyed THEO PHƯƠNG ÁN → PA1 mặc định thân cột, PA2 mặc định đặc thân hẹp."""
     caps, stems, foots = _pier_part_libs()
     piers = _saved_piers()
     if not (caps or stems or foots or piers):
@@ -5254,8 +5290,8 @@ def _pier_assembler(d) -> None:
         return
     _opts, _meta = _pier_options()
     cur = d.get("pier_parts") or {}
-    # Khôi phục index theo lựa chọn đang lưu trong d
-    _idx = 0
+    # Khôi phục index theo lựa chọn đang lưu trong d; chưa có → mặc định theo PA.
+    _idx = None
     if cur.get("pier_id"):
         for i, o in enumerate(_opts):
             if _meta[o] == ("saved", cur["pier_id"]):
@@ -5267,8 +5303,11 @@ def _pier_assembler(d) -> None:
                 _idx = _opts.index(p["ten"]); break
         else:
             _idx = _opts.index(_PIER_CUSTOM_OPT)
+    if _idx is None:                              # mặc định theo phương án
+        _def = _default_pier_opt(_opts, _meta, _clearance_mode_for(ribbon or ""))
+        _idx = _opts.index(_def) if _def in _opts else 0
     _sel = st.selectbox(
-        "🏗️ Trụ áp dụng cho cầu", _opts, index=_idx, key="tru_preset_sel",
+        "🏗️ Trụ áp dụng cho cầu", _opts, index=_idx, key=_pier_sel_key(ribbon),
         help="Chọn 1 TRỤ TỔNG đã ghép (THƯ VIỆN → Trụ → Trụ tổng), 1 trụ điển "
              "hình, hoặc 'Tùy chỉnh' để ghép nhanh. Khi gắn vào cầu, xà mũ tự co "
              "bề rộng theo cầu, thân tự co chiều cao theo tĩnh không.")
@@ -5298,14 +5337,14 @@ def _pier_assembler(d) -> None:
         with _c3:
             _pick("🟫 Bệ trụ", foots, "tru_footing_sel", cur.get("footing_id"))
     # Nguồn sự thật là widget state (đọc qua _current_pier_parts) → KHÔNG rerun.
-    d["pier_parts"] = _current_pier_parts()
+    d["pier_parts"] = _current_pier_parts(ribbon)
 
 
 
-def _assembly_picker(d, kind: str) -> None:
+def _assembly_picker(d, kind: str, ribbon=None) -> None:
     """Selectbox chọn trụ/mố lắp ghép áp dụng cho cầu (lưu d[id_key])."""
     if kind == "tru":
-        _pier_assembler(d)
+        _pier_assembler(d, ribbon)
         return
     cfg = _asm_cfg(kind); lab = cfg["label"]
     items = st.session_state.get(cfg["ss"])
@@ -7023,6 +7062,11 @@ with _col_main:
             _auto_pier_on_beam_change(d, selected_ribbon)
         except Exception:
             pass
+        # Gắn _clearance_mode + PA TRƯỚC khi resolve trụ → phương án quyết định
+        # LOẠI trụ (PA1 cột / PA2 đặc). Nếu không, _pier_model resolve khi d chưa
+        # có _clearance_mode → luôn ra trụ đầu tiên (cột).
+        d["_clearance_mode"] = _clearance_mode_for(selected_ribbon)
+        d["_pa_ribbon"]      = selected_ribbon
         # Mô hình trụ/mố lắp ghép → để KHỐI LƯỢNG tính theo mô hình mới (nếu có)
         try:
             d["_pier_model"] = _resolve_assembly(d, "tru")
@@ -7057,7 +7101,8 @@ with _col_main:
             # Nạp bố trí nhịp (2 tầng) của PA vào d → mọi bản vẽ đồng bộ
             d = {**d, "span_layout": _pa_span_layout(selected_ribbon),
                  "railings": _resolve_railings_for_pa(selected_ribbon),
-                 "_clearance_mode": _clearance_mode_for(selected_ribbon)}
+                 "_clearance_mode": _clearance_mode_for(selected_ribbon),
+                 "_pa_ribbon": selected_ribbon}
 
             # Chưa khai báo dầm → tự lấy dầm phù hợp theo nhịp từ THƯ VIỆN người
             # dùng (nếu có DXF); không có thì các mặt cắt sinh hình tham số đúng
@@ -7495,7 +7540,7 @@ with _col_main:
                     if not _pa3:        # PA3: cấu kiện do AI dự báo, không cho chọn
                         _pck1, _pck2, _pck3 = st.columns([2, 2, 1.4])
                         with _pck1:
-                            _assembly_picker(d, "tru")
+                            _assembly_picker(d, "tru", selected_ribbon)
                             _auto_cap = st.checkbox(
                                 "🔗 Tự chọn xà mũ theo loại dầm", value=bool(
                                     st.session_state.design_data.get("_auto_pier_cap", True)),
@@ -7519,7 +7564,7 @@ with _col_main:
                                 _save_design_inputs(st.session_state.design_data)
                             else:
                                 d["h_goi_m"] = float(_hg)
-                    _pa_obj = _resolve_assembly(d, "tru")
+                    _pa_obj = d.get("_pier_model") or _resolve_assembly(d, "tru")
                     _ab_obj = _resolve_assembly(d, "mo")
                     _dc_data = st.session_state.get("dia_chat_data")
                     # Loại dầm THỰC đang áp dụng (thư viện) → tiêu đề sơ đồ đúng loại
@@ -7576,7 +7621,7 @@ with _col_main:
                     _y_bot_btc = -(_H_dam_btc + _t_ban_btc + 0.15)   # ngay dưới đáy dầm
                     _y_top_btc = _t_phu_btc + 1.40                    # trên đỉnh lan can
 
-                    _pa_tru_mcn = _resolve_assembly(d, "tru")
+                    _pa_tru_mcn = d.get("_pier_model") or _resolve_assembly(d, "tru")
 
                     # Từ khoá nhận diện trace/dim của KẾT CẤU DƯỚI (trụ/bệ/cọc)
                     _SUB_KW = ("Xà mũ", "xà mũ", "Thân trụ", "Bệ cọc", "Bệ ",
@@ -7734,18 +7779,20 @@ with _col_main:
                         _stype, _sval = (None, 0.0)
                     if _stype == "2cot":
                         _cur = float(d.get("pier_col_spacing_m") or _sval or 9.0)
+                        _cur = min(max(_cur, 0.5), 30.0)      # kẹp trong [min,max]
                         _new = st.number_input(
                             "↔️ Khoảng cách 2 cột trụ (m) — áp cho MỌI trụ 2 thân",
-                            min_value=0.5, max_value=20.0, value=round(_cur, 2),
+                            min_value=0.5, max_value=30.0, value=round(_cur, 2),
                             step=0.1, key="pier_col_spacing_in",
                             help="Khai báo 1 lần → cập nhật mọi trụ 2 thân trên cầu.")
                         d["pier_col_spacing_m"] = float(_new)
                         st.session_state.design_data["pier_col_spacing_m"] = float(_new)
                     elif _stype == "dac":
                         _cur = float(d.get("pier_solid_width_m") or _sval or 2.0)
+                        _cur = min(max(_cur, 0.3), 30.0)      # kẹp (thân đặc = bc−6 có thể lớn)
                         _new = st.number_input(
                             "↔️ Bề rộng thân trụ (m) — áp cho MỌI trụ đặc thân hẹp",
-                            min_value=0.3, max_value=10.0, value=round(_cur, 2),
+                            min_value=0.3, max_value=30.0, value=round(_cur, 2),
                             step=0.1, key="pier_solid_width_in",
                             help="Khai báo 1 lần → cập nhật mọi trụ đặc thân hẹp trên cầu.")
                         d["pier_solid_width_m"] = float(_new)
@@ -7758,7 +7805,10 @@ with _col_main:
                 st.markdown(
                     f"**Bố trí {_vt_label_cur}** — TRÁI: mặt bằng kết cấu · mặt cắt "
                     "ngang (thẳng trục Ngang cầu) | PHẢI: mặt bằng cọc · mặt cắt dọc")
-                _pa_tru = _resolve_assembly(d, "tru")   # dựng 1 lần, dùng lại
+                # DÙNG CHUNG 1 NGUỒN trụ với bình đồ + 3D toàn cầu (d["_pier_model"])
+                # → mặt cắt ngang chi tiết trụ khớp tuyệt đối (3 cột / bệ nới / xà
+                # mũ) thay vì resolve riêng dễ lệch.
+                _pa_tru = d.get("_pier_model") or _resolve_assembly(d, "tru")
                 # Tầm nhìn ngang CHUNG cho 2 hình cột TRÁI → thẳng trục Ngang cầu
                 _xh = max(float(d.get("bc", 12.0)) / 2.0 + 4.0, 11.0)
                 # Cột TRÁI rộng (~67%): mặt bằng kết cấu trên · mặt cắt ngang dưới.
