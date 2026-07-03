@@ -1726,7 +1726,13 @@ def dialog_step1():
     )
 
     st.markdown("<br>", unsafe_allow_html=True)
-    _apply_col, btn_col = st.columns([1, 1])
+    _back_col, _apply_col, btn_col = st.columns([1, 1, 1])
+    with _back_col:
+        if st.button("◀ Địa hình & Địa chất", use_container_width=True,
+                     key="d1_back_geo", help="Quay lại bước Địa hình & Địa chất"):
+            _d1_commit()
+            st.session_state.open_dialog = "geodata"
+            st.rerun()
     with _apply_col:
         if st.button(
             "✅ Áp dụng",
@@ -3487,6 +3493,25 @@ def dialog_geo_data():
     elif st.session_state.get("dia_chat_frames"):
         _fhk = st.session_state["dia_chat_frames"][0]
         st.caption(f"✅ Đang có dữ liệu địa chất: {len(_fhk)} hố khoan trong phiên.")
+
+    # ── Chuyển bước: Địa hình & Địa chất là BƯỚC ĐẦU của trình tự khai báo ───
+    st.markdown("<br>", unsafe_allow_html=True)
+    _gd_a, _gd_n = st.columns([1, 1])
+    with _gd_a:
+        if st.button("✅ Áp dụng", use_container_width=True, key="gd_apply",
+                     help="LƯU dữ liệu đã nạp — hộp vẫn mở để khai báo tiếp"):
+            st.toast("💾 Đã lưu Địa hình & Địa chất.", icon="✅")
+            st.session_state.open_dialog = "geodata"   # ghi nhớ, không thoát hộp
+            st.rerun()
+    with _gd_n:
+        if st.button("Thủy văn ▶", use_container_width=True, type="primary",
+                     key="gd_next", help="Sang bước Thủy văn & vị trí cầu"):
+            st.session_state.field_touched = set()
+            st.session_state.field_errors = {}
+            st.session_state.field_warnings = {}
+            st.session_state.d1_show_feedback = False
+            st.session_state.open_dialog = "step1"
+            st.rerun()
 
 
 # ── Dialog dispatcher ────────────────────────────────────────────────────────
@@ -6437,7 +6462,8 @@ with _col_main:
                     type="primary",
                     key="welcome_start_btn",
                 ):
-                    st.session_state.open_dialog = "step1"
+                    # Trình tự khai báo: ĐỊA HÌNH & ĐỊA CHẤT trước tiên
+                    st.session_state.open_dialog = "geodata"
                     st.session_state.field_touched = set()
                     st.session_state.field_errors = {}
                     st.session_state.field_warnings = {}
@@ -6966,7 +6992,8 @@ with _col_main:
                 with _mc:
                     if st.button(_es["cta_label"], key=_es["cta_key"],
                                  use_container_width=True, type="secondary"):
-                        st.session_state.open_dialog = "step1"
+                        # Trình tự khai báo: ĐỊA HÌNH & ĐỊA CHẤT trước tiên
+                        st.session_state.open_dialog = "geodata"
                         st.session_state.field_touched = set()
                         st.session_state.field_errors = {}
                         st.session_state.field_warnings = {}
@@ -8473,7 +8500,8 @@ with _col_main:
                 with _mc:
                     if st.button(_es["cta_label"], key=_es["cta_key"],
                                  use_container_width=True, type="secondary"):
-                        st.session_state.open_dialog = "step1"
+                        # Trình tự khai báo: ĐỊA HÌNH & ĐỊA CHẤT trước tiên
+                        st.session_state.open_dialog = "geodata"
                         st.session_state.field_touched = set()
                         st.session_state.field_errors = {}
                         st.session_state.field_warnings = {}
