@@ -6436,7 +6436,8 @@ with _col_main:
                     type="primary",
                     key="welcome_start_btn",
                 ):
-                    st.session_state.open_dialog = "step1"
+                    # Trình tự khai báo: ĐỊA HÌNH & ĐỊA CHẤT trước tiên
+                    st.session_state.open_dialog = "geodata"
                     st.session_state.field_touched = set()
                     st.session_state.field_errors = {}
                     st.session_state.field_warnings = {}
@@ -6965,7 +6966,8 @@ with _col_main:
                 with _mc:
                     if st.button(_es["cta_label"], key=_es["cta_key"],
                                  use_container_width=True, type="secondary"):
-                        st.session_state.open_dialog = "step1"
+                        # Trình tự khai báo: ĐỊA HÌNH & ĐỊA CHẤT trước tiên
+                        st.session_state.open_dialog = "geodata"
                         st.session_state.field_touched = set()
                         st.session_state.field_errors = {}
                         st.session_state.field_warnings = {}
@@ -8472,7 +8474,8 @@ with _col_main:
                 with _mc:
                     if st.button(_es["cta_label"], key=_es["cta_key"],
                                  use_container_width=True, type="secondary"):
-                        st.session_state.open_dialog = "step1"
+                        # Trình tự khai báo: ĐỊA HÌNH & ĐỊA CHẤT trước tiên
+                        st.session_state.open_dialog = "geodata"
                         st.session_state.field_touched = set()
                         st.session_state.field_errors = {}
                         st.session_state.field_warnings = {}
