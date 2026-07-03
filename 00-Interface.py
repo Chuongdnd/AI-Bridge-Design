@@ -359,8 +359,9 @@ _cc_theme.html(
       bl.id = 'cau-busy-block';
       d.body.appendChild(bl);
       function busy(){ return bl.classList.contains('on'); }
-      // Chặn chuột/cảm ứng (overlay đã phủ) + phím (bắt ở document khi đang bận)
-      ['mousedown','mouseup','click','dblclick','wheel','touchstart','touchend',
+      // CHỈ chặn BẤM/GÕ khi đang chạy (tránh bấm lặp). VẪN CHO cuộn/xem
+      // (wheel, touch) để không có cảm giác bị "đơ" chờ lâu.
+      ['mousedown','mouseup','click','dblclick',
        'keydown','keypress','keyup'].forEach(function(ev){
         d.addEventListener(ev, function(e){
           if(!busy()) return;
@@ -369,6 +370,8 @@ _cc_theme.html(
           e.stopPropagation(); e.preventDefault();
         }, true);
       });
+      // Overlay không nuốt cử chỉ cuộn
+      bl.style.pointerEvents = 'none';
       function running(){
         var w = d.querySelector('[data-testid="stStatusWidget"]');
         if(!w) return false;
@@ -1550,10 +1553,11 @@ def dialog_step1():
             format_func=lambda x: "Miền Bắc" if x == "1" else "Miền Nam",
             key="d1_mien",
         )
+        _caps_opts = ["1", "2", "3", "4", "5", "6"]   # thứ tự chuẩn I → VI
         cap_s = st.selectbox(
             "Cấp sông ỐTN:",
-            ["4", "5", "6", "3", "2", "1"],
-            index=["4","5","6","3","2","1"].index(str(draft.get('cap_s', '4'))),
+            _caps_opts,
+            index=_caps_opts.index(str(draft.get('cap_s', '4'))),
             format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}",
             key="d1_caps",
         )
@@ -1580,7 +1584,7 @@ def dialog_step1():
 
         st.markdown("**🚧 Tĩnh không khác (nếu có)**")
         st.caption("Ngoài tĩnh không sông chính. Khai báo lý trình, cao độ đáy, "
-                   "bề rộng B (dọc cầu) × cao H → hệ thống rải trụ TRÁNH.")
+                   "bề rộng B (dọc cầu) × cao H")
         import pandas as _pd_tk
         _ex0 = (draft.get('extra_clearances')
                 or st.session_state.design_data.get('extra_clearances') or [])
@@ -1676,10 +1680,6 @@ def dialog_step1():
             show_feedback = _d1_show,
         )
 
-        st.caption(
-            "ℹ️ Bề dày bản mặt cầu được khai báo ở **Bước 2** — ngay dưới bề rộng bản mặt cầu."
-        )
-
     def _d1_commit():
         st.session_state.wizard_draft.update({
             'mien': mien, 'cap_s': cap_s, 'loai_h': loai_h,
@@ -1708,22 +1708,20 @@ def dialog_step1():
     _apply_col, btn_col = st.columns([1, 1])
     with _apply_col:
         if st.button(
-            "✅ Áp dụng & cập nhật",
+            "✅ Áp dụng",
             use_container_width=True,
             key="d1_apply",
-            help="Lưu số liệu và CẬP NHẬT hệ thống ngay (không cần sang bước sau)",
+            help="LƯU số liệu đã khai — hộp vẫn mở để khai báo tiếp",
         ):
             _d1_commit()
             st.session_state.d1_show_feedback = True
             if _d1_validate():
                 st.toast("⚠️ Có cao độ chưa hợp lệ — xem cảnh báo.", icon="⚠️")
-                st.rerun()
             else:
-                # Áp dụng CỤC BỘ → chạy lại pipeline, giữ nguyên tab & khai báo
-                st.session_state._d3_run = True
-                st.session_state._apply_keep_context = True
-                st.session_state.open_dialog = "step3"
-                st.rerun()
+                st.toast("💾 Đã lưu khai báo thủy văn.", icon="✅")
+            # GHI NHỚ nhưng KHÔNG thoát hộp — mở lại chính hộp này
+            st.session_state.open_dialog = "step1"
+            st.rerun()
     with btn_col:
         if st.button(
             "Bước 2 ▶",
@@ -2302,12 +2300,11 @@ def dialog_step2():
             st.rerun()
     with btn_a:
         if st.button("✅ Áp dụng", use_container_width=True, key="d2_apply",
-                     help="Lưu thông số hình học và CẬP NHẬT hệ thống ngay "
-                          "(không cần sang bước sau)"):
+                     help="LƯU thông số hình học — hộp vẫn mở để khai báo tiếp"):
             # draft đã được cập nhật ở khối update phía trên mỗi lần render.
-            st.session_state._d3_run = True
-            st.session_state._apply_keep_context = True
-            st.session_state.open_dialog = "step3"
+            st.toast("💾 Đã lưu thông số hình học.", icon="✅")
+            # GHI NHỚ nhưng KHÔNG thoát hộp — mở lại chính hộp này
+            st.session_state.open_dialog = "step2"
             st.rerun()
     with btn_f:
         if st.button("Bước 3 ▶", use_container_width=True, type="primary", key="d2_next"):
@@ -3196,8 +3193,8 @@ def _decl_box_thuy_van():
                                     step=0.1, format="%.2f", key="dinp_MNTN")
             _H_tk = st.number_input("Cao tĩnh không (m)", value=float(_sd.get('H', 4.75)),
                                      step=0.25, key="dinp_H")
-            _cap_s_opts = ["IV","V","VI","III","II","I"]
-            _cap_idx = _cap_s_opts.index(str(_sd.get('cap_song','VI'))) if str(_sd.get('cap_song','VI')) in _cap_s_opts else 2
+            _cap_s_opts = ["I","II","III","IV","V","VI"]   # thứ tự chuẩn I → VI
+            _cap_idx = _cap_s_opts.index(str(_sd.get('cap_song','VI'))) if str(_sd.get('cap_song','VI')) in _cap_s_opts else 5
             _cap_song = st.selectbox("Cấp sông", _cap_s_opts, index=_cap_idx, key="dinp_cap_song",
                                       format_func=lambda x: f"Cấp {x}")
             _goc_giao = st.number_input("Góc giao (°)", value=float(_sd.get('goc_giao', 90.0)),
