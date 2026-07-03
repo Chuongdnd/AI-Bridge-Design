@@ -7716,18 +7716,20 @@ with _col_main:
                         _stype, _sval = (None, 0.0)
                     if _stype == "2cot":
                         _cur = float(d.get("pier_col_spacing_m") or _sval or 9.0)
+                        _cur = min(max(_cur, 0.5), 30.0)      # kẹp trong [min,max]
                         _new = st.number_input(
                             "↔️ Khoảng cách 2 cột trụ (m) — áp cho MỌI trụ 2 thân",
-                            min_value=0.5, max_value=20.0, value=round(_cur, 2),
+                            min_value=0.5, max_value=30.0, value=round(_cur, 2),
                             step=0.1, key="pier_col_spacing_in",
                             help="Khai báo 1 lần → cập nhật mọi trụ 2 thân trên cầu.")
                         d["pier_col_spacing_m"] = float(_new)
                         st.session_state.design_data["pier_col_spacing_m"] = float(_new)
                     elif _stype == "dac":
                         _cur = float(d.get("pier_solid_width_m") or _sval or 2.0)
+                        _cur = min(max(_cur, 0.3), 30.0)      # kẹp (thân đặc = bc−6 có thể lớn)
                         _new = st.number_input(
                             "↔️ Bề rộng thân trụ (m) — áp cho MỌI trụ đặc thân hẹp",
-                            min_value=0.3, max_value=10.0, value=round(_cur, 2),
+                            min_value=0.3, max_value=30.0, value=round(_cur, 2),
                             step=0.1, key="pier_solid_width_in",
                             help="Khai báo 1 lần → cập nhật mọi trụ đặc thân hẹp trên cầu.")
                         d["pier_solid_width_m"] = float(_new)
