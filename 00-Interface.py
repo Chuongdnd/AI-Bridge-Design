@@ -40,6 +40,7 @@ def _plotly_chart_touch(fig, *a, **kw):
     _cfg.setdefault("displayModeBar", True)
     _cfg.setdefault("doubleClick", "reset")          # chạm 2 lần = về mặc định
     _cfg.setdefault("displaylogo", False)
+    _cfg.setdefault("responsive", True)              # bám kích thước khung (mobile)
     kw["config"] = _cfg
     return _orig_plotly_chart(fig, *a, **kw)
 st.plotly_chart = _plotly_chart_touch
@@ -80,11 +81,18 @@ footer                            { display: none !important; }
     width: 100% !important;
     min-width: 100% !important;
   }
-  /* Biểu đồ trên điện thoại: ẨN chú giải (ẩn/hiện cấu kiện) + thanh CAO ĐỘ
-     (colorbar) — chiếm gần hết khung nhìn nhỏ. Máy tính vẫn hiển thị đủ. */
-  .js-plotly-plot .legend { display: none !important; }
-  .js-plotly-plot .infolayer g[class*="colorbar"],
-  .js-plotly-plot .infolayer g[class^="cb"] { display: none !important; }
+  /* Biểu đồ trên điện thoại: chú giải + thanh CAO ĐỘ mặc định ẨN (che khung
+     nhìn nhỏ) nhưng BẬT/TẮT được bằng nút 👁 (JS gắn) — không ẩn hẳn. */
+  .js-plotly-plot:not(.cau-show-legend) .legend { display: none !important; }
+  .js-plotly-plot:not(.cau-show-legend) .infolayer g[class*="colorbar"],
+  .js-plotly-plot:not(.cau-show-legend) .infolayer g[class^="cb"] {
+    display: none !important; }
+  /* Khung MÔ HÌNH 3D cao hơn cho vừa điện thoại (chỉ biểu đồ có WebGL 3D) */
+  [data-testid="stPlotlyChart"]:has(.gl-container),
+  [data-testid="stPlotlyChart"]:has(.gl-container) .js-plotly-plot,
+  [data-testid="stPlotlyChart"]:has(.gl-container) .plot-container {
+    height: 72vh !important; min-height: 420px !important;
+  }
 }
 
 /* ── Metrics ── */
@@ -508,6 +516,37 @@ _cc_theme.html(
       }
       d.addEventListener('touchend', endGesture, {capture:true, passive:false});
       d.addEventListener('touchcancel', endGesture, {capture:true, passive:false});
+
+      // ── Nút 👁 bật/tắt chú giải + thanh cao độ (chỉ màn hẹp ≤700px) ──────
+      var mq = d.defaultView.matchMedia ?
+               d.defaultView.matchMedia('(max-width: 700px)') : null;
+      function addBtns(){
+        if(!mq || !mq.matches) return;
+        d.querySelectorAll('.js-plotly-plot').forEach(function(gd){
+          if(gd.querySelector('.cau-lg-btn')) return;
+          // chỉ gắn khi biểu đồ CÓ chú giải hoặc colorbar
+          if(!gd.querySelector('.legend') &&
+             !gd.querySelector('.infolayer g[class*="colorbar"]') &&
+             !gd.querySelector('.infolayer g[class^="cb"]')) return;
+          var b = d.createElement('button');
+          b.className = 'cau-lg-btn';
+          b.textContent = '\\uD83D\\uDC41 Chu giai';
+          b.style.cssText = 'position:absolute;left:6px;top:6px;z-index:1002;'
+            +'padding:4px 10px;font-size:11px;border-radius:14px;'
+            +'border:1px solid #4fc3f7;background:rgba(18,18,28,.72);'
+            +'color:#4fc3f7;cursor:pointer';
+          b.addEventListener('click', function(ev){
+            ev.stopPropagation();
+            gd.classList.toggle('cau-show-legend');
+          });
+          if(getComputedStyle(gd).position === 'static')
+            gd.style.position = 'relative';
+          gd.appendChild(b);
+        });
+      }
+      addBtns();
+      try{ new MutationObserver(addBtns).observe(d.body,
+             {childList:true, subtree:true}); }catch(e){}
     })();
     </script>""", height=0)
 
