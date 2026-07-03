@@ -80,6 +80,11 @@ footer                            { display: none !important; }
     width: 100% !important;
     min-width: 100% !important;
   }
+  /* Biểu đồ trên điện thoại: ẨN chú giải (ẩn/hiện cấu kiện) + thanh CAO ĐỘ
+     (colorbar) — chiếm gần hết khung nhìn nhỏ. Máy tính vẫn hiển thị đủ. */
+  .js-plotly-plot .legend { display: none !important; }
+  .js-plotly-plot .infolayer g[class*="colorbar"],
+  .js-plotly-plot .infolayer g[class^="cb"] { display: none !important; }
 }
 
 /* ── Metrics ── */
