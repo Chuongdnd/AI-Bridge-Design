@@ -390,6 +390,83 @@ _cc_theme.html(
     })();
     </script>""", height=0)
 
+# ── CẢM ỨNG BIỂU ĐỒ trên ĐIỆN THOẠI (pinch zoom 2D & 3D, chạm 2 lần reset) ────
+# (1) touch-action:none trên vùng plot → trình duyệt KHÔNG cướp cử chỉ (1 ngón
+#     không cuộn trang, 2 ngón không zoom cả trang) → Plotly nhận đủ sự kiện:
+#     2D 1 ngón = pan (dragmode pan), 3D 1 ngón = xoay, 2 ngón = pan.
+# (2) Plotly 2D KHÔNG có pinch-zoom gốc → quy đổi cử chỉ CHỤM/XOÈ 2 ngón thành
+#     sự kiện LĂN CHUỘT (wheel) tại trung điểm 2 ngón — Plotly đã bật scrollZoom
+#     nên zoom đúng tâm. Áp cho cả 3D (đồng nhất).
+# (3) Chạm 2 lần nhanh = dblclick → về khung hình mặc định (doubleClick reset).
+_cc_theme.html(
+    """<script>
+    (function(){
+      var d = window.parent.document;
+      if(d._cauTouchPlot) return; d._cauTouchPlot = true;
+      var stl = d.createElement('style');
+      stl.textContent =
+        '.js-plotly-plot, .js-plotly-plot .plot-container, '
+        +'.js-plotly-plot .svg-container, .js-plotly-plot canvas'
+        +'{touch-action:none !important; -ms-touch-action:none !important}';
+      d.head.appendChild(stl);
+
+      function mid(ts){ return {x:(ts[0].clientX+ts[1].clientX)/2,
+                                y:(ts[0].clientY+ts[1].clientY)/2}; }
+      function dist(ts){ var dx=ts[0].clientX-ts[1].clientX,
+                             dy=ts[0].clientY-ts[1].clientY;
+                         return Math.sqrt(dx*dx+dy*dy); }
+      var pinch = null, lastTap = 0, lastTapXY = null;
+
+      d.addEventListener('touchstart', function(e){
+        var gd = e.target.closest && e.target.closest('.js-plotly-plot');
+        if(!gd) { pinch = null; return; }
+        if(e.touches.length === 2){
+          pinch = {gd: gd, d: dist(e.touches)};
+          e.preventDefault();          // chặn zoom trang
+        }
+      }, {capture:true, passive:false});
+
+      d.addEventListener('touchmove', function(e){
+        if(!pinch || e.touches.length !== 2) return;
+        e.preventDefault();
+        var nd = dist(e.touches);
+        if(nd < 10) return;
+        var ratio = nd / pinch.d;
+        if(Math.abs(ratio - 1) < 0.01) return;
+        var m = mid(e.touches);
+        // Quy đổi tỉ lệ chụm → deltaY wheel (âm = phóng to). Hệ số 300 cho mượt.
+        var dy = -Math.log(ratio) * 300;
+        var tgt = d.elementFromPoint(m.x, m.y) || pinch.gd;
+        try{
+          tgt.dispatchEvent(new WheelEvent('wheel', {
+            bubbles:true, cancelable:true, view:d.defaultView,
+            clientX:m.x, clientY:m.y, deltaY:dy, deltaMode:0}));
+        }catch(err){}
+        pinch.d = nd;
+      }, {capture:true, passive:false});
+
+      d.addEventListener('touchend', function(e){
+        if(e.touches.length < 2) pinch = null;
+        // Chạm 2 lần nhanh (cùng chỗ ±40px) → dblclick = reset khung hình
+        if(e.touches.length === 0 && e.changedTouches.length === 1){
+          var gd = e.target.closest && e.target.closest('.js-plotly-plot');
+          if(!gd) return;
+          var t = e.changedTouches[0], now = Date.now();
+          if(now - lastTap < 350 && lastTapXY &&
+             Math.abs(t.clientX-lastTapXY.x) < 40 &&
+             Math.abs(t.clientY-lastTapXY.y) < 40){
+            try{
+              (d.elementFromPoint(t.clientX, t.clientY) || gd).dispatchEvent(
+                new MouseEvent('dblclick', {bubbles:true, cancelable:true,
+                  view:d.defaultView, clientX:t.clientX, clientY:t.clientY}));
+            }catch(err){}
+            lastTap = 0; lastTapXY = null;
+          } else { lastTap = now; lastTapXY = {x:t.clientX, y:t.clientY}; }
+        }
+      }, {capture:true, passive:false});
+    })();
+    </script>""", height=0)
+
 # ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
 import importlib.util as _iutil
 _auth_spec = _iutil.spec_from_file_location("auth00", os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-Auth.py"))
