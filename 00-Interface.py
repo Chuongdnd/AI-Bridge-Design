@@ -359,8 +359,9 @@ _cc_theme.html(
       bl.id = 'cau-busy-block';
       d.body.appendChild(bl);
       function busy(){ return bl.classList.contains('on'); }
-      // Chặn chuột/cảm ứng (overlay đã phủ) + phím (bắt ở document khi đang bận)
-      ['mousedown','mouseup','click','dblclick','wheel','touchstart','touchend',
+      // CHỈ chặn BẤM/GÕ khi đang chạy (tránh bấm lặp). VẪN CHO cuộn/xem
+      // (wheel, touch) để không có cảm giác bị "đơ" chờ lâu.
+      ['mousedown','mouseup','click','dblclick',
        'keydown','keypress','keyup'].forEach(function(ev){
         d.addEventListener(ev, function(e){
           if(!busy()) return;
@@ -369,6 +370,8 @@ _cc_theme.html(
           e.stopPropagation(); e.preventDefault();
         }, true);
       });
+      // Overlay không nuốt cử chỉ cuộn
+      bl.style.pointerEvents = 'none';
       function running(){
         var w = d.querySelector('[data-testid="stStatusWidget"]');
         if(!w) return false;
@@ -481,10 +484,13 @@ _cc_theme.html(
           if(nd < 10) return;
           var r = nd / g.lastD;
           if(Math.abs(r - 1) < 0.01) return;
-          try{ (d.elementFromPoint(nm.x, nm.y) || g.tgt).dispatchEvent(
-            new WheelEvent('wheel', {bubbles:true, cancelable:true,
+          try{
+            var we = new WheelEvent('wheel', {bubbles:true, cancelable:true,
               view:d.defaultView, clientX:nm.x, clientY:nm.y,
-              deltaY:-Math.log(r)*300, deltaMode:0})); }catch(err){}
+              deltaY:-Math.log(r)*300, deltaMode:0});
+            we._cau = true;   // đánh dấu: KHÔNG giảm tốc lần nữa
+            (d.elementFromPoint(nm.x, nm.y) || g.tgt).dispatchEvent(we);
+          }catch(err){}
           g.lastD = nd;
         } else {
           fire(g.tgt, 'mousemove', nm.x, nm.y, 1);
@@ -547,6 +553,23 @@ _cc_theme.html(
       addBtns();
       try{ new MutationObserver(addBtns).observe(d.body,
              {childList:true, subtree:true}); }catch(e){}
+
+      // ── GIẢM TỐC ĐỘ ZOOM 3D bằng con lăn chuột (máy tính) ────────────────
+      // Plotly gl3d zoom theo nguyên deltaY → quá nhanh. Bắt wheel trên biểu đồ
+      // 3D, chặn bản gốc, phát lại với deltaY × 0.25 (đánh dấu _cau tránh lặp).
+      d.addEventListener('wheel', function(e){
+        if(e._cau) return;                       // sự kiện đã xử lý/pinch mobile
+        var gd = e.target.closest && e.target.closest('.js-plotly-plot');
+        if(!gd || !gd.querySelector('.gl-container')) return;   // chỉ 3D
+        e.preventDefault(); e.stopImmediatePropagation();
+        try{
+          var ev = new WheelEvent('wheel', {bubbles:true, cancelable:true,
+            view:d.defaultView, clientX:e.clientX, clientY:e.clientY,
+            deltaY:e.deltaY * 0.25, deltaMode:e.deltaMode});
+          ev._cau = true;
+          e.target.dispatchEvent(ev);
+        }catch(err){}
+      }, {capture:true, passive:false});
     })();
     </script>""", height=0)
 
@@ -987,6 +1010,7 @@ if 'panel_widths' not in st.session_state:
 
 # ── Metadata 8 bước pipeline AI ──────────────────────────────────────────────
 PIPELINE_STEPS = [
+    {"id": "DC",   "label": "Địa hình & Địa chất", "desc": "Kiểm tra dữ liệu khảo sát tim tuyến + hố khoan đã khai báo",  "icon": "🪨", "weight": 5},
     {"id": "TK",   "label": "Tĩnh không ỐTN",    "desc": "Tra cứu tĩnh không thông thuyền theo TCVN 8818:2022",         "icon": "🌊", "weight": 5},
     {"id": "YTHH", "label": "Yếu tố hình học",     "desc": "Tính MCN, chiều rộng cầu, độ dốc dọc ngang",                  "icon": "📐", "weight": 10},
     {"id": "KCN",  "label": "AI kết cấu nhịp",     "desc": "Dự báo loại dầm, số nhịp, chiều dài, chiều cao",              "icon": "🤖", "weight": 20},
@@ -994,7 +1018,7 @@ PIPELINE_STEPS = [
     {"id": "MONG", "label": "AI móng cầu",          "desc": "Dự báo loại móng, đường kính cọc, chiều sâu",                 "icon": "⚙️", "weight": 20},
     {"id": "LPC",  "label": "Lớp phủ mặt cầu",     "desc": "Tư vấn cấu tạo lớp phủ theo TCVN 8819:2011",                 "icon": "🛣️", "weight": 5},
     {"id": "BVK",  "label": "Bản vẽ kết cấu",      "desc": "Sinh bản vẽ trắc dọc, mặt cắt ngang, mố trụ",                "icon": "📋", "weight": 10},
-    {"id": "SSP",  "label": "So sánh phương án",   "desc": "Sinh và đánh giá 3 phương án loại dầm",                       "icon": "📊", "weight": 10},
+    {"id": "SSP",  "label": "So sánh phương án",   "desc": "Sinh và đánh giá 3 phương án loại dầm",                       "icon": "📊", "weight": 5},
 ]
 assert sum(s["weight"] for s in PIPELINE_STEPS) == 100
 
@@ -1550,10 +1574,11 @@ def dialog_step1():
             format_func=lambda x: "Miền Bắc" if x == "1" else "Miền Nam",
             key="d1_mien",
         )
+        _caps_opts = ["1", "2", "3", "4", "5", "6"]   # thứ tự chuẩn I → VI
         cap_s = st.selectbox(
             "Cấp sông ỐTN:",
-            ["4", "5", "6", "3", "2", "1"],
-            index=["4","5","6","3","2","1"].index(str(draft.get('cap_s', '4'))),
+            _caps_opts,
+            index=_caps_opts.index(str(draft.get('cap_s', '4'))),
             format_func=lambda x: f"Cấp {['I','II','III','IV','V','VI'][int(x)-1]}",
             key="d1_caps",
         )
@@ -1580,7 +1605,7 @@ def dialog_step1():
 
         st.markdown("**🚧 Tĩnh không khác (nếu có)**")
         st.caption("Ngoài tĩnh không sông chính. Khai báo lý trình, cao độ đáy, "
-                   "bề rộng B (dọc cầu) × cao H → hệ thống rải trụ TRÁNH.")
+                   "bề rộng B (dọc cầu) × cao H")
         import pandas as _pd_tk
         _ex0 = (draft.get('extra_clearances')
                 or st.session_state.design_data.get('extra_clearances') or [])
@@ -1676,10 +1701,6 @@ def dialog_step1():
             show_feedback = _d1_show,
         )
 
-        st.caption(
-            "ℹ️ Bề dày bản mặt cầu được khai báo ở **Bước 2** — ngay dưới bề rộng bản mặt cầu."
-        )
-
     def _d1_commit():
         st.session_state.wizard_draft.update({
             'mien': mien, 'cap_s': cap_s, 'loai_h': loai_h,
@@ -1708,22 +1729,20 @@ def dialog_step1():
     _apply_col, btn_col = st.columns([1, 1])
     with _apply_col:
         if st.button(
-            "✅ Áp dụng & cập nhật",
+            "✅ Áp dụng",
             use_container_width=True,
             key="d1_apply",
-            help="Lưu số liệu và CẬP NHẬT hệ thống ngay (không cần sang bước sau)",
+            help="LƯU số liệu đã khai — hộp vẫn mở để khai báo tiếp",
         ):
             _d1_commit()
             st.session_state.d1_show_feedback = True
             if _d1_validate():
                 st.toast("⚠️ Có cao độ chưa hợp lệ — xem cảnh báo.", icon="⚠️")
-                st.rerun()
             else:
-                # Áp dụng CỤC BỘ → chạy lại pipeline, giữ nguyên tab & khai báo
-                st.session_state._d3_run = True
-                st.session_state._apply_keep_context = True
-                st.session_state.open_dialog = "step3"
-                st.rerun()
+                st.toast("💾 Đã lưu khai báo thủy văn.", icon="✅")
+            # GHI NHỚ nhưng KHÔNG thoát hộp — mở lại chính hộp này
+            st.session_state.open_dialog = "step1"
+            st.rerun()
     with btn_col:
         if st.button(
             "Bước 2 ▶",
@@ -2218,38 +2237,20 @@ def dialog_step2():
         help="Bề rộng gờ lan can (tính tới mép ngoài cùng). Cầu có lan can đối xứng 2 bên.",
     )
 
+    # LUÔN TỰ ĐỘNG: khai báo làn xe/lề/DPC ở trên xong là Bc tính & cập nhật
+    # ngay tại đây — không checkbox, không ô nhập tay, KHÔNG làm tròn.
     _tinh_ban, _bd_parts = _calc_be_rong_ban(l_hinhhoc, mcn_oto_override, w_lan_can)
     if _tinh_ban > 0:
-        import math as _math
-        _bc_goi_y = _math.ceil(_tinh_ban * 2) / 2.0   # làm tròn lên bội số 0.5m
-        st.caption(
-            "Σ = " + " + ".join(_bd_parts)
-            + f" + Lan can 2×{w_lan_can:g} = **{_tinh_ban:.2f} m** "
-            + f"→ đề xuất Bc = **{_bc_goi_y:.2f} m** (làm tròn lên 0.5m)"
-        )
+        b_cau = float(_tinh_ban)                      # giữ nguyên giá trị tính
+        st.caption("Σ = " + " + ".join(_bd_parts)
+                   + f" + Lan can 2×{w_lan_can:g} = **{_tinh_ban:.2f} m**")
+        st.success(f"📐 Bề rộng bản mặt cầu **Bc = {b_cau:.2f} m** "
+                   "(tự tính đúng tổng MCN đã khai báo)")
     else:
-        _bc_goi_y = float(draft.get('b_cau', st.session_state.design_data.get('bc', 12.0)))
-        st.caption("ℹ️ Chưa đủ dữ liệu MCN để tính tự động — nhập bề rộng cầu thủ công.")
-
-    _auto_bc = st.checkbox(
-        "Tự động lấy bề rộng theo MCN tối thiểu",
-        value=bool(draft.get('auto_bc', _tinh_ban > 0)),
-        help="Bỏ chọn để nhập bề rộng Bc thủ công.",
-        key="d2_auto_bc",
-    )
-    if _auto_bc and _tinh_ban > 0:
-        b_cau = _bc_goi_y
-        st.number_input(
-            "Bề rộng Bc mặt cắt cầu (m) — tự động:",
-            value=float(b_cau), disabled=True, key="d2_bc_auto_disp",
-        )
-    else:
-        b_cau = st.number_input(
-            "Bề rộng Bc mặt cắt cầu (m):",
-            min_value=6.0,
-            value=float(draft.get('b_cau', _bc_goi_y)),
-            step=0.5, key="d2_bc_manual",
-        )
+        b_cau = float(draft.get('b_cau', st.session_state.design_data.get('bc', 12.0)))
+        st.info(f"ℹ️ Chưa đủ dữ liệu MCN để tính — tạm dùng Bc = {b_cau:.2f} m "
+                "(khai báo đủ làn xe/lề ở trên để hệ thống tự tính).")
+    _auto_bc = True
 
     # Bề dày bản mặt cầu — chuyển từ hộp Thủy văn sang, đặt DƯỚI bề rộng.
     t_ban_mm = st.number_input(
@@ -2318,12 +2319,11 @@ def dialog_step2():
             st.rerun()
     with btn_a:
         if st.button("✅ Áp dụng", use_container_width=True, key="d2_apply",
-                     help="Lưu thông số hình học và CẬP NHẬT hệ thống ngay "
-                          "(không cần sang bước sau)"):
+                     help="LƯU thông số hình học — hộp vẫn mở để khai báo tiếp"):
             # draft đã được cập nhật ở khối update phía trên mỗi lần render.
-            st.session_state._d3_run = True
-            st.session_state._apply_keep_context = True
-            st.session_state.open_dialog = "step3"
+            st.toast("💾 Đã lưu thông số hình học.", icon="✅")
+            # GHI NHỚ nhưng KHÔNG thoát hộp — mở lại chính hộp này
+            st.session_state.open_dialog = "step2"
             st.rerun()
     with btn_f:
         if st.button("Bước 3 ▶", use_container_width=True, type="primary", key="d2_next"):
@@ -2468,6 +2468,32 @@ def dialog_step3():
         kcn_models  = None
         pier_models = None
         fnd_models  = None
+
+        # ── DC — ĐỊA HÌNH & ĐỊA CHẤT (bước ĐẦU pipeline) ────────────────
+        # Kiểm tra dữ liệu khảo sát người dùng đã khai (hộp Địa hình & Địa
+        # chất): tim tuyến (df_tim_line) + hố khoan (dia_chat_data). Thiếu →
+        # cảnh báo (không chặn pipeline — hệ dùng giá trị mặc định).
+        tracker.start("DC")
+        try:
+            _dc_terr_ok = lt_diahinh_arr is not None
+            _dc_geo     = st.session_state.get('dia_chat_data')
+            _n_hk = 0
+            try:
+                _n_hk = len((_dc_geo or {}).get('ho_khoan')
+                            or (_dc_geo or {}).get('hk') or _dc_geo or [])
+            except Exception:
+                pass
+            if _dc_terr_ok and _dc_geo:
+                tracker.done("DC", f"Tim tuyến {len(lt_diahinh_arr)} điểm · "
+                                    f"{_n_hk} hố khoan · CĐTN_tb≈{h_tn_tb:.2f}m")
+            elif _dc_terr_ok:
+                tracker.done("DC", f"Tim tuyến {len(lt_diahinh_arr)} điểm · "
+                                    f"CĐTN_tb≈{h_tn_tb:.2f}m (chưa có địa chất)")
+            else:
+                tracker.error("DC", "Chưa nạp Địa hình & Địa chất — dùng cao độ "
+                                     "mặc định. Khai báo ở hộp 🪨 để chính xác.")
+        except Exception as _e:
+            tracker.error("DC", str(_e))
 
         # ── TK ──────────────────────────────────────────────────────────
         tracker.start("TK")
@@ -3130,7 +3156,17 @@ _render_topbar(st.session_state.design_data, _cur_tab)
 # ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
 #    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
 _has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
-_dk1, _dk2, _dk4, _dk3 = st.columns(4)
+# Thứ tự khai báo: ĐỊA HÌNH & ĐỊA CHẤT trước (nền tảng vị trí/cao độ) → Thủy văn
+# → Hình học → Tổng hợp.
+_dk4, _dk1, _dk2, _dk3 = st.columns(4)
+with _dk4:
+    _has_geo = bool(st.session_state.get("df_geology") is not None
+                    or st.session_state.get("dia_chat_frames"))
+    if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
+                 use_container_width=True, key="declbtn_geodata",
+                 help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
+        st.session_state.open_dialog = "geodata"
+        st.rerun()
 with _dk1:
     if st.button("🌊 Thông số thủy văn & vị trí cầu",
                  use_container_width=True, key="declbtn_step1",
@@ -3146,14 +3182,6 @@ with _dk2:
                  use_container_width=True, key="declbtn_step2",
                  help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
         st.session_state.open_dialog = "step2"
-        st.rerun()
-with _dk4:
-    _has_geo = bool(st.session_state.get("df_geology") is not None
-                    or st.session_state.get("dia_chat_frames"))
-    if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
-                 use_container_width=True, key="declbtn_geodata",
-                 help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
-        st.session_state.open_dialog = "geodata"
         st.rerun()
 with _dk3:
     if st.button("✅ Tổng hợp các thông số",
@@ -3210,8 +3238,8 @@ def _decl_box_thuy_van():
                                     step=0.1, format="%.2f", key="dinp_MNTN")
             _H_tk = st.number_input("Cao tĩnh không (m)", value=float(_sd.get('H', 4.75)),
                                      step=0.25, key="dinp_H")
-            _cap_s_opts = ["IV","V","VI","III","II","I"]
-            _cap_idx = _cap_s_opts.index(str(_sd.get('cap_song','VI'))) if str(_sd.get('cap_song','VI')) in _cap_s_opts else 2
+            _cap_s_opts = ["I","II","III","IV","V","VI"]   # thứ tự chuẩn I → VI
+            _cap_idx = _cap_s_opts.index(str(_sd.get('cap_song','VI'))) if str(_sd.get('cap_song','VI')) in _cap_s_opts else 5
             _cap_song = st.selectbox("Cấp sông", _cap_s_opts, index=_cap_idx, key="dinp_cap_song",
                                       format_func=lambda x: f"Cấp {x}")
             _goc_giao = st.number_input("Góc giao (°)", value=float(_sd.get('goc_giao', 90.0)),
