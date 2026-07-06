@@ -300,14 +300,12 @@ def _light_css(pfx: str = "") -> str:
         lines.append(f"{flat} {{{decl};}}")
     return "\n".join(lines)
 
-# KÍCH HOẠT theo HAI đường (bù nhau):
-#  (A) @media (prefers-color-scheme: light) — khi OS/Streamlit "Use system" SÁNG.
-#  (B) class html.cau-light — JS đọc NỀN THỰC của .stApp rồi gắn class → bám đúng
-#      lựa chọn ☰ Theme của Streamlit KỂ CẢ khi OS đang Tối (trường hợp ☰=Light,
-#      Windows=Dark). Dùng !important nên thắng style inline tối.
+# MẶC ĐỊNH TỐI (.streamlit/config.toml: base="dark") — KHÔNG bám OS nữa.
+# Lật màu SÁNG chỉ khi người dùng đổi ☰ Theme = Light: JS đọc NỀN THỰC của
+# .stApp rồi gắn class html.cau-light (bỏ đường @media prefers-color-scheme để
+# máy OS-sáng không bị card sáng trên nền tối).
 st.markdown(
     "<style>\n"
-    "@media (prefers-color-scheme: light){\n" + _light_css("") + "\n}\n"
     + _light_css("html.cau-light") + "\n"
     "</style>",
     unsafe_allow_html=True,
