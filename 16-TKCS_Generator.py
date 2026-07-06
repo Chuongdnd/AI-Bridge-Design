@@ -997,47 +997,143 @@ class TKCSGenerator:
 
     def generate_chapter_7(self, doc):
         mong = self._mong()
+        # Kết quả Module 08 (design_data.mong_result) — nguồn 4 phần A/B/C/D
+        _dd = (self.ss.get("design_data")
+               if isinstance(self.ss.get("design_data"), dict) else {}) or {}
+        mr = _dd.get("mong_result") or {}
 
         self._h1(doc, "Giải pháp thiết kế móng")
-
-        self._h2(doc, "Lựa chọn loại cọc và hệ số an toàn")
-        loai_coc = mong.get("loai_coc") or "Cọc khoan nhồi BTCT"
-        D_coc    = mong.get("D_coc") or mong.get("duong_kinh_coc") or 800
-        L_coc    = mong.get("L_coc") or mong.get("chieu_dai_coc") or "—"
-        n_coc_be = mong.get("n_coc_be") or mong.get("so_coc_tren_be") or "—"
-        Qa       = mong.get("Q_cho_phep") or mong.get("Qa") or "—"
-
         self._para(doc,
-            f"Dựa trên kết quả khảo sát địa chất sơ bộ và tải trọng từ phần "
-            f"trên truyền xuống, phương án móng được lựa chọn là {loai_coc}. "
-            f"Đây là loại cọc phù hợp theo Điều 6.3, TCVN 10304:2014.")
+            "Giải pháp móng cọc được xác lập theo bốn nhóm logic tuân thủ "
+            "TCVN 10304:2025: (A) lựa chọn loại cọc theo đường kính; "
+            "(B) chiều dài cọc và tầng tựa mũi; (C) số lượng cọc với hệ số "
+            "hiệu quả nhóm; (D) khoảng cách bố trí cọc trên bệ.")
 
-        tang_qd = mong.get("tang_quyet_dinh") or []
-        if tang_qd:
-            self._para(doc, "Phân tích lựa chọn theo phương pháp Rule-Based 4 tầng:")
-            for t in tang_qd:
+        loai_coc = (mr.get("loai_mong") or mr.get("loai_coc")
+                    or mong.get("loai_coc") or "Cọc khoan nhồi BTCT")
+        D_coc    = (mr.get("D_coc_mm") or mr.get("kich_thuoc_mm")
+                    or mong.get("D_coc") or mong.get("duong_kinh_coc") or 800)
+        L_coc    = (mr.get("chieu_dai_coc") or mr.get("L_coc_tu")
+                    or mong.get("L_coc") or mong.get("chieu_dai_coc") or "—")
+        n_coc_be = (mr.get("so_coc_be") or mr.get("So_coc_tu")
+                    or mong.get("n_coc_be") or mong.get("so_coc_tren_be") or "—")
+        Qa       = (mr.get("Q_1coc_tk_kN") or mong.get("Q_cho_phep")
+                    or mong.get("Qa") or "—")
+        la_ckn   = "khoan nhồi" in str(loai_coc).lower()
+
+        # ── A. Lựa chọn loại cọc theo đường kính ────────────────────────
+        self._h2(doc, "A. Lựa chọn loại cọc theo đường kính")
+        self._para(doc,
+            "Cọc được phân hai nhóm theo đường kính: nhóm ĐƯỜNG KÍNH NHỎ "
+            "(D ≤ 0.6m — cọc đóng/ép vuông 200–450mm, cọc tròn ly tâm "
+            "D300–D600, Q_tk 250–1800 kN) áp dụng cho cầu nhịp nhỏ, tải đầu "
+            "cọc thấp, nền không quá rắn, không đá tảng/đá mồ côi; nhóm "
+            "ĐƯỜNG KÍNH LỚN (D = 0.8–2m — cọc khoan nhồi D800–D2000, Q_tk "
+            "1500–6000 kN) cho tải trọng lớn, đô thị hạn chế rung động, "
+            "có đá phong hóa/đá mồ côi cần khoan xuyên; ràng buộc bắt buộc "
+            "D_cọc ≥ D_trụ.")
+        rows_a = [
+            ["Nhóm cọc (category)",
+             mr.get("ten_nhom_coc") or ("Đường kính lớn (large)" if la_ckn
+                                        else "Đường kính nhỏ (small)")],
+            ["Loại cọc",               str(loai_coc)],
+            ["Kích thước chọn",        f"D = {D_coc} mm"],
+            ["Sức chịu tải Q_tk",      f"{Qa} kN/cọc"],
+        ]
+        if mr.get("ly_tam_tuong_duong"):
+            rows_a.append(["Phương án thay thế cùng nhóm",
+                           str(mr["ly_tam_tuong_duong"])])
+        _lyd = (mr.get("ly_do_chon") or mong.get("tang_quyet_dinh") or [])
+        self.insert_table(doc, ["Thông số", "Giá trị"], rows_a,
+                          "Lựa chọn loại cọc (A)")
+        if _lyd:
+            self._para(doc, "Cơ sở lựa chọn:")
+            for t in _lyd[:4]:
                 self._bullet(doc, str(t))
 
-        rows_mong = [
-            ["Loại cọc",               loai_coc],
-            ["Đường kính cọc",         f"D = {D_coc} mm"],
-            ["Chiều dài cọc dự kiến",  f"L = {L_coc} m"],
-            ["Số cọc trên mỗi bệ",     f"{n_coc_be} cọc"],
-            ["Sức chịu tải cho phép",  f"Qa ≈ {Qa} kN/cọc"],
-            ["Lớp tựa mũi cọc",        mong.get("lop_tua_mui", "Lớp cát chặt vừa N≥20")],
-            ["Độ sâu cắm vào lớp tốt", f"≥ {mong.get('cam_sau_vao_lop_tot', 5)}D (TCVN 10304 Điều 6.3.3)"],
-            ["Bê tông bệ cọc",         mong.get("bt_be_coc", "B25, dày 1.2–1.5m")],
+        # ── B. Chiều dài cọc và tầng tựa mũi ────────────────────────────
+        self._h2(doc, "B. Chiều dài cọc và tầng tựa mũi")
+        self._para(doc,
+            "Lớp tựa mũi phải đồng thời đạt tiêu chuẩn định lượng theo "
+            "TCVN 10304:2025: đất dính SPT-N ≥ 30; đất rời SPT-N ≥ 40; "
+            "đá RQD > 60%. Chiều sâu cắm vào lớp tốt: đất chặt/dính cứng "
+            "≥ 3.0m; đất yếu/đất rời ≥ 6.0m; đá tươi RQD > 75% (hoặc đạt "
+            "độ chối) chỉ cần ngàm ≥ 0.5m.")
+        rows_b = [
+            ["Lớp tựa mũi",            str(mr.get("lop_tua_mui")
+                                           or mong.get("lop_tua_mui", "—"))],
+            ["Tiêu chuẩn kiểm tra",    str(mr.get("lop_tua_mo_ta", "—"))],
+            ["Chiều sâu cắm L_cam",    f"{mr.get('chieu_dai_cam_lop_tot', '—')} m"
+             + (f" ({mr.get('co_so_cam')})" if mr.get("co_so_cam") else "")],
+            ["Tổng chiều dài cọc",     f"L = {L_coc} m"],
+            ["Tỷ lệ L/D",              f"{mr.get('ty_le_LD', '—')} "
+                                       "(giới hạn 37 khi nền yếu SPT<15)"],
+            ["Q vật liệu / Q đất nền", f"{mr.get('Q_vl_kN', '—')} / {Qa} kN "
+                                       "(chênh > 40% → xem lại kinh tế)"],
         ]
-        self.insert_table(doc, ["Thông số", "Giá trị"], rows_mong,
-                          "Thông số thiết kế móng cọc")
+        self.insert_table(doc, ["Thông số", "Giá trị"], rows_b,
+                          "Chiều dài cọc và tầng tựa mũi (B)")
+
+        # ── C. Số lượng cọc ─────────────────────────────────────────────
+        self._h2(doc, "C. Số lượng cọc và hệ số hiệu quả nhóm")
+        self._para(doc,
+            "Số cọc trên bệ: n = max(4, ⌈P_bệ / (Q_1cọc × η_g)⌉ × dự phòng). "
+            "Hệ số hiệu quả nhóm η_g lấy theo Converse-Labarre (đất dính, "
+            "bệ không tiếp xúc đất — tim-tim 2.5D cho η ≈ 0.7–0.8) hoặc "
+            "≈ 0.9–1.0 với đất rời. Số cọc đã nhân dự phòng sai số thi công "
+            "1.05–1.10 (cọc đóng lệch 75–150mm).")
+        rows_c = [
+            ["Số cọc / bệ",            f"{n_coc_be} cọc"],
+            ["Hệ số nhóm η_g",         f"{mr.get('he_so_nhom', '—')}"],
+            ["Hệ số dự phòng thi công", f"×{mr.get('he_so_du_phong', '—')} "
+                                        "(lệch 75–150mm)"],
+        ]
+        if mr.get("cong_thuc_so_coc"):
+            rows_c.append(["Công thức áp dụng", str(mr["cong_thuc_so_coc"])])
+        self.insert_table(doc, ["Thông số", "Giá trị"], rows_c,
+                          "Số lượng cọc (C)")
+
+        # ── D. Khoảng cách bố trí cọc ───────────────────────────────────
+        self._h2(doc, "D. Khoảng cách bố trí cọc trên bệ")
+        if la_ckn:
+            self._para(doc,
+                "Cọc khoan nhồi (TCVN 10304:2025): tim-tim thiết kế > 3.0D; "
+                "tim-tim < 4D thi công không ống vách phải đánh giá tương "
+                "tác giữa các cọc; tim-tim < 6D phải quy định rõ trình tự "
+                "thi công khoan trong hồ sơ thiết kế; khoảng thông thủy "
+                "giữa thân các cọc ≥ 1.0m; mặt bên cọc đến mép bệ ≥ 300mm.")
+        else:
+            self._para(doc,
+                "Cọc đóng/ép (TCVN 10304:2025): khoảng cách tim-tim tối "
+                "thiểu max(750mm, 2.5D); tại mặt phẳng mũi cọc ma sát "
+                "tim-tim ≥ 3D; mặt ngoài cọc đến mép bệ ≥ 225mm.")
+        _S  = mr.get("khoang_cach_tim") or mr.get("khoang_cach_tim_coc")
+        _mp = mr.get("khoang_cach_mep")
+        rows_d = [
+            ["Khoảng cách tim-tim",   f"{_S if _S is not None else '—'} m"],
+            ["Mặt cọc → mép bệ",      (f"≥ {float(_mp)*1000:.0f} mm"
+                                       if _mp else ("≥ 300 mm" if la_ckn
+                                                    else "≥ 225 mm"))],
+        ]
+        if la_ckn:
+            rows_d.append(["Thông thủy thân cọc",
+                           f"{mr.get('khoang_cach_thong_thuy', '—')} m (≥ 1.0m)"])
+        rows_d.append(["Kích thước bệ cọc",
+                       str(mr.get("kich_thuoc_be")
+                           or mr.get("kich_thuoc_be_goi_y", "—"))])
+        self.insert_table(doc, ["Thông số", "Giá trị"], rows_d,
+                          "Khoảng cách bố trí cọc theo TCVN 10304:2025 (D)")
+        _ws = [w for w in (mr.get("warnings") or [])
+               if "tương tác" in w or "Trình tự" in w]
+        for w in _ws:
+            self._bullet(doc, str(w))
 
         self._h2(doc, "Bệ cọc và kiểm tra ổn định")
         self._para(doc,
-            f"Bệ cọc được thiết kế đủ lớn để chứa {n_coc_be} cọc với khoảng cách "
-            f"tim cọc ≥ 3D = {3*int(D_coc)}mm (Điều 6.3.4, TCVN 10304:2014). "
-            f"Chiều dày bệ cọc tối thiểu {max(int(D_coc)/1000, 0.8):.1f}m. "
-            f"Cao độ đỉnh bệ cọc đặt dưới cao độ đáy mố/trụ để đảm bảo ổn định.")
-
+            f"Bệ cọc được thiết kế đủ lớn để chứa {n_coc_be} cọc theo các "
+            f"khoảng cách mục D. Chiều dày bệ cọc tối thiểu "
+            f"{max(float(D_coc)/1000, 0.8):.1f}m. Cao độ đỉnh bệ cọc đặt "
+            "dưới cao độ đáy mố/trụ để đảm bảo ổn định.")
         self._para(doc,
             "Kiểm tra xói lở: Chiều sâu đặt móng phải nằm dưới cao độ xói thiết kế "
             "≥ 0.5m (Điều 2.6, TCVN 11823:2017). Xói cục bộ quanh cọc được tính "
