@@ -2586,7 +2586,7 @@ def dialog_step3():
                     # phương án. Nhờ đó không còn đề xuất loại dầm thư viện chưa có
                     # (vd 'Dầm bản'). Người dùng rà soát/đổi dầm tùy ý sau (ribbon).
                     _userbeams = st.session_state.get("dam_beams") or CLIB.load_beams()
-                    for _k_pa in ("pa1_chi_phi", "pa2_my_quan", "pa3_ai"):
+                    for _k_pa in ("pa1_chi_phi", "pa2_my_quan", "pa3_ml"):
                         _papa = _kcn_raw.get(_k_pa)
                         if not isinstance(_papa, dict):
                             continue
@@ -2613,12 +2613,16 @@ def dialog_step3():
                         if _src == "default":
                             _papa["ghi_chu"] = (_papa.get("ghi_chu", "") +
                                 " | Dầm thư viện MẶC ĐỊNH — hãy tạo/upload dầm riêng để chính xác hơn.")
-                    # 'Cầu tổng' mặc định = PA1 (nhịp NGẮN nhất, NHIỀU trụ — bám tĩnh
-                    # không). PA2 (nhịp dài, ít trụ) / PA3 (AI) xem ở ribbon 2 / 3.
+                    # 'Cầu tổng' mặc định = PA1 (tối ưu CHI PHÍ — nhóm dầm KHÔNG bản
+                    # đáy liền mạch, nhịp dài ít trụ). PA2 (mỹ quan — bản đáy liền
+                    # mạch) / PA3 (Machine Learning) xem ở ribbon 2 / 3.
                     _pa = dict(_kcn_raw["pa1_chi_phi"])
                     _pa["do_tin_cay"] = 85 if kcn_models else 60
                     res['kcn_result'] = _pa
                     res['kcn_3_pa']   = _kcn_raw
+                    # Pipeline mới sinh lại 3 PA → khai báo tay cũ (nếu có) hết
+                    # hiệu lực; xóa để tránh khôi phục nhầm bản backup lỗi thời.
+                    st.session_state.pop("user_declared_beam", None)
                 else:
                     res['kcn_result'] = _kcn_raw
                 _kr = res.get('kcn_result') or {}
@@ -2764,6 +2768,7 @@ def dialog_step3():
                 pa1_kcn=res.get('kcn_result'),
                 pa1_tru=res.get('tru_result'),
                 pa1_mong=res.get('mong_result'),
+                kcn_3_pa=res.get('kcn_3_pa'),
             )
             tracker.done("SSP", "3 phương án đã được sinh và đánh giá")
         except Exception as _e:
@@ -2900,21 +2905,21 @@ _TAB_META = [
         'key':      'Phương án 1',
         'icon':     '🖼️',
         'state':    tab_states['tab1'],
-        'tip':      'Bản vẽ 2D/3D — Phương án 1 (nhịp ngắn, nhiều trụ)',
+        'tip':      'Bản vẽ 2D/3D — Phương án 1 (tối ưu chi phí — không bản đáy liền mạch)',
         'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
     },
     {
         'key':      'Phương án 2',
         'icon':     '🖼️',
         'state':    tab_states['tab1'],
-        'tip':      'Bản vẽ 2D/3D — Phương án 2 (nhịp dài, ít trụ)',
+        'tip':      'Bản vẽ 2D/3D — Phương án 2 (tối ưu mỹ quan — bản đáy liền mạch)',
         'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
     },
     {
         'key':      'Phương án 3',
         'icon':     '🖼️',
         'state':    tab_states['tab1'],
-        'tip':      'Bản vẽ 2D/3D — Phương án 3 (AI đề xuất)',
+        'tip':      'Bản vẽ 2D/3D — Phương án 3 (Machine Learning)',
         'lock_msg': 'Cần chạy tính toán kết cấu nhịp trước',
     },
     {
@@ -4127,7 +4132,7 @@ def _pa_dam_roles(d: dict, pa_key: str) -> list:
 
 _PA_KEY_MAP = {"Phương án 1": "pa1_chi_phi",
                "Phương án 2": "pa2_my_quan",
-               "Phương án 3": "pa3_ai"}
+               "Phương án 3": "pa3_ml"}
 
 
 def _build_pa_d(base_d: dict, ribbon: str) -> dict:
@@ -4138,8 +4143,11 @@ def _build_pa_d(base_d: dict, ribbon: str) -> dict:
         return base_d
     d = dict(base_d)
     _3pa = base_d.get("kcn_3_pa") or {}
-    if _3pa.get(pa_key):
-        d["kcn_result"] = dict(_3pa[pa_key])
+    # 'pa3_ai' = key cũ trong design.json đã lưu trước khi PA3 đổi tên → ML
+    _pa_plan = _3pa.get(pa_key) or (
+        _3pa.get("pa3_ai") if pa_key == "pa3_ml" else None)
+    if _pa_plan:
+        d["kcn_result"] = dict(_pa_plan)
     d["span_layout"] = _pa_span_layout(ribbon)
     d["railings"] = _resolve_railings_for_pa(ribbon)
     d["_clearance_mode"] = _clearance_mode_for(ribbon)
@@ -6583,6 +6591,127 @@ with _col_main:
         # (Đã bỏ "II.b CHỈNH SỬA KÍCH THƯỚC CHI TIẾT DẦM" — thay bằng tab
         #  BeamBuilder mới; chi tiết dầm do người dùng dựng ở đó.)
 
+        # ── II.c KHAI BÁO LẠI LOẠI DẦM (chỉ PA1 / PA2) ───────────────────────
+        # Ghi đè kết quả tự động của PA1 (chi phí) hoặc PA2 (mỹ quan) bằng dầm
+        # người dùng chọn từ BEAM_CATALOG. PA3 Machine Learning KHÔNG cho ghi
+        # đè — giữ nguyên kết quả học từ dữ liệu thực tế làm cơ sở so sánh
+        # khách quan (PA Rule-Based có thể bị ảnh hưởng bởi tùy chọn tay).
+        _3pa_ui = st.session_state.design_data.get("kcn_3_pa")
+        if _3pa_ui:
+            with st.expander("**II.b KHAI BÁO LẠI LOẠI DẦM — PA1 / PA2**",
+                             expanded=False):
+                _PA_OVR_OPTS = {"PA1 — Tối ưu chi phí": "pa1_chi_phi",
+                                "PA2 — Tối ưu mỹ quan": "pa2_my_quan"}
+                _ovr_lbl = st.selectbox(
+                    "Phương án muốn ghi đè", list(_PA_OVR_OPTS),
+                    key="ovr_pa_sel",
+                    help="Chỉ PA1/PA2 (Rule-Based) được khai báo lại. PA3 "
+                         "Machine Learning giữ nguyên làm cơ sở so sánh.")
+                _ovr_key = _PA_OVR_OPTS[_ovr_lbl]
+                _udb = st.session_state.get("user_declared_beam") or {}
+                # Trạng thái hiện tại của 2 PA
+                for _lbl_i, _key_i in _PA_OVR_OPTS.items():
+                    _p_i = _3pa_ui.get(_key_i) or {}
+                    if _p_i.get("nguon_chon") == "nguoi_dung_khai_bao":
+                        st.warning(
+                            f"⚠️ **{_lbl_i}** đang dùng loại dầm do người dùng "
+                            f"tự khai báo ({_p_i.get('loai_dam','?')} "
+                            f"L={_p_i.get('chieu_dai','?')}m) — có thể không "
+                            "tối ưu về chi phí hay mỹ quan.")
+                st.caption("🟢 **PA3 — Machine Learning: kết quả gốc không đổi** "
+                           "(vai trò tham chiếu khách quan, không cho ghi đè).")
+
+                _tick = st.checkbox("Tùy chọn khai báo lại loại dầm",
+                                    value=False, key="ovr_beam_tick")
+                if _tick:
+                    _c_l, _c_L = st.columns(2)
+                    with _c_l:
+                        _types = KCN.catalog_beam_types()
+                        _sel_loai = st.selectbox("Loại dầm", _types,
+                                                 key="ovr_beam_loai")
+                    with _c_L:
+                        _Ls = KCN.catalog_lengths(_sel_loai)
+                        _sel_L = st.selectbox(
+                            "Chiều dài nhịp (m)", _Ls, key="ovr_beam_L",
+                            format_func=lambda v: f"{v:g} m")
+                    # Thông số phụ thuộc từ catalog (H, S, công nghệ DUL)
+                    _rec = KCN.get_beam_from_catalog(_sel_L, loai_dam=_sel_loai)
+                    _mm1, _mm2, _mm3, _mm4 = st.columns(4)
+                    _mm1.metric("Chiều cao H", f"{_rec[3]:g} m")
+                    _mm2.metric("Khoảng cách S", f"{_rec[4]:g} m")
+                    _mm3.metric("Công nghệ DUL", str(_rec[5]))
+                    _mm4.metric("Bản đáy liền mạch",
+                                "CÓ" if KCN._rec_lien_mach(_rec) else "KHÔNG")
+
+                    _b_ap, _b_huy = st.columns(2)
+                    if _b_ap.button("✅ Áp dụng khai báo", type="primary",
+                                    use_container_width=True, key="ovr_apply"):
+                        _dd = st.session_state.design_data
+                        _L_cau_o = (_dd.get("geo_logic") or {}).get("L_cau")
+                        _plan_o = KCN.make_plan_from_catalog(
+                            _sel_loai, _sel_L, float(_dd.get("bc", 12.0)),
+                            _L_cau_o)
+                        _udb = dict(st.session_state.get("user_declared_beam")
+                                    or {})
+                        if _ovr_key not in _udb:      # backup bản TỰ ĐỘNG gốc
+                            _udb[_ovr_key] = {
+                                "backup_pa": dict(_dd["kcn_3_pa"].get(_ovr_key)
+                                                  or {}),
+                                "backup_kcn_result": (
+                                    dict(_dd.get("kcn_result") or {})
+                                    if _ovr_key == "pa1_chi_phi" else None),
+                            }
+                        _udb[_ovr_key]["config"] = {
+                            "loai_dam": _sel_loai, "L": float(_sel_L)}
+                        st.session_state["user_declared_beam"] = _udb
+                        _dd["kcn_3_pa"][_ovr_key] = _plan_o
+                        if _ovr_key == "pa1_chi_phi":
+                            # PA1 = 'cầu tổng' mặc định → đồng bộ kcn_result
+                            _pa_o = dict(_plan_o)
+                            _pa_o["do_tin_cay"] = (_dd.get("kcn_result") or {}
+                                                   ).get("do_tin_cay", 60)
+                            _dd["kcn_result"] = _pa_o
+                            _dd["ai_result"] = _pa_o
+                        _save_design_inputs(_dd)
+                        try:      # đồng bộ dashboard so sánh (nếu đã sinh)
+                            _alts_ss = st.session_state.get("alternatives")
+                            if _alts_ss:
+                                SSP.refresh_alternative_kcn(
+                                    _alts_ss, _ovr_key, _plan_o,
+                                    float(_dd.get("bc", 12.0)))
+                        except Exception:
+                            pass
+                        st.success(f"Đã ghi đè {_ovr_lbl} = {_sel_loai} "
+                                   f"L={_sel_L:g}m (nguồn: người dùng khai báo).")
+                        st.rerun()
+                    if _b_huy.button("↩️ Hủy khai báo", use_container_width=True,
+                                     key="ovr_cancel",
+                                     disabled=(_ovr_key not in _udb)):
+                        _dd = st.session_state.design_data
+                        _bk = (_udb.get(_ovr_key) or {})
+                        if _bk.get("backup_pa"):
+                            _dd["kcn_3_pa"][_ovr_key] = _bk["backup_pa"]
+                        if _ovr_key == "pa1_chi_phi" and _bk.get("backup_kcn_result"):
+                            _dd["kcn_result"] = _bk["backup_kcn_result"]
+                            _dd["ai_result"] = _bk["backup_kcn_result"]
+                        _udb = dict(_udb)
+                        _udb.pop(_ovr_key, None)
+                        if _udb:
+                            st.session_state["user_declared_beam"] = _udb
+                        else:
+                            st.session_state.pop("user_declared_beam", None)
+                        _save_design_inputs(_dd)
+                        try:      # đồng bộ dashboard so sánh (nếu đã sinh)
+                            _alts_ss = st.session_state.get("alternatives")
+                            if _alts_ss and _bk.get("backup_pa"):
+                                SSP.refresh_alternative_kcn(
+                                    _alts_ss, _ovr_key, _bk["backup_pa"],
+                                    float(_dd.get("bc", 12.0)))
+                        except Exception:
+                            pass
+                        st.success(f"Đã khôi phục {_ovr_lbl} về kết quả tự động.")
+                        st.rerun()
+
         # ── III. TRỤ CẦU (AI) ────────────────────────────────────────────────
         with st.expander("**III. TRỤ CẦU — Phân loại & kích thước (AI v2)**", expanded=True):
             if tru:
@@ -6927,9 +7056,24 @@ with _col_main:
                 _pa_colors = [a["color"] for a in _alts]
                 _pa_labels = [a["label"] for a in _alts]
     
+                # Badge nguồn chọn: PA bị người dùng ghi đè → VÀNG; PA3 ML → XANH
+                _3pa_b = st.session_state.design_data.get("kcn_3_pa") or {}
+                _pa_ovr_keys = ["pa1_chi_phi", "pa2_my_quan", "pa3_ml"]
+                def _pa_badge(_i):
+                    _pk = _pa_ovr_keys[_i] if _i < len(_pa_ovr_keys) else None
+                    _pp = _3pa_b.get(_pk) or {}
+                    if _pk == "pa3_ml":
+                        return ("<span style='background:#1d4ed8;color:#fff;"
+                                "padding:1px 8px;border-radius:10px;font-size:11px;"
+                                "margin-left:6px'>Kết quả ML gốc</span>")
+                    if _pp.get("nguon_chon") == "nguoi_dung_khai_bao":
+                        return ("<span style='background:#f59e0b;color:#1a1000;"
+                                "padding:1px 8px;border-radius:10px;font-size:11px;"
+                                "margin-left:6px'>Người dùng khai báo</span>")
+                    return ""
                 # Thẻ tóm tắt nhanh mỗi PA
                 _c1, _c2, _c3 = st.columns(3)
-                for _col, _alt in zip([_c1, _c2, _c3], _alts):
+                for _pa_i, (_col, _alt) in enumerate(zip([_c1, _c2, _c3], _alts)):
                     _k  = _alt["kcn"]
                     _t  = _alt["tru"]
                     _m  = _alt["mong"]
@@ -6937,7 +7081,7 @@ with _col_main:
                         st.markdown(
                             f"<div style='background:{_alt['color']}18;border:1px solid {_alt['color']}55;"
                             f"border-radius:10px;padding:14px'>"
-                            f"<div style='font-weight:700;color:{_alt['color']};font-size:15px'>{_alt['label']}</div>"
+                            f"<div style='font-weight:700;color:{_alt['color']};font-size:15px'>{_alt['label']}{_pa_badge(_pa_i)}</div>"
                             f"<div style='font-size:12px;color:#aaa;margin-bottom:10px'>{_alt['mo_ta']}</div>"
                             f"<table style='width:100%;font-size:13px'>"
                             f"<tr><td style='color:#888'>Sơ đồ nhịp</td>"
@@ -7043,11 +7187,27 @@ with _col_main:
         # Trụ/móng/địa hình/địa chất DÙNG CHUNG cho cả 3 phương án.
         _pa_map = {"Phương án 1": "pa1_chi_phi",
                    "Phương án 2": "pa2_my_quan",
-                   "Phương án 3": "pa3_ai"}
+                   "Phương án 3": "pa3_ml"}
         _pa_key = _pa_map.get(selected_ribbon, "pa1_chi_phi")
         _3pa = d.get("kcn_3_pa") or {}
-        if _3pa.get(_pa_key):
-            d = {**d, "kcn_result": dict(_3pa[_pa_key])}
+        # 'pa3_ai' = key cũ đã lưu trước khi PA3 đổi tên → Machine Learning
+        _pa_plan_rb = _3pa.get(_pa_key) or (
+            _3pa.get("pa3_ai") if _pa_key == "pa3_ml" else None)
+        if _pa_plan_rb:
+            d = {**d, "kcn_result": dict(_pa_plan_rb)}
+        # Phương án bị NGƯỜI DÙNG ghi đè / PA3 tham chiếu → nhắc ngay đầu tab
+        if _pa_plan_rb and _pa_plan_rb.get("nguon_chon") == "nguoi_dung_khai_bao":
+            st.warning(
+                "⚠️ Phương án này dùng **loại dầm do người dùng tự khai báo** "
+                f"({_pa_plan_rb.get('loai_dam','?')} "
+                f"L={_pa_plan_rb.get('chieu_dai','?')}m) — có thể KHÔNG tối ưu "
+                "về chi phí hay mỹ quan như kết quả tự động của hệ thống.")
+        elif _pa_key == "pa3_ml" and any(
+                (p or {}).get("nguon_chon") == "nguoi_dung_khai_bao"
+                for p in _3pa.values() if isinstance(p, dict)):
+            st.success("🟢 **Kết quả gốc không đổi** — PA3 Machine Learning giữ "
+                       "nguyên kết quả học từ dữ liệu thực tế làm cơ sở so sánh "
+                       "khách quan (không bị ảnh hưởng bởi khai báo tay ở PA1/PA2).")
         # Đồng bộ chiều cao dầm THỰC (thư viện) → đáy dầm/thân trụ khớp, dầm kê
         # đúng lên trụ ở MỌI bản vẽ (MCN, 3D, bố trí chung). Làm TRƯỚC khi vẽ.
         try:

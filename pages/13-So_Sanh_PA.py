@@ -32,7 +32,7 @@ PA_BG     = {"PA1": "#dbeafe", "PA2": "#ede9fe", "PA3": "#dcfce7"}
 PA_LABELS = {
     "PA1": "PA1 — Tối ưu chi phí",
     "PA2": "PA2 — Tối ưu mỹ quan",
-    "PA3": "PA3 — AI khuyến nghị",
+    "PA3": "PA3 — Machine Learning",
 }
 SCORE_LABELS = {
     "A1": "L/H hợp lý",    "A2": "Nhịp phù hợp", "A3": "Thi công",
@@ -379,7 +379,7 @@ def _export_excel(pa_list: list, scores: dict) -> bytes:
     ws["A2"] = f"Ngày lập: {datetime.now().strftime('%d/%m/%Y %H:%M')}"
     ws.merge_cells("A2:E2")
 
-    col_hdrs = ["Chỉ tiêu", "PA1 – Chi phí", "PA2 – Mỹ quan", "PA3 – AI KN", "Tốt nhất"]
+    col_hdrs = ["Chỉ tiêu", "PA1 – Chi phí", "PA2 – Mỹ quan", "PA3 – ML", "Tốt nhất"]
     for ci, h in enumerate(col_hdrs, 1):
         _hdr(ws, 4, ci, h, BLUE)
 
@@ -509,7 +509,7 @@ def _export_excel(pa_list: list, scores: dict) -> bytes:
 
 st.title("📊 Dashboard so sánh ba phương án kết cấu nhịp")
 st.caption(
-    "Tổng hợp PA1 (tối ưu chi phí) · PA2 (tối ưu mỹ quan) · PA3 (AI khuyến nghị) "
+    "Tổng hợp PA1 (tối ưu chi phí) · PA2 (tối ưu mỹ quan) · PA3 (Machine Learning) "
     "từ Module 06 để hỗ trợ ra quyết định lựa chọn phương án cho hồ sơ TKCS."
 )
 
@@ -550,6 +550,24 @@ best_key  = max(scores, key=lambda k: scores[k]["tong_diem"])
 st.markdown("---")
 st.subheader("① Tóm tắt ba phương án")
 
+# Badge NGUỒN CHỌN: PA1/PA2 bị người dùng ghi đè → VÀNG "Người dùng khai báo";
+# PA3 Machine Learning luôn → XANH DƯƠNG "Kết quả ML gốc" (cơ sở so sánh
+# khách quan, không bị can thiệp).
+_kcn_3pa = (st.session_state.get("design_data") or {}).get("kcn_3_pa") or {}
+_PA_TO_KEY = {"PA1": "pa1_chi_phi", "PA2": "pa2_my_quan", "PA3": "pa3_ml"}
+
+
+def _nguon_badge(pk: str) -> str:
+    if pk == "PA3":
+        return ('<br><span style="background:#1d4ed8;color:white;padding:2px 8px;'
+                'border-radius:12px;font-size:12px">Kết quả ML gốc</span>')
+    _plan = _kcn_3pa.get(_PA_TO_KEY.get(pk, "")) or {}
+    if _plan.get("nguon_chon") == "nguoi_dung_khai_bao":
+        return ('<br><span style="background:#f59e0b;color:#1a1000;padding:2px 8px;'
+                'border-radius:12px;font-size:12px">Người dùng khai báo</span>')
+    return ""
+
+
 cols = st.columns(3)
 for pa, col in zip(pa_list, cols):
     pk  = pa["key"]
@@ -563,7 +581,7 @@ for pa, col in zip(pa_list, cols):
             '<br><span style="background:#f59e0b;color:white;padding:2px 8px;'
             'border-radius:12px;font-size:12px">🏆 Khuyến nghị</span>'
             if is_best else ""
-        )
+        ) + _nguon_badge(pk)
         border = f"3px solid #f59e0b" if is_best else f"1px solid {clr}44"
         st.markdown(
             f'<div style="background:{PA_BG[pk]};border:{border};border-radius:10px;'
