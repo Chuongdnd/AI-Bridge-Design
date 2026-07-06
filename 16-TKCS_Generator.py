@@ -1030,8 +1030,8 @@ class TKCSGenerator:
             "cọc thấp, nền không quá rắn, không đá tảng/đá mồ côi; nhóm "
             "ĐƯỜNG KÍNH LỚN (D = 0.8–2m — cọc khoan nhồi D800–D2000, Q_tk "
             "1500–6000 kN) cho tải trọng lớn, đô thị hạn chế rung động, "
-            "có đá phong hóa/đá mồ côi cần khoan xuyên; ràng buộc bắt buộc "
-            "D_cọc ≥ D_trụ.")
+            "có đá phong hóa/đá mồ côi cần khoan xuyên; đường kính chọn "
+            "theo sức chịu tải yêu cầu Q_tk và số lượng cọc hợp lý.")
         rows_a = [
             ["Nhóm cọc (category)",
              mr.get("ten_nhom_coc") or ("Đường kính lớn (large)" if la_ckn
@@ -1067,7 +1067,8 @@ class TKCSGenerator:
              + (f" ({mr.get('co_so_cam')})" if mr.get("co_so_cam") else "")],
             ["Tổng chiều dài cọc",     f"L = {L_coc} m"],
             ["Tỷ lệ L/D",              f"{mr.get('ty_le_LD', '—')} "
-                                       "(giới hạn 37 khi nền yếu SPT<15)"],
+                                       "(khoảng hợp lý 30–100; <30 xem xét "
+                                       "giảm D, >100 nền yếu tăng D)"],
             ["Q vật liệu / Q đất nền", f"{mr.get('Q_vl_kN', '—')} / {Qa} kN "
                                        "(chênh > 40% → xem lại kinh tế)"],
         ]

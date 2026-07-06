@@ -10,13 +10,15 @@ Cấu trúc 4 NHÓM LOGIC (A → D) tương ứng 4 khía cạnh bài toán món
         không quá rắn, không đá tảng/đá mồ côi trong phạm vi cắm cọc.
       • "large" D = 0.8–2m — cọc khoan nhồi D800–D2000; Q_tk 1500–6000 kN.
         Tải trọng lớn, yêu cầu chịu tải + chống uốn cao, đô thị hạn chế
-        rung động, có đá phong hóa/đá mồ côi cần khoan xuyên.
-        RÀNG BUỘC BẮT BUỘC: D_coc ≥ D_tru.
+        rung động, có đá phong hóa/đá mồ côi cần khoan xuyên. Đường kính
+        chọn theo sức chịu tải yêu cầu Q_tk và số lượng cọc hợp lý.
   B — CHIỀU DÀI CỌC + TẦNG TỰA MŨI (_check_bearing_layer, _calc_pile_length):
       • Lớp tựa mũi đạt: đất dính SPT-N ≥ 30; đất rời SPT-N ≥ 40; đá RQD > 60%.
       • Chiều sâu cắm: đất chặt/dính cứng ≥ 3.0m; đất yếu/rời ≥ 6.0m;
         đá tươi RQD > 75% (hoặc đạt độ chối) ngàm ≥ 0.5m.
-      • Kiểm tra L/D ≤ 37 khi nền yếu (SPT tb < 15 trong 10m đầu);
+      • Kiểm tra tỷ lệ L/D trong khoảng hợp lý 30–100: nền yếu (SPT tb
+        < 15 trong 10m đầu) + L/D > 100 → cọc quá mảnh, tăng D; L/D < 30 →
+        cọc quá ngắn so đường kính, xem xét giảm D để tối ưu kinh tế;
         kiểm tra kinh tế Q_vật_liệu so Q_đất_nền (chênh > 40% → cảnh báo).
   C — SỐ LƯỢNG CỌC (_calc_pile_number):
       n = max(4, ⌈P_bệ / (Q_1cọc × η_g)⌉ × dự phòng 1.05–1.10)
@@ -52,8 +54,8 @@ PILE_CATEGORY = {
         "Q_tk_kN":   (1500, 6000),
         "dieu_kien": ("Công trình tải trọng lớn, yêu cầu sức chịu tải và "
                       "chống uốn cao, cầu đô thị hạn chế rung động, có đá "
-                      "phong hóa / đá mồ côi cần khoan xuyên. RÀNG BUỘC: "
-                      "D_cọc ≥ D_trụ."),
+                      "phong hóa / đá mồ côi cần khoan xuyên. Đường kính "
+                      "chọn theo Q_tk yêu cầu và số lượng cọc hợp lý."),
     },
 }
 
@@ -120,16 +122,16 @@ _DA       = {"Đá tươi", "Đá phong hóa"}
 # ═══════════════════════════════════════════════════════════════════════════════
 # A — LỰA CHỌN LOẠI CỌC THEO ĐƯỜNG KÍNH
 # ═══════════════════════════════════════════════════════════════════════════════
-def _select_pile_category(dac_trung_dia_chat, tai_trong, D_tru=None,
-                          is_urban=False):
+def _select_pile_category(dac_trung_dia_chat, tai_trong, is_urban=False):
     """
     Phân loại cọc theo ĐƯỜNG KÍNH và điều kiện áp dụng (PILE_CATEGORY).
+    Đường kính cọc chọn theo sức chịu tải yêu cầu Q_tk và số lượng cọc hợp
+    lý — KHÔNG ràng buộc theo đường kính trụ phía trên.
 
     Parameters
     ----------
     dac_trung_dia_chat : dict  — đặc trưng địa chất (00-DiaChat_Loader)
     tai_trong          : float — tải trọng tính toán lên một bệ cọc (kN)
-    D_tru              : float — đường kính/bề rộng trụ (m); ràng buộc D_cọc ≥ D_trụ
     is_urban           : bool  — đô thị (hạn chế rung động)
 
     Returns
@@ -157,12 +159,6 @@ def _select_pile_category(dac_trung_dia_chat, tai_trong, D_tru=None,
         reasons.append(
             "Cầu đô thị — hạn chế rung động/tiếng ồn khi hạ cọc → nhóm LỚN "
             "(khoan nhồi)")
-        return "large", reasons, warnings
-
-    if D_tru and float(D_tru) > 0.6:
-        reasons.append(
-            f"Ràng buộc D_cọc ≥ D_trụ = {float(D_tru)*1000:.0f}mm > 600mm — "
-            "vượt phạm vi cọc nhỏ → nhóm LỚN")
         return "large", reasons, warnings
 
     # Tải đầu cọc yêu cầu (giả định tối thiểu 4 cọc/bệ) vượt Q_tk max nhóm nhỏ
@@ -195,15 +191,16 @@ def _select_pile_category(dac_trung_dia_chat, tai_trong, D_tru=None,
     reasons.append(
         f"Tải bệ {float(tai_trong or 0):.0f}kN vừa phải, lớp tựa mũi sâu "
         f"{do_sau:.1f}m ≤ 35m, không đá tảng/đá mồ côi, không ràng buộc "
-        "đô thị/D_trụ → nhóm NHỎ (đóng/ép vuông 200–450mm hoặc ly tâm "
-        "D300–D600)")
+        "đô thị → nhóm NHỎ (đóng/ép vuông 200–450mm hoặc ly tâm D300–D600)")
     return "small", reasons, warnings
 
 
 def _select_pile_size(pile_type, tai_trong, duong_kinh_tru=None):
     """
-    Chọn kích thước cọc NHỎ NHẤT có Q_tk ≥ tải trọng thiết kế đại diện,
-    thỏa ràng buộc đường kính (nhóm lớn: D_cọc ≥ D_trụ).
+    Chọn kích thước cọc NHỎ NHẤT có Q_tk ≥ tải trọng thiết kế đại diện.
+    Đường kính chọn THUẦN theo sức chịu tải yêu cầu và số lượng cọc hợp lý
+    — KHÔNG còn ràng buộc D_cọc ≥ D_trụ (duong_kinh_tru giữ trong chữ ký
+    để tương thích ngược, không dùng).
 
     tai_trong ở đây là tải trọng tính toán ĐẠI DIỆN dùng để định cỡ cọc
     (Q_tk của cỡ chọn phải phủ được); số lượng cọc chính thức tính riêng
@@ -222,19 +219,10 @@ def _select_pile_size(pile_type, tai_trong, duong_kinh_tru=None):
         spec = sizes[size_key]
         if spec["tai_trong_tk_kN"] < float(tai_trong or 0):
             continue
-        # Ràng buộc nhóm lớn: D_coc >= D_tru
-        if pile_type == "Cọc khoan nhồi" and duong_kinh_tru:
-            if size_key / 1000 < duong_kinh_tru:
-                continue
         return size_key, spec
 
-    # Fallback: kích thước lớn nhất có thể (ưu tiên thỏa D_tru)
-    all_keys = sorted(keys, reverse=True)
-    if pile_type == "Cọc khoan nhồi" and duong_kinh_tru:
-        filtered = [k for k in all_keys if k / 1000 >= duong_kinh_tru]
-        key = filtered[0] if filtered else all_keys[0]
-    else:
-        key = all_keys[0]
+    # Fallback: kích thước lớn nhất có thể
+    key = sorted(keys, reverse=True)[0]
     return key, sizes[key]
 
 
@@ -310,8 +298,12 @@ def _calc_pile_length(dac_trung_dia_chat, D_m, spec, loai_coc,
       • Đất yếu / đất rời             : L_cam ≥ 6.0m
       • Đá tươi RQD > 75% (độ chối)   : ngàm L_cam ≥ 0.5m
 
-    Kiểm tra bổ sung:
-      • Nền yếu (SPT tb < 15 trong 10m đầu) → L/D ≤ 37, vượt → đề xuất tăng D.
+    Kiểm tra bổ sung — khoảng hợp lý L/D = 30–100 (tùy loại đất và độ
+    mảnh cho phép):
+      • Nền yếu (SPT tb < 15 trong 10m đầu) + L/D > 100 → cọc quá mảnh,
+        đề xuất TĂNG D lên cỡ tiếp theo.
+      • L/D < 30 → cọc quá ngắn so với đường kính, xem xét GIẢM D để tối
+        ưu kinh tế.
       • Kinh tế: |Q_vật_liệu − Q_đất| > 40% → cảnh báo lãng phí vật liệu.
 
     Returns
@@ -363,14 +355,19 @@ def _calc_pile_length(dac_trung_dia_chat, D_m, spec, loai_coc,
             f"(L_max={L_max}m). Cân nhắc tăng kích thước cọc hoặc thay đổi "
             "độ sâu tựa mũi.")
 
-    # ── Ổn định: L/D ≤ 37 khi nền yếu (SPT tb < 15 trong 10m đầu) ───────
+    # ── Ổn định + kinh tế: khoảng hợp lý L/D = 30–100 ───────────────────
     ty_le_LD = round(L_coc / D_m, 1) if D_m > 0 else 0.0
     spt_10m = dac_trung.get("spt_n_tb_10m") or dac_trung.get("spt_tb_10m")
-    if spt_10m is not None and float(spt_10m) < 15 and ty_le_LD > 37:
+    if spt_10m is not None and float(spt_10m) < 15 and ty_le_LD > 100:
         warnings.append(
             f"⚠️ Nền yếu (SPT tb 10m đầu = {float(spt_10m):.0f} < 15) và "
-            f"L/D = {ty_le_LD} > 37 — nguy cơ mất ổn định thân cọc; đề xuất "
-            f"TĂNG đường kính lên cỡ tiếp theo (TCVN 10304:2025).")
+            f"L/D = {ty_le_LD} > 100 — cọc quá mảnh, nguy cơ mất ổn định "
+            f"thân cọc; đề xuất TĂNG đường kính lên cỡ tiếp theo "
+            f"(TCVN 10304:2025).")
+    elif ty_le_LD > 0 and ty_le_LD < 30:
+        warnings.append(
+            f"ℹ️ L/D = {ty_le_LD} < 30 — cọc có thể QUÁ NGẮN so với đường "
+            f"kính (khoảng hợp lý 30–100); xem xét GIẢM D để tối ưu kinh tế.")
 
     # ── Kinh tế: Q_vật_liệu so Q_đất_nền ────────────────────────────────
     if loai_coc == "Cọc khoan nhồi":
@@ -549,7 +546,8 @@ def predict_foundation_geo(dac_trung_dia_chat, tai_trong_dau_coc,
     dac_trung_dia_chat : dict — từ 00-DiaChat_Loader.dac_trung_tong_hop[hk_name]
     tai_trong_dau_coc  : float — tổng tải trọng tính toán lên một bệ cọc (kN)
     loai_tru           : str   — loại trụ từ Module 07 (thông tin tham khảo)
-    duong_kinh_tru     : float — đường kính / bề rộng trụ (m) — ràng buộc D_cọc ≥ D_trụ
+    duong_kinh_tru     : float — đường kính / bề rộng trụ (m) — chỉ THAM KHẢO,
+                         KHÔNG còn dùng làm ràng buộc chọn đường kính cọc
     is_urban           : bool  — khu vực đô thị (hạn chế tiếng ồn/rung)
     is_river           : bool  — công trình vượt sông
     cao_do_dau_coc     : float — cao độ đầu cọc (m); mặc định = Z mặt đất − 0.5m
@@ -560,15 +558,13 @@ def predict_foundation_geo(dac_trung_dia_chat, tai_trong_dau_coc,
     """
     dac_trung = dac_trung_dia_chat or {}
     P_be      = float(tai_trong_dau_coc) if tai_trong_dau_coc else 800.0
-    D_tru     = float(duong_kinh_tru) if duong_kinh_tru else None
-
     lop_tua      = dac_trung.get("lop_tua_mui_de_xuat") or {}
     loai_dat_tua = lop_tua.get("loai_dat", "")
     warnings, reasons = [], []
 
     # ── A. Lựa chọn loại cọc theo đường kính ────────────────────────────
     category, rs_a, ws_a = _select_pile_category(
-        dac_trung, P_be, D_tru=D_tru, is_urban=bool(is_urban))
+        dac_trung, P_be, is_urban=bool(is_urban))
     reasons.extend(f"[A] {r}" for r in rs_a)
     warnings.extend(ws_a)
 
@@ -582,8 +578,8 @@ def predict_foundation_geo(dac_trung_dia_chat, tai_trong_dau_coc,
 
     loai_coc = "Cọc khoan nhồi" if category == "large" else "Cọc ép BTCT"
 
-    # Kích thước cọc (nhóm lớn ràng buộc D ≥ D_trụ)
-    size_key, spec = _select_pile_size(loai_coc, P_be, D_tru)
+    # Kích thước cọc — thuần theo Q_tk yêu cầu (không ràng buộc D_trụ)
+    size_key, spec = _select_pile_size(loai_coc, P_be)
     D_m = size_key / 1000.0
     if loai_coc == "Cọc ép BTCT":
         kich_thuoc_str = f"{size_key}×{size_key} mm"
@@ -595,10 +591,9 @@ def predict_foundation_geo(dac_trung_dia_chat, tai_trong_dau_coc,
     else:
         kich_thuoc_str = f"Ø{size_key} mm"
         ly_tam_td = None
-        if D_tru:
-            reasons.append(
-                f"[A] Ràng buộc D_cọc = {size_key}mm ≥ D_trụ = "
-                f"{D_tru*1000:.0f}mm {'✓' if D_m >= D_tru else '✗'}")
+        reasons.append(
+            f"[A] D_cọc = {size_key}mm chọn theo Q_tk ≥ {P_be:.0f}kN và số "
+            "lượng cọc hợp lý (không ràng buộc theo D_trụ)")
 
     # ── B2. Chiều dài cọc + chiều sâu cắm ───────────────────────────────
     lb = _calc_pile_length(dac_trung, D_m, spec, loai_coc,
