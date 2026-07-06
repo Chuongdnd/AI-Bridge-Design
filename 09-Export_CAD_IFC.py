@@ -54,6 +54,7 @@ _LAYER_CFG = {
     "TEXT":         {"color": 7,   "linetype": "CONTINUOUS"},
     "CENTERLINE":   {"color": 1,   "linetype": "CENTER"},
     "HATCH":        {"color": 8,   "linetype": "CONTINUOUS"},
+    "BAN_QUA_DO":   {"color": 40,  "linetype": "CONTINUOUS"},   # cam đậm — bản quá độ
 }
 
 def _setup_doc(title="BRIDGE DRAWING"):
@@ -248,6 +249,20 @@ def export_mcn_dxf(design_data) -> bytes:
     doc = _setup_doc("MẶT CẮT NGANG")
     msp = doc.modelspace()
 
+    # Ghi chú BẢN QUÁ ĐỘ (layer BAN_QUA_DO — cấu kiện ở 2 đầu cầu, ngoài
+    # phạm vi mặt cắt ngang; kích thước lấy từ mo_result Module 07).
+    _bqd_mcn = ((design_data.get("tru_result") or {}).get("ket_qua_mo") or {}
+                ).get("ban_qua_do") or {}
+    if _bqd_mcn:
+        msp.add_text(
+            (f"BAN QUA DO 2 DAU CAU: L={_bqd_mcn.get('L_bqd','5'):g}m  "
+             f"day>={float(_bqd_mcn.get('day_bqd',0.3))*100:.0f}cm  "
+             f"doc 10-15%  dat dap >=70cm"
+             if isinstance(_bqd_mcn.get('L_bqd'), (int, float)) else
+             "BAN QUA DO 2 DAU CAU (xem trac doc)"),
+            dxfattribs={"layer": "BAN_QUA_DO", "height": 0.25},
+        ).set_placement((-bc / 2, 1.2))
+
     # --- Bản mặt cầu (deck slab) ---
     t_ban = 0.20   # chiều dày bản mặt cầu
     w_lc  = 0.5    # lan can
@@ -441,6 +456,36 @@ def export_trac_doc_dxf(design_data) -> bytes:
         hatch = msp.add_hatch(dxfattribs={"layer": "HATCH"})
         hatch.paths.add_polyline_path([(p[0], p[1]) for p in pts_mo])
         hatch.set_pattern_fill("ANSI31", scale=0.2)
+
+    # --- Bản quá độ (BẮT BUỘC sau mỗi mố — Module 07) ---
+    # Một đầu kê tường đỉnh mố, đầu kia trên dầm kê trong nền đường; mặt bản
+    # dưới mặt đường ≥ 0.7m, dốc dọc 10–15% hạ về phía nền đường.
+    _bqd = ((design_data.get("tru_result") or {}).get("ket_qua_mo") or {}
+            ).get("ban_qua_do") or {}
+    L_bqd   = float(_bqd.get("L_bqd", 5.0) or 5.0)
+    t_bqd   = float(_bqd.get("day_bqd", 0.30) or 0.30)
+    doc_bqd = float(_bqd.get("doc_bqd_val", 0.10) or 0.10)
+    cov_bqd = float(_bqd.get("chieu_sau_dat_dap_toi_thieu", 0.70) or 0.70)
+    for xm, od in [(x_mo_trai, -1.0), (x_mo_phai, 1.0)]:
+        idx = int(np.argmin(np.abs(np.array([p[0] for p in design_pts]) - xm)))
+        y_near = design_pts[idx][1] - cov_bqd          # mặt bản dưới mặt đường
+        y_far  = y_near - doc_bqd * L_bqd              # dốc về phía nền đường
+        x_far  = xm + od * L_bqd
+        pts_bqd = [(xm, y_near), (x_far, y_far),
+                   (x_far, y_far - t_bqd), (xm, y_near - t_bqd)]
+        msp.add_lwpolyline(pts_bqd + [pts_bqd[0]], close=True,
+                           dxfattribs={"layer": "BAN_QUA_DO", "lineweight": 40})
+        # Dầm kê đầu bản trong nền đường
+        pts_ke = [(x_far, y_far - t_bqd), (x_far + od * 0.4, y_far - t_bqd),
+                  (x_far + od * 0.4, y_far - t_bqd - 0.4),
+                  (x_far, y_far - t_bqd - 0.4)]
+        msp.add_lwpolyline(pts_ke + [pts_ke[0]], close=True,
+                           dxfattribs={"layer": "BAN_QUA_DO", "lineweight": 30})
+        if od < 0:
+            msp.add_text(
+                f"BAN QUA DO L={L_bqd:g}m day={t_bqd*100:.0f}cm doc={doc_bqd*100:.0f}%",
+                dxfattribs={"layer": "BAN_QUA_DO", "height": 0.25}
+            ).set_placement((xm - L_bqd, y_near + 0.3))
 
     # --- Trụ ---
     x_trus = []
@@ -850,6 +895,22 @@ def export_bridge_ifc(design_data) -> bytes:
                  L_nhip, bc, t_ban,
                  "IfcSlab", f"Ban mat cau N{i_nhip+1}",
                  material_name="Concrete C40")
+
+    # ── Bản quá độ 2 đầu cầu (IfcSlab — cấu kiện BẮT BUỘC, Module 07) ──
+    # Mặt bản dưới mặt đường ≥ 0.7m (LOD sơ bộ: tấm phẳng, chưa thể hiện dốc).
+    _bqd = ((design_data.get("tru_result") or {}).get("ket_qua_mo") or {}
+            ).get("ban_qua_do") or {}
+    L_bqd = float(_bqd.get("L_bqd", 5.0) or 5.0)
+    t_bqd = float(_bqd.get("day_bqd", 0.30) or 0.30)
+    cov_b = float(_bqd.get("chieu_sau_dat_dap_toi_thieu", 0.70) or 0.70)
+    z_bqd = z_dd + t_ban - cov_b - t_bqd          # mặt đường ≈ z_dd + t_ban
+    for xs_b, nm_b in [(x0 - L_bqd, "Ban qua do mo trai"),
+                       (x0 + L_cau, "Ban qua do mo phai")]:
+        _ifc_box(ifc, storey, ctx,
+                 xs_b, -bc/2, z_bqd,
+                 L_bqd, bc, t_bqd,
+                 "IfcSlab", nm_b,
+                 material_name="Concrete M300")
 
     import tempfile, os as _os
     with tempfile.NamedTemporaryFile(suffix=".ifc", delete=False) as tf:

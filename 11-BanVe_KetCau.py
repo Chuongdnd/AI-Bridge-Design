@@ -449,13 +449,15 @@ def _dim_h(fig, y, x0, x1, text, color=None, dy=0):
     ya = y + dy
     _rec_dim(fig, "h", x0, x1, ya, text)
     # đường dim + mũi tên 2 đầu (head ở x0 và x1, hướng ra ngoài)
+    # name="DIM" → nút "Ẩn DIM" lọc được (an_dim_text).
     for xh, xt in ((x0, x1), (x1, x0)):
         fig.add_annotation(x=xh, y=ya, ax=xt, ay=ya, xref="x", yref="y",
                            axref="x", ayref="y", showarrow=True, arrowhead=3,
-                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color)
+                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color,
+                           name="DIM")
     fig.add_annotation(x=(x0+x1)/2, y=ya+0.05, text=text, showarrow=False,
                        font=dict(size=_DIM_TXT, color=color), yanchor="bottom",
-                       bgcolor="rgba(255,255,255,0.85)")
+                       bgcolor="rgba(255,255,255,0.85)", name="DIM")
 
 def _dim_v(fig, x, y0, y1, text, color=None, dx=0.4):
     """Đường kích thước ĐỨNG — nét DIM xanh nhạt + 2 mũi tên closed filled."""
@@ -465,10 +467,31 @@ def _dim_v(fig, x, y0, y1, text, color=None, dx=0.4):
     for yh, yt in ((y0, y1), (y1, y0)):
         fig.add_annotation(x=xa, y=yh, ax=xa, ay=yt, xref="x", yref="y",
                            axref="x", ayref="y", showarrow=True, arrowhead=3,
-                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color)
+                           arrowsize=_DIM_ARROW, arrowwidth=1, arrowcolor=color,
+                           name="DIM")
     fig.add_annotation(x=xa+0.08, y=(y0+y1)/2, text=text, showarrow=False,
                        font=dict(size=_DIM_TXT, color=color), xanchor="left",
-                       textangle=-90, bgcolor="rgba(255,255,255,0.85)")
+                       textangle=-90, bgcolor="rgba(255,255,255,0.85)", name="DIM")
+
+
+def an_dim_text(fig, an_dim=False, an_text=False):
+    """Ẩn KÍCH THƯỚC (DIM) và/hoặc CHỮ ghi chú trên bản vẽ 2D theo tùy chọn.
+    - an_dim : bỏ mọi annotation name="DIM" (đường dim + mũi tên + nhãn số).
+    - an_text: bỏ mọi annotation chữ còn lại (nhãn Z=, tên cấu kiện, ghi chú…).
+    Trả về fig (sửa tại chỗ) — gọi SAU khi hình đã dựng xong."""
+    try:
+        keep = []
+        for a in (fig.layout.annotations or ()):
+            is_dim = (str(getattr(a, "name", "") or "") == "DIM")
+            if an_dim and is_dim:
+                continue
+            if an_text and not is_dim:
+                continue
+            keep.append(a)
+        fig.layout.annotations = tuple(keep)
+    except Exception:
+        pass
+    return fig
 
 # ── Áp LAYER cho bản vẽ 2D (quy tắc thể hiện bản vẽ) ─────────────────────────
 def _apply_layers_2d(fig):
@@ -3739,6 +3762,62 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             _ag(_approach_road(
                 _xm, _s1, _z_app,
                 name="Mặt đường đầu cầu" if _od < 0 else "", sl=(_od < 0)))
+
+        # ── BẢN QUÁ ĐỘ (cấu kiện BẮT BUỘC sau mỗi mố — Module 07) ───────────
+        # Đọc tru_result.ket_qua_mo.ban_qua_do: tấm BTCT nằm giữa tường đỉnh
+        # mố và dầm kê trong nền đường, mặt bản dưới mặt đường ≥ 0.7m, dốc
+        # dọc 10–15% hạ dần về phía nền đường.
+        _grp_state["g"] = "Bản quá độ"
+        _bqd = ((d.get("tru_result") or {}).get("ket_qua_mo") or {}
+                ).get("ban_qua_do") or {}
+        _L_bqd   = float(_bqd.get("L_bqd", 5.0) or 5.0)
+        _t_bqd   = float(_bqd.get("day_bqd", 0.30) or 0.30)
+        _doc_bqd = float(_bqd.get("doc_bqd_val", 0.10) or 0.10)
+        _cover   = float(_bqd.get("chieu_sau_dat_dap_toi_thieu", 0.70) or 0.70)
+
+        def _bqd_slab(s0, s1, z_top0, z_top1, t_slab, color, nm, sl):
+            """Tấm nghiêng quét theo tim tuyến (2 mặt cắt × 4 đỉnh)."""
+            vx, vy, vz = [], [], []
+            for _s, _zt in [(s0, z_top0), (s1, z_top1)]:
+                _xL, _yL = _vn_ext(_s, -bc / 2)
+                _xR, _yR = _vn_ext(_s,  bc / 2)
+                vx += [_xL, _xR, _xR, _xL]
+                vy += [_yL, _yR, _yR, _yL]
+                vz += [_zt * hz, _zt * hz,
+                       (_zt - t_slab) * hz, (_zt - t_slab) * hz]
+            ii, jj, kk = [], [], []
+            def _q(a, b, c, dd):
+                ii.append(a); jj.append(b); kk.append(c)
+                ii.append(a); jj.append(c); kk.append(dd)
+            _q(0, 1, 5, 4)   # mặt trên
+            _q(3, 2, 6, 7)   # mặt dưới
+            _q(0, 4, 7, 3)   # bên trái
+            _q(1, 2, 6, 5)   # bên phải
+            _q(0, 1, 2, 3)   # bịt đầu phía mố
+            _q(4, 5, 6, 7)   # bịt đầu phía nền đường
+            return go.Mesh3d(
+                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk,
+                color=color, opacity=0.95, flatshading=True,
+                name=nm, showlegend=sl and bool(nm),
+                lighting=dict(ambient=0.6, diffuse=0.9, specular=0.15),
+                hovertemplate=(f"<b>{nm or 'Bản quá độ'}</b><br>L={_L_bqd:g}m"
+                               f" · dày {_t_bqd*100:.0f}cm · dốc "
+                               f"{_doc_bqd*100:.0f}% · đắp ≥{_cover*100:.0f}cm"
+                               "<extra></extra>"))
+
+        for _xm, _od in [(x0, -1.0), (x_end, 1.0)]:
+            # Một đầu kê TƯỜNG ĐỈNH MỐ (tại mố), đầu kia trên DẦM KÊ trong nền
+            # đường (cách mố L_bqd); mặt bản dưới mặt đường ≥ _cover, hạ dần
+            # theo dốc _doc_bqd về phía nền đường.
+            _s_far = _xm + _od * _L_bqd
+            _z_near = _zred_fn(_xm) + t_phu - _cover
+            _z_far  = _z_near - _doc_bqd * _L_bqd
+            _ag(_bqd_slab(_xm, _s_far, _z_near, _z_far, _t_bqd, "#8d99a6",
+                          "Bản quá độ" if _od < 0 else "", sl=(_od < 0)))
+            # Dầm kê đỡ đầu bản trong nền đường
+            _ag(_bqd_slab(_s_far, _s_far + _od * 0.4,
+                          _z_far - _t_bqd, _z_far - _t_bqd, 0.4,
+                          "#6d7a87", "", sl=False))
 
         # Đường bao cấu kiện (viền tối các hộp trụ/mố/xà mũ/bệ…) → dễ nhìn
         _add_box_outlines(fig)

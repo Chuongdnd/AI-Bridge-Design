@@ -7,8 +7,15 @@ Fallback: Rule-Based từ BEAM_CATALOG khi chưa có dữ liệu train
 
 Phương án dự đoán:
   PA1 — Rule-Based tối ưu chi phí  (_predict_rb_chi_phi)
+        Chỉ chọn nhóm dầm KHÔNG có bản đáy liền mạch (Dầm I / Super-T / Dầm T)
+        — cấu tạo đơn giản, chi phí thấp; ưu tiên nhịp dài để giảm số nhịp.
   PA2 — Rule-Based tối ưu mỹ quan  (_predict_rb_my_quan)
-  PA3 — AI + tra catalog           (_predict_ai)
+        Chỉ chọn nhóm dầm CÓ bản đáy liền mạch (T ngược / Dầm bản / Bản rỗng)
+        — các dầm ghép sát tạo bề mặt phẳng dưới cầu, phù hợp đô thị/cầu vượt.
+  PA3 — Machine Learning + tra catalog (_predict_ml)
+        Random Forest học từ Bridge_Train_Dataset_v3 (công trình cầu VN thực
+        tế), được chọn bất kỳ trong 6 loại dầm — GIỮ NGUYÊN làm cơ sở so sánh
+        khách quan, KHÔNG cho người dùng ghi đè.
 """
 
 import os
@@ -59,37 +66,72 @@ def _n_nhip_from(L_cau, L_span):
 # ---------------------------------------------------------------------------
 # CATALOG DẦM BTCT THEO KINH NGHIỆM THỰC TẾ VN
 # ---------------------------------------------------------------------------
+# Trường co_ban_day_lien_mach phân 2 nhóm theo cấu tạo bản đáy:
+#   • False — KHÔNG bản đáy liền mạch (Dầm I 6–33m, Super-T 28.2–38.2m,
+#     Dầm T 12–15m): nhìn từ dưới thấy các dầm riêng biệt, cấu tạo đơn giản,
+#     chi phí thấp hơn → nhóm chọn của PA1 (tối ưu chi phí).
+#   • True  — CÓ bản đáy liền mạch (T ngược 10–33m, Dầm bản đặc 9–24m,
+#     Dầm bản rỗng 12–24m): các dầm ghép sát tạo bề mặt phẳng liền mạch dưới
+#     cầu, mỹ quan cao → nhóm chọn của PA2 (tối ưu mỹ quan, đô thị/cầu vượt).
 BEAM_CATALOG = [
-    # (loai_dam,         L,     B,    H,    S,    cong_nghe)
-    ("Dầm bản",          9.00, 0.99, 0.40, 1.00, "DUL_truoc"),
-    ("Dầm bản rỗng",    12.00, 0.99, 0.50, 1.00, "DUL_truoc"),
-    ("Dầm bản rỗng",    18.00, 0.99, 0.65, 1.00, "DUL_truoc"),
-    ("Dầm bản rỗng",    20.00, 0.99, 0.75, 1.00, "DUL_truoc"),
-    ("Dầm bản rỗng",    21.00, 0.99, 0.80, 1.00, "DUL_truoc"),
-    ("Dầm bản rỗng",    24.00, 0.99, 0.95, 1.00, "DUL_truoc"),
-    ("Dầm I",            6.00, 0.16, 0.28, 1.50, "DUL_truoc"),
-    ("Dầm I",            9.00, 0.20, 0.40, 1.50, "DUL_truoc"),
-    ("Dầm I",           12.50, 0.32, 0.56, 1.50, "DUL_truoc"),
-    ("Dầm I",           15.00, 0.22, 0.50, 1.50, "DUL_truoc"),
-    ("Dầm I",           15.00, 0.45, 1.00, 2.25, "DUL_sau"),
-    ("Dầm I",           18.60, 0.43, 0.70, 1.50, "DUL_truoc"),
-    ("Dầm I",           20.70, 0.60, 1.20, 2.25, "DUL_sau"),
-    ("Dầm I",           24.54, 0.56, 1.14, 1.75, "DUL_truoc"),
-    ("Dầm I",           33.00, 0.50, 1.40, 2.40, "DUL_truoc"),
-    ("Dầm I",           33.00, 0.65, 1.65, 2.25, "DUL_sau"),
-    ("Dầm T",           12.00, 1.80, 0.90, 2.40, "DUL_truoc"),
-    ("Dầm T",           15.00, 1.80, 1.00, 2.40, "DUL_truoc"),
-    ("T ngược",         10.00, 0.98, 0.55, 1.00, "DUL_truoc"),
-    ("T ngược",         12.00, 0.98, 0.55, 1.00, "DUL_truoc"),
-    ("T ngược",         15.00, 0.98, 0.55, 1.00, "DUL_truoc"),
-    ("T ngược",         18.00, 0.98, 0.75, 1.00, "DUL_truoc"),
-    ("T ngược",         20.00, 0.98, 0.75, 1.00, "DUL_truoc"),
-    ("T ngược",         25.00, 0.98, 0.90, 1.00, "DUL_truoc"),
-    ("T ngược",         29.00, 0.98, 1.10, 1.00, "DUL_truoc"),
-    ("Super-T",         28.20, 0.70, 1.75, 2.44, "DUL_sau"),
-    ("Super-T",         35.70, 0.70, 1.75, 2.44, "DUL_sau"),
-    ("Super-T",         38.20, 0.70, 1.75, 2.44, "DUL_sau"),
+    # (loai_dam,         L,     B,    H,    S,    cong_nghe,  co_ban_day_lien_mach)
+    ("Dầm bản",          9.00, 0.99, 0.40, 1.00, "DUL_truoc", True),
+    ("Dầm bản rỗng",    12.00, 0.99, 0.50, 1.00, "DUL_truoc", True),
+    ("Dầm bản rỗng",    18.00, 0.99, 0.65, 1.00, "DUL_truoc", True),
+    ("Dầm bản rỗng",    20.00, 0.99, 0.75, 1.00, "DUL_truoc", True),
+    ("Dầm bản rỗng",    21.00, 0.99, 0.80, 1.00, "DUL_truoc", True),
+    ("Dầm bản rỗng",    24.00, 0.99, 0.95, 1.00, "DUL_truoc", True),
+    ("Dầm I",            6.00, 0.16, 0.28, 1.50, "DUL_truoc", False),
+    ("Dầm I",            9.00, 0.20, 0.40, 1.50, "DUL_truoc", False),
+    ("Dầm I",           12.50, 0.32, 0.56, 1.50, "DUL_truoc", False),
+    ("Dầm I",           15.00, 0.22, 0.50, 1.50, "DUL_truoc", False),
+    ("Dầm I",           15.00, 0.45, 1.00, 2.25, "DUL_sau",   False),
+    ("Dầm I",           18.60, 0.43, 0.70, 1.50, "DUL_truoc", False),
+    ("Dầm I",           20.70, 0.60, 1.20, 2.25, "DUL_sau",   False),
+    ("Dầm I",           24.54, 0.56, 1.14, 1.75, "DUL_truoc", False),
+    ("Dầm I",           33.00, 0.50, 1.40, 2.40, "DUL_truoc", False),
+    ("Dầm I",           33.00, 0.65, 1.65, 2.25, "DUL_sau",   False),
+    ("Dầm T",           12.00, 1.80, 0.90, 2.40, "DUL_truoc", False),
+    ("Dầm T",           15.00, 1.80, 1.00, 2.40, "DUL_truoc", False),
+    ("T ngược",         10.00, 0.98, 0.55, 1.00, "DUL_truoc", True),
+    ("T ngược",         12.00, 0.98, 0.55, 1.00, "DUL_truoc", True),
+    ("T ngược",         15.00, 0.98, 0.55, 1.00, "DUL_truoc", True),
+    ("T ngược",         18.00, 0.98, 0.75, 1.00, "DUL_truoc", True),
+    ("T ngược",         20.00, 0.98, 0.75, 1.00, "DUL_truoc", True),
+    ("T ngược",         25.00, 0.98, 0.90, 1.00, "DUL_truoc", True),
+    ("T ngược",         29.00, 0.98, 1.10, 1.00, "DUL_truoc", True),
+    ("Super-T",         28.20, 0.70, 1.75, 2.44, "DUL_sau",   False),
+    ("Super-T",         35.70, 0.70, 1.75, 2.44, "DUL_sau",   False),
+    ("Super-T",         38.20, 0.70, 1.75, 2.44, "DUL_sau",   False),
 ]
+
+
+def _rec_lien_mach(record):
+    """Đọc trường co_ban_day_lien_mach của 1 bản ghi catalog (an toàn 6-tuple cũ)."""
+    return bool(record[6]) if len(record) > 6 else False
+
+
+def co_ban_day_lien_mach(loai_dam):
+    """True nếu LOẠI dầm thuộc nhóm CÓ bản đáy liền mạch (tra theo catalog)."""
+    for r in BEAM_CATALOG:
+        if r[0] == loai_dam:
+            return _rec_lien_mach(r)
+    return False
+
+
+def catalog_beam_types():
+    """Danh sách loại dầm trong catalog (giữ thứ tự xuất hiện, không lặp)."""
+    seen, out = set(), []
+    for r in BEAM_CATALOG:
+        if r[0] not in seen:
+            seen.add(r[0])
+            out.append(r[0])
+    return out
+
+
+def catalog_lengths(loai_dam):
+    """Các chiều dài nhịp L (m) có sẵn trong catalog cho 1 loại dầm (tăng dần)."""
+    return sorted({r[1] for r in BEAM_CATALOG if r[0] == loai_dam})
 
 
 def get_beam_from_catalog(L_target, loai_dam=None):
@@ -106,7 +148,7 @@ def get_beam_from_catalog(L_target, loai_dam=None):
 
     Returns
     -------
-    tuple : (loai_dam, L, B, H, S, cong_nghe)
+    tuple : (loai_dam, L, B, H, S, cong_nghe, co_ban_day_lien_mach)
     """
     if loai_dam:
         filtered = [r for r in BEAM_CATALOG if r[0] == loai_dam]
@@ -140,7 +182,7 @@ def _build_default_library_beams():
     """
     seen = set()
     out = []
-    for loai, L, B, H, S, cong_nghe in BEAM_CATALOG:
+    for loai, L, B, H, S, cong_nghe, *_ in BEAM_CATALOG:
         if loai in ("Dầm bản", "Dầm T"):
             continue
         lib_type = _CATALOG_TO_LIB_TYPE.get(loai, "Khác")
@@ -545,14 +587,14 @@ def _predict_optimize(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
         candidate_types.update(["Super-T", "Dầm I"])
     candidate_types = {t for t in candidate_types if t in le_type.classes_}
 
-    L_ai_raw  = float(models["reg_L"].predict(X_row)[0])
+    L_ml_raw  = float(models["reg_L"].predict(X_row)[0])
     L_min_geo = _L_nhip_min(B_tk, goc)
-    L_ai_raw  = max(L_ai_raw, L_min_geo)
-    L_ai_std  = _snap_length(L_ai_raw)
+    L_ml_raw  = max(L_ml_raw, L_min_geo)
+    L_ml_std  = _snap_length(L_ml_raw)
     # Chỉ xét nhịp định hình ≥ điều kiện tĩnh không (nhịp chính không vi phạm TK).
     # Toàn cầu dùng MỘT chiều dài định hình duy nhất → các nhịp đều nhau.
-    possible_L = sorted({l for l in STD_LENGTHS if l >= L_min_geo - 1e-6} | {L_ai_std})
-    possible_L = [l for l in possible_L if l >= L_min_geo - 1e-6] or [L_ai_std]
+    possible_L = sorted({l for l in STD_LENGTHS if l >= L_min_geo - 1e-6} | {L_ml_std})
+    possible_L = [l for l in possible_L if l >= L_min_geo - 1e-6] or [L_ml_std]
 
     best_score = -1
     best = None
@@ -582,14 +624,93 @@ def _predict_optimize(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
 # ---------------------------------------------------------------------------
 # 4. BA PHƯƠNG ÁN DỰ ĐOÁN
 # ---------------------------------------------------------------------------
+def _girder_layout_from_S(B_cau, S):
+    """Số dầm + overhang trên MCN từ khoảng cách dầm S catalog (dùng chung)."""
+    n_dam = max(2, int(B_cau / S) + 1)
+    oh = round((B_cau - (n_dam - 1) * S) / 2, 2)
+    if oh < 0.15:
+        n_dam = max(2, n_dam - 1)
+        oh = round((B_cau - (n_dam - 1) * S) / 2, 2)
+    if oh > max(1.2, 0.8 * S):
+        n_dam += 1
+        oh = round((B_cau - (n_dam - 1) * S) / 2, 2)
+    return n_dam, max(0.10, oh)
+
+
+def _plan_from_record(record, B_cau, n_nhip, phuong_phap, ghi_chu,
+                      canh_bao=None, nguon_chon="tu_dong"):
+    """Dựng dict phương án chuẩn (xem predict_kcn) từ 1 bản ghi catalog."""
+    loai, L, B, H, S, cong_nghe = record[:6]
+    n_dam, oh = _girder_layout_from_S(B_cau, S)
+    plan = {
+        "loai_dam":        loai,
+        "chieu_dai":       L,
+        "chieu_cao_dam":   H,
+        "be_rong_dam":     B,
+        "khoang_cach_dam": S,
+        "tong_so_nhip":    n_nhip,
+        "so_luong_dam":    n_dam,
+        "overhang":        oh,
+        "ti_le_L_H":       round(L / H, 1) if H > 0 else 0,
+        "cong_nghe":       cong_nghe,
+        "co_ban_day_lien_mach": _rec_lien_mach(record),
+        "phuong_phap":     phuong_phap,
+        "ghi_chu":         ghi_chu,
+        "nguon_chon":      nguon_chon,
+    }
+    if canh_bao:
+        plan["canh_bao"] = canh_bao
+    return plan
+
+
+def _filter_group(L_min_geo, lien_mach, L_cau=None):
+    """Lọc catalog theo nhóm bản đáy + điều kiện tĩnh không (+ chiều dài cầu).
+
+    Trả (records, canh_bao): đúng nhóm + thỏa L ≥ L_nhip_min; khi biết chiều
+    dài toàn cầu thì loại dầm DÀI hơn cầu (L ≤ max(L_cau, L_min)×1.05 — không
+    dùng dầm 38m cho cầu 15m). Nhóm rỗng → FALLBACK sang nhóm còn lại (kèm
+    cảnh báo); cùng lắm trả cả catalog.
+    """
+    L_max = (max(float(L_cau), L_min_geo) * 1.05
+             if (L_cau and float(L_cau) > 0) else None)
+
+    def _pick(lm):
+        grp = [r for r in BEAM_CATALOG
+               if _rec_lien_mach(r) == lm and r[1] >= L_min_geo - 1e-6]
+        if L_max is not None and grp:
+            capped = [r for r in grp if r[1] <= L_max + 1e-6]
+            if capped:
+                return capped
+            # Không dầm nào ngắn hơn cầu → lấy các dầm NGẮN NHẤT vượt nhịp
+            # tối thiểu (không dùng dầm 38m cho cầu ~17m chỉ vì điểm cao).
+            L_ngan = min(r[1] for r in grp)
+            return [r for r in grp if r[1] <= L_ngan + 1e-6]
+        return grp
+
+    grp = _pick(lien_mach)
+    if grp:
+        return grp, None
+    nhom = ("CÓ bản đáy liền mạch" if lien_mach else "KHÔNG bản đáy liền mạch")
+    other = _pick(not lien_mach)
+    canh_bao = (f"Không có dầm nhóm {nhom} thỏa nhịp tối thiểu "
+                f"{L_min_geo:.1f}m (tĩnh không) — đã chuyển sang nhóm còn lại.")
+    if other:
+        return other, canh_bao
+    return list(BEAM_CATALOG), (f"Không có dầm nào trong catalog thỏa nhịp tối "
+                                f"thiểu {L_min_geo:.1f}m — dùng toàn bộ catalog.")
+
+
 def _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong):
     """
     PA1 — Tối ưu chi phí xây dựng (Rule-Based từ BEAM_CATALOG).
 
-    Chiến lược chấm điểm:
+    CHỈ chọn nhóm dầm KHÔNG có bản đáy liền mạch (Dầm I / Super-T / Dầm T —
+    các dầm riêng biệt, cấu tạo đơn giản, chi phí thấp). Chấm điểm:
       - Ít trụ nhất (n_nhip nhỏ) → tiết kiệm chi phí phần dưới (trọng số cao nhất)
       - Nhịp dài hơn (L lớn) → ít dầm tổng thể hơn
       - Khoảng cách dầm S lớn → ít dầm trên mỗi mặt cắt ngang
+    Cầu nhiều nhịp dùng CÙNG chiều dài nhịp cho cả nhịp chính và nhịp dẫn
+    (không trộn dầm khác nhau) để đơn giản hóa thi công.
 
     Parameters
     ----------
@@ -605,16 +726,14 @@ def _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong):
     L_min_geo = _L_nhip_min(B_tk, goc)
     L_cau = float(L_cau_tong) if L_cau_tong else None
 
-    eligible = [r for r in BEAM_CATALOG if r[1] >= L_min_geo - 1e-6]
-    if not eligible:
-        eligible = BEAM_CATALOG
+    eligible, canh_bao = _filter_group(L_min_geo, lien_mach=False, L_cau=L_cau)
 
     best_score = -1e9
     best_record = None
     best_n_nhip = 1
 
     for record in eligible:
-        loai, L, B, H, S, cong_nghe = record
+        loai, L, B, H, S, cong_nghe = record[:6]
         n_nhip = _n_nhip_from(L_cau, L) if L_cau else 1
 
         # Scoring: ít nhịp (ít trụ) → ưu tiên cao nhất; nhịp dài → thứ hai; S lớn → thứ ba
@@ -625,43 +744,30 @@ def _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong):
             best_record = record
             best_n_nhip = n_nhip
 
-    loai, L, B, H, S, cong_nghe = best_record
-
-    n_dam = max(2, int(B_cau / S) + 1)
-    oh = round((B_cau - (n_dam - 1) * S) / 2, 2)
-    if oh < 0.15:
-        n_dam = max(2, n_dam - 1)
-        oh = round((B_cau - (n_dam - 1) * S) / 2, 2)
-    if oh > max(1.2, 0.8 * S):
-        n_dam += 1
-        oh = round((B_cau - (n_dam - 1) * S) / 2, 2)
-
-    return {
-        "loai_dam":        loai,
-        "chieu_dai":       L,
-        "chieu_cao_dam":   H,
-        "be_rong_dam":     B,
-        "khoang_cach_dam": S,
-        "tong_so_nhip":    best_n_nhip,
-        "so_luong_dam":    n_dam,
-        "overhang":        max(0.10, oh),
-        "ti_le_L_H":       round(L / H, 1) if H > 0 else 0,
-        "cong_nghe":       cong_nghe,
-        "phuong_phap":     "Rule-Based (Nhịp dài — ít trụ)",
-        "ghi_chu":         (f"Nhịp DÀI, ÍT TRỤ (tiết kiệm phần dưới): {loai} "
-                            f"L={L}m, {best_n_nhip} nhịp, S={S}m."),
-    }
+    loai, L = best_record[0], best_record[1]
+    S = best_record[4]
+    ghi_chu = (f"Ưu tiên nhịp DÀI để giảm số nhịp → giảm chi phí thi công; "
+               f"dầm KHÔNG bản đáy liền mạch (cấu tạo đơn giản, chi phí thấp): "
+               f"{loai} L={L}m × {best_n_nhip} nhịp (cùng chiều dài cho nhịp "
+               f"chính và nhịp dẫn), S={S}m.")
+    return _plan_from_record(best_record, B_cau, best_n_nhip,
+                             "Rule-Based (Chi phí — không bản đáy liền mạch)",
+                             ghi_chu, canh_bao=canh_bao)
 
 
 def _predict_rb_my_quan(B_tk, goc, B_cau, L_cau_tong):
     """
     PA2 — Tối ưu mỹ quan (Rule-Based từ BEAM_CATALOG).
 
-    Chiến lược chấm điểm:
-      - H nhỏ nhất → kết cấu nhịp thấp, thông thoáng (ưu tiên hàng đầu)
-      - Ưu tiên loại dầm bản rỗng và T ngược (tỉ lệ H/L nhỏ)
-      - Chấp nhận nhiều nhịp hơn nếu đổi lại được chiều cao thấp hơn
-        (phạt số nhịp nhẹ hơn PA1)
+    CHỈ chọn nhóm dầm CÓ bản đáy liền mạch (T ngược / Dầm bản / Bản rỗng —
+    các dầm ghép sát tạo bề mặt phẳng liền mạch dưới cầu, phù hợp cầu đô thị
+    và cầu vượt). Chấm điểm (nhấn cấu tạo bản đáy thay vì chỉ chiều cao):
+      score = −H×30 + bonus_ban_day_lien_mach(50) + n_nhip×3
+      - Hệ số H giảm 50 → 30: không quá nhấn chiều cao thấp
+      - +50 điểm cho mọi dầm nhóm bản đáy liền mạch (0 khi phải fallback)
+      - Ưu tiên chiều dài nhịp trung bình 10–33m phù hợp cầu đô thị
+    Cầu nhiều nhịp dùng CÙNG chiều dài nhịp cho cả nhịp chính và nhịp dẫn
+    (nguyên tắc như PA1).
 
     Parameters
     ----------
@@ -677,61 +783,75 @@ def _predict_rb_my_quan(B_tk, goc, B_cau, L_cau_tong):
     L_min_geo = _L_nhip_min(B_tk, goc)
     L_cau = float(L_cau_tong) if L_cau_tong else None
 
-    eligible = [r for r in BEAM_CATALOG if r[1] >= L_min_geo - 1e-6]
-    if not eligible:
-        eligible = BEAM_CATALOG
+    eligible, canh_bao = _filter_group(L_min_geo, lien_mach=True, L_cau=L_cau)
 
     best_score = -1e9
     best_record = None
     best_n_nhip = 1
 
     for record in eligible:
-        loai, L, B, H, S, cong_nghe = record
+        loai, L, B, H, S, cong_nghe = record[:6]
         n_nhip = _n_nhip_from(L_cau, L) if L_cau else 1
 
-        # Scoring: H nhỏ → điểm cao; bonus dầm bản rỗng và T ngược; phạt nhẹ số nhịp
-        score = -H * 50.0
-        if loai in ("Dầm bản rỗng", "T ngược"):
-            score += 30.0
-        score -= n_nhip * 3.0
+        # Scoring: −H×30 (nhấn vừa phải) + 50 điểm bản đáy liền mạch + n_nhip×3;
+        # ưu tiên nhẹ nhịp trung bình 10–33m (phù hợp cầu đô thị).
+        bonus_ban_day_lien_mach = 50.0 if _rec_lien_mach(record) else 0.0
+        score = -H * 30.0 + bonus_ban_day_lien_mach + n_nhip * 3.0
+        if 10.0 <= L <= 33.0:
+            score += 5.0
 
         if score > best_score:
             best_score = score
             best_record = record
             best_n_nhip = n_nhip
 
-    loai, L, B, H, S, cong_nghe = best_record
-
-    n_dam = max(2, int(B_cau / S) + 1)
-    oh = round((B_cau - (n_dam - 1) * S) / 2, 2)
-    if oh < 0.15:
-        n_dam = max(2, n_dam - 1)
-        oh = round((B_cau - (n_dam - 1) * S) / 2, 2)
-    if oh > max(1.2, 0.8 * S):
-        n_dam += 1
-        oh = round((B_cau - (n_dam - 1) * S) / 2, 2)
-
-    return {
-        "loai_dam":        loai,
-        "chieu_dai":       L,
-        "chieu_cao_dam":   H,
-        "be_rong_dam":     B,
-        "khoang_cach_dam": S,
-        "tong_so_nhip":    best_n_nhip,
-        "so_luong_dam":    n_dam,
-        "overhang":        max(0.10, oh),
-        "ti_le_L_H":       round(L / H, 1) if H > 0 else 0,
-        "cong_nghe":       cong_nghe,
-        "phuong_phap":     "Rule-Based (Mỹ quan)",
-        "ghi_chu":         (f"Tối ưu chiều cao thấp: {loai} L={L}m, "
-                            f"H={H}m, {best_n_nhip} nhịp."),
-    }
+    loai, L = best_record[0], best_record[1]
+    H = best_record[3]
+    ghi_chu = (f"Ưu tiên dầm CÓ bản đáy liền mạch — các dầm ghép sát tạo bề "
+               f"mặt phẳng đẹp dưới cầu, phù hợp cầu đô thị/cầu vượt: {loai} "
+               f"L={L}m × {best_n_nhip} nhịp (cùng chiều dài cho nhịp chính "
+               f"và nhịp dẫn), H={H}m.")
+    return _plan_from_record(best_record, B_cau, best_n_nhip,
+                             "Rule-Based (Mỹ quan — bản đáy liền mạch)",
+                             ghi_chu, canh_bao=canh_bao)
 
 
-def _predict_ai(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
+def make_plan_from_catalog(loai_dam, L, B_cau, L_cau_tong=None,
+                           nguon_chon="nguoi_dung_khai_bao"):
     """
-    PA3 — AI dự đoán loại dầm + chiều dài, sau đó tra BEAM_CATALOG để lấy
-    H, B, S thực tế thay vì dùng công thức.
+    Dựng phương án từ 1 dầm catalog do NGƯỜI DÙNG khai báo (loại + chiều dài).
+
+    Dùng cho tính năng "khai báo lại loại dầm" của PA1/PA2: các thông số phụ
+    thuộc (H, S, B, công nghệ DUL) tự lấy từ BEAM_CATALOG theo loại và chiều
+    dài đã chọn; số nhịp chia đều theo chiều dài toàn cầu (cùng chiều dài
+    nhịp cho nhịp chính và nhịp dẫn).
+
+    Returns
+    -------
+    dict với cấu trúc chuẩn (xem predict_kcn), nguon_chon đánh dấu nguồn chọn.
+    """
+    record = get_beam_from_catalog(float(L), loai_dam=loai_dam)
+    L_cat = record[1]
+    n_nhip = (_n_nhip_from(float(L_cau_tong), L_cat)
+              if (L_cau_tong and float(L_cau_tong) > 0) else 1)
+    nhom = ("CÓ bản đáy liền mạch" if _rec_lien_mach(record)
+            else "KHÔNG bản đáy liền mạch")
+    ghi_chu = (f"Người dùng khai báo: {record[0]} L={L_cat}m × {n_nhip} nhịp "
+               f"(nhóm {nhom}); H/S/công nghệ lấy theo catalog.")
+    return _plan_from_record(record, B_cau, n_nhip,
+                             "Người dùng khai báo (catalog)", ghi_chu,
+                             nguon_chon=nguon_chon)
+
+
+def _predict_ml(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
+    """
+    PA3 — Machine Learning (Random Forest học từ Bridge_Train_Dataset_v3 —
+    dữ liệu công trình cầu Việt Nam) dự đoán loại dầm + chiều dài, sau đó tra
+    BEAM_CATALOG để lấy H, B, S thực tế thay vì dùng công thức.
+
+    PA3 được chọn BẤT KỲ trong 6 loại dầm của catalog (phản ánh kinh nghiệm
+    tích lũy thực tế) và KHÔNG cho người dùng ghi đè — giữ nguyên kết quả học
+    từ dữ liệu để làm cơ sở so sánh khách quan với PA1/PA2 Rule-Based.
 
     Nếu models là None (chưa huấn luyện), fallback về kết quả tra catalog
     theo tỉ lệ L/H mục tiêu ≈ 18 (giá trị kinh nghiệm trung bình).
@@ -755,53 +875,36 @@ def _predict_ai(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
         # Fallback: chọn bản ghi catalog có L/H gần 18 nhất và L >= L_min_geo (tĩnh không)
         eligible = [r for r in BEAM_CATALOG if r[1] >= L_min_geo - 1e-6] or BEAM_CATALOG
         best_record = min(eligible, key=lambda r: abs(r[1] / r[3] - 18.0))
-        loai_cat, L_cat, B_cat, H_cat, S_cat, cong_nghe = best_record
+        loai_cat, L_cat = best_record[0], best_record[1]
         L_cau_actual = float(L_cau_tong) if L_cau_tong else L_cat
         n_nhip_cat = _n_nhip_from(L_cau_actual, L_cat)
-        ghi_chu = (f"Chưa có mô hình AI — catalog L/H≈18: "
+        ghi_chu = (f"Chưa có mô hình Machine Learning — catalog L/H≈18: "
                    f"{loai_cat} L={L_cat}m, {n_nhip_cat} nhịp.")
-        phuong_phap = "Catalog (chưa có AI)"
+        phuong_phap = "Catalog (chưa có mô hình ML)"
     else:
-        loai_ai, L_ai, _, _ = _predict_optimize(
+        loai_ml, L_ml, _, _ = _predict_optimize(
             B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models
         )
         # Nhịp chính không vi phạm tĩnh không → bảo đảm L tra catalog ≥ L_min_geo
-        best_record = get_beam_from_catalog(max(L_ai, L_min_geo), loai_dam=loai_ai)
-        loai_cat, L_cat, B_cat, H_cat, S_cat, cong_nghe = best_record
-        if L_cat < L_min_geo - 1e-6:
+        best_record = get_beam_from_catalog(max(L_ml, L_min_geo), loai_dam=loai_ml)
+        if best_record[1] < L_min_geo - 1e-6:
             elig = [r for r in BEAM_CATALOG if r[1] >= L_min_geo - 1e-6]
             if elig:
                 best_record = min(elig, key=lambda r: r[1])
-                loai_cat, L_cat, B_cat, H_cat, S_cat, cong_nghe = best_record
+        loai_cat, L_cat = best_record[0], best_record[1]
         L_cau_actual = float(L_cau_tong) if L_cau_tong else L_cat
         n_nhip_cat = _n_nhip_from(L_cau_actual, L_cat)
-        ghi_chu = (f"AI: {loai_ai} L≈{L_ai:.1f}m → "
+        ghi_chu = (f"Machine Learning (Random Forest, Bridge_Train_v3): "
+                   f"{loai_ml} L≈{L_ml:.1f}m → "
                    f"Catalog: {loai_cat} L={L_cat}m, {n_nhip_cat} nhịp.")
-        phuong_phap = "AI + Catalog"
+        phuong_phap = "Machine Learning + Catalog"
 
-    n_dam = max(2, int(B_cau / S_cat) + 1)
-    oh = round((B_cau - (n_dam - 1) * S_cat) / 2, 2)
-    if oh < 0.15:
-        n_dam = max(2, n_dam - 1)
-        oh = round((B_cau - (n_dam - 1) * S_cat) / 2, 2)
-    if oh > max(1.2, 0.8 * S_cat):
-        n_dam += 1
-        oh = round((B_cau - (n_dam - 1) * S_cat) / 2, 2)
+    return _plan_from_record(best_record, B_cau, n_nhip_cat,
+                             phuong_phap, ghi_chu)
 
-    return {
-        "loai_dam":        loai_cat,
-        "chieu_dai":       L_cat,
-        "chieu_cao_dam":   H_cat,
-        "be_rong_dam":     B_cat,
-        "khoang_cach_dam": S_cat,
-        "tong_so_nhip":    n_nhip_cat,
-        "so_luong_dam":    n_dam,
-        "overhang":        max(0.10, oh),
-        "ti_le_L_H":       round(L_cat / H_cat, 1) if H_cat > 0 else 0,
-        "cong_nghe":       cong_nghe,
-        "phuong_phap":     phuong_phap,
-        "ghi_chu":         ghi_chu,
-    }
+
+# Alias tương thích ngược (tên cũ trước khi đổi PA3 → Machine Learning)
+_predict_ai = _predict_ml
 
 
 # ---------------------------------------------------------------------------
@@ -828,19 +931,22 @@ def predict_kcn(B_tk, H_tk, goc, B_cau, moi_truong,
       {
         "pa1_chi_phi": { loai_dam, chieu_dai, chieu_cao_dam, be_rong_dam,
                          khoang_cach_dam, tong_so_nhip, so_luong_dam,
-                         overhang, ti_le_L_H, cong_nghe, phuong_phap, ghi_chu },
+                         overhang, ti_le_L_H, cong_nghe,
+                         co_ban_day_lien_mach, phuong_phap, ghi_chu,
+                         nguon_chon ('tu_dong' | 'nguoi_dung_khai_bao') },
         "pa2_my_quan": { ... },
-        "pa3_ai":      { ... },
+        "pa3_ml":      { ... },   # Machine Learning — không cho ghi đè
       }
     Tất cả giá trị H, B, S đều lấy từ BEAM_CATALOG, không tính bằng công thức.
     Chi tiết hình học dầm do người dùng dựng ở tab BeamBuilder (module 17).
     """
     return {
-        # PA1 = nhịp NGẮN nhất, NHIỀU trụ (bám tĩnh không) — mặc định 'cầu tổng'
-        "pa1_chi_phi": _predict_rb_nhip_ngan(B_tk, goc, B_cau, L_cau_tong),
-        # PA2 = nhịp DÀI, ÍT trụ (tối ưu chi phí phần dưới)
-        "pa2_my_quan": _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong),
-        "pa3_ai":      _predict_ai(B_tk, H_tk, goc, B_cau, moi_truong,
+        # PA1 = tối ưu CHI PHÍ: nhóm KHÔNG bản đáy liền mạch, nhịp dài ít trụ
+        "pa1_chi_phi": _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong),
+        # PA2 = tối ưu MỸ QUAN: nhóm CÓ bản đáy liền mạch (đô thị/cầu vượt)
+        "pa2_my_quan": _predict_rb_my_quan(B_tk, goc, B_cau, L_cau_tong),
+        # PA3 = Machine Learning (Random Forest, Bridge_Train_v3) + catalog
+        "pa3_ml":      _predict_ml(B_tk, H_tk, goc, B_cau, moi_truong,
                                    L_cau_tong, models),
     }
 
@@ -879,7 +985,7 @@ def predict_kcn_default(B_tk, goc, B_cau, L_cau_tong=None):
     L_def   = float(min(elig)) if elig else float(max(STD_LENGTHS))
 
     # Dầm catalog gần chiều dài định hình nhất (lấy H/B/S/công nghệ thực tế)
-    loai, L_cat, B_cat, H_cat, S_cat, cong_nghe = get_beam_from_catalog(L_def)
+    loai, L_cat, B_cat, H_cat, S_cat, cong_nghe = get_beam_from_catalog(L_def)[:6]
 
     n_nhip = _n_nhip_from(L_cau_tong, L_def) if (L_cau_tong and L_cau_tong > 0) else 1
 
@@ -1125,10 +1231,12 @@ def score_kcn_plans(plans, B_tk, goc, B_cau, moi_truong):
             'tong': int, 'xep_loai': str, 'khuyen_nghi': str,
         },
         'pa2_my_quan': { ... },
-        'pa3_ai':      { ... },
+        'pa3_ml':      { ... },
     }
     """
-    pa_keys = ["pa1_chi_phi", "pa2_my_quan", "pa3_ai"]
+    # pa3_ai = key cũ (dữ liệu đã lưu trước khi đổi tên PA3 → Machine Learning)
+    pa_keys = [k for k in ("pa1_chi_phi", "pa2_my_quan", "pa3_ml", "pa3_ai")
+               if k in plans]
     pa_list = [plans[k] for k in pa_keys]
 
     indep_scores      = [_score_single_plan(pa, B_tk, goc, moi_truong) for pa in pa_list]

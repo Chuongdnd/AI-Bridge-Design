@@ -754,13 +754,59 @@ class TKCSGenerator:
         self._h2(doc, "Phân tích và lựa chọn phương án kết cấu nhịp")
         self._para(doc,
             "Trong giai đoạn nghiên cứu, đã xem xét ba phương án kết cấu nhịp "
-            "để lựa chọn phương án tối ưu. Các phương án được đánh giá theo "
-            "100 điểm (60 điểm kỹ thuật + 30 điểm kinh tế + 10 điểm mỹ quan) "
-            "theo phương pháp AHP (Analytic Hierarchy Process) tích hợp trong "
-            "phần mềm AI-Bridge-Design:")
+            "để lựa chọn phương án tối ưu: PA1 tối ưu chi phí (nhóm dầm không "
+            "có bản đáy liền mạch), PA2 tối ưu mỹ quan (nhóm dầm có bản đáy "
+            "liền mạch) và PA3 do mô hình Machine Learning đề xuất (Random "
+            "Forest học từ dữ liệu công trình cầu Việt Nam). Các phương án "
+            "được đánh giá theo 100 điểm (60 điểm kỹ thuật + 30 điểm kinh tế "
+            "+ 10 điểm mỹ quan) theo phương pháp AHP (Analytic Hierarchy "
+            "Process) tích hợp trong phần mềm AI-Bridge-Design:")
+
+        # Nguồn chọn từng PA: tự động / người dùng khai báo / Machine Learning
+        _kcn3 = ((self.ss.get("design_data") or {}).get("kcn_3_pa")
+                 if isinstance(self.ss.get("design_data"), dict) else None) or {}
+        _PA_ROWS = [("PA1", "pa1_chi_phi", "Tối ưu chi phí"),
+                    ("PA2", "pa2_my_quan", "Tối ưu mỹ quan"),
+                    ("PA3", "pa3_ml",      "Machine Learning")]
+
+        def _nguon_txt(key, plan):
+            if key == "pa3_ml":
+                return "Machine Learning (kết quả gốc)"
+            if (plan or {}).get("nguon_chon") == "nguoi_dung_khai_bao":
+                return "Người dùng khai báo"
+            return "Tự động (Rule-Based)"
 
         pa_list = self.ss.get("so_sanh_3pa") or []
-        if pa_list:
+        if _kcn3:
+            rows_pa = []
+            for _lbl, _key, _mota in _PA_ROWS:
+                _plan = _kcn3.get(_key) or (
+                    _kcn3.get("pa3_ai") if _key == "pa3_ml" else None) or {}
+                rows_pa.append([
+                    f"{_lbl} — {_mota}",
+                    (f"{_plan.get('loai_dam','—')} "
+                     f"L={_plan.get('chieu_dai','—')}m × "
+                     f"{_plan.get('tong_so_nhip','—')} nhịp"),
+                    _nguon_txt(_key, _plan),
+                ])
+            self.insert_table(
+                doc,
+                ["Phương án", "Mô tả", "Nguồn chọn"],
+                rows_pa,
+                "So sánh và đánh giá các phương án kết cấu nhịp",
+            )
+            _ovr = [f"{_lbl}" for _lbl, _key, _m in _PA_ROWS
+                    if _key != "pa3_ml"
+                    and (_kcn3.get(_key) or {}).get("nguon_chon")
+                    == "nguoi_dung_khai_bao"]
+            if _ovr:
+                self._para(doc,
+                    f"Ghi chú: phương án {', '.join(_ovr)} sử dụng loại dầm do "
+                    "người dùng tự khai báo (ghi đè kết quả tự động của hệ "
+                    "thống); các phương án còn lại là kết quả tự động. PA3 "
+                    "giữ nguyên kết quả Machine Learning gốc làm cơ sở so "
+                    "sánh khách quan.")
+        elif pa_list:
             rows_pa = []
             for pa_item in pa_list:
                 rows_pa.append([
@@ -816,20 +862,50 @@ class TKCSGenerator:
     def generate_chapter_6(self, doc):
         pier = self._pier()
         kcn  = self._kcn()
+        # Kết quả Module 07 (design_data.tru_result) — nguồn nhom_tru + mố +
+        # bản quá độ; pier_result cũ (nếu có) vẫn dùng cho các trường legacy.
+        _dd     = (self.ss.get("design_data")
+                   if isinstance(self.ss.get("design_data"), dict) else {}) or {}
+        tru_res = _dd.get("tru_result") or {}
+        mo_res  = tru_res.get("ket_qua_mo") or {}
 
         self._h1(doc, "Giải pháp thiết kế mố và trụ cầu")
 
+        # ── Trụ cầu: phân loại theo 3 NHÓM cấu tạo ────────────────────────
         self._h2(doc, "Thiết kế trụ cầu")
-        loai_tru = pier.get("loai_tru") or "Trụ thân đặc BTCT"
-        H_tru    = pier.get("H_tru") or pier.get("chieu_cao_tru") or "—"
+        loai_tru = (tru_res.get("loai_tru") or pier.get("loai_tru")
+                    or "Trụ thân đặc BTCT")
+        nhom_tru = tru_res.get("nhom_tru") or ""
+        ten_nhom = tru_res.get("ten_nhom") or ""
+        H_tru    = (pier.get("H_tru") or pier.get("chieu_cao_tru")
+                    or _dd.get("H_tru_est") or "—")
         n_tru    = (kcn.get("tong_so_nhip") or 1) - 1
 
         self._para(doc,
+            "Trụ cầu được phân loại theo ba nhóm cấu tạo chính: "
+            "(1) Trụ dẻo (trụ cọc) — một hoặc hai hàng cọc tiết diện nhỏ "
+            "30×30 đến 40×40cm liên kết trực tiếp với xà mũ, không có bệ trụ "
+            "riêng, áp dụng cho cầu nhiều nhịp ngắn ≤ 12m vượt sông nhỏ cấp "
+            "V–VI, lòng sông không sâu và không thông thuyền (chiều cao trụ "
+            "thấp là hệ quả tự nhiên, không phải tiêu chí phân nhóm); "
+            "(2) Trụ cột (trụ thân cột BTCT) — một hoặc nhiều cột tròn/chữ "
+            "nhật đường kính phổ biến 0.8–2m liên kết với xà mũ chịu uốn, có "
+            "bệ móng riêng, áp dụng cho cầu cạn, cầu vượt và cầu vượt sông "
+            "cấp IV–VI ít cây trôi (một cột cho cầu vượt đô thị để giải "
+            "phóng không gian gầm cầu, 2–4 cột cho cầu vừa và rộng); "
+            "(3) Trụ đặc thân hẹp — phần thân dưới thu hẹp so với bề rộng "
+            "kết cấu nhịp, mũi vát nhọn với hệ số cản dòng chảy CD = 0.7–0.8, "
+            "áp dụng cho cầu vượt sông lớn cấp I–III chịu va tàu và nhiều "
+            "cây trôi; khi chiều cao trụ H > 10m chuyển sang biến thể trụ "
+            "đặc thân hẹp rỗng để giảm khối lượng vật liệu.")
+        self._para(doc,
             f"Dựa trên điều kiện địa hình, tải trọng và nhịp thiết kế, "
-            f"phương án trụ được lựa chọn là: {loai_tru}. "
-            f"Tổng số trụ trung gian: {n_tru} trụ.")
+            f"phương án trụ được lựa chọn là: {loai_tru}"
+            + (f" — thuộc nhóm {ten_nhom or nhom_tru}" if (nhom_tru or ten_nhom) else "")
+            + f". Tổng số trụ trung gian: {n_tru} trụ.")
 
         rows_tru = [
+            ["Nhóm trụ (cấu tạo)",    ten_nhom or nhom_tru or "—"],
             ["Loại trụ",              loai_tru],
             ["Số lượng trụ",          f"{n_tru} trụ"],
             ["Chiều cao thân trụ",    f"{H_tru} m"],
@@ -837,21 +913,31 @@ class TKCSGenerator:
             ["Kích thước sơ bộ",      pier.get("kich_thuoc_tru", "Xem bản vẽ")],
         ]
 
-        if pier.get("canh_bao"):
-            rows_tru.append(["Cảnh báo kỹ thuật", pier.get("canh_bao", "")])
+        if pier.get("canh_bao") or tru_res.get("canh_bao"):
+            rows_tru.append(["Cảnh báo kỹ thuật",
+                             pier.get("canh_bao") or tru_res.get("canh_bao", "")])
 
         self.insert_table(doc, ["Thông số", "Giá trị"], rows_tru,
                           "Thông số thiết kế trụ cầu")
 
-        tang_qd = pier.get("tang_quyet_dinh") or []
+        tang_qd = (pier.get("tang_quyet_dinh")
+                   or (tru_res.get("pa_rb") or {}).get("tang_quyet_dinh") or [])
         if tang_qd:
             self._h3(doc, "Cơ sở quyết định loại trụ")
-            self._para(doc, "Phân tích lựa chọn theo phương pháp Rule-Based:")
+            self._para(doc, "Phân tích lựa chọn theo phương pháp Rule-Based "
+                            "(phân nhóm cấu tạo trước, loại con trong nhóm sau):")
+            if isinstance(tang_qd, str):
+                tang_qd = [tang_qd]
             for t in tang_qd:
                 self._bullet(doc, str(t))
+            _gc_rb = (tru_res.get("pa_rb") or {}).get("ghi_chu")
+            if _gc_rb:
+                self._bullet(doc, str(_gc_rb))
 
+        # ── Mố cầu ─────────────────────────────────────────────────────────
         self._h2(doc, "Thiết kế mố cầu")
-        loai_mo  = pier.get("loai_mo") or "Mố chữ U BTCT"
+        loai_mo  = (mo_res.get("loai_mo") or pier.get("loai_mo")
+                    or "Mố chữ U BTCT")
         H_dap    = pier.get("H_dap") or self.ss.get("H_dap") or "—"
 
         self._para(doc,
@@ -863,10 +949,47 @@ class TKCSGenerator:
             ["Loại mố",           loai_mo],
             ["Chiều cao đất đắp", f"{H_dap} m"],
             ["Vật liệu",          pier.get("vat_lieu_mo", "BTCT B25")],
-            ["Bản dẫn sau mố",    "≥ 4m — BTCT đổ tại chỗ"],
+            ["Bản quá độ sau mố", "BẮT BUỘC — xem mục Bản quá độ dưới đây"],
         ]
         self.insert_table(doc, ["Thông số", "Giá trị"], rows_mo,
                           "Thông số thiết kế mố cầu")
+
+        # ── Bản quá độ (cấu kiện BẮT BUỘC cho mọi mố) ──────────────────────
+        self._h3(doc, "Bản quá độ sau mố (cấu kiện bắt buộc)")
+        bqd = mo_res.get("ban_qua_do") or {}
+        self._para(doc,
+            "Mọi mố cầu đều bố trí bản quá độ với bốn chức năng thiết yếu:")
+        for cn in (bqd.get("chuc_nang") or [
+            "Khắc phục hiện tượng điểm xóc đầu cầu (đất đắp trong lòng mố "
+            "khó đạt độ chặt tuyệt đối)",
+            "Chuyển tiếp độ cứng dần dần giữa nền đường mềm và mố cầu cứng",
+            "Xử lý lún chênh lệch — bù trừ khi độ chênh < 5cm",
+            "Phân phối lại tải trọng đất đắp + hoạt tải xe lên mố theo "
+            "hướng tích cực cho ổn định",
+        ]):
+            self._bullet(doc, str(cn))
+
+        _L_bqd = bqd.get("L_bqd", "≥ 5 (theo quy mô cầu)")
+        rows_bqd = [
+            ["Chiều dài bản L_bqd",
+             (f"{_L_bqd} m ({bqd.get('L_bqd_range','')} — "
+              f"{bqd.get('quy_mo_cau','theo quy mô cầu')})"
+              if bqd else "Cầu nhỏ ≥5m · cầu trung 6–8m · cầu lớn 8–12m")],
+            ["Chiều dày bản (day_bqd)",
+             f"≥ {float(bqd.get('day_bqd', 0.30))*100:.0f} cm"],
+            ["Độ dốc dọc (doc_bqd)",
+             str(bqd.get("doc_bqd", "10–15% về phía nền đường"))],
+            ["Đất đắp mặt đường → mặt bản (chieu_sau_dat_dap)",
+             f"≥ {float(bqd.get('chieu_sau_dat_dap_toi_thieu', 0.70))*100:.0f} cm "
+             "(tránh nứt mặt đường do hoạt tải xe)"],
+            ["Vật liệu", str(bqd.get("vat_lieu",
+                                     "BTCT M300 đổ tại chỗ hoặc đúc sẵn"))],
+            ["Vị trí lắp đặt", str(bqd.get("vi_tri_lap_dat",
+             "Một đầu bản kê lên tường đỉnh mố, đầu còn lại đặt trên dầm kê "
+             "nằm trong nền đường."))],
+        ]
+        self.insert_table(doc, ["Thông số bản quá độ", "Giá trị"], rows_bqd,
+                          "Thông số thiết kế bản quá độ")
 
     # ─────────────────────────────────────────────────────────────────────────
     # CHƯƠNG 7 — Móng cọc
