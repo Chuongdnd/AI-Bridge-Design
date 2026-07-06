@@ -3275,6 +3275,12 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         cap_thick = 0.4
         be_long   = be_W * 0.7
         mo_L      = 3.5
+        # KÍCH THƯỚC BỆ THẬT từ Module 08 (Be_ngang × Be_doc, TCVN 10304:2025)
+        # — ưu tiên hơn heuristic theo bề rộng cầu (be_W dùng nửa-bề-rộng).
+        if float(mong_r.get("Be_ngang") or 0) > 0:
+            be_W = max(be_W, float(mong_r["Be_ngang"]) / 2.0)
+        if float(mong_r.get("Be_doc") or 0) > 0:
+            be_long = float(mong_r["Be_doc"]) / 2.0
 
         supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
         x0, x_end = supports[0], supports[-1]
@@ -3607,8 +3613,21 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             else:
                 _z_coc_top = z_bet
             _z_coc_bot = _z_coc_top - L_coc * hz
-            c_ds = np.linspace(-be_W*0.65, be_W*0.65, n_coc_row)
-            c_ls = np.linspace(-be_long*0.65, be_long*0.65, n_coc_row)
+            # Bố trí cọc CHÍNH XÁC theo Module 08 (TCVN 10304:2025): lưới
+            # n_cols × n_rows với tim-tim khoang_cach_tim, căn tâm bệ. Thiếu
+            # thông số (dữ liệu cũ) → heuristic trải đều theo bề bệ như trước.
+            _S_coc = float(mong_r.get("khoang_cach_tim")
+                           or mong_r.get("khoang_cach_tim_coc") or 0)
+            _nc_be = int(mong_r.get("n_cols_be") or 0)
+            _nr_be = int(mong_r.get("n_rows_be") or 0)
+            if _S_coc > 0 and _nc_be >= 1 and _nr_be >= 1:
+                c_ds = [(_c - (_nc_be - 1) / 2.0) * _S_coc
+                        for _c in range(_nc_be)]           # ngang cầu
+                c_ls = [(_r - (_nr_be - 1) / 2.0) * _S_coc
+                        for _r in range(_nr_be)]           # dọc cầu
+            else:
+                c_ds = np.linspace(-be_W*0.65, be_W*0.65, n_coc_row)
+                c_ls = np.linspace(-be_long*0.65, be_long*0.65, n_coc_row)
             for dl in c_ls:
                 for dt in c_ds:
                     xp, yp = _vn(xt + dl, dt)
