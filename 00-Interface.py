@@ -6842,35 +6842,104 @@ with _col_main:
             else:
                 st.warning("Chưa có kết quả AI trụ cầu.")
     
-        # ── IV. MÓNG CẦU ─────────────────────────────────────────────────────
-        with st.expander("**IV. MÓNG CẦU — Gợi ý loại cọc (TCVN 10304)**", expanded=True):
-            if mong:
-                mc1, mc2 = st.columns(2)
-                with mc1:
-                    st.markdown(f"### Loại móng: **{mong['loai_mong']}**")
-                    st.table(pd.DataFrame({
-                        "Thông số": [
-                            "Đường kính cọc",
-                            "Chiều dài cọc",
-                            "Số cọc / bệ",
-                            "Kích thước bệ cọc",
-                            "Thi công",
-                        ],
-                        "Giá trị": [
-                            mong["D_coc_chon_txt"],
-                            f"{mong['L_coc_tu']} – {mong['L_coc_den']} m",
-                            f"{mong['So_coc_tu']} – {mong['So_coc_den']} cọc",
-                            mong["kich_thuoc_be_goi_y"],
-                            mong["phuong_phap_thi_cong"],
-                        ],
-                    }))
-                with mc2:
-                    st.markdown("**Khuyến nghị kỹ thuật:**")
+        # ── IV. MÓNG CẦU — 4 phần A/B/C/D theo TCVN 10304:2025 ──────────────
+        st.markdown("#### IV. MÓNG CẦU — Tư vấn móng cọc (TCVN 10304:2025)")
+        if mong:
+            # A — Lựa chọn loại cọc
+            with st.expander("**A. Lựa chọn loại cọc** — phân nhóm theo đường kính",
+                             expanded=True):
+                _cat = mong.get("category")
+                if _cat:
+                    st.caption(f"Nhóm: **{mong.get('ten_nhom_coc', _cat)}** "
+                               f"(category = `{_cat}`)")
+                _a1, _a2 = st.columns(2)
+                _a1.metric("Loại cọc", str(mong.get("loai_mong")
+                                           or mong.get("loai_coc", "—")))
+                _a1.metric("Kích thước",
+                           str(mong.get("D_coc_chon_txt")
+                               or mong.get("kich_thuoc_coc", "—")))
+                _a2.metric("Sức chịu tải Q_tk",
+                           f"{mong.get('Q_1coc_tk_kN', '—')} kN/cọc")
+                _a2.metric("Thi công",
+                           str(mong.get("phuong_phap_thi_cong", "—")))
+                if mong.get("ly_tam_tuong_duong"):
+                    st.caption(f"Phương án thay thế cùng nhóm: "
+                               f"**{mong['ly_tam_tuong_duong']}**")
+                for _r in (mong.get("ly_do_chon") or [])[:3]:
+                    st.caption(f"• {_r}")
+
+            # B — Chiều dài cọc và tầng tựa mũi
+            with st.expander("**B. Chiều dài cọc & tầng tựa mũi** — SPT-N/RQD, "
+                             "chiều sâu cắm", expanded=False):
+                _b1, _b2 = st.columns(2)
+                _lt_txt = mong.get("lop_tua_mui", "—")
+                _b1.metric("Lớp tựa mũi", str(_lt_txt)[:24])
+                if mong.get("lop_tua_mo_ta"):
+                    _b1.caption(mong["lop_tua_mo_ta"])
+                _b1.metric("Chiều sâu cắm L_cam",
+                           f"{mong.get('chieu_dai_cam_lop_tot', '—')} m")
+                if mong.get("co_so_cam"):
+                    _b1.caption(mong["co_so_cam"])
+                _Lc = mong.get("chieu_dai_coc") or mong.get("L_coc_tu", "—")
+                _b2.metric("Tổng chiều dài cọc L_coc", f"{_Lc} m"
+                           + (f" (–{mong.get('L_coc_den')}m)"
+                              if mong.get("L_coc_den") else ""))
+                if mong.get("ty_le_LD") is not None:
+                    _b2.metric("Tỷ lệ L/D", f"{mong.get('ty_le_LD')}"
+                               " (giới hạn 37 khi nền yếu)")
+                if mong.get("Q_vl_kN"):
+                    _b2.caption(f"Q_vật_liệu ≈ {mong['Q_vl_kN']} kN so "
+                                f"Q_đất_nền {mong.get('Q_1coc_tk_kN','—')} kN")
+
+            # C — Số lượng cọc
+            with st.expander("**C. Số lượng cọc** — hệ số nhóm η_g + dự phòng "
+                             "thi công", expanded=False):
+                _c1, _c2, _c3 = st.columns(3)
+                _c1.metric("Số cọc / bệ",
+                           str(mong.get("so_coc_be")
+                               or f"{mong.get('So_coc_tu','—')}–{mong.get('So_coc_den','—')}"))
+                _c2.metric("Hệ số nhóm η_g", f"{mong.get('he_so_nhom', '—')}")
+                _c3.metric("Dự phòng thi công",
+                           f"×{mong.get('he_so_du_phong', '—')} (lệch 75–150mm)")
+                if mong.get("cong_thuc_so_coc"):
+                    st.caption("Công thức: " + mong["cong_thuc_so_coc"])
+
+            # D — Khoảng cách bố trí
+            with st.expander("**D. Khoảng cách bố trí cọc** — tim-tim / mép bệ "
+                             "/ thông thủy", expanded=False):
+                _d1, _d2, _d3 = st.columns(3)
+                _d1.metric("Tim-tim",
+                           f"{mong.get('khoang_cach_tim') or mong.get('khoang_cach_tim_coc', '—')} m")
+                _mep = mong.get("khoang_cach_mep")
+                _d2.metric("Mặt cọc → mép bệ",
+                           f"≥ {_mep*1000:.0f} mm" if _mep else "—")
+                _tt = mong.get("khoang_cach_thong_thuy")
+                _d3.metric("Thông thủy (CKN)",
+                           f"{_tt} m (≥ 1.0m)" if _tt else "— (chỉ CKN)")
+                st.caption(f"Kích thước bệ: {mong.get('kich_thuoc_be') or mong.get('kich_thuoc_be_goi_y','—')}")
+                for _w in (mong.get("warnings") or []):
+                    if "tương tác" in _w or "Trình tự" in _w:
+                        st.warning(_w)
+                try:      # sơ đồ mặt bằng bệ cọc tự động theo số cọc + kích thước
+                    import utils.pile_plan as _PPm
+                    st.plotly_chart(_PPm.grid_figure(mong),
+                                    use_container_width=True,
+                                    key="mong_grid_fig")
+                except Exception:
+                    pass
+
+            # Cảnh báo chung còn lại
+            _wchung = [w for w in (mong.get("warnings") or [])
+                       if "tương tác" not in w and "Trình tự" not in w]
+            if _wchung or mong.get("khuyen_nghi"):
+                with st.expander("⚠️ Khuyến nghị / cảnh báo kỹ thuật", expanded=False):
                     for kn in mong.get("khuyen_nghi", []):
                         st.warning(kn)
-                    st.caption(mong.get("ghi_chu_mong", ""))
-            else:
-                st.warning("Chưa có kết quả gợi ý móng.")
+                    for _w in _wchung:
+                        st.warning(_w)
+                    st.caption(mong.get("ghi_chu_mong", mong.get("ghi_chu", "")))
+        else:
+            st.warning("Chưa có kết quả gợi ý móng.")
     
         # ── V. BẢN MẶT CẦU & LỚP PHỦ ────────────────────────────────────────
         lop_phu = d.get('lop_phu_result')
@@ -8563,6 +8632,11 @@ with _col_main:
                                  _tru_dxf_bytes),
                                 ("tru3d", "3D — IFC", "tru.ifc",
                                  _pier_ifc_bytes),
+                            ]),
+                            ("Móng cọc (mặt bằng bệ + bảng TCVN 10304:2025)",
+                             "MongCoc", [
+                                ("mong2d", "2D — DXF", "mat_bang_be_coc.dxf",
+                                 lambda: EXP.export_foundation_dxf(d)),
                             ]),
                             ("Kết cấu toàn cầu", "ToanCau", [
                                 ("cau3d", "3D — IFC", "ket_cau_cau.ifc",

@@ -653,6 +653,108 @@ def export_tru_dxf(design_data) -> bytes:
 
 
 # ===========================================================================
+# 3B. DXF — MẶT BẰNG BỆ CỌC (Module 08 — TCVN 10304:2025)
+# ===========================================================================
+def export_foundation_dxf(design_data) -> bytes:
+    """
+    Xuất MẶT BẰNG BỆ CỌC ra DXF kèm BẢNG THỐNG KÊ khoảng cách bố trí theo
+    TCVN 10304:2025 (tim-tim / mép bệ / thông thủy — Module 08).
+    Đọc mong_result: khoang_cach_tim, khoang_cach_mep, khoang_cach_thong_thuy,
+    n_cols_be/n_rows_be, so_coc_be, Be_ngang/Be_doc, kich_thuoc_mm.
+    """
+    if not _HAS_EZDXF:
+        raise RuntimeError("Thiếu thư viện ezdxf")
+
+    mong = design_data.get("mong_result") or {}
+    D_mm = float(mong.get("D_coc_mm") or mong.get("kich_thuoc_mm") or 800)
+    D_m  = D_mm / 1000.0
+    n    = int(mong.get("so_coc_be") or mong.get("So_coc_tu") or 4)
+    S    = float(mong.get("khoang_cach_tim")
+                 or mong.get("khoang_cach_tim_coc") or 3.0 * D_m)
+    n_cols = int(mong.get("n_cols_be") or math.ceil(math.sqrt(n)))
+    n_rows = int(mong.get("n_rows_be") or math.ceil(n / max(1, n_cols)))
+    kt_mep_tim = float(mong.get("khoang_cach_mep_be") or (D_m / 2 + 0.3))
+    Be_W = float(mong.get("Be_ngang") or ((n_cols - 1) * S + 2 * kt_mep_tim))
+    Be_D = float(mong.get("Be_doc")   or ((n_rows - 1) * S + 2 * kt_mep_tim))
+    la_ckn = "khoan nhồi" in str(mong.get("loai_mong")
+                                 or mong.get("loai_coc") or "").lower()
+    mep  = mong.get("khoang_cach_mep") or (0.300 if la_ckn else 0.225)
+    tt   = mong.get("khoang_cach_thong_thuy")
+
+    doc = _setup_doc("MẶT BẰNG BỆ CỌC")
+    msp = doc.modelspace()
+
+    # Bệ cọc
+    pts_be = [(-Be_W/2, -Be_D/2), (Be_W/2, -Be_D/2),
+              (Be_W/2, Be_D/2), (-Be_W/2, Be_D/2)]
+    msp.add_lwpolyline(pts_be + [pts_be[0]], close=True,
+                       dxfattribs={"layer": "PIER", "lineweight": 50})
+
+    # Lưới cọc (tròn CKN/ly tâm; vuông cọc ép)
+    k = 0
+    for r in range(n_rows):
+        for c in range(n_cols):
+            if k >= n:
+                break
+            xc = (c - (n_cols - 1) / 2.0) * S
+            yc = (r - (n_rows - 1) / 2.0) * S
+            if la_ckn:
+                msp.add_circle((xc, yc), D_m / 2,
+                               dxfattribs={"layer": "GIRDER", "lineweight": 40})
+            else:
+                h = D_m / 2
+                sq = [(xc-h, yc-h), (xc+h, yc-h), (xc+h, yc+h), (xc-h, yc+h)]
+                msp.add_lwpolyline(sq + [sq[0]], close=True,
+                                   dxfattribs={"layer": "GIRDER", "lineweight": 40})
+            # tim cọc
+            msp.add_line((xc-0.15, yc), (xc+0.15, yc),
+                         dxfattribs={"layer": "CENTERLINE", "lineweight": 9})
+            msp.add_line((xc, yc-0.15), (xc, yc+0.15),
+                         dxfattribs={"layer": "CENTERLINE", "lineweight": 9})
+            k += 1
+
+    # Kích thước tim-tim (hàng dưới)
+    if n_cols >= 2:
+        y_dim = -Be_D/2 - 0.6
+        x_a = -(n_cols - 1) / 2.0 * S
+        msp.add_line((x_a, y_dim), (x_a + S, y_dim),
+                     dxfattribs={"layer": "DIMS", "lineweight": 18})
+        msp.add_text(f"S={S:g}m", dxfattribs={"layer": "DIMS", "height": 0.22}
+                     ).set_placement((x_a + S/2 - 0.4, y_dim - 0.35))
+
+    # ── BẢNG THỐNG KÊ khoảng cách (TCVN 10304:2025) ─────────────────────
+    rows = [
+        ("BANG THONG KE BO TRI COC (TCVN 10304:2025)", ""),
+        ("So coc / be",        f"{n} ({n_rows}x{n_cols})"),
+        ("Duong kinh/canh D",  f"{D_mm:.0f} mm"),
+        ("Tim-tim S",          f"{S:g} m"
+         + (" (>3.0D)" if la_ckn else " (>=max(750mm,2.5D))")),
+        ("Mat coc -> mep be",  f">= {float(mep)*1000:.0f} mm"),
+    ]
+    if la_ckn and tt:
+        rows.append(("Thong thuy than coc", f"{tt:g} m (>= 1.0 m)"))
+    rows.append(("Kich thuoc be", f"{Be_W:g} x {Be_D:g} m"))
+    x_tb = Be_W / 2 + 1.0
+    y_tb = Be_D / 2
+    for i, (k1, v1) in enumerate(rows):
+        h_txt = 0.28 if i == 0 else 0.22
+        msp.add_text(f"{k1}{(':  ' + v1) if v1 else ''}",
+                     dxfattribs={"layer": "TEXT", "height": h_txt}
+                     ).set_placement((x_tb, y_tb - i * 0.45))
+
+    _title_block(msp,
+                 title="MẶT BẰNG BỆ CỌC",
+                 subtitle=(f"{mong.get('loai_mong') or mong.get('loai_coc','Cọc')} "
+                           f"D{D_mm:.0f}  |  {n} cọc  |  S={S:g}m"),
+                 scale="1:50",
+                 x0=-Be_W / 2, y0=-Be_D / 2 - 3.0)
+
+    buf = io.StringIO()
+    doc.write(buf)
+    return buf.getvalue().encode("utf-8")
+
+
+# ===========================================================================
 # 4 & 5. IFC — LOW-LEVEL API (version-stable, IFC4)
 # ===========================================================================
 def _new_ifc():
