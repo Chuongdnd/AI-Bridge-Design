@@ -714,11 +714,20 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0, x_tim_clearance=0.0,
     Lưu ý quan trọng: x_mo_trai / x_mo_phai trong dict trả về KHÔNG phải là vị trí
     mố thật, mà là điểm đầu / điểm cuối DỰ KIẾN của cầu — dùng để ước lượng chiều
     dài cầu (L_cau). Hai điểm này được quét ĐỘC LẬP (không lấy đối xứng qua tim
-    tĩnh không), mỗi điểm phải thỏa đồng thời 2 điều kiện:
+    tĩnh không), mỗi điểm phải thỏa đồng thời các điều kiện:
+      - Điều kiện 0: nằm NGOÀI mép tĩnh không + khoảng an toàn 2.0m (mố/nền
+        đắp không được lấn vào khổ tĩnh không).
       - Điều kiện 1: quét địa hình 2000 điểm, tìm vị trí có chiều cao đắp
         (đường đỏ − cao độ địa hình THỰC tại điểm đó) gần với h_dap_yc nhất.
       - Điều kiện 2: tại vị trí đó, cao độ đường đỏ offset xuống 2.0m không được
         thấp hơn cao độ MNCN (H1%) + 0.25m (đảm bảo nền đường đầu cầu không ngập lũ).
+
+    ĐẮP THẤP (quan trọng): nếu về một phía KHÔNG có điểm nào đạt chiều cao đắp
+    ≈ h_dap_yc (đường đỏ thấp, H_đắp nhỏ trên toàn tuyến) thì KHÔNG kéo dài cầu
+    đi tìm điểm đắp cao — kinh tế đúng là ĐẮP NỀN ĐƯỜNG tiến sát mép tĩnh không
+    và làm CẦU NGẮN NHẤT: điểm đầu/cuối lấy tại vị trí GẦN TIM NHẤT thỏa ĐK0+ĐK2.
+    Chiều dài tối thiểu của cầu vì vậy chỉ khống chế theo TĨNH KHÔNG
+    (B_tk + 2×2.0m an toàn), không theo chiều dài dầm dự kiến.
     """
     R = res.get('R_hinh_hoc', 5000)
     i_val = res.get('i_max_hinh_hoc', 4.0) / 100
@@ -735,9 +744,18 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0, x_tim_clearance=0.0,
     x_t2_rel = T
     y_t_rel = y_dinh - (T**2) / (2 * R)
 
-    # Ước lượng chiều dài cầu tối thiểu
-    l_nhip_du_kien = res.get('ai_result', {}).get('chieu_dai', 33.0)
-    l_cau_min = l_nhip_du_kien + 10.0
+    # Chiều dài cầu tối thiểu = VƯỢT TĨNH KHÔNG (B_tk + 2×2.0m an toàn mép trụ/
+    # mố — đồng bộ _PIER_SAFETY module 06/11). KHÔNG ép theo chiều dài dầm dự
+    # kiến nữa: đắp thấp → cầu ngắn 1 nhịp, dầm chọn theo nhịp thực sau.
+    B_tk = float(res.get('B', 0) or 0)
+    if B_tk > 0:
+        x_clear_half = B_tk / 2.0 + 2.0     # mép tĩnh không + an toàn (hệ tương đối)
+        l_cau_min = B_tk + 2 * 2.0
+    else:
+        # Dự phòng khi chưa khai báo tĩnh không: giữ hành vi cũ theo dầm dự kiến
+        x_clear_half = 0.0
+        l_nhip_du_kien = res.get('ai_result', {}).get('chieu_dai', 33.0)
+        l_cau_min = l_nhip_du_kien + 10.0
 
     # Quét địa hình 2000 điểm dọc tuyến (±500m quanh tim tĩnh không)
     x_scan_rel = np.linspace(-500, 500, 2000)
@@ -781,26 +799,42 @@ def tinh_toan_geo_logic(res, h_tn_tb, h_dam, h_dap_yc=6.0, x_tim_clearance=0.0,
     dat_dk2 = y_scan_rel >= nguong_dk2_rel
 
     def _tim_diem(mask_phia):
-        """Tìm điểm (tương đối), trong phạm vi mask_phia, thỏa đồng thời ĐK2 (nếu có
-        thể) và gần ĐK1 (chiều cao đắp ≈ h_dap_yc) nhất."""
+        """Tìm điểm (tương đối), trong phạm vi mask_phia, thỏa lần lượt:
+        ĐK0 — nằm NGOÀI mép tĩnh không + 2.0m an toàn;
+        ĐK2 — nền đường đầu cầu không ngập lũ (nếu có thể);
+        ĐK1 — chiều cao đắp ≈ h_dap_yc.
+        ĐẮP THẤP: phía này không có điểm nào đạt H_đắp ≥ h_dap_yc → KHÔNG kéo
+        dài cầu; chọn điểm GẦN TIM NHẤT (sát mép tĩnh không) — nền đắp tiến
+        sát khổ tĩnh không, cầu ngắn nhất."""
         idx_phia = np.where(mask_phia)[0]
+        # ĐK0 — ngoài tĩnh không (khi biết B_tk)
+        if x_clear_half > 0:
+            idx_ngoai = idx_phia[np.abs(x_scan_rel[idx_phia]) >= x_clear_half]
+            if len(idx_ngoai) > 0:
+                idx_phia = idx_ngoai
+        # ĐK2 — an toàn ngập lũ
         idx_an_toan = idx_phia[dat_dk2[idx_phia]]
         idx_xet = idx_an_toan if len(idx_an_toan) > 0 else idx_phia
-        idx_chon = idx_xet[np.argmin(np.abs(delta_y[idx_xet] - h_dap_yc))]
-        return idx_chon
+        # ĐẮP THẤP toàn phía → điểm gần tim nhất (cầu ngắn, nền đắp thay nhịp)
+        if float(np.max(delta_y[idx_xet])) < h_dap_yc:
+            return idx_xet[np.argmin(np.abs(x_scan_rel[idx_xet]))]
+        # Bình thường → ĐK1: điểm có chiều cao đắp gần h_dap_yc nhất
+        return idx_xet[np.argmin(np.abs(delta_y[idx_xet] - h_dap_yc))]
 
     # Điểm đầu (bên trái tim tĩnh không) và điểm cuối (bên phải) — quét độc lập
     idx_dau = _tim_diem(x_scan_rel < 0)
     idx_cuoi = _tim_diem(x_scan_rel > 0)
     x_dau_rel = x_scan_rel[idx_dau]
     x_cuoi_rel = x_scan_rel[idx_cuoi]
-    # Cao độ địa hình thực (tương đối) ngay tại điểm đầu/cuối đã chọn
-    y_dau_tuong_doi = h_tn_tai_diem_tuong_doi[idx_dau]
-    y_cuoi_tuong_doi = h_tn_tai_diem_tuong_doi[idx_cuoi]
 
-    # Khống chế chiều dài tối thiểu
+    # Khống chế chiều dài tối thiểu (vượt trọn tĩnh không)
     x_dau_rel = min(x_dau_rel, -l_cau_min / 2)
     x_cuoi_rel = max(x_cuoi_rel, l_cau_min / 2)
+    # Cao độ địa hình thực (tương đối) tại điểm đầu/cuối SAU khống chế
+    y_dau_tuong_doi = float(np.interp(x_dau_rel, x_scan_rel,
+                                      h_tn_tai_diem_tuong_doi))
+    y_cuoi_tuong_doi = float(np.interp(x_cuoi_rel, x_scan_rel,
+                                       h_tn_tai_diem_tuong_doi))
 
     # Chuyển sang hệ tọa độ thực tế bằng cách cộng với x_tim_clearance
     offset = x_tim_clearance

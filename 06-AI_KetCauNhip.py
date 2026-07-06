@@ -677,10 +677,14 @@ def _filter_group(L_min_geo, lien_mach, L_cau=None):
     def _pick(lm):
         grp = [r for r in BEAM_CATALOG
                if _rec_lien_mach(r) == lm and r[1] >= L_min_geo - 1e-6]
-        if L_max is not None:
+        if L_max is not None and grp:
             capped = [r for r in grp if r[1] <= L_max + 1e-6]
             if capped:
                 return capped
+            # Không dầm nào ngắn hơn cầu → lấy các dầm NGẮN NHẤT vượt nhịp
+            # tối thiểu (không dùng dầm 38m cho cầu ~17m chỉ vì điểm cao).
+            L_ngan = min(r[1] for r in grp)
+            return [r for r in grp if r[1] <= L_ngan + 1e-6]
         return grp
 
     grp = _pick(lien_mach)
