@@ -2681,16 +2681,22 @@ def dialog_step3():
                 is_river = 1
                 _n_nhip = (res.get('kcn_result', {}).get('tong_so_nhip', 1)
                            if res.get('kcn_result') else 1)
+                _L_nhip_mot = float(
+                    (res.get('kcn_result') or {}).get('chieu_dai') or 20.0)
                 res['tru_result'] = MOT.predict_pier(
                     vtk=res['vtk'], B_cau=res['bc'],
                     H_tru=H_tru_est, is_urban=is_urban,
                     is_river=is_river, cap_song=res['cap_song'],
                     loai_dam=loai_dam_cho_tru, n_nhip=_n_nhip,
                     models=pier_models,
+                    # L_nhip → phân nhóm trụ dẻo; L_cau → BẢN QUÁ ĐỘ bắt buộc
+                    L_nhip=_L_nhip_mot,
+                    L_cau=(res.get('geo_logic') or {}).get('L_cau'),
                 )
                 _tr = res.get('tru_result') or {}
                 tracker.done("MOT",
-                    f"{_tr.get('loai_tru','?')}  H_trụ≈{H_tru_est:.1f}m")
+                    f"{_tr.get('loai_tru','?')} (nhóm {_tr.get('nhom_tru','?')})"
+                    f"  H_trụ≈{H_tru_est:.1f}m")
             except Exception as _e:
                 tracker.error("MOT", str(_e))
                 res['tru_result'] = None
@@ -3098,11 +3104,14 @@ def _render_right_panel(d: dict) -> None:
     if _tru:
         _lt = _tru.get('loai_tru', '—')
         _ht = d.get('H_tru_est', '—')
-        _lmo = _tru.get('loai_mo', '—')
+        _lmo = ((_tru.get('ket_qua_mo') or {}).get('loai_mo')
+                or _tru.get('loai_mo', '—'))
+        _nhomt = _tru.get('nhom_tru')
         _c2 = (
             f"<div style='font-size:13px;font-weight:600;color:#c39bd3'>{_lt}</div>"
             f"<div style='font-size:10px;color:#888;margin-top:3px'>"
-            f"H≈{_ht}m · Mố: {str(_lmo)[:18]}</div>"
+            + (f"Nhóm {_nhomt} · " if _nhomt else "")
+            + f"H≈{_ht}m · Mố: {str(_lmo)[:18]}</div>"
         )
     else:
         _c2 = "<div style='font-size:11px;color:#444;text-align:center;padding:6px'>Chưa tính toán</div>"
@@ -6727,6 +6736,18 @@ with _col_main:
                 tc1, tc2 = st.columns([3, 2])
                 with tc1:
                     st.markdown(f"### Loại trụ: **{tru['loai_tru']}**")
+                    _nhom_t = tru.get('nhom_tru')
+                    if _nhom_t:
+                        st.caption(
+                            f"🏛️ Nhóm cấu tạo: **{tru.get('ten_nhom') or _nhom_t}** "
+                            f"(dẻo / cột / đặc thân hẹp)")
+                        try:
+                            _g_t = MOT.PIER_TYPES.get(_nhom_t) or {}
+                            if _g_t:
+                                st.caption(f"• Cấu tạo: {_g_t['dac_diem']}")
+                                st.caption(f"• Áp dụng: {_g_t['dieu_kien']}")
+                        except Exception:
+                            pass
                     H_tru = d.get('H_tru_est', 0)
                     cao_dd = d.get('cao_day_dam', 0)
                     cao_mc = d.get('cao_mat_cau', 0)
@@ -6749,6 +6770,34 @@ with _col_main:
                         for r in tru['xep_hang']:
                             bar = "█" * int(r['xac_suat'] / 5)
                             st.text(f"  {r['loai']:25s} {bar}  {r['xac_suat']:.0f}%")
+                    # ── MỐ + BẢN QUÁ ĐỘ (bắt buộc cho mọi mố) ────────────
+                    _mo_kq = tru.get('ket_qua_mo') or {}
+                    _bqd = _mo_kq.get('ban_qua_do') or {}
+                    if _bqd:
+                        st.markdown(
+                            f"**Mố: {_mo_kq.get('loai_mo','—')}** · Bản quá độ "
+                            "(cấu kiện **bắt buộc**):")
+                        st.table(pd.DataFrame({
+                            "Thông số bản quá độ": [
+                                "Chiều dài L_bqd",
+                                "Chiều dày bản",
+                                "Độ dốc dọc",
+                                "Đất đắp mặt đường → mặt bản",
+                                "Vật liệu",
+                                "Vị trí lắp đặt",
+                            ],
+                            "Giá trị": [
+                                f"{_bqd.get('L_bqd','—')} m "
+                                f"({_bqd.get('L_bqd_range','')} — {_bqd.get('quy_mo_cau','')})",
+                                f"≥ {_bqd.get('day_bqd',0.3)*100:.0f} cm",
+                                str(_bqd.get('doc_bqd','10–15%')),
+                                f"≥ {_bqd.get('chieu_sau_dat_dap_toi_thieu',0.7)*100:.0f} cm",
+                                str(_bqd.get('vat_lieu','BTCT M300')),
+                                str(_bqd.get('vi_tri_lap_dat','')),
+                            ],
+                        }))
+                        if _bqd.get('canh_bao'):
+                            st.warning("⚠️ " + _bqd['canh_bao'])
                 with tc2:
                     conf_tru = tru.get('do_tin_cay', 0)
                     color_tru = "#27ae60" if conf_tru >= 70 else ("#f39c12" if conf_tru >= 50 else "#e74c3c")
