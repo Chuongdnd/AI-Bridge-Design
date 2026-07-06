@@ -3,7 +3,17 @@ Module 07 — AI Mo - Tru (Pier Classification AI)
 Data  : Bridge_Train_Dataset_v3.xlsx — sheet 06_Mo-Tru + 02 + 03 + 07
 Features: Vtk, B_cau, H_tru, Is_Urban, Is_River, Cap_song, Loai_dam
 Label   : Loai_tru (phan loai tru)
-Fallback: Rule-Based 6 tang khi chua co du lieu train
+Fallback: Rule-Based khi chua co du lieu train
+
+Phân loại TRỤ theo 3 NHÓM cấu tạo chính (PIER_TYPES):
+  1. Trụ DẺO (Trụ cọc)      — nhịp ngắn ≤12m, trụ thấp ≤4m, không thông thuyền
+  2. Trụ CỘT (thân cột BTCT) — cầu cạn/cầu vượt/sông cấp IV–VI; 1 cột (đô thị)
+                               hoặc nhiều cột (2–4) theo bề rộng cầu
+  3. Trụ ĐẶC THÂN HẸP        — sông lớn cấp I–III, va tàu; H>10m → biến thể rỗng
+Kết quả trả đồng thời nhom_tru (dẻo/cột/đặc thân hẹp) + loai_tru chi tiết.
+
+MỐ: mọi mố BẮT BUỘC có BẢN QUÁ ĐỘ (ban_qua_do trong ket_qua_mo) — kích thước
+theo quy mô cầu (BAN_QUA_DO_CONFIG), dày ≥30cm, dốc 10–15%, đất đắp ≥70cm.
 """
 
 import os
@@ -24,48 +34,220 @@ _CAP_SONG_ORDER = ["I", "II", "III", "IV", "V", "VI"]
 # Ánh xạ chuỗi số → La Mã
 _CAP_SONG_MAP = {"1": "I", "2": "II", "3": "III", "4": "IV", "5": "V", "6": "VI"}
 
-# Danh sách loại trụ chuẩn
-PIER_TYPES = [
-    "Trụ đặc",            # Solid Wall — thân tường đặc, thấp
-    "Trụ đặc thân hẹp",   # Solid Wall hẹp — sông lớn, chịu va tàu
-    "Trụ cột đơn",        # Single-Column (chữ T / đầu búa) — đô thị
-    "Thân cột 2 trụ",     # Bent Pier 2 cột — cầu vừa
-    "Thân cột 3 trụ",     # Bent Pier 3 cột — cầu rộng
-    "Thân rỗng",          # Hollow — trụ cao H > 10m
-]
+# ---------------------------------------------------------------------------
+# PHÂN LOẠI TRỤ THEO 3 NHÓM CẤU TẠO CHÍNH
+# ---------------------------------------------------------------------------
+# Mỗi nhóm có đặc điểm cấu tạo + điều kiện áp dụng riêng; loại con trong nhóm
+# xác định sau khi đã chọn nhóm (xem _rule_based_pier).
+PIER_TYPES = {
+    "dẻo": {
+        "ten_nhom": "Trụ dẻo (Trụ cọc)",
+        "dac_diem": (
+            "1 hoặc 2 hàng cọc tiết diện nhỏ 30×30 đến 40×40 cm liên kết "
+            "TRỰC TIẾP với xà mũ, KHÔNG có bệ trụ riêng."
+        ),
+        "dieu_kien": (
+            "Cầu nhiều nhịp ngắn L_nhịp ≤ 12m; trụ thấp H_trụ ≤ 4m; lòng "
+            "sông không sâu, không thông thuyền (không vượt sông hoặc sông "
+            "cấp V–VI). Thường kết hợp với Mố dẻo (Mố chân dê)."
+        ),
+        "loai": ["Trụ cọc"],
+    },
+    "cột": {
+        "ten_nhom": "Trụ cột (Trụ thân cột BTCT)",
+        "dac_diem": (
+            "Thanh mảnh: 1 hoặc nhiều cột tròn/chữ nhật liên kết với xà mũ "
+            "chịu uốn, CÓ bệ móng riêng. Đường kính cột phổ biến 0.8–2m, "
+            "cá biệt 3m."
+        ),
+        "dieu_kien": (
+            "Cầu cạn, cầu vượt, cầu vượt sông cấp IV–VI ít cây trôi, nhịp "
+            "trung bình. Trụ 1 cột cho cầu vượt đô thị (giải phóng tối đa "
+            "không gian gầm cầu); trụ nhiều cột (2–4) cho cầu vừa và rộng."
+        ),
+        "loai": ["Trụ cột đơn", "Thân cột 2 trụ", "Thân cột 3 trụ",
+                 "Thân cột 4 trụ"],
+    },
+    "đặc thân hẹp": {
+        "ten_nhom": "Trụ đặc thân hẹp",
+        "dac_diem": (
+            "Phần thân dưới THU HẸP so với bề rộng kết cấu nhịp (ngược với "
+            "2 nhóm trên). Mũi vát nhọn, hệ số cản dòng chảy CD = 0.7–0.8."
+        ),
+        "dieu_kien": (
+            "Cầu vượt sông lớn cấp I–III, chịu va tàu lớn, nhiều cây trôi. "
+            "Khi H_trụ > 10m chuyển sang biến thể Trụ đặc thân hẹp RỖNG để "
+            "giảm khối lượng vật liệu."
+        ),
+        "loai": ["Trụ đặc thân hẹp", "Trụ đặc thân hẹp rỗng"],
+    },
+}
+
+# Danh sách phẳng tương thích ngược (code cũ duyệt PIER_TYPES như list)
+PIER_TYPES_FLAT = [lt for g in PIER_TYPES.values() for lt in g["loai"]]
+
+
+def nhom_tru_of(loai_tru: str) -> str:
+    """Tra NHÓM cấu tạo ('dẻo'/'cột'/'đặc thân hẹp') từ tên loại trụ chi tiết.
+    Nhận cả tên cũ ('Trụ đặc', 'Thân rỗng'…) để tương thích dữ liệu đã lưu."""
+    s = str(loai_tru or "").strip().lower()
+    for nhom, g in PIER_TYPES.items():
+        if any(s == lt.lower() for lt in g["loai"]):
+            return nhom
+    if "cọc" in s:
+        return "dẻo"
+    if "đặc" in s or "rỗng" in s:
+        return "đặc thân hẹp"
+    if "cột" in s:
+        return "cột"
+    return "cột"
+
 
 # Ghi chú kỹ thuật tra cứu ưu nhược điểm (dùng trong UI để hiển thị tooltip)
 PIER_NOTES = {
-    "Trụ đặc": (
-        "Độ cứng cao, thi công đơn giản. "
-        "Phù hợp trụ thấp ≤ 2.5m. Tốn vật liệu nếu trụ cao."
+    # ── Nhóm 1 — Trụ dẻo ────────────────────────────────────────────────
+    "Trụ cọc": (
+        "Nhóm TRỤ DẺO: 1–2 hàng cọc 30×30 đến 40×40 cm liên kết trực tiếp "
+        "xà mũ, KHÔNG bệ trụ riêng — cấu tạo đơn giản, kinh tế nhất cho cầu "
+        "nhiều nhịp ngắn ≤ 12m, trụ thấp ≤ 4m, lòng sông nông không thông "
+        "thuyền. Thường đi cùng Mố dẻo (chân dê). Không dùng nơi va xô lớn."
     ),
-    "Trụ đặc thân hẹp": (
-        "Tiết diện đặc chịu va tàu tốt. Mũi vát nhọn CD=0.7–0.8 "
-        "giảm cản dòng chảy. Không cần ụ bảo vệ riêng. "
-        "Chi phí ban đầu cao nhưng kinh tế dài hạn tại luồng nhộn nhịp."
-    ),
+    # ── Nhóm 2 — Trụ cột ────────────────────────────────────────────────
     "Trụ cột đơn": (
-        "Chiếm ít mặt bằng, thông thoáng không gian dưới cầu. "
-        "Phù hợp cầu hẹp, cầu cong, cầu chéo đô thị. "
-        "Yêu cầu móng tập trung vững chắc (cọc khoan nhồi đường kính lớn)."
+        "Nhóm TRỤ CỘT: 1 cột (tròn/chữ nhật, D phổ biến 0.8–2m, cá biệt 3m) "
+        "+ bệ móng riêng. Giải phóng tối đa không gian dưới gầm — chuẩn cho "
+        "cầu vượt đô thị, cầu cong/chéo. Yêu cầu móng tập trung vững chắc "
+        "(cọc khoan nhồi đường kính lớn)."
     ),
     "Thân cột 2 trụ": (
-        "Hệ khung ngang vững, phân tán lực tốt. "
-        "Có thể kéo dài cọc lên làm cột, thi công nhanh. "
-        "Chú ý xói lở và rác kẹt khi cọc lộ trước dòng chảy."
+        "Nhóm TRỤ CỘT: khung ngang 2 cột + xà mũ chịu uốn, có bệ móng riêng. "
+        "Phân tán lực tốt, thi công nhanh, phù hợp cầu vừa B<16m; cầu cạn / "
+        "sông cấp IV–VI ít cây trôi. Chú ý xói lở và rác kẹt chân cột."
     ),
     "Thân cột 3 trụ": (
-        "Phù hợp cầu rộng ≥ 16m, phân tán tải đều. "
-        "Thi công phức tạp hơn thân cột 2 trụ. "
-        "Chi phí bảo trì cao hơn do nhiều cấu kiện phơi lộ."
+        "Nhóm TRỤ CỘT: 3 cột cho cầu rộng 16–24m, phân tán tải đều. "
+        "Thi công phức tạp hơn 2 cột; nhiều cấu kiện phơi lộ hơn."
+    ),
+    "Thân cột 4 trụ": (
+        "Nhóm TRỤ CỘT: 4 cột cho cầu rất rộng ≥ 24m. "
+        "Kiểm tra phân bố tải xà mũ và độ cứng ngang tổng thể."
+    ),
+    # ── Nhóm 3 — Trụ đặc thân hẹp ───────────────────────────────────────
+    "Trụ đặc thân hẹp": (
+        "Nhóm TRỤ ĐẶC THÂN HẸP: thân dưới thu hẹp so với bề rộng nhịp, mũi "
+        "vát nhọn CD=0.7–0.8 giảm cản dòng. Chịu va tàu lớn, chống cây trôi "
+        "— chuẩn cho sông cấp I–III. Không cần ụ bảo vệ riêng; chi phí ban "
+        "đầu cao nhưng kinh tế dài hạn tại luồng nhộn nhịp."
+    ),
+    "Trụ đặc thân hẹp rỗng": (
+        "Biến thể RỖNG của trụ đặc thân hẹp khi H_trụ > 10m — giảm khối "
+        "lượng vật liệu, giữ khả năng chịu va tàu. Thi công yêu cầu ván "
+        "khuôn trượt/leo; tham vấn chuyên gia tại giai đoạn TKKT."
+    ),
+    # ── Tên cũ (tương thích dữ liệu đã lưu) ─────────────────────────────
+    "Trụ đặc": (
+        "Tên cũ (≤ v2). Độ cứng cao, thi công đơn giản, phù hợp trụ thấp; "
+        "phân loại mới xếp theo nhóm TRỤ ĐẶC THÂN HẸP."
     ),
     "Thân rỗng": (
-        "Tiết kiệm vật liệu cho trụ cao > 10m. "
-        "Thi công yêu cầu kỹ thuật ván khuôn trượt hoặc leo. "
-        "Khuyến nghị tham vấn chuyên gia tại giai đoạn TKKT."
+        "Tên cũ (≤ v2) cho trụ cao > 10m; phân loại mới dùng "
+        "'Trụ đặc thân hẹp rỗng' trong nhóm TRỤ ĐẶC THÂN HẸP."
     ),
 }
+
+# ---------------------------------------------------------------------------
+# BẢN QUÁ ĐỘ — CẤU KIỆN BẮT BUỘC CHO MỌI MỐ CẦU
+# ---------------------------------------------------------------------------
+# 4 chức năng thiết yếu: (1) khắc phục điểm xóc đầu cầu do đất đắp trong lòng
+# mố khó đạt độ chặt tuyệt đối; (2) chuyển tiếp độ cứng dần dần giữa nền đường
+# mềm và mố cầu cứng; (3) xử lý bù trừ lún chênh lệch khi độ chênh < 5cm;
+# (4) phân phối lại tải trọng (đất đắp + hoạt tải xe) lên mố theo hướng tích
+# cực cho ổn định.
+BAN_QUA_DO_CONFIG = {
+    # Chiều dài bản theo QUY MÔ CẦU (L_cau = chiều dài toàn cầu, m)
+    "chieu_dai_theo_quy_mo": [
+        {"quy_mo": "Cầu nhỏ (L ≤ 25m)",        "L_max_cau": 25.0,
+         "L_bqd_min": 5.0,  "L_bqd_max": 5.0},
+        {"quy_mo": "Cầu trung (25 < L ≤ 100m)", "L_max_cau": 100.0,
+         "L_bqd_min": 6.0,  "L_bqd_max": 8.0},
+        {"quy_mo": "Cầu lớn (L > 100m)",        "L_max_cau": None,
+         "L_bqd_min": 8.0,  "L_bqd_max": 12.0},
+    ],
+    # Thông số cấu tạo CỐ ĐỊNH
+    "day_bqd_min_m":       0.30,   # chiều dày bản ≥ 30cm
+    "doc_bqd_min":         0.10,   # độ dốc dọc 10–15% về phía nền đường
+    "doc_bqd_max":         0.15,
+    "chieu_sau_dat_dap_m": 0.70,   # đất đắp mặt đường → mặt bản ≥ 70cm
+    "vat_lieu":            "BTCT M300 đổ tại chỗ hoặc đúc sẵn",
+    "vi_tri_lap_dat": (
+        "Một đầu bản kê lên tường đỉnh mố, đầu còn lại đặt trên dầm kê "
+        "nằm trong nền đường."
+    ),
+    "chuc_nang": [
+        "Khắc phục hiện tượng điểm xóc đầu cầu (đất đắp trong lòng mố khó "
+        "đạt độ chặt tuyệt đối)",
+        "Chuyển tiếp độ cứng dần dần giữa nền đường mềm và mố cầu cứng",
+        "Xử lý lún chênh lệch — bù trừ khi độ chênh < 5cm",
+        "Phân phối lại tải trọng đất đắp + hoạt tải xe lên mố theo hướng "
+        "tích cực cho ổn định",
+    ],
+}
+
+
+def _calc_ban_qua_do(L_cau=None):
+    """
+    Tính thông số BẢN QUÁ ĐỘ (cấu kiện BẮT BUỘC cho mọi mố) theo quy mô cầu.
+
+    Parameters
+    ----------
+    L_cau : float or None — chiều dài toàn cầu (m), từ geo_logic["L_cau"]
+            (Module 02). None → fallback 25m (cầu nhỏ) kèm cảnh báo.
+
+    Returns
+    -------
+    dict: L_bqd (m, giá trị chọn), L_bqd_range (chuỗi khoảng quy định),
+          quy_mo_cau, day_bqd, doc_bqd (chuỗi), doc_bqd_val (số),
+          chieu_sau_dat_dap_toi_thieu, vat_lieu, vi_tri_lap_dat,
+          chuc_nang (list), canh_bao ('' nếu đủ dữ liệu).
+    """
+    cfg = BAN_QUA_DO_CONFIG
+    canh_bao = ""
+    if not L_cau or float(L_cau) <= 0:
+        L_cau = 25.0
+        canh_bao = ("Chưa có L_cau từ Module 02 (geo_logic) — tạm dùng 25m "
+                    "(cầu nhỏ) để tính bản quá độ; chạy pipeline đầy đủ để "
+                    "cập nhật.")
+    L_cau = float(L_cau)
+
+    for band in cfg["chieu_dai_theo_quy_mo"]:
+        if band["L_max_cau"] is None or L_cau <= band["L_max_cau"]:
+            break
+    lo, hi = band["L_bqd_min"], band["L_bqd_max"]
+    # Giá trị chọn: nội suy tuyến tính trong khoảng quy định theo L_cau
+    if hi > lo:
+        if band["L_max_cau"] is not None:            # cầu trung 25→100m
+            t = (L_cau - 25.0) / (band["L_max_cau"] - 25.0)
+        else:                                        # cầu lớn 100m→300m (chặn)
+            t = min(1.0, (L_cau - 100.0) / 200.0)
+        L_bqd = round((lo + max(0.0, min(1.0, t)) * (hi - lo)) * 2) / 2.0
+    else:
+        L_bqd = lo
+
+    return {
+        "L_bqd":       L_bqd,
+        "L_bqd_range": (f"{lo:g}m" if hi == lo else f"{lo:g}–{hi:g}m"),
+        "quy_mo_cau":  band["quy_mo"],
+        "day_bqd":     cfg["day_bqd_min_m"],
+        "doc_bqd":     (f"{cfg['doc_bqd_min']*100:.0f}–"
+                        f"{cfg['doc_bqd_max']*100:.0f}% về phía nền đường"),
+        "doc_bqd_val": cfg["doc_bqd_min"],
+        "chieu_sau_dat_dap_toi_thieu": cfg["chieu_sau_dat_dap_m"],
+        "vat_lieu":       cfg["vat_lieu"],
+        "vi_tri_lap_dat": cfg["vi_tri_lap_dat"],
+        "chuc_nang":      list(cfg["chuc_nang"]),
+        "canh_bao":       canh_bao,
+    }
+
 
 # Danh sách loại mố chuẩn (phạm vi đề tài: 2 loại)
 ABUTMENT_TYPES = [
@@ -273,129 +455,116 @@ def train_pier_ai(v3_path=None, **_):
 
 
 # ---------------------------------------------------------------------------
-# 3. QUY TẮC KỸ THUẬT — MA TRẬN 6 TẦNG
+# 3. QUY TẮC KỸ THUẬT — PHÂN NHÓM TRƯỚC, LOẠI CON SAU
 # ---------------------------------------------------------------------------
 def _rule_based_pier(vtk, B_cau, H_tru, is_urban, is_river,
-                     cap_song="VI", loai_dam="", n_nhip=1, note=""):
+                     cap_song="VI", loai_dam="", n_nhip=1, note="",
+                     L_nhip=None):
     """
-    Phân loại trụ cầu theo ma trận quyết định 6 tầng.
+    Phân loại trụ theo 3 NHÓM cấu tạo chính (PIER_TYPES), sau đó xác định
+    LOẠI CON trong nhóm.
 
-    Tầng 1 → chiều cao (tuyệt đối)
-    Tầng 2 → cấp sông / va tàu
-    Tầng 3 → bề rộng cầu (cấp V–VI)
-    Tầng 4 → điều chỉnh đô thị
-    Tầng 5 → tải trọng kết cấu nhịp
-    Tầng 6 → trụ rất cao (H > 10m)
+    Bước 1 — PHÂN NHÓM theo điều kiện chính:
+      • Nhóm DẺO (Trụ cọc): L_nhịp ≤ 12m, H_trụ ≤ 4m, không thông thuyền
+        (không vượt sông hoặc sông cấp V–VI). Cọc nhỏ 30×30–40×40cm nối
+        thẳng xà mũ, không bệ riêng; thường đi cùng Mố chân dê.
+      • Nhóm ĐẶC THÂN HẸP: vượt sông LỚN cấp I–III (va tàu lớn, cây trôi).
+        Thân dưới thu hẹp, mũi vát CD=0.7–0.8.
+      • Nhóm CỘT (còn lại): cầu cạn/cầu vượt/sông cấp IV–VI ít cây trôi.
+
+    Bước 2 — LOẠI CON trong nhóm:
+      • Dẻo         → "Trụ cọc".
+      • Cột         → đô thị hoặc B<10m: "Trụ cột đơn" (giải phóng gầm cầu);
+                      B<16m: 2 cột; B<24m: 3 cột; còn lại: 4 cột.
+      • Đặc thân hẹp→ H ≤ 10m: "Trụ đặc thân hẹp";
+                      H > 10m: "Trụ đặc thân hẹp rỗng" (giảm vật liệu).
+
+    Returns dict có ĐỒNG THỜI nhom_tru (dẻo/cột/đặc thân hẹp — giao diện và
+    Module 11 dùng) và loai_tru chi tiết (tương thích ngược code cũ).
     """
     cap_int = _encode_cap_song(cap_song) if cap_song else 4
-    can_than_rong = H_tru > 10
+    _L_nhip = float(L_nhip) if L_nhip else 20.0
     notes = []
-    tang = ""
 
-    # ── Tầng 1 — Chiều cao trụ (ưu tiên tuyệt đối) ──────────────────────
-    if H_tru <= 2.5:
-        loai = "Trụ đặc"
-        tang = "Tầng 1 — H_tru thấp"
-        notes.append(f"H_tru={H_tru:.1f}m ≤ 2.5m — trụ đặc kinh tế nhất")
-        ghi_chu = "; ".join(notes)
-        if note:
-            ghi_chu = (ghi_chu + ". " + note).strip()
-        return {
-            "loai_tru":        loai,
-            "do_tin_cay":      100.0,
-            "tang_quyet_dinh": tang,
-            "ghi_chu":         ghi_chu,
-            "phuong_phap":     "Rule-Based",
-        }
-
-    # ── Tầng 2 — Cấp sông xác định yêu cầu chịu va tàu ─────────────────
-    # Bỏ qua Tầng 2 nếu không phải vượt sông (không có yêu cầu va tàu)
-    if not is_river:
-        cap_int = 6  # ép về cấp VI để rơi xuống Tầng 3 (width-based)
-
-    if cap_int <= 2:
-        # Cấp I–II: tải va tàu rất lớn, bắt buộc tiết diện đặc
-        loai = "Trụ đặc thân hẹp"
-        tang = "Tầng 2 — Cấp sông"
-        notes.append(f"Cấp {cap_song} — tải va tàu rất lớn, bắt buộc tiết diện đặc")
-
-    elif cap_int <= 4:
-        # Cấp III–IV: va tàu vừa
-        if not is_urban:
-            loai = "Trụ đặc thân hẹp"
-            tang = "Tầng 2 — Cấp sông"
-            notes.append(
-                f"Cấp {cap_song}, không đô thị — tiết diện đặc tối ưu thủy lực CD=0.7–0.8"
-            )
-        else:
-            loai = "Thân cột 2 trụ"
-            tang = "Tầng 2 — Cấp sông"
-            notes.append(
-                f"Cấp {cap_song}, đô thị — thân cột ưu tiên thông thoáng mỹ quan"
-            )
-
+    # ── Bước 1 — PHÂN NHÓM ──────────────────────────────────────────────
+    khong_thong_thuyen = (not is_river) or cap_int >= 5
+    if _L_nhip <= 12.0 and H_tru <= 4.0 and khong_thong_thuyen:
+        nhom = "dẻo"
+        tang = "Nhóm 1 — Trụ dẻo (Trụ cọc)"
+        notes.append(
+            f"L_nhịp={_L_nhip:.0f}m ≤ 12m, H_trụ={H_tru:.1f}m ≤ 4m, "
+            + ("không vượt sông" if not is_river else f"sông cấp {cap_song} không thông thuyền")
+            + " — trụ dẻo: cọc 30×30–40×40cm nối trực tiếp xà mũ, không bệ "
+              "riêng; kết hợp Mố dẻo (chân dê)")
+    elif is_river and cap_int <= 3:
+        nhom = "đặc thân hẹp"
+        tang = "Nhóm 3 — Trụ đặc thân hẹp"
+        notes.append(
+            f"Sông lớn cấp {cap_song} — va tàu lớn, nhiều cây trôi: thân "
+            "dưới thu hẹp, mũi vát nhọn CD=0.7–0.8")
     else:
-        # Cấp V–VI → xét Tầng 3
-        if B_cau < 10:
-            loai = "Trụ cột đơn"
-            tang = "Tầng 3 — Bề rộng cầu"
+        nhom = "cột"
+        tang = "Nhóm 2 — Trụ cột"
+        notes.append(
+            ("Cầu cạn/cầu vượt" if not is_river else f"Sông cấp {cap_song} ít cây trôi")
+            + " — trụ thân cột BTCT (cột D 0.8–2m, có bệ móng riêng)")
+
+    # ── Bước 2 — LOẠI CON trong nhóm ────────────────────────────────────
+    if nhom == "dẻo":
+        loai = "Trụ cọc"
+
+    elif nhom == "đặc thân hẹp":
+        if H_tru > 10.0:
+            loai = "Trụ đặc thân hẹp rỗng"
             notes.append(
-                f"Cấp {cap_song}, B_cau={B_cau:.1f}m < 10m — cầu hẹp, trụ cột đơn tiết kiệm mặt bằng"
-            )
+                f"H_trụ={H_tru:.1f}m > 10m — biến thể thân RỖNG giảm khối "
+                "lượng vật liệu")
+        else:
+            loai = "Trụ đặc thân hẹp"
+
+    else:  # nhóm cột
+        if is_urban:
+            loai = "Trụ cột đơn"
+            notes.append(
+                "Đô thị — trụ 1 cột giải phóng tối đa không gian dưới gầm cầu")
+        elif B_cau < 10:
+            loai = "Trụ cột đơn"
+            notes.append(f"B_cau={B_cau:.1f}m < 10m — cầu hẹp, 1 cột đủ")
         elif B_cau < 16:
             loai = "Thân cột 2 trụ"
-            tang = "Tầng 3 — Bề rộng cầu"
-            notes.append(f"Cấp {cap_song}, B_cau={B_cau:.1f}m — cầu vừa, thân cột 2 trụ")
-        else:
+            notes.append(f"B_cau={B_cau:.1f}m — cầu vừa, 2 cột")
+        elif B_cau < 24:
             loai = "Thân cột 3 trụ"
-            tang = "Tầng 3 — Bề rộng cầu"
-            notes.append(
-                f"Cấp {cap_song}, B_cau={B_cau:.1f}m ≥ 16m — cầu rộng, thân cột 3 trụ"
-            )
+            notes.append(f"B_cau={B_cau:.1f}m — cầu rộng, 3 cột")
+        else:
+            loai = "Thân cột 4 trụ"
+            notes.append(f"B_cau={B_cau:.1f}m ≥ 24m — cầu rất rộng, 4 cột")
 
-    # ── Tầng 4 — Điều chỉnh theo môi trường đô thị ───────────────────────
-    if is_urban:
-        if loai == "Trụ đặc thân hẹp" and cap_int >= 4:
-            # Va tàu không quá lớn (cấp IV trở đi) → ưu tiên thông thoáng
+        # Điều chỉnh tải trọng nặng: nhiều nhịp dầm nặng KHÔNG đô thị → ≥2 cột
+        _HEAVY = ("Super-T", "Dầm I")
+        loai_dam_str = str(loai_dam).strip()
+        if (loai_dam_str in _HEAVY and n_nhip >= 4
+                and loai == "Trụ cột đơn" and not is_urban):
             loai = "Thân cột 2 trụ"
-            tang = "Tầng 4 — Đô thị"
             notes.append(
-                "Đô thị cấp ≥ IV: đổi sang thân cột — ưu tiên thông thoáng không gian và mỹ quan"
-            )
-        if B_cau < 10 and loai != "Trụ cột đơn":
-            loai = "Trụ cột đơn"
-            tang = "Tầng 4 — Đô thị"
-            notes.append("Đô thị B_cau < 10m: trụ cột đơn — chiếm ít mặt bằng nút giao")
-
-    # ── Tầng 5 — Điều chỉnh theo tải trọng kết cấu nhịp ─────────────────
-    _HEAVY = ("Super-T", "Dầm I")
-    loai_dam_str = str(loai_dam).strip()
-    if loai_dam_str in _HEAVY:
-        if n_nhip >= 4 and loai == "Trụ cột đơn":
-            loai = "Thân cột 2 trụ"
-            tang = "Tầng 5 — Tải trọng nhịp"
+                f"{loai_dam_str} × {n_nhip} nhịp — tải lớn, nâng lên 2 cột")
+        if loai_dam_str in _HEAVY and cap_int >= 5 and is_river:
             notes.append(
-                f"{loai_dam_str} × {n_nhip} nhịp — tải lớn, không dùng trụ cột đơn, nâng lên thân cột 2 trụ"
-            )
-        if cap_int >= 5:
+                f"Lưu ý: {loai_dam_str} trên sông cấp V–VI — kiểm tra xói "
+                "cục bộ chân cột")
+        if H_tru > 10.0:
             notes.append(
-                f"Lưu ý: {loai_dam_str} trên sông cấp V–VI — khuyến nghị kiểm tra xói cục bộ chân cột"
-            )
-
-    # ── Tầng 6 — Chiều cao trụ rất cao ───────────────────────────────────
-    if can_than_rong and loai not in ("Trụ đặc", "Trụ đặc thân hẹp"):
-        loai = "Thân rỗng"
-        tang = "Tầng 6 — H_tru rất cao"
-        notes.append(
-            f"H_tru={H_tru:.1f}m > 10m — trụ đặc quá nặng, khuyến nghị thân rỗng hoặc tham vấn chuyên gia"
-        )
+                f"H_trụ={H_tru:.1f}m > 10m — cột mảnh, kiểm tra ổn định "
+                "uốn dọc; cân nhắc tiết diện rỗng ở TKKT")
 
     ghi_chu = "; ".join(notes)
     if note:
         ghi_chu = (ghi_chu + ". " + note).strip()
 
     return {
-        "loai_tru":        loai,
+        "loai_tru":        loai,          # chi tiết (tương thích ngược)
+        "nhom_tru":        nhom,          # dẻo / cột / đặc thân hẹp
+        "ten_nhom":        PIER_TYPES[nhom]["ten_nhom"],
         "do_tin_cay":      100.0,
         "tang_quyet_dinh": tang,
         "ghi_chu":         ghi_chu,
@@ -411,7 +580,7 @@ def predict_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song,
                  # ── Tham số phân loại mố (tất cả có default, tương thích ngược) ──
                  H_dap=3.0, L_nhip=20.0, SPT_N=10,
                  MNCN=None, MNTN=None, Z_tu_nhien=None,
-                 is_tidal=0, cap_duong=""):
+                 is_tidal=0, cap_duong="", L_cau=None):
     """
     Dự đoán loại trụ cầu (2 phương án RB + AI) và phân loại mố cầu (RB).
 
@@ -430,22 +599,26 @@ def predict_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song,
     Params — Mố (keyword-only, tất cả có default)
     ---------------------------------------------
     H_dap            : Chiều cao đất đắp tại mố (m)
-    L_nhip           : Chiều dài nhịp biên (m)
+    L_nhip           : Chiều dài nhịp biên (m) — cũng dùng phân nhóm trụ dẻo
     SPT_N            : Chỉ số SPT tại vị trí mố
     MNCN             : Mực nước cao nhất (m), None nếu không áp dụng
     MNTN             : Mực nước thấp nhất (m)
     Z_tu_nhien       : Cao độ tự nhiên tại vị trí mố (m)
     is_tidal         : 1 nếu vùng triều
     cap_duong        : Cấp đường ('Cao tốc'/'I'/'II'/...'VI')
+    L_cau            : Chiều dài toàn cầu (m) — tính BẢN QUÁ ĐỘ (bắt buộc);
+                       None → fallback 25m kèm cảnh báo trong ban_qua_do.
 
     Returns
     -------
-    dict: pa_rb, pa_ai, dong_thuan, canh_bao, ket_qua_mo
+    dict: loai_tru, nhom_tru, pa_rb, pa_ai, dong_thuan, canh_bao, ket_qua_mo
+          (ket_qua_mo LUÔN có key ban_qua_do — cấu kiện bắt buộc).
     """
-    # Phương án Rule-Based (luôn tính)
+    # Phương án Rule-Based (luôn tính) — phân NHÓM trước, loại con sau
     pa_rb = _rule_based_pier(
         vtk, B_cau, H_tru, is_urban, is_river,
         cap_song=cap_song, loai_dam=loai_dam, n_nhip=n_nhip,
+        L_nhip=L_nhip,
     )
 
     # Phương án AI
@@ -453,6 +626,7 @@ def predict_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song,
         # Chưa có mô hình → lặp lại RB
         pa_ai = {
             "loai_tru":    pa_rb["loai_tru"],
+            "nhom_tru":    pa_rb["nhom_tru"],
             "do_tin_cay":  100.0,
             "xep_hang":    [{"loai": pa_rb["loai_tru"], "xac_suat": 100.0}],
             "ghi_chu":     pa_rb["ghi_chu"],
@@ -495,6 +669,7 @@ def predict_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song,
 
             pa_ai = {
                 "loai_tru":    loai_ai,
+                "nhom_tru":    nhom_tru_of(loai_ai),
                 "do_tin_cay":  round(conf, 1),
                 "xep_hang":    xep_hang,
                 "ghi_chu":     ghi_chu,
@@ -506,10 +681,11 @@ def predict_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song,
             rb_fb = _rule_based_pier(
                 vtk, B_cau, H_tru, is_urban, is_river,
                 cap_song=cap_song, loai_dam=loai_dam, n_nhip=n_nhip,
-                note=f"[fallback AI lỗi: {e}]",
+                L_nhip=L_nhip, note=f"[fallback AI lỗi: {e}]",
             )
             pa_ai = {
                 "loai_tru":    rb_fb["loai_tru"],
+                "nhom_tru":    rb_fb["nhom_tru"],
                 "do_tin_cay":  100.0,
                 "xep_hang":    [{"loai": rb_fb["loai_tru"], "xac_suat": 100.0}],
                 "ghi_chu":     rb_fb["ghi_chu"],
@@ -528,12 +704,14 @@ def predict_pier(vtk, B_cau, H_tru, is_urban, is_river, cap_song,
     ket_qua_mo = _classify_abutment(
         H_dap=H_dap, L_nhip=L_nhip, is_urban=is_urban,
         SPT_N=SPT_N, MNCN=MNCN, MNTN=MNTN, Z_tu_nhien=Z_tu_nhien,
-        is_tidal=is_tidal, cap_duong=cap_duong,
+        is_tidal=is_tidal, cap_duong=cap_duong, L_cau=L_cau,
     )
 
     return {
         # ── Convenience keys (tương thích ngược với các module cũ) ──
         "loai_tru":   pa_rb["loai_tru"],
+        "nhom_tru":   pa_rb["nhom_tru"],
+        "ten_nhom":   pa_rb.get("ten_nhom", ""),
         "do_tin_cay": pa_rb["do_tin_cay"],
         # ── Hai phương án đầy đủ ──
         "pa_rb":      pa_rb,
@@ -683,6 +861,7 @@ def _classify_abutment(
     Z_tu_nhien=None,
     is_tidal=0,
     cap_duong="",
+    L_cau=None,
 ):
     """
     Phân loại mố cầu trong phạm vi đề tài (2 loại: Mố chân dê / Mố chữ U).
@@ -691,7 +870,13 @@ def _classify_abutment(
         H_dap ≤ 4m  →  Mố chân dê   (nhóm dẻo)
         H_dap > 4m  →  Mố chữ U     (nhóm cứng)
 
-    Bước 2 — Bản dẫn: bắt buộc cho mọi trường hợp trong đề tài.
+    Bước 2 — BẢN QUÁ ĐỘ: cấu kiện BẮT BUỘC cho MỌI mố (không còn tùy chọn).
+        Kích thước theo quy mô cầu (BAN_QUA_DO_CONFIG / _calc_ban_qua_do):
+        L_cau ≤ 25m → L_bqd ≥ 5m; 25–100m → 6–8m; > 100m → 8–12m.
+        Dày ≥ 30cm; dốc dọc 10–15% về phía nền đường; đất đắp mặt đường →
+        mặt bản ≥ 70cm; BTCT đổ tại chỗ hoặc đúc sẵn. Một đầu kê tường đỉnh
+        mố, đầu kia đặt trên dầm kê trong nền đường. (Bản dẫn/can_ban_dan cũ
+        giữ nguyên để tương thích — nay đồng nghĩa bản quá độ bắt buộc.)
 
     Bước 3 — Sinh cảnh báo kỹ thuật theo điều kiện phụ (không đổi loai_mo):
         • Z_tu_nhien < MNCN + 0.5m   → nguy cơ ngập lũ, kiểm tra mái taluy
@@ -708,8 +893,8 @@ def _classify_abutment(
 
     Returns
     -------
-    dict: loai_mo, nhom, can_ban_dan, H_mo, L_tuong_canh,
-          warnings, ghi_chu, H_dap_vung
+    dict: loai_mo, nhom, can_ban_dan, ban_qua_do (BẮT BUỘC), H_mo,
+          L_tuong_canh, warnings, ghi_chu, H_dap_vung
     """
     # ── Bước 1 — Chọn loại mố (quy tắc cứng) ────────────────────────────
     if H_dap <= 4.0:
@@ -721,8 +906,9 @@ def _classify_abutment(
         nhom       = "cứng"
         H_dap_vung = "cao (>4m)"
 
-    # ── Bước 2 — Bản dẫn bắt buộc ───────────────────────────────────────
-    can_ban_dan = True
+    # ── Bước 2 — BẢN QUÁ ĐỘ bắt buộc cho mọi mố ─────────────────────────
+    can_ban_dan = True                       # giữ key cũ (tương thích ngược)
+    ban_qua_do = _calc_ban_qua_do(L_cau)
 
     # ── Bước 3 — Cảnh báo kỹ thuật (không thay đổi loai_mo) ─────────────
     warnings_list = []
@@ -778,10 +964,14 @@ def _classify_abutment(
     # H_mo = (Z_tu_nhien + H_dap) - (Z_tu_nhien - 0.5) = H_dap + 0.5
     H_mo = round(H_dap + 0.5, 2)
 
+    if ban_qua_do.get("canh_bao"):
+        warnings_list.append(ban_qua_do["canh_bao"])
+
     return {
         "loai_mo":      loai_mo,
         "nhom":         nhom,
         "can_ban_dan":  can_ban_dan,
+        "ban_qua_do":   ban_qua_do,          # BẮT BUỘC cho mọi mố
         "H_mo":         H_mo,
         "L_tuong_canh": L_tuong_canh,
         "warnings":     warnings_list,
@@ -820,7 +1010,7 @@ if __name__ == "__main__":
 
         rb = res["pa_rb"]
         ai = res["pa_ai"]
-        print(f"  [RB] {rb['loai_tru']:20s} | {rb['tang_quyet_dinh']}")
+        print(f"  [RB] {rb['loai_tru']:20s} | nhóm: {rb['nhom_tru']:14s} | {rb['tang_quyet_dinh']}")
         print(f"       {rb['ghi_chu']}")
         print(f"  [AI] {ai['loai_tru']:20s} | {ai['do_tin_cay']:.0f}% | {ai['phuong_phap']}")
         if res["dong_thuan"]:
@@ -904,5 +1094,8 @@ if __name__ == "__main__":
         print(f"        H_mo         = {mo['H_mo']:.2f} m")
         print(f"        L_tuong_canh = {mo['L_tuong_canh']:.2f} m")
         print(f"        H_dap_vung   = {mo['H_dap_vung']}")
+        bqd = mo["ban_qua_do"]
+        print(f"  [BQD] L={bqd['L_bqd']:g}m ({bqd['L_bqd_range']}, {bqd['quy_mo_cau']}) | "
+              f"dày={bqd['day_bqd']:g}m | dốc {bqd['doc_bqd']} | đắp ≥{bqd['chieu_sau_dat_dap_toi_thieu']:g}m")
         for w in mo["warnings"]:
             print(f"        [!] {w}")
