@@ -5170,6 +5170,26 @@ def _resolve_assembly(d, kind: str) -> dict:
         # PA1 (fewest) hoặc mặc định = trụ THÂN CỘT (2 thân)
         return _find("2 thân") or _find("cột") or items[0]
 
+    def _auto_pick_mo(items):
+        """MỐ theo QUY TẮC CỨNG chiều cao đắp H_dap (KHÔNG đổi bởi điều kiện phụ):
+          • H_dap ≤ 4m → Mố CHÂN DÊ (nhóm mố DẺO, nền đắp thấp, cầu nhỏ/vừa).
+          • H_dap > 4m → Mố CHỮ U (nhóm mố CỨNG, ổn định độc lập).
+        H_dap ≈ cao mặt cầu − cao ĐTN trung bình. Fallback items[0] nếu thư viện
+        THIẾU loại tương ứng (VD chưa có 'Mố chân dê')."""
+        if not items:
+            return None
+        try:
+            _hd = (float((d or {}).get("cao_mat_cau", 0) or 0)
+                   - float((d or {}).get("h_tn_tb", 0) or 0))
+        except (TypeError, ValueError):
+            _hd = 5.0
+        def _find(*kw):
+            return next((it for it in items
+                         if any(k in str(it.get("ten", "")).lower() for k in kw)), None)
+        if _hd <= 4.0:
+            return _find("chân dê", "chan de", "dẻo", "deo") or items[0]
+        return _find("chữ u", "chu u") or items[0]
+
     if kind == "tru":
         pp = _current_pier_parts((d or {}).get("_pa_ribbon"))
         if pp and pp.get("pier_id"):              # TRỤ TỔNG đã lưu
@@ -5191,9 +5211,13 @@ def _resolve_assembly(d, kind: str) -> dict:
     if kind == "tru" and (d or {}).get("_clearance_mode") in ("fewest", "straddle") \
             and items:
         return _ap_pier(_auto_pick_pier(items))
+    # MỐ theo QUY TẮC CỨNG H_dap (≤4m Mố chân dê / >4m Mố chữ U) — ưu tiên tuyệt
+    # đối, không đổi bởi điều kiện phụ. (Chưa có 'Mố chân dê' trong thư viện →
+    # fallback Mố chữ U cho tới khi bổ sung.)
+    if kind == "mo" and items:
+        return _auto_pick_mo(items)
     rid = (d or {}).get(cfg["id_key"])
     if not rid:
-        # MỐ MẶC ĐỊNH = mố THƯ VIỆN đầu tiên (vd "Mố chữ U") thay khối mố generic cũ.
         if kind == "mo" and items:
             return items[0]
         # TRỤ MẶC ĐỊNH = tự chọn theo phương án + chiều cao (PA1 cột / PA2 đặc).
