@@ -2595,6 +2595,10 @@ def dialog_step3():
                     # phương án. Nhờ đó không còn đề xuất loại dầm thư viện chưa có
                     # (vd 'Dầm bản'). Người dùng rà soát/đổi dầm tùy ý sau (ribbon).
                     _userbeams = st.session_state.get("dam_beams") or CLIB.load_beams()
+                    try:      # nhịp tối thiểu thỏa tĩnh không (đồng bộ module 06)
+                        _Lmin_tk = KCN._L_nhip_min(res['B'], goc_giao)
+                    except Exception:
+                        _Lmin_tk = 0.0
                     for _k_pa in ("pa1_chi_phi", "pa2_my_quan", "pa3_ml"):
                         _papa = _kcn_raw.get(_k_pa)
                         if not isinstance(_papa, dict):
@@ -2603,6 +2607,14 @@ def dialog_step3():
                             _papa.get("loai_dam", ""), _papa.get("chieu_dai", 0),
                             _userbeams)
                         if not _lb:
+                            continue
+                        # Dầm thư viện NGẮN hơn nhịp tối thiểu (vi phạm tĩnh không)
+                        # → bỏ override, giữ chiều dài định hình dự đoán.
+                        if float(_lb.get("chieu_dai") or 0) < _Lmin_tk - 1e-6:
+                            _papa["ghi_chu"] = (_papa.get("ghi_chu", "") +
+                                f" | Dầm thư viện cùng loại dài nhất "
+                                f"{float(_lb.get('chieu_dai') or 0):g}m < nhịp tối thiểu "
+                                f"{_Lmin_tk:.1f}m (tĩnh không) — dùng chiều dài định hình.")
                             continue
                         _papa["loai_dam"] = _lb.get("loai_dam", _papa.get("loai_dam"))
                         _Lb = float(_lb.get("chieu_dai") or 0)
@@ -4270,11 +4282,12 @@ def _auto_apply_lib_beam_for_pa(d: dict, ribbon: str, pfx: str) -> None:
                   if _beam_has_sections(b)]
     same = [b for b in _beams_all
             if str(b.get("loai_dam", "")).strip() == pred_lib]
-    # CHỈ dùng dầm THƯ VIỆN thực: cùng loại trước, không có thì lấy dầm thực gần
-    # chiều dài nhất (không sinh mặt cắt tham số 'dầm cũ' nữa).
-    _pool  = same or _beams_all
-    target = (min(_pool, key=lambda b: abs(float(b.get("chieu_dai") or 0) - L))
-              if _pool else None)
+    # CHỈ dùng dầm THƯ VIỆN thực CÙNG LOẠI (đúng docstring). KHÔNG lấy chéo loại
+    # nữa — trước đây thư viện chỉ có Super-T 19.4m → PA nhóm khác cũng bị nạp
+    # Super-T (sai loại + kéo chiều dài nhịp về 19.4m). Không có cùng loại →
+    # target=None → DỌN mặt cắt, _resolve_beam_sections tự fallback hiển thị.
+    target = (min(same, key=lambda b: abs(float(b.get("chieu_dai") or 0) - L))
+              if same else None)
     sig = (pred_lib, (target or {}).get("id"))
     if st.session_state.get(f"_auto_sig_{pfx}") == sig:
         return                                   # đã xử lý đúng cho loại+dầm này

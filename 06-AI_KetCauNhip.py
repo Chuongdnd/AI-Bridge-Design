@@ -226,18 +226,26 @@ def select_library_beam(loai_dam_pred, L_target, user_beams=None):
     (beam_dict, nguon) với nguon ∈ {'user','default'}; hoặc (None, None) nếu
     không có dầm nào (về lý thuyết không xảy ra vì luôn có thư viện mặc định).
     """
-    beams = [b for b in (user_beams or []) if float(b.get("chieu_dai") or 0) > 0]
-    nguon = "user"
-    if not beams:
-        beams = DEFAULT_LIBRARY_BEAMS
-        nguon = "default"
-    if not beams:
-        return None, None
-
     pred_lib = _CATALOG_TO_LIB_TYPE.get(loai_dam_pred, loai_dam_pred)
-    same = [b for b in beams if str(b.get("loai_dam", "")).strip() == pred_lib]
-    pool = same if same else beams
-    best = min(pool, key=lambda b: abs(float(b.get("chieu_dai") or 0) - float(L_target)))
+
+    def _same_type(pool):
+        return [b for b in pool
+                if str(b.get("loai_dam", "")).strip() == pred_lib
+                and float(b.get("chieu_dai") or 0) > 0]
+
+    # CHỈ nhận dầm CÙNG LOẠI với dự đoán — KHÔNG đổi chéo loại (trước đây thư viện
+    # chỉ có Super-T 19.4m → PA nhóm khác cũng bị ép thành Super-T 19.4m, sai cả
+    # loại lẫn chiều dài định hình). Không có cùng loại trong thư viện người dùng
+    # → dùng thư viện MẶC ĐỊNH (suy từ catalog định hình); vẫn không có → giữ
+    # nguyên dự đoán (trả None để caller bỏ qua override).
+    same = _same_type(user_beams or [])
+    nguon = "user"
+    if not same:
+        same = _same_type(DEFAULT_LIBRARY_BEAMS)
+        nguon = "default"
+    if not same:
+        return None, None
+    best = min(same, key=lambda b: abs(float(b.get("chieu_dai") or 0) - float(L_target)))
     return best, nguon
 
 
