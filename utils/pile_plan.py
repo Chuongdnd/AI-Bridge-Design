@@ -416,3 +416,94 @@ def tan_to_slope_ratio(t: float) -> float:
     except (TypeError, ValueError):
         return 0.0
     return 0.0 if abs(t) < 1e-9 else 1.0 / t
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
+# LƯỚI CỌC MẶC ĐỊNH TỪ mong_result (Module 08 — TCVN 10304:2025)
+# ═══════════════════════════════════════════════════════════════════════════════
+def default_grid(mong: dict) -> dict:
+    """Sinh LƯỚI CỌC MẶC ĐỊNH từ mong_result Module 08 (khi người dùng chưa
+    upload DXF sơ đồ cọc): n_cols × n_rows cọc, tim-tim = khoang_cach_tim,
+    căn tâm về (0,0) = tâm bệ.
+
+    Trả: {"piles": [pile...], "Be_ngang", "Be_doc", "S", "D", "note"}
+    (schema pile như make_pile — dùng được cho mọi hàm vẽ hiện có)."""
+    m = mong or {}
+    D = float(m.get("D_coc_mm") or m.get("kich_thuoc_mm") or 800) / 1000.0
+    L = float(m.get("chieu_dai_coc") or m.get("L_coc_tu") or DEFAULT_L)
+    n = int(m.get("so_coc_be") or m.get("So_coc_tu") or 4)
+    S = float(m.get("khoang_cach_tim") or m.get("khoang_cach_tim_coc")
+              or 3.0 * D)
+    n_cols = int(m.get("n_cols_be") or math.ceil(math.sqrt(n)))
+    n_rows = int(m.get("n_rows_be") or math.ceil(n / max(1, n_cols)))
+    kt_mep = float(m.get("khoang_cach_mep_be") or (D / 2 + 0.3))
+
+    piles = []
+    k = 0
+    for r in range(n_rows):
+        for c in range(n_cols):
+            if k >= n:
+                break
+            piles.append(make_pile(
+                x=(c - (n_cols - 1) / 2.0) * S,
+                y=(r - (n_rows - 1) / 2.0) * S,
+                D=D, L=L))
+            k += 1
+    Be_ngang = float(m.get("Be_ngang") or ((n_cols - 1) * S + 2 * kt_mep))
+    Be_doc   = float(m.get("Be_doc")   or ((n_rows - 1) * S + 2 * kt_mep))
+    return {"piles": piles, "Be_ngang": round(Be_ngang, 2),
+            "Be_doc": round(Be_doc, 2), "S": S, "D": D,
+            "note": (f"Lưới mặc định {n_rows}×{n_cols}, tim-tim {S:g}m "
+                     f"(TCVN 10304:2025)")}
+
+
+def grid_figure(mong: dict):
+    """Vẽ MẶT BẰNG BỆ CỌC (plotly) từ mong_result: bệ + cọc + kích thước
+    tim-tim / mép bệ theo TCVN 10304:2025. Trả go.Figure."""
+    import plotly.graph_objects as go
+    g = default_grid(mong)
+    piles, D, S = g["piles"], g["D"], g["S"]
+    W, Hd = g["Be_ngang"], g["Be_doc"]
+    m = mong or {}
+    la_ckn = "khoan nhồi" in str(m.get("loai_coc") or m.get("loai_mong") or "").lower()
+
+    fig = go.Figure()
+    # Bệ cọc
+    fig.add_shape(type="rect", x0=-W/2, x1=W/2, y0=-Hd/2, y1=Hd/2,
+                  line=dict(color="#7f8c8d", width=2),
+                  fillcolor="rgba(127,140,141,0.10)")
+    # Cọc
+    for p in piles:
+        fig.add_shape(type="circle",
+                      x0=p["x"]-D/2, x1=p["x"]+D/2,
+                      y0=p["y"]-D/2, y1=p["y"]+D/2,
+                      line=dict(color="#2c3e50", width=2),
+                      fillcolor="rgba(52,73,94,0.25)")
+    # Kích thước tim-tim (2 cọc đầu hàng dưới, nếu có ≥ 2 cột)
+    xs = sorted({round(p["x"], 3) for p in piles})
+    ys = sorted({round(p["y"], 3) for p in piles})
+    if len(xs) >= 2:
+        y_dim = min(ys) - max(0.5, D)
+        fig.add_annotation(x=(xs[0]+xs[1])/2, y=y_dim,
+                           text=f"tim-tim S={S:g}m", showarrow=False,
+                           font=dict(size=11, color="#c0392b"))
+        fig.add_shape(type="line", x0=xs[0], x1=xs[1], y0=y_dim+0.2,
+                      y1=y_dim+0.2, line=dict(color="#c0392b", width=1))
+    # Mép bệ
+    mep = float(m.get("khoang_cach_mep") or (0.3 if la_ckn else 0.225))
+    fig.add_annotation(x=W/2, y=max(ys) if ys else 0,
+                       text=f"mặt cọc→mép bệ ≥{mep*1000:.0f}mm",
+                       showarrow=False, xanchor="left",
+                       font=dict(size=10, color="#2980b9"))
+    tt = m.get("khoang_cach_thong_thuy")
+    title = (f"MẶT BẰNG BỆ CỌC — {len(piles)} cọc D{D*1000:.0f} · "
+             f"bệ {W:g}×{Hd:g}m"
+             + (f" · thông thủy {tt:g}m" if tt else ""))
+    fig.update_layout(
+        title=dict(text=title, font=dict(size=13)),
+        xaxis=dict(scaleanchor="y", scaleratio=1, title="Ngang cầu (m)",
+                   zeroline=False),
+        yaxis=dict(title="Dọc cầu (m)", zeroline=False),
+        height=420, margin=dict(t=50, b=40, l=40, r=20),
+        plot_bgcolor="rgba(0,0,0,0)", showlegend=False)
+    return fig

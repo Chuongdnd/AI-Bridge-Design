@@ -1,12 +1,15 @@
 """
-Module 09 — So sanh 3 Phuong An Loai Dam
+Module 09 — So sanh 3 Phuong An
 ==========================================
-PA1 — Dam I    : nhip 21-30m, H/L ~ 1/15-1/18
-PA2 — T nguoc  : nhip 15-22m, H/L ~ 1/12-1/15
-PA3 — Super-T  : nhip 30-40m, H/L ~ 1/18-1/20
+Khi Module 06 da sinh kcn_3_pa (truyen qua tham so kcn_3_pa), dashboard so
+sanh dung DUNG 3 phuong an cua he thong:
+  PA1 — Toi uu chi phi   (nhom dam KHONG ban day lien mach)
+  PA2 — Toi uu my quan   (nhom dam CO ban day lien mach)
+  PA3 — Machine Learning (Random Forest hoc tu Bridge_Train_v3 — ket qua goc,
+        khong bi nguoi dung ghi de, lam co so so sanh khach quan)
+Fallback (chua co kcn_3_pa): 3 loai dam dai dien Dam I / T nguoc / Super-T.
 
-Tung PA lay nip toi uu cho loai dam do, sau do tinh:
-  - So do nhip (n nhip x L)
+Tung PA lay so do nhip, sau do tinh:
   - Loai tru / chieu cao tru
   - Loai mong / coc
   - Chi phi tuong doi, thoi gian thi cong
@@ -189,12 +192,16 @@ def generate_3_alternatives(
     cap_song="VI", is_urban=0, is_river=1, vtk=80,
     # Tham so nay khong dung nua (giu lai de khong loi Interface.py)
     pa1_kcn=None, pa1_tru=None, pa1_mong=None,
+    kcn_3_pa=None,
 ):
     """
-    Sinh 3 phuong an thiet ke cau theo 3 loai dam:
-      PA1 — Dam I   (nhip trung 21-30m)
-      PA2 — T nguoc (nhip ngan 15-22m)
-      PA3 — Super-T (nhip dai 30-40m)
+    Sinh 3 phuong an thiet ke cau.
+
+    Co kcn_3_pa (tu Module 06 predict_kcn) → dung DUNG 3 phuong an he thong:
+      PA1 — Toi uu chi phi (khong ban day lien mach)
+      PA2 — Toi uu my quan (ban day lien mach)
+      PA3 — Machine Learning (ket qua goc lam co so so sanh)
+    Khong co → fallback 3 loai dam dai dien (Dam I / T nguoc / Super-T).
 
     Returns: list[dict] gom 3 phuong an, moi dict co:
         label, color, mo_ta, loai_dam_key,
@@ -213,30 +220,47 @@ def generate_3_alternatives(
     _PA_DEF = [
         {
             "loai_dam": "Dầm I",
-            "label":    "PA1 — Dầm I",
+            "pa_key":   "pa1_chi_phi",
+            "label":    "PA1 — Tối ưu chi phí",
             "color":    "#3498db",
-            "mo_ta":    "Nhịp trung 21–30 m, dầm đúc sẵn phổ biến, thi công nhanh.",
+            "mo_ta":    "Nhịp dài — ít nhịp, dầm KHÔNG bản đáy liền mạch (cấu tạo đơn giản, chi phí thấp).",
         },
         {
             "loai_dam": "T ngược",
-            "label":    "PA2 — T ngược",
+            "pa_key":   "pa2_my_quan",
+            "label":    "PA2 — Tối ưu mỹ quan",
             "color":    "#2ecc71",
-            "mo_ta":    "Nhịp ngắn 15–22 m, chi phí dầm thấp, thi công đơn giản.",
+            "mo_ta":    "Dầm CÓ bản đáy liền mạch — bề mặt phẳng dưới cầu, phù hợp đô thị/cầu vượt.",
         },
         {
             "loai_dam": "Super-T",
-            "label":    "PA3 — Super-T",
+            "pa_key":   "pa3_ml",
+            "label":    "PA3 — Machine Learning",
             "color":    "#e67e22",
-            "mo_ta":    "Nhịp dài 30–40 m, ít trụ, ít cản dòng chảy, kết cấu hiện đại.",
+            "mo_ta":    "Random Forest học từ dữ liệu cầu VN (Bridge_Train_v3) — kết quả gốc tham chiếu.",
         },
     ]
 
+    # 'pa3_ai' = key cu (du lieu luu truoc khi doi ten PA3 → Machine Learning)
+    _3pa = dict(kcn_3_pa or {})
+    if "pa3_ml" not in _3pa and "pa3_ai" in _3pa:
+        _3pa["pa3_ml"] = _3pa["pa3_ai"]
+
     results = []
     for pa in _PA_DEF:
-        loai_dam = pa["loai_dam"]
+        _plan = _3pa.get(pa["pa_key"]) if _3pa else None
 
-        # ── 1. KCN ─────────────────────────────────────────────────────────
-        kcn = _kcn_for_beam(loai_dam, B_tk, goc, B_cau, L_cau, kcn_models)
+        # ── 1. KCN: dung dung phuong an Module 06 neu co ───────────────────
+        if isinstance(_plan, dict) and _plan.get("loai_dam"):
+            kcn = dict(_plan)
+            loai_dam = kcn["loai_dam"]
+            pa = dict(pa)
+            pa["label"] = f"{pa['label']} ({loai_dam})"
+            if _plan.get("ghi_chu"):
+                pa["mo_ta"] = _plan["ghi_chu"]
+        else:
+            loai_dam = pa["loai_dam"]
+            kcn = _kcn_for_beam(loai_dam, B_tk, goc, B_cau, L_cau, kcn_models)
 
         # ── 2. Chieu cao tru ─────────────────────────────────────────────
         _ph = mod7.estimate_pier_height(
@@ -280,6 +304,7 @@ def generate_3_alternatives(
 
         results.append({
             "label":          pa["label"],
+            "pa_key":         pa.get("pa_key"),
             "color":          pa["color"],
             "mo_ta":          pa["mo_ta"],
             "loai_dam_key":   loai_dam,
@@ -304,11 +329,77 @@ def generate_3_alternatives(
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# CAP NHAT 1 PHUONG AN SAU KHI NGUOI DUNG KHAI BAO LAI (PA1/PA2)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def refresh_alternative_kcn(alternatives, pa_key, kcn_plan, B_cau):
+    """Cap nhat KCN cua 1 phuong an trong list alternatives (sau khi nguoi dung
+    khai bao lai dam PA1/PA2 hoac huy khai bao) va tinh lai chi phi/thoi gian.
+    Giu nguyen tru/mong hien co (xap xi chap nhan duoc cho so sanh so bo)."""
+    if not alternatives or not isinstance(kcn_plan, dict):
+        return alternatives
+    for alt in alternatives:
+        if alt.get("pa_key") != pa_key:
+            continue
+        kcn = dict(kcn_plan)
+        alt["kcn"] = kcn
+        alt["loai_dam_key"] = kcn.get("loai_dam", alt.get("loai_dam_key"))
+        alt["n_tru"] = max(int(kcn.get("tong_so_nhip", 1)) - 1, 1)
+        base_lbl = str(alt.get("label", "")).split(" (")[0]
+        alt["label"] = f"{base_lbl} ({kcn.get('loai_dam','?')})"
+        if kcn.get("ghi_chu"):
+            alt["mo_ta"] = kcn["ghi_chu"]
+        try:
+            alt["cost_raw"] = _cost_index(
+                kcn, alt.get("H_tru_est", 6.0), B_cau,
+                (alt.get("tru") or {}).get("loai_tru", "Trụ đặc"),
+                alt.get("mong") or {})
+            alt["thoi_gian"] = _thoi_gian(
+                alt["n_tru"], (alt.get("mong") or {}).get("loai_mong", ""),
+                kcn.get("tong_so_nhip", 1), alt["loai_dam_key"])
+        except Exception:
+            pass
+        break
+    # Chuan hoa lai % chi phi theo PA1
+    try:
+        base = alternatives[0].get("cost_raw") or 1.0
+        for r in alternatives:
+            if r.get("cost_raw"):
+                r["cost_pct"] = round(r["cost_raw"] / base * 100, 1)
+    except Exception:
+        pass
+    return alternatives
+
+
+def _nguon_chon_badges(alternatives, st):
+    """Badge nguon chon cho tung cot PA: nguoi dung ghi de → VANG
+    'Người dùng khai báo'; PA3 Machine Learning → XANH DUONG 'Kết quả ML gốc'
+    (nhan manh vai tro co so so sanh khach quan, khong bi can thiep)."""
+    _3pa = ((st.session_state.get("design_data") or {}).get("kcn_3_pa")
+            if hasattr(st, "session_state") else None) or {}
+    out = []
+    for alt in alternatives:
+        pk = alt.get("pa_key")
+        if pk == "pa3_ml":
+            out.append("<span style='background:#1d4ed8;color:#fff;padding:2px 8px;"
+                       "border-radius:10px;font-size:11px'>Kết quả ML gốc</span>")
+            continue
+        plan = _3pa.get(pk) or {}
+        if plan.get("nguon_chon") == "nguoi_dung_khai_bao" or \
+                (alt.get("kcn") or {}).get("nguon_chon") == "nguoi_dung_khai_bao":
+            out.append("<span style='background:#f59e0b;color:#1a1000;padding:2px 8px;"
+                       "border-radius:10px;font-size:11px'>Người dùng khai báo</span>")
+        else:
+            out.append("")
+    return out
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # RENDER TAB SO SANH (Streamlit)
 # ─────────────────────────────────────────────────────────────────────────────
 
 def render_comparison_tab(alternatives, st):
-    """Render tab so sanh 3 loai dam."""
+    """Render tab so sanh 3 phuong an."""
     import plotly.graph_objects as go
     import pandas as pd
 
@@ -319,17 +410,18 @@ def render_comparison_tab(alternatives, st):
     pa_labels = [a["label"] for a in alternatives]
     pa_colors = [a["color"] for a in alternatives]
 
-    st.markdown("## So sanh 3 Phuong An Loai Dam")
-    st.caption("Cung mot cau — 3 loai dam khac nhau — so sanh ky thuat, kinh te va thi cong")
+    st.markdown("## So sanh 3 Phuong An")
+    st.caption("PA1 chi phí · PA2 mỹ quan · PA3 Machine Learning — so sanh ky thuat, kinh te va thi cong")
 
-    # Mo ta ngan
+    # Mo ta ngan + badge nguon chon (nguoi dung khai bao / ket qua ML goc)
+    _badges = _nguon_chon_badges(alternatives, st)
     cols = st.columns(3)
-    for alt, col in zip(alternatives, cols):
+    for alt, col, bdg in zip(alternatives, cols, _badges):
         with col:
             st.markdown(
                 f"<div style='background:{alt['color']}22;border-left:4px solid {alt['color']};"
                 f"padding:12px;border-radius:8px;margin-bottom:8px'>"
-                f"<b>{alt['label']}</b><br><small>{alt['mo_ta']}</small></div>",
+                f"<b>{alt['label']}</b> {bdg}<br><small>{alt['mo_ta']}</small></div>",
                 unsafe_allow_html=True,
             )
     st.markdown("---")
@@ -371,8 +463,9 @@ def render_comparison_tab(alternatives, st):
     ]
 
     hdr = "".join(
-        f"<th style='background:{c}22;color:{c};padding:8px;text-align:center'>{lb}</th>"
-        for c, lb in zip(pa_colors, pa_labels)
+        f"<th style='background:{c}22;color:{c};padding:8px;text-align:center'>{lb}"
+        f"{('<br>' + b) if b else ''}</th>"
+        for c, lb, b in zip(pa_colors, pa_labels, _badges)
     )
     html = (
         "<table style='width:100%;border-collapse:collapse;font-size:14px'>"

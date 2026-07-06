@@ -27,6 +27,7 @@ DON_GIA_VAT_LIEU: dict[str, dict] = {
     "BT_M40":  {"don_vi": "m³",  "don_gia": 1_850,  "mo_ta": "Bê tông thương phẩm M40"},
     "BT_M50":  {"don_vi": "m³",  "don_gia": 2_200,  "mo_ta": "Bê tông C50/60 dầm DUL"},
     "BT_coc":  {"don_vi": "m³",  "don_gia": 1_750,  "mo_ta": "Bê tông cọc khoan nhồi M30+"},
+    "COC_LY_TAM": {"don_vi": "m",  "don_gia": 620,   "mo_ta": "Cọc tròn ly tâm PHC D300–D600 (vật liệu đúc sẵn/m dài)"},
     # Cốt thép
     "CT_CB300": {"don_vi": "tấn", "don_gia": 16_500, "mo_ta": "Thép CB300-V phụ"},
     "CT_CB400": {"don_vi": "tấn", "don_gia": 18_500, "mo_ta": "Thép CB400-V chính"},
@@ -318,21 +319,35 @@ def tinh_khoi_luong_mo_tru(res: dict) -> dict:
 
     vol_mo_tong = xa_mu_mo_vol + than_mo_vol + canh_mo_vol
 
+    # ── Bản quá độ (cấu kiện BẮT BUỘC sau mỗi mố — Module 07) ──
+    # Kích thước từ tru_result.ket_qua_mo.ban_qua_do; thiếu → mặc định
+    # L=5m, dày 0.30m (cầu nhỏ). Khối lượng = 2 mố × L × B_cầu × dày.
+    _bqd = (tru.get("ket_qua_mo") or {}).get("ban_qua_do") or {}
+    L_bqd = float(_bqd.get("L_bqd", 5.0) or 5.0)
+    t_bqd = float(_bqd.get("day_bqd", 0.30) or 0.30)
+    vol_ban_qua_do = 2.0 * L_bqd * bc * t_bqd
+
     # ── Tổng khối lượng thép ──
     vol_BT_tong = vol_tru_tong + vol_mo_tong
     # Trụ + mố dùng M35 (thường), hệ số cốt thép 110 kg/m³
-    thep_mo_tru_tan = vol_BT_tong * 110 / 1000.0
+    # (bản quá độ M300 tính cốt thép ~100 kg/m³ riêng)
+    thep_mo_tru_tan = (vol_BT_tong * 110 + vol_ban_qua_do * 100) / 1000.0
 
     return {
         "n_tru"            : n_tru,
         "loai_tru"         : loai_tru,
+        "nhom_tru"         : tru.get("nhom_tru", ""),
         "vol_than_tru_m3"  : round(vol_than_1tru * n_tru, 2),
         "vol_xa_mu_tru_m3" : round(vol_xa_mu_1tru * n_tru, 2),
         "vol_be_tru_m3"    : round(vol_be_1tru * n_tru, 2),
         "vol_mo_m3"        : round(vol_mo_tong, 2),
+        "vol_ban_qua_do_m3": round(vol_ban_qua_do, 2),
+        "L_bqd_m"          : L_bqd,
         "vol_BT_M35_m3"    : round(vol_BT_tong, 2),
         "thep_mo_tru_tan"  : round(thep_mo_tru_tan, 3),
         "ghi_chu"          : f"{n_tru} trụ {loai_tru}; 2 mố",
+        "ghi_chu_bqd"      : (f"2 bản quá độ L={L_bqd:g}m × B={bc:g}m × "
+                              f"dày {t_bqd:g}m (BTCT M300 đổ tại chỗ)"),
     }
 
 
@@ -566,12 +581,18 @@ def tinh_du_toan_so_bo(
     vol_tru_only = kl_tru["vol_than_tru_m3"] + kl_tru["vol_xa_mu_tru_m3"] + kl_tru["vol_be_tru_m3"]
     vol_mo_only  = kl_tru["vol_mo_m3"]
 
+    # Bản quá độ: BTCT M300 đổ tại chỗ (đơn giá theo QĐ 409:2025)
+    dg_bt_bqd = DGV["BT_M30"]["don_gia"] + DGC["duc_mo"] + DGM["may_bom_BT"] + DGM["may_dam_BT"]
     hm2 = [
         _hang_muc("Bê tông trụ M35 — thân + xà mũ + bệ trụ",
                    "m³",  vol_tru_only,              dg_bt_tru * k,
                    kl_tru["ghi_chu"]),
         _hang_muc("Bê tông mố cầu M35",
                    "m³",  vol_mo_only,               dg_bt_mo  * k),
+        _hang_muc("Bản quá độ BTCT M300 đổ tại chỗ (2 mố)",
+                   "m³",  kl_tru.get("vol_ban_qua_do_m3", 0.0),
+                   dg_bt_bqd * k,
+                   kl_tru.get("ghi_chu_bqd", "")),
         _hang_muc("Cốt thép mố trụ CB400",
                    "tấn", kl_tru["thep_mo_tru_tan"], dg_ct_tt  * k),
         _hang_muc("Cốp pha mố trụ (thép)",
@@ -583,7 +604,9 @@ def tinh_du_toan_so_bo(
     # ─────────────────────────────────────────────────────────────────────────
     # HẠNG MỤC 3 — MÓNG CỌC
     # ─────────────────────────────────────────────────────────────────────────
-    is_bored = "khoan nhồi" in kl_coc["loai_coc"].lower()
+    _lc_lower = kl_coc["loai_coc"].lower()
+    is_bored  = "khoan nhồi" in _lc_lower
+    is_ly_tam = "ly tâm" in _lc_lower or "ly tam" in _lc_lower or "phc" in _lc_lower
     dg_coc_m = (DGC["khoan_nhoi"] + DGM["may_khoan"]
                 if is_bored
                 else DGC["ep_coc"] + DGM["may_ep_coc"])
@@ -594,7 +617,12 @@ def tinh_du_toan_so_bo(
     # Đơn giá/m dài cọc = VL/m + nhân công + máy
     D_m = kl_coc["D_coc_mm"] * _MM2M
     A_coc_m2 = math.pi * (D_m / 2) ** 2 if is_bored else D_m ** 2
-    dg_per_m  = dg_coc_vl * A_coc_m2 + dg_coc_m   # nghìn đ/m dài cọc
+    if is_ly_tam:
+        # Cọc tròn ly tâm PHC: vật liệu tính theo m dài đúc sẵn (QĐ 409:2025)
+        A_coc_m2 = math.pi * (D_m / 2) ** 2 * 0.55   # rỗng lòng (thống kê BT)
+        dg_per_m = DGV["COC_LY_TAM"]["don_gia"] + dg_coc_m
+    else:
+        dg_per_m = dg_coc_vl * A_coc_m2 + dg_coc_m   # nghìn đ/m dài cọc
 
     hm3 = [
         _hang_muc(f"Thi công cọc {kl_coc['loai_coc']} Ø{kl_coc['D_coc_mm']:.0f}mm",

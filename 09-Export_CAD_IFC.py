@@ -54,6 +54,7 @@ _LAYER_CFG = {
     "TEXT":         {"color": 7,   "linetype": "CONTINUOUS"},
     "CENTERLINE":   {"color": 1,   "linetype": "CENTER"},
     "HATCH":        {"color": 8,   "linetype": "CONTINUOUS"},
+    "BAN_QUA_DO":   {"color": 40,  "linetype": "CONTINUOUS"},   # cam đậm — bản quá độ
 }
 
 def _setup_doc(title="BRIDGE DRAWING"):
@@ -247,6 +248,20 @@ def export_mcn_dxf(design_data) -> bytes:
 
     doc = _setup_doc("MẶT CẮT NGANG")
     msp = doc.modelspace()
+
+    # Ghi chú BẢN QUÁ ĐỘ (layer BAN_QUA_DO — cấu kiện ở 2 đầu cầu, ngoài
+    # phạm vi mặt cắt ngang; kích thước lấy từ mo_result Module 07).
+    _bqd_mcn = ((design_data.get("tru_result") or {}).get("ket_qua_mo") or {}
+                ).get("ban_qua_do") or {}
+    if _bqd_mcn:
+        msp.add_text(
+            (f"BAN QUA DO 2 DAU CAU: L={_bqd_mcn.get('L_bqd','5'):g}m  "
+             f"day>={float(_bqd_mcn.get('day_bqd',0.3))*100:.0f}cm  "
+             f"doc 10-15%  dat dap >=70cm"
+             if isinstance(_bqd_mcn.get('L_bqd'), (int, float)) else
+             "BAN QUA DO 2 DAU CAU (xem trac doc)"),
+            dxfattribs={"layer": "BAN_QUA_DO", "height": 0.25},
+        ).set_placement((-bc / 2, 1.2))
 
     # --- Bản mặt cầu (deck slab) ---
     t_ban = 0.20   # chiều dày bản mặt cầu
@@ -442,6 +457,36 @@ def export_trac_doc_dxf(design_data) -> bytes:
         hatch.paths.add_polyline_path([(p[0], p[1]) for p in pts_mo])
         hatch.set_pattern_fill("ANSI31", scale=0.2)
 
+    # --- Bản quá độ (BẮT BUỘC sau mỗi mố — Module 07) ---
+    # Một đầu kê tường đỉnh mố, đầu kia trên dầm kê trong nền đường; mặt bản
+    # dưới mặt đường ≥ 0.7m, dốc dọc 10–15% hạ về phía nền đường.
+    _bqd = ((design_data.get("tru_result") or {}).get("ket_qua_mo") or {}
+            ).get("ban_qua_do") or {}
+    L_bqd   = float(_bqd.get("L_bqd", 5.0) or 5.0)
+    t_bqd   = float(_bqd.get("day_bqd", 0.30) or 0.30)
+    doc_bqd = float(_bqd.get("doc_bqd_val", 0.10) or 0.10)
+    cov_bqd = float(_bqd.get("chieu_sau_dat_dap_toi_thieu", 0.70) or 0.70)
+    for xm, od in [(x_mo_trai, -1.0), (x_mo_phai, 1.0)]:
+        idx = int(np.argmin(np.abs(np.array([p[0] for p in design_pts]) - xm)))
+        y_near = design_pts[idx][1] - cov_bqd          # mặt bản dưới mặt đường
+        y_far  = y_near - doc_bqd * L_bqd              # dốc về phía nền đường
+        x_far  = xm + od * L_bqd
+        pts_bqd = [(xm, y_near), (x_far, y_far),
+                   (x_far, y_far - t_bqd), (xm, y_near - t_bqd)]
+        msp.add_lwpolyline(pts_bqd + [pts_bqd[0]], close=True,
+                           dxfattribs={"layer": "BAN_QUA_DO", "lineweight": 40})
+        # Dầm kê đầu bản trong nền đường
+        pts_ke = [(x_far, y_far - t_bqd), (x_far + od * 0.4, y_far - t_bqd),
+                  (x_far + od * 0.4, y_far - t_bqd - 0.4),
+                  (x_far, y_far - t_bqd - 0.4)]
+        msp.add_lwpolyline(pts_ke + [pts_ke[0]], close=True,
+                           dxfattribs={"layer": "BAN_QUA_DO", "lineweight": 30})
+        if od < 0:
+            msp.add_text(
+                f"BAN QUA DO L={L_bqd:g}m day={t_bqd*100:.0f}cm doc={doc_bqd*100:.0f}%",
+                dxfattribs={"layer": "BAN_QUA_DO", "height": 0.25}
+            ).set_placement((xm - L_bqd, y_near + 0.3))
+
     # --- Trụ ---
     x_trus = []
     if n_nhip > 1:
@@ -601,6 +646,108 @@ def export_tru_dxf(design_data) -> bytes:
                  subtitle=f"H_trụ={H:.2f}m  |  B_cầu={bc_val}m  |  Xà mũ={cap_W:.2f}×{cap_L:.2f}m  |  Bệ={base_W:.2f}×{base_L:.2f}×{base_H:.1f}m",
                  scale="1:50",
                  x0=-base_W / 2, y0=-base_H - 3.0)
+
+    buf = io.StringIO()
+    doc.write(buf)
+    return buf.getvalue().encode("utf-8")
+
+
+# ===========================================================================
+# 3B. DXF — MẶT BẰNG BỆ CỌC (Module 08 — TCVN 10304:2025)
+# ===========================================================================
+def export_foundation_dxf(design_data) -> bytes:
+    """
+    Xuất MẶT BẰNG BỆ CỌC ra DXF kèm BẢNG THỐNG KÊ khoảng cách bố trí theo
+    TCVN 10304:2025 (tim-tim / mép bệ / thông thủy — Module 08).
+    Đọc mong_result: khoang_cach_tim, khoang_cach_mep, khoang_cach_thong_thuy,
+    n_cols_be/n_rows_be, so_coc_be, Be_ngang/Be_doc, kich_thuoc_mm.
+    """
+    if not _HAS_EZDXF:
+        raise RuntimeError("Thiếu thư viện ezdxf")
+
+    mong = design_data.get("mong_result") or {}
+    D_mm = float(mong.get("D_coc_mm") or mong.get("kich_thuoc_mm") or 800)
+    D_m  = D_mm / 1000.0
+    n    = int(mong.get("so_coc_be") or mong.get("So_coc_tu") or 4)
+    S    = float(mong.get("khoang_cach_tim")
+                 or mong.get("khoang_cach_tim_coc") or 3.0 * D_m)
+    n_cols = int(mong.get("n_cols_be") or math.ceil(math.sqrt(n)))
+    n_rows = int(mong.get("n_rows_be") or math.ceil(n / max(1, n_cols)))
+    kt_mep_tim = float(mong.get("khoang_cach_mep_be") or (D_m / 2 + 0.3))
+    Be_W = float(mong.get("Be_ngang") or ((n_cols - 1) * S + 2 * kt_mep_tim))
+    Be_D = float(mong.get("Be_doc")   or ((n_rows - 1) * S + 2 * kt_mep_tim))
+    la_ckn = "khoan nhồi" in str(mong.get("loai_mong")
+                                 or mong.get("loai_coc") or "").lower()
+    mep  = mong.get("khoang_cach_mep") or (0.300 if la_ckn else 0.225)
+    tt   = mong.get("khoang_cach_thong_thuy")
+
+    doc = _setup_doc("MẶT BẰNG BỆ CỌC")
+    msp = doc.modelspace()
+
+    # Bệ cọc
+    pts_be = [(-Be_W/2, -Be_D/2), (Be_W/2, -Be_D/2),
+              (Be_W/2, Be_D/2), (-Be_W/2, Be_D/2)]
+    msp.add_lwpolyline(pts_be + [pts_be[0]], close=True,
+                       dxfattribs={"layer": "PIER", "lineweight": 50})
+
+    # Lưới cọc (tròn CKN/ly tâm; vuông cọc ép)
+    k = 0
+    for r in range(n_rows):
+        for c in range(n_cols):
+            if k >= n:
+                break
+            xc = (c - (n_cols - 1) / 2.0) * S
+            yc = (r - (n_rows - 1) / 2.0) * S
+            if la_ckn:
+                msp.add_circle((xc, yc), D_m / 2,
+                               dxfattribs={"layer": "GIRDER", "lineweight": 40})
+            else:
+                h = D_m / 2
+                sq = [(xc-h, yc-h), (xc+h, yc-h), (xc+h, yc+h), (xc-h, yc+h)]
+                msp.add_lwpolyline(sq + [sq[0]], close=True,
+                                   dxfattribs={"layer": "GIRDER", "lineweight": 40})
+            # tim cọc
+            msp.add_line((xc-0.15, yc), (xc+0.15, yc),
+                         dxfattribs={"layer": "CENTERLINE", "lineweight": 9})
+            msp.add_line((xc, yc-0.15), (xc, yc+0.15),
+                         dxfattribs={"layer": "CENTERLINE", "lineweight": 9})
+            k += 1
+
+    # Kích thước tim-tim (hàng dưới)
+    if n_cols >= 2:
+        y_dim = -Be_D/2 - 0.6
+        x_a = -(n_cols - 1) / 2.0 * S
+        msp.add_line((x_a, y_dim), (x_a + S, y_dim),
+                     dxfattribs={"layer": "DIMS", "lineweight": 18})
+        msp.add_text(f"S={S:g}m", dxfattribs={"layer": "DIMS", "height": 0.22}
+                     ).set_placement((x_a + S/2 - 0.4, y_dim - 0.35))
+
+    # ── BẢNG THỐNG KÊ khoảng cách (TCVN 10304:2025) ─────────────────────
+    rows = [
+        ("BANG THONG KE BO TRI COC (TCVN 10304:2025)", ""),
+        ("So coc / be",        f"{n} ({n_rows}x{n_cols})"),
+        ("Duong kinh/canh D",  f"{D_mm:.0f} mm"),
+        ("Tim-tim S",          f"{S:g} m"
+         + (" (>3.0D)" if la_ckn else " (>=max(750mm,2.5D))")),
+        ("Mat coc -> mep be",  f">= {float(mep)*1000:.0f} mm"),
+    ]
+    if la_ckn and tt:
+        rows.append(("Thong thuy than coc", f"{tt:g} m (>= 1.0 m)"))
+    rows.append(("Kich thuoc be", f"{Be_W:g} x {Be_D:g} m"))
+    x_tb = Be_W / 2 + 1.0
+    y_tb = Be_D / 2
+    for i, (k1, v1) in enumerate(rows):
+        h_txt = 0.28 if i == 0 else 0.22
+        msp.add_text(f"{k1}{(':  ' + v1) if v1 else ''}",
+                     dxfattribs={"layer": "TEXT", "height": h_txt}
+                     ).set_placement((x_tb, y_tb - i * 0.45))
+
+    _title_block(msp,
+                 title="MẶT BẰNG BỆ CỌC",
+                 subtitle=(f"{mong.get('loai_mong') or mong.get('loai_coc','Cọc')} "
+                           f"D{D_mm:.0f}  |  {n} cọc  |  S={S:g}m"),
+                 scale="1:50",
+                 x0=-Be_W / 2, y0=-Be_D / 2 - 3.0)
 
     buf = io.StringIO()
     doc.write(buf)
@@ -850,6 +997,22 @@ def export_bridge_ifc(design_data) -> bytes:
                  L_nhip, bc, t_ban,
                  "IfcSlab", f"Ban mat cau N{i_nhip+1}",
                  material_name="Concrete C40")
+
+    # ── Bản quá độ 2 đầu cầu (IfcSlab — cấu kiện BẮT BUỘC, Module 07) ──
+    # Mặt bản dưới mặt đường ≥ 0.7m (LOD sơ bộ: tấm phẳng, chưa thể hiện dốc).
+    _bqd = ((design_data.get("tru_result") or {}).get("ket_qua_mo") or {}
+            ).get("ban_qua_do") or {}
+    L_bqd = float(_bqd.get("L_bqd", 5.0) or 5.0)
+    t_bqd = float(_bqd.get("day_bqd", 0.30) or 0.30)
+    cov_b = float(_bqd.get("chieu_sau_dat_dap_toi_thieu", 0.70) or 0.70)
+    z_bqd = z_dd + t_ban - cov_b - t_bqd          # mặt đường ≈ z_dd + t_ban
+    for xs_b, nm_b in [(x0 - L_bqd, "Ban qua do mo trai"),
+                       (x0 + L_cau, "Ban qua do mo phai")]:
+        _ifc_box(ifc, storey, ctx,
+                 xs_b, -bc/2, z_bqd,
+                 L_bqd, bc, t_bqd,
+                 "IfcSlab", nm_b,
+                 material_name="Concrete M300")
 
     import tempfile, os as _os
     with tempfile.NamedTemporaryFile(suffix=".ifc", delete=False) as tf:
