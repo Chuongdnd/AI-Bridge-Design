@@ -6,7 +6,7 @@ Label   : Loai_tru (phan loai tru)
 Fallback: Rule-Based khi chua co du lieu train
 
 Phân loại TRỤ theo 3 NHÓM cấu tạo chính (PIER_TYPES):
-  1. Trụ DẺO (Trụ cọc)      — nhịp ngắn ≤12m, trụ thấp ≤4m, không thông thuyền
+  1. Trụ DẺO (Trụ cọc)      — nhịp ngắn ≤12m, sông nhỏ cấp V–VI không thông thuyền
   2. Trụ CỘT (thân cột BTCT) — cầu cạn/cầu vượt/sông cấp IV–VI; 1 cột (đô thị)
                                hoặc nhiều cột (2–4) theo bề rộng cầu
   3. Trụ ĐẶC THÂN HẸP        — sông lớn cấp I–III, va tàu; H>10m → biến thể rỗng
@@ -47,9 +47,11 @@ PIER_TYPES = {
             "TRỰC TIẾP với xà mũ, KHÔNG có bệ trụ riêng."
         ),
         "dieu_kien": (
-            "Cầu nhiều nhịp ngắn L_nhịp ≤ 12m; trụ thấp H_trụ ≤ 4m; lòng "
-            "sông không sâu, không thông thuyền (không vượt sông hoặc sông "
-            "cấp V–VI). Thường kết hợp với Mố dẻo (Mố chân dê)."
+            "Cầu nhiều nhịp ngắn L_nhịp ≤ 12m; lòng sông không sâu, không "
+            "thông thuyền (vượt sông cấp V–VI; trường hợp không vượt sông "
+            "chỉ khi vẫn có yêu cầu bố trí trụ giữa). Chiều cao trụ thấp là "
+            "hệ quả tự nhiên của cầu nhịp ngắn qua vùng nước cạn, không "
+            "phải tiêu chí phân nhóm. Thường kết hợp với Mố dẻo (Mố chân dê)."
         ),
         "loai": ["Trụ cọc"],
     },
@@ -109,8 +111,9 @@ PIER_NOTES = {
     "Trụ cọc": (
         "Nhóm TRỤ DẺO: 1–2 hàng cọc 30×30 đến 40×40 cm liên kết trực tiếp "
         "xà mũ, KHÔNG bệ trụ riêng — cấu tạo đơn giản, kinh tế nhất cho cầu "
-        "nhiều nhịp ngắn ≤ 12m, trụ thấp ≤ 4m, lòng sông nông không thông "
-        "thuyền. Thường đi cùng Mố dẻo (chân dê). Không dùng nơi va xô lớn."
+        "nhiều nhịp ngắn ≤ 12m vượt sông nhỏ cấp V–VI, lòng sông nông không "
+        "thông thuyền (trụ thấp là hệ quả tự nhiên, không phải tiêu chí). "
+        "Thường đi cùng Mố dẻo (chân dê). Không dùng nơi va xô lớn."
     ),
     # ── Nhóm 2 — Trụ cột ────────────────────────────────────────────────
     "Trụ cột đơn": (
@@ -465,9 +468,12 @@ def _rule_based_pier(vtk, B_cau, H_tru, is_urban, is_river,
     LOẠI CON trong nhóm.
 
     Bước 1 — PHÂN NHÓM theo điều kiện chính:
-      • Nhóm DẺO (Trụ cọc): L_nhịp ≤ 12m, H_trụ ≤ 4m, không thông thuyền
-        (không vượt sông hoặc sông cấp V–VI). Cọc nhỏ 30×30–40×40cm nối
-        thẳng xà mũ, không bệ riêng; thường đi cùng Mố chân dê.
+      • Nhóm DẺO (Trụ cọc): L_nhịp ≤ 12m + lòng sông không sâu, không
+        thông thuyền — vượt sông cấp V–VI; trường hợp KHÔNG vượt sông chỉ
+        khi vẫn có yêu cầu bố trí trụ giữa (n_nhịp ≥ 2). Chiều cao trụ
+        thấp là HỆ QUẢ tự nhiên của cầu nhịp ngắn qua vùng nước cạn, không
+        phải tiêu chí phân nhóm. Cọc nhỏ 30×30–40×40cm nối thẳng xà mũ,
+        không bệ riêng; thường đi cùng Mố chân dê.
       • Nhóm ĐẶC THÂN HẸP: vượt sông LỚN cấp I–III (va tàu lớn, cây trôi).
         Thân dưới thu hẹp, mũi vát CD=0.7–0.8.
       • Nhóm CỘT (còn lại): cầu cạn/cầu vượt/sông cấp IV–VI ít cây trôi.
@@ -487,13 +493,20 @@ def _rule_based_pier(vtk, B_cau, H_tru, is_urban, is_river,
     notes = []
 
     # ── Bước 1 — PHÂN NHÓM ──────────────────────────────────────────────
-    khong_thong_thuyen = (not is_river) or cap_int >= 5
-    if _L_nhip <= 12.0 and H_tru <= 4.0 and khong_thong_thuyen:
+    # Trụ dẻo: sông NHỎ cấp V–VI (lòng sông không sâu, không thông thuyền);
+    # không vượt sông chỉ nhận khi vẫn có yêu cầu bố trí trụ giữa (n_nhịp≥2).
+    # KHÔNG xét H_trụ — trụ thấp là hệ quả tự nhiên, không phải tiêu chí.
+    song_nho_khong_thong_thuyen = bool(is_river) and cap_int >= 5
+    can_tru_giua_khong_song = (not is_river) and n_nhip >= 2
+    if _L_nhip <= 12.0 and (song_nho_khong_thong_thuyen
+                            or can_tru_giua_khong_song):
         nhom = "dẻo"
         tang = "Nhóm 1 — Trụ dẻo (Trụ cọc)"
         notes.append(
-            f"L_nhịp={_L_nhip:.0f}m ≤ 12m, H_trụ={H_tru:.1f}m ≤ 4m, "
-            + ("không vượt sông" if not is_river else f"sông cấp {cap_song} không thông thuyền")
+            f"L_nhịp={_L_nhip:.0f}m ≤ 12m, "
+            + (f"sông cấp {cap_song} lòng không sâu, không thông thuyền"
+               if is_river else
+               f"không vượt sông nhưng vẫn cần {n_nhip - 1} trụ giữa")
             + " — trụ dẻo: cọc 30×30–40×40cm nối trực tiếp xà mũ, không bệ "
               "riêng; kết hợp Mố dẻo (chân dê)")
     elif is_river and cap_int <= 3:
