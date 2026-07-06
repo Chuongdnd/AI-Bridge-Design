@@ -1742,20 +1742,25 @@ def dialog_step1():
             st.rerun()
     with _apply_col:
         if st.button(
-            "✅ Áp dụng",
+            "✅ Áp dụng & cập nhật",
             use_container_width=True,
             key="d1_apply",
-            help="LƯU số liệu đã khai — hộp vẫn mở để khai báo tiếp",
+            help="LƯU số liệu + CHẠY cập nhật toàn hệ thống ngay, xong tự đóng "
+                 "hộp (khai báo vẫn được giữ nguyên để sửa tiếp lần sau)",
         ):
             _d1_commit()
             st.session_state.d1_show_feedback = True
             if _d1_validate():
+                # Số liệu chưa hợp lệ → giữ hộp mở để sửa
                 st.toast("⚠️ Có cao độ chưa hợp lệ — xem cảnh báo.", icon="⚠️")
+                st.session_state.open_dialog = "step1"
+                st.rerun()
             else:
-                st.toast("💾 Đã lưu khai báo thủy văn.", icon="✅")
-            # GHI NHỚ nhưng KHÔNG thoát hộp — mở lại chính hộp này
-            st.session_state.open_dialog = "step1"
-            st.rerun()
+                # LƯU + CHẠY pipeline (giữ draft & tab) → xong tự đóng hộp
+                st.session_state._d3_run = True
+                st.session_state._apply_keep_context = True
+                st.session_state.open_dialog = "step3"
+                st.rerun()
     with btn_col:
         if st.button(
             "Bước 2 ▶",
@@ -2331,12 +2336,15 @@ def dialog_step2():
             st.session_state.open_dialog = "step1"
             st.rerun()
     with btn_a:
-        if st.button("✅ Áp dụng", use_container_width=True, key="d2_apply",
-                     help="LƯU thông số hình học — hộp vẫn mở để khai báo tiếp"):
+        if st.button("✅ Áp dụng & cập nhật", use_container_width=True,
+                     key="d2_apply",
+                     help="LƯU thông số + CHẠY cập nhật toàn hệ thống ngay, xong "
+                          "tự đóng hộp (khai báo vẫn giữ nguyên để sửa tiếp)"):
             # draft đã được cập nhật ở khối update phía trên mỗi lần render.
-            st.toast("💾 Đã lưu thông số hình học.", icon="✅")
-            # GHI NHỚ nhưng KHÔNG thoát hộp — mở lại chính hộp này
-            st.session_state.open_dialog = "step2"
+            # LƯU + CHẠY pipeline (giữ draft & tab) → xong tự đóng hộp.
+            st.session_state._d3_run = True
+            st.session_state._apply_keep_context = True
+            st.session_state.open_dialog = "step3"
             st.rerun()
     with btn_f:
         if st.button("Bước 3 ▶", use_container_width=True, type="primary", key="d2_next"):
