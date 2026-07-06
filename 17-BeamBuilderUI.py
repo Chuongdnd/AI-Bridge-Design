@@ -1870,8 +1870,11 @@ def _pa_kcn_for_pfx(pfx: str):
     p = pfx or ""
     key = ("pa1_chi_phi" if "pa1" in p else
            "pa2_my_quan" if "pa2" in p else
-           "pa3_ai"      if "pa3" in p else None)
-    kcn = (_3.get(key) if key else None) or dd.get("kcn_result") or dd.get("ai_result") or {}
+           "pa3_ml"      if "pa3" in p else None)
+    # 'pa3_ai' = key cũ đã lưu trước khi PA3 đổi tên → Machine Learning
+    kcn = ((_3.get(key) if key else None)
+           or (_3.get("pa3_ai") if key == "pa3_ml" else None)
+           or dd.get("kcn_result") or dd.get("ai_result") or {})
     loai = str(kcn.get("loai_dam", "") or "")
     H = float(kcn.get("chieu_cao_dam") or kcn.get("chieu_cao") or 1.2)
     return loai, H * 1000.0

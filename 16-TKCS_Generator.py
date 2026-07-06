@@ -754,13 +754,59 @@ class TKCSGenerator:
         self._h2(doc, "Phân tích và lựa chọn phương án kết cấu nhịp")
         self._para(doc,
             "Trong giai đoạn nghiên cứu, đã xem xét ba phương án kết cấu nhịp "
-            "để lựa chọn phương án tối ưu. Các phương án được đánh giá theo "
-            "100 điểm (60 điểm kỹ thuật + 30 điểm kinh tế + 10 điểm mỹ quan) "
-            "theo phương pháp AHP (Analytic Hierarchy Process) tích hợp trong "
-            "phần mềm AI-Bridge-Design:")
+            "để lựa chọn phương án tối ưu: PA1 tối ưu chi phí (nhóm dầm không "
+            "có bản đáy liền mạch), PA2 tối ưu mỹ quan (nhóm dầm có bản đáy "
+            "liền mạch) và PA3 do mô hình Machine Learning đề xuất (Random "
+            "Forest học từ dữ liệu công trình cầu Việt Nam). Các phương án "
+            "được đánh giá theo 100 điểm (60 điểm kỹ thuật + 30 điểm kinh tế "
+            "+ 10 điểm mỹ quan) theo phương pháp AHP (Analytic Hierarchy "
+            "Process) tích hợp trong phần mềm AI-Bridge-Design:")
+
+        # Nguồn chọn từng PA: tự động / người dùng khai báo / Machine Learning
+        _kcn3 = ((self.ss.get("design_data") or {}).get("kcn_3_pa")
+                 if isinstance(self.ss.get("design_data"), dict) else None) or {}
+        _PA_ROWS = [("PA1", "pa1_chi_phi", "Tối ưu chi phí"),
+                    ("PA2", "pa2_my_quan", "Tối ưu mỹ quan"),
+                    ("PA3", "pa3_ml",      "Machine Learning")]
+
+        def _nguon_txt(key, plan):
+            if key == "pa3_ml":
+                return "Machine Learning (kết quả gốc)"
+            if (plan or {}).get("nguon_chon") == "nguoi_dung_khai_bao":
+                return "Người dùng khai báo"
+            return "Tự động (Rule-Based)"
 
         pa_list = self.ss.get("so_sanh_3pa") or []
-        if pa_list:
+        if _kcn3:
+            rows_pa = []
+            for _lbl, _key, _mota in _PA_ROWS:
+                _plan = _kcn3.get(_key) or (
+                    _kcn3.get("pa3_ai") if _key == "pa3_ml" else None) or {}
+                rows_pa.append([
+                    f"{_lbl} — {_mota}",
+                    (f"{_plan.get('loai_dam','—')} "
+                     f"L={_plan.get('chieu_dai','—')}m × "
+                     f"{_plan.get('tong_so_nhip','—')} nhịp"),
+                    _nguon_txt(_key, _plan),
+                ])
+            self.insert_table(
+                doc,
+                ["Phương án", "Mô tả", "Nguồn chọn"],
+                rows_pa,
+                "So sánh và đánh giá các phương án kết cấu nhịp",
+            )
+            _ovr = [f"{_lbl}" for _lbl, _key, _m in _PA_ROWS
+                    if _key != "pa3_ml"
+                    and (_kcn3.get(_key) or {}).get("nguon_chon")
+                    == "nguoi_dung_khai_bao"]
+            if _ovr:
+                self._para(doc,
+                    f"Ghi chú: phương án {', '.join(_ovr)} sử dụng loại dầm do "
+                    "người dùng tự khai báo (ghi đè kết quả tự động của hệ "
+                    "thống); các phương án còn lại là kết quả tự động. PA3 "
+                    "giữ nguyên kết quả Machine Learning gốc làm cơ sở so "
+                    "sánh khách quan.")
+        elif pa_list:
             rows_pa = []
             for pa_item in pa_list:
                 rows_pa.append([
