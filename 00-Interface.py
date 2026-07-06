@@ -6885,8 +6885,17 @@ with _col_main:
                            + (f" (–{mong.get('L_coc_den')}m)"
                               if mong.get("L_coc_den") else ""))
                 if mong.get("ty_le_LD") is not None:
-                    _b2.metric("Tỷ lệ L/D", f"{mong.get('ty_le_LD')}"
-                               " (giới hạn 37 khi nền yếu)")
+                    _ld_v = mong.get("ty_le_LD")
+                    _b2.metric("Tỷ lệ L/D", f"{_ld_v} (hợp lý 30–100)")
+                    try:
+                        if 0 < float(_ld_v) < 30:
+                            _b2.caption("⚠️ L/D < 30 — cọc quá ngắn so đường "
+                                        "kính, xem xét giảm D (kinh tế)")
+                        elif float(_ld_v) > 100:
+                            _b2.caption("⚠️ L/D > 100 — cọc quá mảnh, "
+                                        "xem xét tăng D")
+                    except Exception:
+                        pass
                 if mong.get("Q_vl_kN"):
                     _b2.caption(f"Q_vật_liệu ≈ {mong['Q_vl_kN']} kN so "
                                 f"Q_đất_nền {mong.get('Q_1coc_tk_kN','—')} kN")
