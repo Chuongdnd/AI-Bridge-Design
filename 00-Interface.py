@@ -579,9 +579,18 @@ _auth_spec = _iutil.spec_from_file_location("auth00", os.path.join(os.path.dirna
 AUTH = _iutil.module_from_spec(_auth_spec)
 _auth_spec.loader.exec_module(AUTH)
 
-if not AUTH.is_authenticated():
-    AUTH.show_login_page()
-    st.stop()
+# ── TẠM ẨN ĐĂNG NHẬP ─────────────────────────────────────────────────────────
+# Bỏ qua trang đăng nhập: tự đăng nhập bằng tài khoản khách (quyền admin để mọi
+# tính năng dùng được). ĐỂ BẬT LẠI: đặt _REQUIRE_LOGIN = True.
+_REQUIRE_LOGIN = False
+if _REQUIRE_LOGIN:
+    if not AUTH.is_authenticated():
+        AUTH.show_login_page()
+        st.stop()
+elif not AUTH.is_authenticated():
+    st.session_state["auth_ok"] = True
+    st.session_state["auth_user"] = {"username": "khach", "name": "Khách",
+                                     "role": "admin"}
 
 # Khởi tạo bộ nhớ hội thoại chatbot
 if 'messages' not in st.session_state:
