@@ -179,8 +179,31 @@ class TKCSGenerator:
     def _mong(self):
         return self.ss.get("mong_coc_result") or {}
 
-    def _dt(self):
-        return self.ss.get("du_toan_result") or {}
+    def _sdt(self):
+        """Giá trị công trình theo SUẤT VỐN ĐẦU TƯ (QĐ 409 — Bảng 76): dict
+        {code, ten, area, suat, gia_tri, gia_tri_xd, gia_tri_tb} hoặc None.
+        Chi phí DUY NHẤT của hệ thống (đã bỏ dự toán đơn giá × khối lượng)."""
+        dd   = self.ss.get("design_data") or self.ss
+        kcn  = dd.get("kcn_result") or dd.get("ai_result") or self._kcn() or {}
+        geo  = dd.get("geo_logic") or {}
+        mong = dd.get("mong_result") or self._mong() or {}
+        L    = float(geo.get("L_cau", 0) or 0)
+        B    = float(dd.get("bc") or dd.get("b_cau") or 0)
+        if L <= 0 or B <= 0:
+            return None
+        try:
+            import importlib.util as _iu
+            _sp = _iu.spec_from_file_location(
+                "suat_dau_tu",
+                os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                             "utils", "suat_dau_tu.py"))
+            _SDT = _iu.module_from_spec(_sp); _sp.loader.exec_module(_SDT)
+            _code = _SDT.suggest(str(kcn.get("loai_dam", "") or ""),
+                                 str(mong.get("loai_mong", "") or ""),
+                                 float(kcn.get("chieu_dai", 0) or 0))
+            return _SDT.compute(_SDT.deck_area(L, B), _code)
+        except Exception:
+            return None
 
     def _pa(self):
         return self.ss.get("phuong_an_cuoi_cung") or {}
@@ -1194,89 +1217,49 @@ class TKCSGenerator:
     # ─────────────────────────────────────────────────────────────────────────
 
     def generate_chapter_9(self, doc):
-        dt   = self._dt()
-        th   = dt.get("tong_hop") or {}
-        ph   = dt.get("phan_tich") or {}
-        kl   = dt.get("khoi_luong") or {}
+        """Giá trị công trình = SUẤT VỐN ĐẦU TƯ × diện tích mặt cầu (đã bỏ hẳn
+        dự toán theo đơn giá × khối lượng — chi phí DUY NHẤT là suất đầu tư)."""
+        self._h1(doc, "Giá trị công trình theo suất vốn đầu tư")
 
-        self._h1(doc, "Dự toán sơ bộ tổng mức đầu tư")
-
-        self._h2(doc, "Cơ sở lập dự toán")
+        self._h2(doc, "Cơ sở xác định")
         self._para(doc,
-            "Dự toán sơ bộ được lập theo phương pháp suất đầu tư quy định tại "
-            "Điều 36.2, Nghị định 175/2024/NĐ-CP, sử dụng đơn giá tham chiếu "
-            "theo Quyết định 409/2025/QĐ-BXD. Các đơn giá vật liệu, nhân công, "
-            "máy thi công theo mức giá thị trường hiện hành.")
+            "Giá trị công trình được xác định theo phương pháp suất vốn đầu tư "
+            "quy định tại Điều 36.2, Nghị định 175/2024/NĐ-CP; suất vốn đầu tư "
+            "công trình cầu đường bộ lấy theo Quyết định 409/QĐ-BXD (Bảng 76). "
+            "Giá trị = suất vốn đầu tư (triệu đồng/m²) × diện tích mặt cầu.")
 
-        self._h2(doc, "Tổng hợp dự toán theo hạng mục")
-        if th:
-            rows_dt = []
-            hm_map = [
-                ("hm1_KCN",  "Kết cấu nhịp (KCN)"),
-                ("hm2_MTM",  "Mố, trụ cầu (MTM)"),
-                ("hm3_MON",  "Móng cọc (MON)"),
-                ("hm4_BMC",  "Bản mặt cầu và phụ trợ (BMC)"),
-                ("hm5_PHU",  "Chi phí phụ (gối, khe, lan can, thoát nước)"),
-                ("chi_phi_dp", "Dự phòng phí"),
-                ("phi_quan_ly","Chi phí quản lý, thiết kế, giám sát"),
-                ("tong_xay_lap","TỔNG XÂY LẮP"),
-                ("VAT",       "Thuế VAT (10%)"),
-                ("tong_dau_tu","TỔNG MỨC ĐẦU TƯ (trước thuế)"),
+        # Dữ liệu phương án (chỉ để in L/B); giá trị tính qua helper _sdt().
+        dd = self.ss.get("design_data") or self.ss
+        L  = float((dd.get("geo_logic") or {}).get("L_cau", 0) or 0)
+        B  = float(dd.get("bc") or dd.get("b_cau") or 0)
+        _sdt_res = self._sdt()
+
+        if _sdt_res:
+            self._h2(doc, "Giá trị công trình")
+            rows_dt = [
+                ["Chiều dài cầu L", f"{L:,.1f}", "m"],
+                ["Bề rộng cầu B", f"{B:,.1f}", "m"],
+                ["Diện tích mặt cầu", f"{_sdt_res['area']:,.0f}", "m²"],
+                [f"Suất vốn đầu tư ({_sdt_res['code']} — {_sdt_res['ten']})",
+                 f"{_sdt_res['suat']:,.3f}", "triệu đồng/m²"],
+                ["Chi phí xây dựng", f"{_sdt_res['gia_tri_xd']:,.0f}", "triệu đồng"],
+                ["Chi phí thiết bị", f"{_sdt_res['gia_tri_tb']:,.0f}", "triệu đồng"],
+                ["GIÁ TRỊ CÔNG TRÌNH (suất đầu tư)",
+                 f"{_sdt_res['gia_tri']:,.0f}", "triệu đồng"],
             ]
-            for key, label in hm_map:
-                val = th.get(key)
-                if val is not None:
-                    rows_dt.append([label, f"{val:,.0f}", "triệu VND"])
-
-            if rows_dt:
-                self.insert_table(
-                    doc,
-                    ["Hạng mục", "Giá trị (triệu VND)", "Đơn vị"],
-                    rows_dt,
-                    "Tổng hợp dự toán sơ bộ theo hạng mục",
-                )
+            self.insert_table(
+                doc, ["Chỉ tiêu", "Giá trị", "Đơn vị"], rows_dt,
+                "Giá trị công trình theo suất vốn đầu tư (QĐ 409/QĐ-BXD, Bảng 76)")
+            self._para(doc,
+                f"Giá trị công trình ước tính theo suất vốn đầu tư: "
+                f"{_sdt_res['gia_tri']:,.0f} triệu đồng "
+                f"(≈ {_sdt_res['gia_tri']/1000:,.2f} tỷ đồng). Giá trị này dùng "
+                f"cho tổng mức đầu tư sơ bộ; chưa gồm GPMB, dự phòng trượt giá "
+                f"và các chi phí khác theo quy định.")
         else:
             self._para(doc,
-                "Chưa có dữ liệu dự toán. Vui lòng hoàn thành Module 12 — "
-                "Dự toán sơ bộ trước khi xuất thuyết minh.")
-
-        # Suất đầu tư
-        sdt = ph.get("suat_dau_tu_trieu_m2")
-        if sdt:
-            self._h2(doc, "Suất đầu tư và đánh giá tính hợp lý")
-            cap_ct = self.ss.get("cap_cong_trinh", "III")
-            self._para(doc,
-                f"Suất đầu tư tính toán: {sdt:.2f} triệu VND/m² diện tích mặt cầu. "
-                f"Theo QĐ 409/2025, suất đầu tư tham chiếu cho cầu cấp {cap_ct} "
-                f"là 8–13 triệu VND/m². "
-                + ("✓ Kết quả nằm trong khoảng tham chiếu, đảm bảo tính hợp lý."
-                   if 8 <= sdt <= 13
-                   else f"⚠ Kết quả ({sdt:.2f} triệu/m²) lệch khỏi mức tham chiếu, "
-                        f"cần giải trình thêm."))
-
-        # Cố gắng chèn biểu đồ phân bổ
-        try:
-            import plotly.graph_objects as go
-            hm_vals = {
-                "KCN": th.get("hm1_KCN", 0),
-                "MTM": th.get("hm2_MTM", 0),
-                "MON": th.get("hm3_MON", 0),
-                "BMC": th.get("hm4_BMC", 0),
-                "PHU": th.get("hm5_PHU", 0),
-            }
-            if any(v > 0 for v in hm_vals.values()):
-                fig = go.Figure(go.Pie(
-                    labels=list(hm_vals.keys()),
-                    values=list(hm_vals.values()),
-                    textinfo="percent+label",
-                ))
-                fig.update_layout(title_text="Phân bổ chi phí xây lắp theo hạng mục",
-                                  width=700, height=450)
-                self.insert_chart_from_plotly(
-                    doc, fig, "Biểu đồ phân bổ chi phí theo hạng mục"
-                )
-        except Exception:
-            pass  # bỏ qua nếu kaleido hoặc plotly không hoạt động
+                "Chưa đủ dữ liệu (chiều dài / bề rộng cầu) để tính giá trị theo "
+                "suất vốn đầu tư — hãy chạy pipeline ở ứng dụng chính rồi xuất lại.")
 
     # ─────────────────────────────────────────────────────────────────────────
     # CHƯƠNG 10 — Môi trường sơ bộ
@@ -1381,9 +1364,7 @@ class TKCSGenerator:
     def generate_chapter_12(self, doc):
         beam  = self._beam()
         mong  = self._mong()
-        dt    = self._dt()
-        ph    = dt.get("phan_tich") or {}
-        th    = dt.get("tong_hop") or {}
+        _sr   = self._sdt() or {}
 
         self._h1(doc, "Kết luận và kiến nghị")
 
@@ -1392,8 +1373,8 @@ class TKCSGenerator:
         L_nhip   = beam.get("L", 0)
         if L_nhip > 100:
             L_nhip /= 1000
-        sdt      = ph.get("suat_dau_tu_trieu_m2", 0)
-        tdt      = th.get("tong_dau_tu", 0)
+        sdt      = float(_sr.get("suat", 0) or 0)        # triệu đồng/m² (QĐ 409)
+        tdt      = float(_sr.get("gia_tri", 0) or 0)     # giá trị theo suất đầu tư
 
         self._para(doc,
             "Trên cơ sở phân tích các điều kiện tự nhiên, kỹ thuật, kinh tế "
@@ -1403,11 +1384,11 @@ class TKCSGenerator:
         self._bullet(doc,
             f"Móng: {mong.get('loai_coc','Cọc khoan nhồi')} — đảm bảo sức chịu tải và an toàn")
         self._bullet(doc,
-            f"Suất đầu tư: {sdt:.2f} triệu VND/m² — "
-            + ("nằm trong khoảng tham chiếu theo QĐ 409/2025" if 8<=sdt<=20
-               else "cần giải trình chi tiết ở giai đoạn TKKT"))
+            f"Suất vốn đầu tư áp dụng: {sdt:.3f} triệu VND/m² "
+            f"(QĐ 409/QĐ-BXD — Bảng 76, mã {_sr.get('code', '?')})")
         self._bullet(doc,
-            f"Tổng mức đầu tư dự kiến: {tdt:,.0f} triệu VND")
+            f"Giá trị công trình theo suất đầu tư: {tdt:,.0f} triệu VND "
+            f"(≈ {tdt/1000:,.2f} tỷ đồng)")
 
         self._para(doc,
             "Phương án đề xuất đảm bảo tính khả thi về mặt kỹ thuật, tuân thủ "
@@ -1443,16 +1424,15 @@ class TKCSGenerator:
         # 1. Tính đầy đủ (max 40pt)
         required_keys = [
             "beam_params_final", "kcn_result", "pier_result",
-            "mong_coc_result", "du_toan_result",
+            "mong_coc_result",
         ]
         n_present = sum(1 for k in required_keys if ss.get(k))
         scores["day_du"] = int(40 * n_present / len(required_keys))
 
-        # 2. Tính nhất quán dữ liệu (max 25pt)
+        # 2. Tính nhất quán dữ liệu (max 25pt) — chi phí theo SUẤT ĐẦU TƯ
         beam = self._beam()
-        dt   = self._dt()
-        ph   = dt.get("phan_tich") or {}
-        sdt  = ph.get("suat_dau_tu_trieu_m2", 0)
+        _sr  = self._sdt() or {}
+        sdt  = float(_sr.get("suat", 0) or 0)
         ok_sdt = 8 <= sdt <= 20 if sdt else False
         L_nhip = (beam.get("L", 0) / 1000) if beam.get("L", 0) > 100 else beam.get("L", 0)
         loai   = beam.get("loai_dam", "")
@@ -1678,23 +1658,12 @@ if __name__ == "__main__":
             "Q_cho_phep":  1_800,
             "lop_tua_mui": "Lớp cát chặt N≥30 (lớp 3)",
         },
-        "du_toan_result": {
-            "tong_hop": {
-                "hm1_KCN":    3_850,
-                "hm2_MTM":    980,
-                "hm3_MON":    2_100,
-                "hm4_BMC":    750,
-                "hm5_PHU":    420,
-                "tong_xay_lap": 8_100,
-                "chi_phi_dp":   405,
-                "phi_quan_ly":  567,
-                "VAT":          810,
-                "tong_dau_tu":  9_882,
-            },
-            "phan_tich": {
-                "suat_dau_tu_trieu_m2": 11.13,
-                "A_cau_m2":             458.4,
-            },
+        # Chi phí: tính theo SUẤT ĐẦU TƯ từ design_data (bc, geo_logic.L_cau).
+        "design_data": {
+            "bc": 12.0,
+            "geo_logic": {"L_cau": 38.2},
+            "kcn_result": {"loai_dam": "Super-T", "chieu_dai": 38.2},
+            "mong_result": {"loai_mong": "Cọc khoan nhồi"},
         },
         "terrain_data": {
             "dia_hinh": "đồng bằng, tương đối bằng phẳng",

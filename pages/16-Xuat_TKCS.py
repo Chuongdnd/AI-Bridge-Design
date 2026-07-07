@@ -45,7 +45,6 @@ PREREQS = [
     ("kcn_result",         "Bước 5 — Kết cấu nhịp (kcn_result)",             True),
     ("pier_result",        "Bước 6 — Mố trụ (pier_result)",                  False),
     ("mong_coc_result",    "Bước 7 — Móng cọc (mong_coc_result)",            False),
-    ("du_toan_result",     "Bước 9 — Dự toán sơ bộ (du_toan_result)",        False),
 ]
 
 
@@ -107,14 +106,11 @@ def _load_demo_data():
         "D_coc": 800, "L_coc": 35, "n_coc_be": 4, "Q_cho_phep": 1_800,
         "lop_tua_mui": "Lớp cát chặt N≥30",
     }
-    st.session_state["du_toan_result"] = {
-        "tong_hop": {
-            "hm1_KCN": 3_850, "hm2_MTM": 980, "hm3_MON": 2_100,
-            "hm4_BMC": 750, "hm5_PHU": 420,
-            "tong_xay_lap": 8_100, "chi_phi_dp": 405,
-            "phi_quan_ly": 567, "VAT": 810, "tong_dau_tu": 9_882,
-        },
-        "phan_tich": {"suat_dau_tu_trieu_m2": 11.13, "A_cau_m2": 458.4},
+    # Chi phí: tính theo SUẤT ĐẦU TƯ từ design_data (bỏ du_toan_result demo).
+    st.session_state["design_data"] = {
+        "bc": 12.0, "geo_logic": {"L_cau": 38.2},
+        "kcn_result": {"loai_dam": "Super-T", "chieu_dai": 38.2},
+        "mong_result": {"loai_mong": "Cọc khoan nhồi"},
     }
     st.session_state["terrain_data"] = {
         "dia_hinh": "đồng bằng, tương đối bằng phẳng",

@@ -87,13 +87,7 @@ def _collect_session_context() -> dict:
         ctx["n_nhip"] = kcn.get("tong_so_nhip", 0)
         ctx["bc"]     = kcn.get("be_rong_cau", 0)
 
-    du_toan = ss.get("du_toan_result", {})
-    if du_toan:
-        ph = du_toan.get("phan_tich", {})
-        th = du_toan.get("tong_hop", {})
-        ctx["suat_dau_tu"] = ph.get("suat_dau_tu_trieu_m2", 0)
-        ctx["tong_dau_tu"] = th.get("tong_dau_tu", 0)
-
+    # Chi phí: DUY NHẤT theo suất đầu tư (đã bỏ du_toan_result / dự toán đơn giá).
     return ctx
 
 

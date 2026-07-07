@@ -1,12 +1,13 @@
 """
 utils/khoi_luong.py — Thống kê KHỐI LƯỢNG cấu kiện cầu (sơ bộ).
 
-Quy tắc: tính cho 1 cấu kiện chi tiết → tổng hợp toàn cầu → đưa vào dự toán.
+Quy tắc: tính cho 1 cấu kiện chi tiết → tổng hợp toàn cầu (THAM KHẢO vật liệu).
 Mỗi cấu kiện trả về: số lượng, bê tông (m³), ván khuôn (m²), cốt thép (kg).
+CHI PHÍ công trình KHÔNG tính từ khối lượng — dùng DUY NHẤT suất vốn đầu tư
+(utils/suat_dau_tu.py, tab 💵 Suất đầu tư).
 
-Module thuần Python (không phụ thuộc Streamlit). Công thức kích thước bám theo
-12-DuToan_SoBo.py để nhất quán; bổ sung VÁN KHUÔN (diện tích bề mặt bê tông).
-Hệ số cốt thép (kg/m³) đặt ở RHO_THEP để dễ chỉnh.
+Module thuần Python (không phụ thuộc Streamlit). VÁN KHUÔN = diện tích bề mặt
+bê tông. Hệ số cốt thép (kg/m³) đặt ở RHO_THEP để dễ chỉnh.
 """
 import math
 
@@ -517,23 +518,6 @@ def tong_hop(rows):
     }
 
 
-# ── DỰ TOÁN: từ bảng khối lượng × đơn giá → thành tiền ───────────────────────
-# Đơn giá tham khảo (đồng): bê tông đ/m³, ván khuôn đ/m², cốt thép đ/kg.
-DON_GIA_MAC_DINH = {"bt": 1_800_000, "vk": 280_000, "thep": 22_000}
-
-
-def du_toan(rows, dg_bt=None, dg_vk=None, dg_thep=None):
-    """Từ list rows khối lượng → list rows dự toán (thêm thanh_tien) + tổng tiền.
-    Trả về (rows_dt, tong_tien). Đơn giá None → dùng mặc định."""
-    dg_bt   = DON_GIA_MAC_DINH["bt"]   if dg_bt   is None else dg_bt
-    dg_vk   = DON_GIA_MAC_DINH["vk"]   if dg_vk   is None else dg_vk
-    dg_thep = DON_GIA_MAC_DINH["thep"] if dg_thep is None else dg_thep
-    out = []
-    tong = 0.0
-    for r in rows:
-        tien = (_f(r["bt_m3"]) * dg_bt + _f(r["coppha_m2"]) * dg_vk
-                + _f(r["thep_kg"]) * dg_thep)
-        tong += tien
-        out.append({**r, "thanh_tien": round(tien, 0)})
-    return out, round(tong, 0)
+# (Đã BỎ dự toán đơn giá × khối lượng — chi phí công trình tính DUY NHẤT theo
+#  SUẤT VỐN ĐẦU TƯ: utils/suat_dau_tu.py, tab 💵 Suất đầu tư.)
 
