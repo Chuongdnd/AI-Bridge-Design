@@ -2644,12 +2644,25 @@ def dialog_step3():
                     # Pipeline mới sinh lại 3 PA → khai báo tay cũ (nếu có) hết
                     # hiệu lực; xóa để tránh khôi phục nhầm bản backup lỗi thời.
                     st.session_state.pop("user_declared_beam", None)
+                elif (isinstance(_kcn_raw, dict)
+                      and (_kcn_raw.get("khoang_tinh_khong") or {}).get(
+                          "khoang") == "lon"):
+                    # KHOẢNG LỚN (B_tk ≥ 60m): ngoài phạm vi đề tài — module 06
+                    # trả dict CẢNH BÁO (không có PA); không đẩy vào kcn_result
+                    # để các bước sau không vẽ/tính chi tiết.
+                    res['kcn_result'] = None
+                    res['_kcn_khoang_lon'] = _kcn_raw
                 else:
                     res['kcn_result'] = _kcn_raw
-                _kr = res.get('kcn_result') or {}
-                tracker.done("KCN",
-                    f"{_kr.get('tong_so_nhip','?')} nhịp × "
-                    f"{_kr.get('chieu_dai','?')}m ({_kr.get('loai_dam','?')})")
+                if res.get('_kcn_khoang_lon'):
+                    tracker.done("KCN",
+                        "Khoảng LỚN (B_tk ≥ 60m) — ngoài phạm vi đề tài, chỉ "
+                        "ghi nhận khuyến nghị lý thuyết")
+                else:
+                    _kr = res.get('kcn_result') or {}
+                    tracker.done("KCN",
+                        f"{_kr.get('tong_so_nhip','?')} nhịp × "
+                        f"{_kr.get('chieu_dai','?')}m ({_kr.get('loai_dam','?')})")
             except Exception as _e:
                 tracker.error("KCN", str(_e))
                 res['kcn_result'] = None
@@ -6513,6 +6526,52 @@ with _col_main:
         tru  = d.get('tru_result')
         mong = d.get('mong_result')
     
+        # ── KHOẢNG LỚN (B_tk ≥ 60m): ngoài phạm vi đề tài — chỉ ghi nhận ──
+        _kl = d.get('_kcn_khoang_lon')
+        if kcn is None and _kl:
+            st.markdown(
+                "<div style='background:#FF7F5022;border:2px solid coral;"
+                "border-radius:10px;padding:16px'>"
+                "<b style='color:coral;font-size:16px'>🟠 Vượt phạm vi đề tài "
+                "— Chỉ ghi nhận lý thuyết</b><br>"
+                f"<span style='font-size:13px'>Tĩnh không B_tk = "
+                f"{_kl.get('B_tk','?'):g}m ≥ 60m (khoảng LỚN) — nhịp tối "
+                f"thiểu ≈ {_kl.get('L_nhip_min','?')}m vượt khả năng dầm "
+                "giản đơn/dầm hộp catalog. Hệ thống KHÔNG tự động tính "
+                "toán chi tiết cho khoảng này.</span></div>",
+                unsafe_allow_html=True)
+            _kc1, _kc2 = st.columns(2)
+            with _kc1:
+                st.markdown(
+                    "<div style='background:#1a2d45;border:1px solid #4fc3f7;"
+                    "border-radius:10px;padding:14px;height:100%'>"
+                    "<b style='color:#4fc3f7'>PA1 gợi ý — Cầu dây văng</b><br>"
+                    f"<span style='font-size:13px'>{_kl.get('khuyen_nghi_pa1','')}"
+                    "</span></div>", unsafe_allow_html=True)
+            with _kc2:
+                st.markdown(
+                    "<div style='background:#2d2410;border:1px solid #f39c12;"
+                    "border-radius:10px;padding:14px;height:100%'>"
+                    "<b style='color:#f39c12'>PA2 gợi ý — Dầm hộp lớn / "
+                    "extradosed</b><br>"
+                    f"<span style='font-size:13px'>{_kl.get('khuyen_nghi_pa2','')}"
+                    "</span></div>", unsafe_allow_html=True)
+            st.caption("• " + _kl.get("ly_do_ngoai_pham_vi", ""))
+            st.caption("• " + _kl.get("de_xuat", ""))
+            with st.expander("📚 Xem tài liệu tham khảo", expanded=False):
+                st.markdown(
+                    "- **TCVN 11823:2017** — Thiết kế cầu đường bộ (bộ 14 phần)\n"
+                    "- **TCVN 13594:2022** — Thiết kế cầu treo dây văng\n"
+                    "- **22TCN 272-05** — Tiêu chuẩn thiết kế cầu (tham khảo "
+                    "lịch sử)\n"
+                    "- **AASHTO LRFD Bridge Design Specifications** — dầm hộp "
+                    "đúc hẫng, extradosed\n"
+                    "- **fib Bulletin / SETRA Extradosed guide** — cầu "
+                    "extradosed\n"
+                    "- Hồ sơ tham khảo: cầu Mỹ Thuận, Cần Thơ, Bãi Cháy "
+                    "(dây văng); cầu Hàm Luông, Rạch Miễu (đúc hẫng nhịp lớn)")
+            st.stop()
+
         # Nếu chưa chạy AI → Welcome / Onboarding screen
         if kcn is None:
             st.markdown("""
@@ -6604,6 +6663,57 @@ with _col_main:
     
         # ── II. KẾT CẤU NHỊP (AI) ────────────────────────────────────────────
         with st.expander("**II. KẾT CẤU NHỊP — Dầm chính (AI v2)**", expanded=True):
+            # Badge BA KHOẢNG TĨNH KHÔNG (module 06 — khoang_tinh_khong)
+            _kg_ui = (d.get("kcn_3_pa") or {}).get("khoang_tinh_khong") or {}
+            _kg_id = _kg_ui.get("khoang")
+            if _kg_id == "nho":
+                st.markdown(
+                    "<span style='background:#0d3d1f;color:#2ecc71;padding:3px "
+                    "10px;border-radius:12px;font-size:12px'>🟢 Khoảng nhỏ — "
+                    "Dầm giản đơn tiêu chuẩn (B_tk &lt; 30m)</span>",
+                    unsafe_allow_html=True)
+            elif _kg_id == "trung":
+                st.markdown(
+                    "<span style='background:#3a2c00;color:#f39c12;padding:3px "
+                    "10px;border-radius:12px;font-size:12px'>🟡 Khoảng trung — "
+                    "Cần bổ sung catalog dầm hộp (30m ≤ B_tk &lt; 60m)</span>",
+                    unsafe_allow_html=True)
+                _3pa_kg = d.get("kcn_3_pa") or {}
+                _p1_kg = _3pa_kg.get("pa1_chi_phi") or {}
+                _p2_kg = _3pa_kg.get("pa2_my_quan") or {}
+                _m1, _m2, _m3 = st.columns(3)
+                if _p1_kg.get("mo_rong_xa_mu") is not None:
+                    _m1.metric("PA1 — Nới ụ giữa xà mũ",
+                               f"{_p1_kg['mo_rong_xa_mu']:g} m",
+                               help=_p1_kg.get("giai_phap", ""))
+                if _p2_kg.get("H_dam_max"):
+                    _m2.metric("PA2 — H tại trụ", f"{_p2_kg['H_dam_max']:g} m")
+                    _m3.metric("PA2 — H giữa nhịp", f"{_p2_kg['H_dam_min']:g} m")
+                # Biểu đồ chiều cao dầm hộp biến thiên dọc nhịp (parabol)
+                if _p2_kg.get("H_dam_max") and _p2_kg.get("H_dam_min"):
+                    try:
+                        import numpy as _np_kg
+                        _Lk = float(_p2_kg.get("chieu_dai", 50.0))
+                        _xs = _np_kg.linspace(0, _Lk, 60)
+                        _Hmx, _Hmn = float(_p2_kg["H_dam_max"]), float(_p2_kg["H_dam_min"])
+                        _hs = _Hmn + (_Hmx - _Hmn) * (2 * _xs / _Lk - 1) ** 2
+                        _figH = go.Figure(go.Scatter(
+                            x=list(_xs), y=list(-_hs), fill="tozeroy",
+                            fillcolor="rgba(79,195,247,0.25)",
+                            line=dict(color="#4fc3f7", width=2),
+                            name="Đáy dầm hộp"))
+                        _figH.update_layout(
+                            title=dict(text=("Chiều cao dầm hộp biến thiên dọc "
+                                             f"nhịp (H {_Hmn:g}→{_Hmx:g}m, "
+                                             "đúc hẫng cân bằng)"),
+                                       font=dict(size=12)),
+                            xaxis_title="Dọc nhịp (m)", yaxis_title="Đáy dầm (m)",
+                            height=220, margin=dict(t=36, b=30, l=40, r=10),
+                            showlegend=False)
+                        st.plotly_chart(_figH, use_container_width=True,
+                                        key="kcn_hop_H_chart")
+                    except Exception:
+                        pass
             if kcn:
                 kc1, kc2 = st.columns([3, 2])
                 with kc1:

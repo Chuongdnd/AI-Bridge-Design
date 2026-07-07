@@ -413,6 +413,28 @@ def render_comparison_tab(alternatives, st):
     st.markdown("## So sanh 3 Phuong An")
     st.caption("PA1 chi phí · PA2 mỹ quan · PA3 Machine Learning — so sanh ky thuat, kinh te va thi cong")
 
+    # Badge BA KHOẢNG TĨNH KHÔNG (module 06) — cách so sánh khác nhau theo khoảng
+    _kg = (((st.session_state.get("design_data") or {}).get("kcn_3_pa") or {})
+           .get("khoang_tinh_khong")
+           if hasattr(st, "session_state") else None) or {}
+    _kg_id = _kg.get("khoang")
+    if _kg_id == "nho":
+        st.markdown("<span style='background:#0d3d1f;color:#2ecc71;padding:2px 10px;"
+                    "border-radius:12px;font-size:12px'>🟢 Khoảng nhỏ — so sánh "
+                    "3 PA dầm giản đơn tiêu chuẩn</span>", unsafe_allow_html=True)
+    elif _kg_id == "trung":
+        st.markdown("<span style='background:#3a2c00;color:#f39c12;padding:2px 10px;"
+                    "border-radius:12px;font-size:12px'>🟡 Khoảng trung — so sánh "
+                    "Super-T mở rộng xà mũ ↔ dầm hộp đúc hẫng (PA3 = fallback "
+                    "PA2, chi phí dầm hộp là ước tính sơ bộ)</span>",
+                    unsafe_allow_html=True)
+    elif _kg_id == "lon":
+        st.markdown("<span style='background:#4a2410;color:coral;padding:2px 10px;"
+                    "border-radius:12px;font-size:12px'>🟠 Khoảng lớn — ngoài "
+                    "phạm vi đề tài: không so sánh định lượng, chỉ ghi nhận "
+                    "khuyến nghị lý thuyết (dây văng / dầm hộp lớn)</span>",
+                    unsafe_allow_html=True)
+
     # Mo ta ngan + badge nguon chon (nguoi dung khai bao / ket qua ML goc)
     _badges = _nguon_chon_badges(alternatives, st)
     cols = st.columns(3)
