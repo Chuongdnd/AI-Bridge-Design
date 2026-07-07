@@ -55,6 +55,69 @@ def _L_nhip_min(B_tk, goc):
     return max(L_geo, L_clear)
 
 
+# ---------------------------------------------------------------------------
+# BA KHOẢNG TĨNH KHÔNG THÔNG THUYỀN — phân theo B_tk (biến trực tiếp quyết
+# định chiều dài nhịp tối thiểu)
+# ---------------------------------------------------------------------------
+KHOANG_TINH_KHONG = {
+    "nho": {
+        "pham_vi":  "B_tk < 30m",
+        "ten":      "Khoảng nhỏ — Dầm giản đơn tiêu chuẩn",
+        "mo_ta":    ("Dầm giản đơn tiêu chuẩn (BEAM_CATALOG 28 bản ghi, nhịp "
+                     "≤ 38.2m): PA1 nhóm KHÔNG bản đáy liền mạch (Dầm I / "
+                     "Super-T), PA2 nhóm CÓ bản đáy liền mạch (T ngược / "
+                     "Dầm bản rỗng)."),
+        "trong_pham_vi_de_tai": True,
+    },
+    "trung": {
+        "pham_vi":  "30m ≤ B_tk < 60m",
+        "ten":      "Khoảng trung — Cần bổ sung catalog dầm hộp",
+        "mo_ta":    ("Vượt khả năng dầm giản đơn tiêu chuẩn: PA1 Super-T MỞ "
+                     "RỘNG XÀ MŨ (nới ụ giữa — kỹ thuật _spt_widen_layout "
+                     "Module 11); PA2 DẦM HỘP ĐÚC HẪNG CÂN BẰNG chiều cao "
+                     "biến thiên (BEAM_CATALOG_TRUNG — catalog mở rộng)."),
+        "trong_pham_vi_de_tai": True,
+    },
+    "lon": {
+        "pham_vi":  "B_tk ≥ 60m",
+        "ten":      "Khoảng lớn — Vượt phạm vi đề tài",
+        "mo_ta":    ("Ngoài phạm vi đề tài: chỉ ghi nhận lý thuyết (cầu dây "
+                     "văng / dầm hộp lớn / extradosed), không tự động tính "
+                     "toán chi tiết."),
+        "trong_pham_vi_de_tai": False,
+    },
+}
+
+
+def _phan_loai_khoang_tinh_khong(B_tk, goc):
+    """
+    Phân loại BA KHOẢNG tĩnh không thông thuyền theo B_tk:
+      • "nho"  : B_tk < 30m        — dầm giản đơn tiêu chuẩn (đầy đủ)
+      • "trung": 30m ≤ B_tk < 60m  — Super-T mở rộng xà mũ / dầm hộp đúc hẫng
+      • "lon"  : B_tk ≥ 60m        — ngoài phạm vi đề tài (chỉ ghi nhận)
+
+    Returns
+    -------
+    dict: {khoang, L_nhip_min, trong_pham_vi_de_tai, ghi_chu}
+    """
+    B = float(B_tk or 0)
+    L_nhip_min = float(_L_nhip_min(B, goc))
+    if B < 30.0:
+        khoang = "nho"
+    elif B < 60.0:
+        khoang = "trung"
+    else:
+        khoang = "lon"
+    kg = KHOANG_TINH_KHONG[khoang]
+    return {
+        "khoang":               khoang,
+        "L_nhip_min":           round(L_nhip_min, 2),
+        "trong_pham_vi_de_tai": kg["trong_pham_vi_de_tai"],
+        "ghi_chu": (f"{kg['ten']} ({kg['pham_vi']}; B_tk={B:g}m, góc={goc:g}° "
+                    f"→ L_nhịp_min={L_nhip_min:.1f}m). {kg['mo_ta']}"),
+    }
+
+
 def _n_nhip_from(L_cau, L_span):
     """Số nhịp khi chia cầu thành các nhịp ĐỀU = L_span (định hình catalog).
     Dùng làm tròn về số nhịp gần nhất (khớp cách bố trí của module vẽ 11)."""
@@ -736,6 +799,12 @@ def _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong):
 
     eligible, canh_bao = _filter_group(L_min_geo, lien_mach=False, L_cau=L_cau)
 
+    # KHOẢNG NHỎ — lọc chặt: nhấn mạnh Dầm I & Super-T (KHÔNG dùng Dầm T
+    # thông thường ở đây vì tối ưu chi phí ưu tiên nhịp dài). Rỗng → giữ nhóm.
+    _uu_tien = [r for r in eligible if r[0] in ("Dầm I", "Super-T")]
+    if _uu_tien:
+        eligible = _uu_tien
+
     best_score = -1e9
     best_record = None
     best_n_nhip = 1
@@ -800,6 +869,12 @@ def _predict_rb_my_quan(B_tk, goc, B_cau, L_cau_tong):
 
     eligible, canh_bao = _filter_group(L_min_geo, lien_mach=True, L_cau=L_cau)
 
+    # KHOẢNG NHỎ — lọc chặt: nhấn mạnh T ngược & Dầm bản rỗng (KHÔNG dùng
+    # Dầm bản đặc — thường chỉ cho nhịp rất ngắn < 15m). Rỗng → giữ nhóm.
+    _uu_tien = [r for r in eligible if r[0] in ("T ngược", "Dầm bản rỗng")]
+    if _uu_tien:
+        eligible = _uu_tien
+
     best_score = -1e9
     best_record = None
     best_n_nhip = 1
@@ -863,6 +938,181 @@ def make_plan_from_catalog(loai_dam, L, B_cau, L_cau_tong=None,
     return _plan_from_record(record, B_cau, n_nhip,
                              "Người dùng khai báo (catalog)", ghi_chu,
                              nguon_chon=nguon_chon)
+
+
+# ---------------------------------------------------------------------------
+# KHOẢNG TRUNG (30m ≤ B_tk < 60m) — CATALOG MỞ RỘNG + 2 PHƯƠNG ÁN
+# ---------------------------------------------------------------------------
+# CATALOG MỞ RỘNG cho khoảng trung — ⚠️ dữ liệu MẪU ban đầu để chạy thử; cần
+# BỔ SUNG bản ghi thực tế (định hình nhà máy / hồ sơ đúc hẫng đã duyệt) khi
+# mở rộng đề tài.
+BEAM_CATALOG_TRUNG = {
+    # Super-T MỞ RỘNG XÀ MŨ (cơ sở PA1): (L_dam_m, H_m, S_m, mo_rong_kha_dung_m)
+    # mo_rong_kha_dung = mức nới ụ giữa xà mũ đi kèm cỡ dầm (cap_mid_extra).
+    "super_t_mo_rong": [
+        (38.2, 1.75, 2.44, 0.0),
+        (40.0, 1.75, 2.44, 1.2),
+        (42.0, 1.75, 2.44, 2.4),
+        (45.0, 1.75, 2.44, 4.0),
+    ],
+    # DẦM HỘP ĐÚC HẪNG CÂN BẰNG (cơ sở PA2): (L_nhip_m, H_min_m, H_max_m)
+    # H_max tại trụ ≈ L/18–L/22; H_min giữa nhịp ≈ L/40–L/50 (TCVN 11823).
+    "dam_hop_duc_hang": [
+        (40.0, 1.0, 2.0),
+        (50.0, 1.2, 2.5),
+        (60.0, 1.4, 3.0),
+    ],
+}
+
+# Dự trữ mép vai kê 2 phía khi nới ụ giữa (m) — khẩu độ thoát được của kỹ
+# thuật mở rộng xà mũ ≈ L_dầm + mo_rong_xa_mu + _MEP_VAI_KE
+_MEP_VAI_KE = 0.6
+
+
+def _predict_pa1_khoang_trung(B_tk, goc, B_cau, L_cau_tong):
+    """
+    PA1 KHOẢNG TRUNG — Super-T MỞ RỘNG XÀ MŨ.
+
+    Giữ dầm Super-T định hình, NỚI RỘNG Ụ GIỮA xà mũ tại trụ kẹp tĩnh không
+    (kỹ thuật _spt_widen_layout của Module 11 — bề rộng nới ánh xạ vào
+    cap_mid_extra khi dựng trụ 3D/2D): khẩu độ thoát ≈ L_dầm + mo_rong +
+    dự trữ mép vai kê. Chọn cỡ Super-T NHỎ NHẤT trong BEAM_CATALOG_TRUNG
+    có mức mở rộng khả dụng đủ vượt B_tk hiệu dụng.
+
+    Returns dict cấu trúc chuẩn PA1 + mo_rong_xa_mu (m — bề rộng ụ giữa cần
+    nới) + giai_phap = "Super-T mở rộng xà mũ".
+    """
+    B_hd = float(B_tk) / np.sin(np.radians(max(goc, 30)))   # B_tk hiệu dụng
+    L_cau = float(L_cau_tong) if L_cau_tong else None
+    canh_bao = None
+
+    chon = None
+    for (L, H, S, mo_max) in BEAM_CATALOG_TRUNG["super_t_mo_rong"]:
+        mo_can = max(0.0, B_hd - L - _MEP_VAI_KE)
+        if mo_can <= mo_max + 1e-6:
+            chon = (L, H, S, round(mo_can, 1))
+            break
+    if chon is None:
+        L, H, S, mo_max = BEAM_CATALOG_TRUNG["super_t_mo_rong"][-1]
+        mo_can = round(max(0.0, B_hd - L - _MEP_VAI_KE), 1)
+        chon = (L, H, S, mo_can)
+        canh_bao = (f"Mức nới ụ giữa cần thiết {mo_can:g}m vượt khuyến nghị "
+                    f"({mo_max:g}m cho Super-T {L:g}m) — kiểm tra kết cấu "
+                    "xà mũ ở bước TKKT.")
+    L, H, S, mo_rong = chon
+
+    n_nhip = _n_nhip_from(L_cau, L) if L_cau else 1
+    n_dam, oh = _girder_layout_from_S(B_cau, S)
+    ghi_chu = (f"KHOẢNG TRUNG: giữ Super-T định hình L={L:g}m, NỚI Ụ GIỮA xà "
+               f"mũ {mo_rong:g}m tại trụ kẹp tĩnh không (khẩu độ thoát ≈ "
+               f"{L + mo_rong + _MEP_VAI_KE:.1f}m ≥ B_tk {B_tk:g}m) — kỹ "
+               f"thuật _spt_widen_layout Module 11; {n_nhip} nhịp.")
+    plan = {
+        "loai_dam":        "Super-T",
+        "chieu_dai":       L,
+        "chieu_cao_dam":   H,
+        "be_rong_dam":     0.70,
+        "khoang_cach_dam": S,
+        "tong_so_nhip":    n_nhip,
+        "so_luong_dam":    n_dam,
+        "overhang":        oh,
+        "ti_le_L_H":       round(L / H, 1),
+        "cong_nghe":       "DUL_sau",
+        "co_ban_day_lien_mach": False,
+        "mo_rong_xa_mu":   mo_rong,
+        "giai_phap":       "Super-T mở rộng xà mũ",
+        "phuong_phap":     "Rule-Based khoảng trung (Super-T mở rộng xà mũ)",
+        "ghi_chu":         ghi_chu,
+        "nguon_chon":      "tu_dong",
+    }
+    if canh_bao:
+        plan["canh_bao"] = canh_bao
+    return plan
+
+
+def _predict_pa2_khoang_trung(B_tk, goc, B_cau, L_cau_tong):
+    """
+    PA2 KHOẢNG TRUNG — DẦM HỘP ĐÚC HẪNG CÂN BẰNG, chiều cao biến thiên.
+
+    Chọn nhịp hộp NHỎ NHẤT ≥ L_nhịp_min từ BEAM_CATALOG_TRUNG; chiều cao
+    biến thiên (TCVN 11823): H_max tại trụ ≈ L/18–L/22, H_min giữa nhịp ≈
+    L/40–L/50, biên dạng đáy dầm parabol (thông số SƠ BỘ cho TKCS, không
+    phải tính toán chi tiết TKKT).
+
+    Returns dict cấu trúc chuẩn + H_dam_min/H_dam_max +
+    phuong_phap_thi_cong = "Đúc hẫng cân bằng" + giai_phap = "Dầm hộp đúc hẫng".
+    """
+    L_min = _L_nhip_min(B_tk, goc)
+    L_cau = float(L_cau_tong) if L_cau_tong else None
+    canh_bao = None
+
+    rows = BEAM_CATALOG_TRUNG["dam_hop_duc_hang"]
+    du = [r for r in rows if r[0] >= L_min - 1e-6]
+    if du:
+        L, H_min, H_max = min(du, key=lambda r: r[0])
+    else:
+        L, H_min, H_max = max(rows, key=lambda r: r[0])
+        canh_bao = (f"Nhịp hộp lớn nhất catalog ({L:g}m) < L_nhịp_min "
+                    f"{L_min:.1f}m — cần bổ sung catalog dầm hộp dài hơn.")
+
+    n_nhip = _n_nhip_from(L_cau, L) if L_cau else 1
+    # MCN hộp: 1 hộp đơn cho cầu hẹp, 2 hộp cho cầu rộng
+    so_hop = 1 if B_cau <= 13.0 else 2
+    kc_hop = round(B_cau / so_hop, 2)
+    oh = round(max(0.1, (B_cau - (so_hop - 1) * kc_hop) / 2 * 0.25), 2)
+    ghi_chu = (f"KHOẢNG TRUNG: dầm hộp ĐÚC HẪNG CÂN BẰNG L={L:g}m × {n_nhip} "
+               f"nhịp; chiều cao biến thiên H_max={H_max:g}m tại trụ "
+               f"(≈L/{L/H_max:.0f}) → H_min={H_min:g}m giữa nhịp "
+               f"(≈L/{L/H_min:.0f}), đáy dầm parabol (TCVN 11823).")
+    plan = {
+        "loai_dam":        "Dầm hộp",
+        "chieu_dai":       L,
+        "chieu_cao_dam":   H_max,          # đại diện (tại trụ) — code cũ dùng
+        "H_dam_min":       H_min,
+        "H_dam_max":       H_max,
+        "be_rong_dam":     round(B_cau / so_hop, 2),
+        "khoang_cach_dam": kc_hop,
+        "tong_so_nhip":    n_nhip,
+        "so_luong_dam":    so_hop,
+        "overhang":        oh,
+        "ti_le_L_H":       round(L / H_max, 1),
+        "cong_nghe":       "DUL_sau",
+        "co_ban_day_lien_mach": True,      # bản đáy hộp liền mạch
+        "phuong_phap_thi_cong": "Đúc hẫng cân bằng",
+        "giai_phap":       "Dầm hộp đúc hẫng",
+        "phuong_phap":     "Rule-Based khoảng trung (dầm hộp đúc hẫng)",
+        "ghi_chu":         ghi_chu,
+        "nguon_chon":      "tu_dong",
+    }
+    if canh_bao:
+        plan["canh_bao"] = canh_bao
+    return plan
+
+
+def _predict_khoang_lon(B_tk, goc, B_cau):
+    """
+    KHOẢNG LỚN (B_tk ≥ 60m) — NGOÀI PHẠM VI ĐỀ TÀI: chỉ đưa thông tin tham
+    khảo, KHÔNG tự động tính số nhịp / chiều cao dầm / thông số chi tiết.
+    """
+    return {
+        "khoang":               "lon",
+        "trong_pham_vi_de_tai": False,
+        "B_tk":                 float(B_tk),
+        "L_nhip_min":           round(float(_L_nhip_min(B_tk, goc)), 1),
+        "khuyen_nghi_pa1": (
+            "Cầu dây văng với hệ dây văng và tháp cầu chịu lực chính, phù "
+            "hợp vượt nhịp lớn không có trụ giữa"),
+        "khuyen_nghi_pa2": (
+            "Dầm hộp đúc hẫng cỡ lớn hoặc kết hợp dây văng hỗ trợ dạng "
+            "extradosed"),
+        "ly_do_ngoai_pham_vi": (
+            "Vượt giới hạn thuật toán Rule-Based và catalog huấn luyện "
+            "Random Forest hiện có, thuộc phạm vi TKKT cầu lớn cần khảo "
+            "sát chi tiết và tham vấn chuyên gia"),
+        "de_xuat": (
+            "Đề xuất chuyển sang phần mềm chuyên dụng cầu lớn hoặc tham "
+            "vấn viện nghiên cứu chuyên ngành"),
+    }
 
 
 def _predict_ml(B_tk, H_tk, goc, B_cau, moi_truong, L_cau_tong, models):
@@ -958,10 +1208,45 @@ def predict_kcn(B_tk, H_tk, goc, B_cau, moi_truong,
                          nguon_chon ('tu_dong' | 'nguoi_dung_khai_bao') },
         "pa2_my_quan": { ... },
         "pa3_ml":      { ... },   # Machine Learning — không cho ghi đè
+        "khoang_tinh_khong": {khoang, L_nhip_min, trong_pham_vi_de_tai,
+                              ghi_chu},   # phân loại 3 khoảng theo B_tk
       }
-    Tất cả giá trị H, B, S đều lấy từ BEAM_CATALOG, không tính bằng công thức.
+    Điều phối BA KHOẢNG tĩnh không (_phan_loai_khoang_tinh_khong):
+      • "nho"  (B_tk < 30m)  : PA1/PA2 catalog dầm giản đơn + PA3 ML — như cũ.
+      • "trung" (30–60m)     : PA1 Super-T mở rộng xà mũ, PA2 dầm hộp đúc
+        hẫng; PA3 fallback Rule-Based (RF chưa huấn luyện cho khoảng trung).
+      • "lon"  (B_tk ≥ 60m)  : trả dict CẢNH BÁO ngoài phạm vi đề tài
+        (khuyen_nghi_pa1/pa2, ly_do_ngoai_pham_vi, de_xuat) — KHÔNG có các
+        key pa1_chi_phi/pa2_my_quan/pa3_ml, không tính toán chi tiết.
+    Khoảng nhỏ: H, B, S lấy từ BEAM_CATALOG, không tính bằng công thức.
     Chi tiết hình học dầm do người dùng dựng ở tab BeamBuilder (module 17).
     """
+    khoang = _phan_loai_khoang_tinh_khong(B_tk, goc)
+
+    # ── KHOẢNG LỚN: ngoài phạm vi đề tài — chỉ cảnh báo, KHÔNG sinh PA ──
+    if khoang["khoang"] == "lon":
+        canh_bao = _predict_khoang_lon(B_tk, goc, B_cau)
+        canh_bao["khoang_tinh_khong"] = khoang
+        return canh_bao
+
+    # ── KHOẢNG TRUNG: Super-T mở rộng xà mũ / dầm hộp đúc hẫng ──────────
+    if khoang["khoang"] == "trung":
+        pa1 = _predict_pa1_khoang_trung(B_tk, goc, B_cau, L_cau_tong)
+        pa2 = _predict_pa2_khoang_trung(B_tk, goc, B_cau, L_cau_tong)
+        # PA3: Random Forest chưa huấn luyện cho khoảng trung → fallback RB
+        pa3 = dict(pa2)
+        pa3["phuong_phap"] = "Rule-Based (fallback ML — khoảng trung)"
+        pa3["ghi_chu"] = ("Random Forest chưa huấn luyện cho khoảng trung, "
+                          "dùng PA2 dầm hộp đúc hẫng làm khuyến nghị. "
+                          + pa2["ghi_chu"])
+        return {
+            "pa1_chi_phi":        pa1,
+            "pa2_my_quan":        pa2,
+            "pa3_ml":             pa3,
+            "khoang_tinh_khong":  khoang,
+        }
+
+    # ── KHOẢNG NHỎ: luồng hiện tại (catalog dầm giản đơn + ML) ──────────
     return {
         # PA1 = tối ưu CHI PHÍ: nhóm KHÔNG bản đáy liền mạch, nhịp dài ít trụ
         "pa1_chi_phi": _predict_rb_chi_phi(B_tk, goc, B_cau, L_cau_tong),
@@ -970,6 +1255,7 @@ def predict_kcn(B_tk, H_tk, goc, B_cau, moi_truong,
         # PA3 = Machine Learning (Random Forest, Bridge_Train_v3) + catalog
         "pa3_ml":      _predict_ml(B_tk, H_tk, goc, B_cau, moi_truong,
                                    L_cau_tong, models),
+        "khoang_tinh_khong": khoang,
     }
 
 

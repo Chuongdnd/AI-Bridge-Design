@@ -28,6 +28,10 @@ DON_GIA_VAT_LIEU: dict[str, dict] = {
     "BT_M50":  {"don_vi": "m³",  "don_gia": 2_200,  "mo_ta": "Bê tông C50/60 dầm DUL"},
     "BT_coc":  {"don_vi": "m³",  "don_gia": 1_750,  "mo_ta": "Bê tông cọc khoan nhồi M30+"},
     "COC_LY_TAM": {"don_vi": "m",  "don_gia": 620,   "mo_ta": "Cọc tròn ly tâm PHC D300–D600 (vật liệu đúc sẵn/m dài)"},
+    # Khoảng trung (module 06) — ⚠️ đơn giá THAM KHẢO, QĐ 409:2025 chưa có mã
+    # riêng: cần tham chiếu đơn giá công trình tương tự khi lập dự toán chính thức.
+    "BT_DAM_HOP": {"don_vi": "m³", "don_gia": 2_600, "mo_ta": "Bê tông dầm hộp đúc hẫng cân bằng (gồm xe đúc, DUL — tham khảo)"},
+    "XA_MU_MO_RONG": {"don_vi": "m³", "don_gia": 1_900, "mo_ta": "BT xà mũ mở rộng ụ giữa (Super-T khoảng trung — tham khảo)"},
     # Cốt thép
     "CT_CB300": {"don_vi": "tấn", "don_gia": 16_500, "mo_ta": "Thép CB300-V phụ"},
     "CT_CB400": {"don_vi": "tấn", "don_gia": 18_500, "mo_ta": "Thép CB400-V chính"},
@@ -553,6 +557,11 @@ def tinh_du_toan_so_bo(
     # HẠNG MỤC 1 — KẾT CẤU NHỊP
     # ─────────────────────────────────────────────────────────────────────────
     dg_bt_dam = DGV["BT_M50"]["don_gia"] + DGC["duc_dam_DUL"] + DGM["cau_lap_dam"] + DGM["may_bom_BT"]
+    # KHOẢNG TRUNG: dầm hộp đúc hẫng → đơn giá riêng (tham khảo) + cảnh báo
+    _kcn_dt = res.get("kcn_result") or res.get("ai_result") or {}
+    _giai_phap_dt = str(_kcn_dt.get("giai_phap") or "")
+    if "hộp" in str(_kcn_dt.get("loai_dam", "")).lower() or _giai_phap_dt == "Dầm hộp đúc hẫng":
+        dg_bt_dam = DGV["BT_DAM_HOP"]["don_gia"] + DGM["may_bom_BT"]
     dg_ct_tt  = DGV["CT_CB400"]["don_gia"] + DGC["lap_thep"]
     dg_ct_DUL = DGV["CT_DUL"]["don_gia"]   + DGC["lap_DUL"] + DGM["thiet_bi_DUL"]
     dg_lap    = DGC["lap_dam"] * kl_dam["bt_m3"]    # chi phí lắp dầm (tính trên volume)
