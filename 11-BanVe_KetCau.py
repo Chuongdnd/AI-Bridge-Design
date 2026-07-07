@@ -1150,7 +1150,11 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
     _kcn = (d or {}).get("kcn_result") or (d or {}).get("ai_result", {}) or {}
     _loai = str(_kcn.get("loai_dam", "") or "").lower()
     _Lb = float(_kcn.get("chieu_dai", 0) or 0)
-    if ("super" in _loai or "spt" in _loai) and 37.5 <= _Lb <= 39.0:
+    # KHOẢNG TRUNG (module 06): giai_phap 'Super-T mở rộng xà mũ' → cùng kỹ
+    # thuật nới ụ giữa cho cả các cỡ Super-T dài 40/42/45m (kèm mo_rong_xa_mu).
+    _gp_widen = (str(_kcn.get("giai_phap") or "") == "Super-T mở rộng xà mũ")
+    if ("super" in _loai or "spt" in _loai) and (
+            37.5 <= _Lb <= 39.0 or (_gp_widen and _Lb > 0)):
         try:
             _W0 = _get_PB().cap_mid_width_m(d.get("_pier_model")) or 1.6
         except Exception:
@@ -2117,6 +2121,32 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                 mode="markers",
                 marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
                 showlegend=False, hoverinfo="skip",
+            ))
+
+    # ── DẦM HỘP ĐÚC HẪNG (khoảng trung): thân hộp chiều cao BIẾN THIÊN ──
+    # kcn.giai_phap == 'Dầm hộp đúc hẫng' → vẽ đáy dầm parabol mỗi nhịp:
+    # H_max tại trụ → H_min giữa nhịp (TCVN 11823), thay cho dầm thư viện.
+    if str(kcn.get("giai_phap") or "") == "Dầm hộp đúc hẫng":
+        _H_mx = float(kcn.get("H_dam_max") or kcn.get("chieu_cao_dam") or 2.5)
+        _H_mn = float(kcn.get("H_dam_min") or max(0.8, _H_mx * 0.5))
+        for _ib, (_xs_b, _xe_b) in enumerate(spans):
+            _Lsp = max(_xe_b - _xs_b, 1e-6)
+            _xx = np.linspace(_xs_b, _xe_b, 40)
+            _hh = _H_mn + (_H_mx - _H_mn) * (2 * (_xx - _xs_b) / _Lsp - 1) ** 2
+            _top = [_z_deck_bot(_x) for _x in _xx]           # đáy bản = đỉnh hộp
+            _bot = [t - h for t, h in zip(_top, _hh)]
+            fig.add_trace(go.Scatter(
+                x=list(_xx) + list(_xx[::-1]),
+                y=_top + _bot[::-1],
+                fill="toself", fillcolor=_C["ban"],
+                line=dict(color=_C["dam_dk"], width=1.4),
+                mode="lines",
+                name=(f"Dầm hộp đúc hẫng H={_H_mn:g}–{_H_mx:g}m"
+                      if _ib == 0 else ""),
+                showlegend=(_ib == 0),
+                hovertemplate=("<b>Dầm hộp đúc hẫng cân bằng</b><br>"
+                               f"H_max={_H_mx:g}m tại trụ · H_min={_H_mn:g}m "
+                               "giữa nhịp<extra></extra>"),
             ))
 
     # ── Bản mặt cầu theo từng nhịp + nhãn chiều dài ──────────────────────

@@ -776,6 +776,34 @@ class TKCSGenerator:
 
         self._h2(doc, "Phân tích và lựa chọn phương án kết cấu nhịp")
         self._para(doc,
+            "Giải pháp kết cấu nhịp được xác lập theo BA KHOẢNG tĩnh không "
+            "thông thuyền (phân theo bề rộng B_tk): (1) khoảng NHỎ B_tk < 30m "
+            "— dầm giản đơn tiêu chuẩn, thuộc phạm vi đề tài và được triển "
+            "khai đầy đủ; (2) khoảng TRUNG 30m ≤ B_tk < 60m — phần mở rộng "
+            "của đề tài với hai kỹ thuật: Super-T mở rộng xà mũ (nới ụ giữa) "
+            "và dầm hộp đúc hẫng cân bằng chiều cao biến thiên; (3) khoảng "
+            "LỚN B_tk ≥ 60m — ngoài phạm vi đề tài, chỉ ghi nhận khuyến nghị "
+            "lý thuyết (cầu dây văng, dầm hộp lớn/extradosed) và cần tham "
+            "vấn chuyên gia ở bước TKKT.")
+        # Khoảng hiện tại của công trình (module 06 — khoang_tinh_khong)
+        _dd5 = (self.ss.get("design_data")
+                if isinstance(self.ss.get("design_data"), dict) else {}) or {}
+        _kg5 = ((_dd5.get("kcn_3_pa") or {}).get("khoang_tinh_khong")
+                or (_dd5.get("_kcn_khoang_lon") or {}).get("khoang_tinh_khong")
+                or {})
+        if _kg5:
+            self._para(doc, "Công trình thuộc: " + str(_kg5.get("ghi_chu", "")))
+        if (_dd5.get("_kcn_khoang_lon") or {}).get("khoang") == "lon":
+            _kl5 = _dd5["_kcn_khoang_lon"]
+            self._para(doc,
+                "Do thuộc khoảng LỚN (ngoài phạm vi đề tài), hệ thống chỉ "
+                "ghi nhận khuyến nghị lý thuyết, không tính toán chi tiết:")
+            self._bullet(doc, "PA1 gợi ý: " + _kl5.get("khuyen_nghi_pa1", ""))
+            self._bullet(doc, "PA2 gợi ý: " + _kl5.get("khuyen_nghi_pa2", ""))
+            self._bullet(doc, _kl5.get("ly_do_ngoai_pham_vi", ""))
+            self._bullet(doc, _kl5.get("de_xuat", ""))
+            return
+        self._para(doc,
             "Trong giai đoạn nghiên cứu, đã xem xét ba phương án kết cấu nhịp "
             "để lựa chọn phương án tối ưu: PA1 tối ưu chi phí (nhóm dầm không "
             "có bản đáy liền mạch), PA2 tối ưu mỹ quan (nhóm dầm có bản đáy "
@@ -877,6 +905,40 @@ class TKCSGenerator:
             "Công nghệ đúc sẵn tại nhà máy giúp kiểm soát chất lượng bê tông tốt hơn")
         self._bullet(doc,
             "Thẩm mỹ phù hợp với cảnh quan khu vực dự án")
+
+        # ── Khoảng TRUNG + PA dầm hộp: mục con kỹ thuật đúc hẫng cân bằng ──
+        _kcn5 = self._kcn() or {}
+        _pa2_5 = ((_dd5.get("kcn_3_pa") or {}).get("pa2_my_quan") or {})
+        _hop = (str(_kcn5.get("giai_phap") or "") == "Dầm hộp đúc hẫng"
+                or str(_pa2_5.get("giai_phap") or "") == "Dầm hộp đúc hẫng")
+        if _kg5.get("khoang") == "trung" and _hop:
+            _src5 = (_kcn5 if str(_kcn5.get("giai_phap") or "") ==
+                     "Dầm hộp đúc hẫng" else _pa2_5)
+            self._h3(doc, "Kỹ thuật đúc hẫng cân bằng (khoảng trung)")
+            self._para(doc,
+                "Phương án dầm hộp thi công theo công nghệ ĐÚC HẪNG CÂN BẰNG: "
+                "đúc đối xứng từng đốt từ trụ ra hai phía bằng xe đúc, hợp "
+                "long tại giữa nhịp; chiều cao dầm biến thiên theo biểu đồ "
+                "mô men — H_max tại trụ (≈ L/18–L/22) giảm dần theo đường "
+                "parabol về H_min tại giữa nhịp (≈ L/40–L/50) theo "
+                "TCVN 11823. Thông số dưới đây là SƠ BỘ cho bước TKCS:")
+            self.insert_table(doc, ["Thông số", "Giá trị"], [
+                ["Chiều dài nhịp chính", f"{_src5.get('chieu_dai', '—')} m"],
+                ["H_max tại trụ",        f"{_src5.get('H_dam_max', '—')} m"],
+                ["H_min giữa nhịp",      f"{_src5.get('H_dam_min', '—')} m"],
+                ["Biên dạng đáy dầm",    "Parabol (đúc hẫng cân bằng)"],
+                ["Phương pháp thi công", str(_src5.get('phuong_phap_thi_cong',
+                                                       'Đúc hẫng cân bằng'))],
+            ], "Thông số sơ bộ dầm hộp đúc hẫng cân bằng")
+        if _kg5.get("khoang") == "trung":
+            _pa1_5 = ((_dd5.get("kcn_3_pa") or {}).get("pa1_chi_phi") or {})
+            if _pa1_5.get("mo_rong_xa_mu") is not None:
+                self._para(doc,
+                    "Phương án Super-T mở rộng xà mũ: giữ dầm Super-T định "
+                    f"hình {_pa1_5.get('chieu_dai','—')}m, nới ụ giữa xà mũ "
+                    f"{_pa1_5.get('mo_rong_xa_mu','—')}m tại trụ kẹp tĩnh "
+                    "không để đạt khẩu độ thoát yêu cầu (kỹ thuật nới ụ "
+                    "giữa — Module 11).")
 
     # ─────────────────────────────────────────────────────────────────────────
     # CHƯƠNG 6 — Mố trụ cầu
