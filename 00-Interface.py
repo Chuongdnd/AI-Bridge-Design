@@ -300,14 +300,12 @@ def _light_css(pfx: str = "") -> str:
         lines.append(f"{flat} {{{decl};}}")
     return "\n".join(lines)
 
-# KÍCH HOẠT theo HAI đường (bù nhau):
-#  (A) @media (prefers-color-scheme: light) — khi OS/Streamlit "Use system" SÁNG.
-#  (B) class html.cau-light — JS đọc NỀN THỰC của .stApp rồi gắn class → bám đúng
-#      lựa chọn ☰ Theme của Streamlit KỂ CẢ khi OS đang Tối (trường hợp ☰=Light,
-#      Windows=Dark). Dùng !important nên thắng style inline tối.
+# MẶC ĐỊNH TỐI (.streamlit/config.toml: base="dark") — KHÔNG bám OS nữa.
+# Lật màu SÁNG chỉ khi người dùng đổi ☰ Theme = Light: JS đọc NỀN THỰC của
+# .stApp rồi gắn class html.cau-light (bỏ đường @media prefers-color-scheme để
+# máy OS-sáng không bị card sáng trên nền tối).
 st.markdown(
     "<style>\n"
-    "@media (prefers-color-scheme: light){\n" + _light_css("") + "\n}\n"
     + _light_css("html.cau-light") + "\n"
     "</style>",
     unsafe_allow_html=True,
@@ -1744,20 +1742,25 @@ def dialog_step1():
             st.rerun()
     with _apply_col:
         if st.button(
-            "✅ Áp dụng",
+            "✅ Áp dụng & cập nhật",
             use_container_width=True,
             key="d1_apply",
-            help="LƯU số liệu đã khai — hộp vẫn mở để khai báo tiếp",
+            help="LƯU số liệu + CHẠY cập nhật toàn hệ thống ngay, xong tự đóng "
+                 "hộp (khai báo vẫn được giữ nguyên để sửa tiếp lần sau)",
         ):
             _d1_commit()
             st.session_state.d1_show_feedback = True
             if _d1_validate():
+                # Số liệu chưa hợp lệ → giữ hộp mở để sửa
                 st.toast("⚠️ Có cao độ chưa hợp lệ — xem cảnh báo.", icon="⚠️")
+                st.session_state.open_dialog = "step1"
+                st.rerun()
             else:
-                st.toast("💾 Đã lưu khai báo thủy văn.", icon="✅")
-            # GHI NHỚ nhưng KHÔNG thoát hộp — mở lại chính hộp này
-            st.session_state.open_dialog = "step1"
-            st.rerun()
+                # LƯU + CHẠY pipeline (giữ draft & tab) → xong tự đóng hộp
+                st.session_state._d3_run = True
+                st.session_state._apply_keep_context = True
+                st.session_state.open_dialog = "step3"
+                st.rerun()
     with btn_col:
         if st.button(
             "Bước 2 ▶",
@@ -2333,12 +2336,15 @@ def dialog_step2():
             st.session_state.open_dialog = "step1"
             st.rerun()
     with btn_a:
-        if st.button("✅ Áp dụng", use_container_width=True, key="d2_apply",
-                     help="LƯU thông số hình học — hộp vẫn mở để khai báo tiếp"):
+        if st.button("✅ Áp dụng & cập nhật", use_container_width=True,
+                     key="d2_apply",
+                     help="LƯU thông số + CHẠY cập nhật toàn hệ thống ngay, xong "
+                          "tự đóng hộp (khai báo vẫn giữ nguyên để sửa tiếp)"):
             # draft đã được cập nhật ở khối update phía trên mỗi lần render.
-            st.toast("💾 Đã lưu thông số hình học.", icon="✅")
-            # GHI NHỚ nhưng KHÔNG thoát hộp — mở lại chính hộp này
-            st.session_state.open_dialog = "step2"
+            # LƯU + CHẠY pipeline (giữ draft & tab) → xong tự đóng hộp.
+            st.session_state._d3_run = True
+            st.session_state._apply_keep_context = True
+            st.session_state.open_dialog = "step3"
             st.rerun()
     with btn_f:
         if st.button("Bước 3 ▶", use_container_width=True, type="primary", key="d2_next"):
@@ -7578,14 +7584,13 @@ with _col_main:
     
             # ── Sub-tabs ────────────────────────────────────────────────────
             (tab_3d, tab_btc, tab_mcn_vt,
-             tab_spt, tab_thkl, tab_dutoan,
+             tab_spt, tab_thkl,
              tab_suat, tab_export) = st.tabs([
                 "🏗️ 3D Tổng hợp"  + (" 🗺️" if has_terr else " (sơ đồ)"),
                 "📋 Bố trí chung",
                 "✂️ MCN Mố/Trụ",
                 "🔩 Chi tiết dầm",
                 "📊 THKL",
-                "💰 Dự toán",
                 "💵 Suất đầu tư",
                 "📤 Xuất hồ sơ",
             ])
@@ -8159,8 +8164,9 @@ with _col_main:
                     try:
                         _kl_rows = KL.bang_toan_cau(d, dam_roles=_pa_dam_roles(d, selected_ribbon))
                         _render_kl_table(_kl_rows, key=f"kl_toancau_{selected_ribbon}")
-                        st.caption("Khối lượng **sơ bộ** — cơ sở lập **dự toán** "
-                                   "(xem tab **💰 Dự toán**). Hệ số cốt thép (kg/m³) theo "
+                        st.caption("Khối lượng **sơ bộ** — tham khảo vật liệu. Chi phí "
+                                   "công trình tính theo **suất vốn đầu tư** (tab "
+                                   "**💵 Suất đầu tư**). Hệ số cốt thép (kg/m³) theo "
                                    "cấu kiện; cọc khoan nhồi không tính ván khuôn.")
                     except Exception as _ekl:
                         st.error(f"Lỗi bảng khối lượng: {_ekl}")
@@ -8863,41 +8869,8 @@ with _col_main:
                             use_container_width=True, key=f"exp_dl_{_PA_TAG}")
                 _export_frag()
 
-            # ── TAB CUỐI: Dự toán (từ bảng khối lượng toàn cầu) ──────────
-            with tab_dutoan:
-                st.markdown("##### 💰 Dự toán sơ bộ — " + selected_ribbon)
-                st.caption("Lấy **bảng khối lượng toàn cầu** (tab Bố trí chung) × "
-                           "**đơn giá** → thành tiền từng cấu kiện và tổng công trình.")
-                try:
-                    _kl_dt = KL.bang_toan_cau(d, dam_roles=_pa_dam_roles(d, selected_ribbon))
-                    _dgc1, _dgc2, _dgc3 = st.columns(3)
-                    _dg_bt = _dgc1.number_input(
-                        "Đơn giá bê tông (đ/m³)", 0, 20_000_000,
-                        KL.DON_GIA_MAC_DINH["bt"], 50_000, key=f"dg_bt_{selected_ribbon}")
-                    _dg_vk = _dgc2.number_input(
-                        "Đơn giá ván khuôn (đ/m²)", 0, 5_000_000,
-                        KL.DON_GIA_MAC_DINH["vk"], 10_000, key=f"dg_vk_{selected_ribbon}")
-                    _dg_th = _dgc3.number_input(
-                        "Đơn giá cốt thép (đ/kg)", 0, 200_000,
-                        KL.DON_GIA_MAC_DINH["thep"], 500, key=f"dg_th_{selected_ribbon}")
-                    _dt_rows, _tong_tien = KL.du_toan(_kl_dt, _dg_bt, _dg_vk, _dg_th)
-                    _df_dt = pd.DataFrame([{
-                        "Cấu kiện":       r["ten"],
-                        "Số lượng":       r["so_luong"],
-                        "Bê tông (m³)":   r["bt_m3"],
-                        "Ván khuôn (m²)": r["coppha_m2"],
-                        "Cốt thép (kg)":  r["thep_kg"],
-                        "Thành tiền (đ)": f"{r['thanh_tien']:,.0f}",
-                    } for r in _dt_rows])
-                    st.dataframe(_df_dt, use_container_width=True, hide_index=True,
-                                 key=f"dt_table_{selected_ribbon}")
-                    st.success(f"**Σ Tổng dự toán sơ bộ: {_tong_tien:,.0f} đ "
-                               f"≈ {_tong_tien/1e9:.3f} tỷ đồng** "
-                               f"(chưa gồm phụ trợ, thiết bị, các hệ số chi phí).")
-                except Exception as _edt:
-                    st.error(f"Lỗi dự toán: {_edt}")
-
-            # ── TAB: Giá trị theo SUẤT VỐN ĐẦU TƯ ─────────────────────────
+            # ── TAB: Giá trị theo SUẤT VỐN ĐẦU TƯ (chi phí DUY NHẤT của cầu —
+            # đã BỎ tab Dự toán theo đơn giá khối lượng) ────────────────────
             with tab_suat:
                 st.markdown("##### 💵 Giá trị công trình theo SUẤT VỐN ĐẦU TƯ — "
                             + selected_ribbon)
