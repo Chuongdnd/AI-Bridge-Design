@@ -300,14 +300,12 @@ def _light_css(pfx: str = "") -> str:
         lines.append(f"{flat} {{{decl};}}")
     return "\n".join(lines)
 
-# KÍCH HOẠT theo HAI đường (bù nhau):
-#  (A) @media (prefers-color-scheme: light) — khi OS/Streamlit "Use system" SÁNG.
-#  (B) class html.cau-light — JS đọc NỀN THỰC của .stApp rồi gắn class → bám đúng
-#      lựa chọn ☰ Theme của Streamlit KỂ CẢ khi OS đang Tối (trường hợp ☰=Light,
-#      Windows=Dark). Dùng !important nên thắng style inline tối.
+# MẶC ĐỊNH TỐI (.streamlit/config.toml: base="dark") — KHÔNG bám OS nữa.
+# Lật màu SÁNG chỉ khi người dùng đổi ☰ Theme = Light: JS đọc NỀN THỰC của
+# .stApp rồi gắn class html.cau-light (bỏ đường @media prefers-color-scheme để
+# máy OS-sáng không bị card sáng trên nền tối).
 st.markdown(
     "<style>\n"
-    "@media (prefers-color-scheme: light){\n" + _light_css("") + "\n}\n"
     + _light_css("html.cau-light") + "\n"
     "</style>",
     unsafe_allow_html=True,
@@ -1744,20 +1742,25 @@ def dialog_step1():
             st.rerun()
     with _apply_col:
         if st.button(
-            "✅ Áp dụng",
+            "✅ Áp dụng & cập nhật",
             use_container_width=True,
             key="d1_apply",
-            help="LƯU số liệu đã khai — hộp vẫn mở để khai báo tiếp",
+            help="LƯU số liệu + CHẠY cập nhật toàn hệ thống ngay, xong tự đóng "
+                 "hộp (khai báo vẫn được giữ nguyên để sửa tiếp lần sau)",
         ):
             _d1_commit()
             st.session_state.d1_show_feedback = True
             if _d1_validate():
+                # Số liệu chưa hợp lệ → giữ hộp mở để sửa
                 st.toast("⚠️ Có cao độ chưa hợp lệ — xem cảnh báo.", icon="⚠️")
+                st.session_state.open_dialog = "step1"
+                st.rerun()
             else:
-                st.toast("💾 Đã lưu khai báo thủy văn.", icon="✅")
-            # GHI NHỚ nhưng KHÔNG thoát hộp — mở lại chính hộp này
-            st.session_state.open_dialog = "step1"
-            st.rerun()
+                # LƯU + CHẠY pipeline (giữ draft & tab) → xong tự đóng hộp
+                st.session_state._d3_run = True
+                st.session_state._apply_keep_context = True
+                st.session_state.open_dialog = "step3"
+                st.rerun()
     with btn_col:
         if st.button(
             "Bước 2 ▶",
@@ -2333,12 +2336,15 @@ def dialog_step2():
             st.session_state.open_dialog = "step1"
             st.rerun()
     with btn_a:
-        if st.button("✅ Áp dụng", use_container_width=True, key="d2_apply",
-                     help="LƯU thông số hình học — hộp vẫn mở để khai báo tiếp"):
+        if st.button("✅ Áp dụng & cập nhật", use_container_width=True,
+                     key="d2_apply",
+                     help="LƯU thông số + CHẠY cập nhật toàn hệ thống ngay, xong "
+                          "tự đóng hộp (khai báo vẫn giữ nguyên để sửa tiếp)"):
             # draft đã được cập nhật ở khối update phía trên mỗi lần render.
-            st.toast("💾 Đã lưu thông số hình học.", icon="✅")
-            # GHI NHỚ nhưng KHÔNG thoát hộp — mở lại chính hộp này
-            st.session_state.open_dialog = "step2"
+            # LƯU + CHẠY pipeline (giữ draft & tab) → xong tự đóng hộp.
+            st.session_state._d3_run = True
+            st.session_state._apply_keep_context = True
+            st.session_state.open_dialog = "step3"
             st.rerun()
     with btn_f:
         if st.button("Bước 3 ▶", use_container_width=True, type="primary", key="d2_next"):
@@ -6898,8 +6904,17 @@ with _col_main:
                            + (f" (–{mong.get('L_coc_den')}m)"
                               if mong.get("L_coc_den") else ""))
                 if mong.get("ty_le_LD") is not None:
-                    _b2.metric("Tỷ lệ L/D", f"{mong.get('ty_le_LD')}"
-                               " (giới hạn 37 khi nền yếu)")
+                    _ld_v = mong.get("ty_le_LD")
+                    _b2.metric("Tỷ lệ L/D", f"{_ld_v} (hợp lý 30–100)")
+                    try:
+                        if 0 < float(_ld_v) < 30:
+                            _b2.caption("⚠️ L/D < 30 — cọc quá ngắn so đường "
+                                        "kính, xem xét giảm D (kinh tế)")
+                        elif float(_ld_v) > 100:
+                            _b2.caption("⚠️ L/D > 100 — cọc quá mảnh, "
+                                        "xem xét tăng D")
+                    except Exception:
+                        pass
                 if mong.get("Q_vl_kN"):
                     _b2.caption(f"Q_vật_liệu ≈ {mong['Q_vl_kN']} kN so "
                                 f"Q_đất_nền {mong.get('Q_1coc_tk_kN','—')} kN")
