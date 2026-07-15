@@ -183,7 +183,13 @@ html:not(.cau-sb-collapsed) [data-testid="stSidebar"] {
     transition: min-width 0.05s, max-width 0.05s, transform 0.15s;
     will-change: min-width, max-width, transform;
 }
-[data-testid="stSidebar"] > div:first-child { padding: 56px 14px 32px !important; }
+/* Sidebar: KHÔNG đệm trên. "> div:first-child" chính là stSidebarContent, mà con
+   đầu của nó là stSidebarHeader (position:static, cao 60px → CHIẾM CHỖ THẬT và đã
+   tự chừa đủ cho nút thu gọn). Đệm 56px cũ chỉ đẩy header xuống chứ không bảo vệ
+   gì → 56px trống thuần. Topbar cũng không cần né: nó bắt đầu từ MÉP PHẢI sidebar
+   (left: var(--sidebar-edge)) nên không hề phủ lên sidebar.
+   Đo trên Streamlit 1.57: nội dung 132px → 76px; nút thu gọn vẫn nguyên ở 16–44. */
+[data-testid="stSidebar"] > div:first-child { padding: 0 14px 32px !important; }
 
 /* Main content tự co giãn theo sidebar */
 section[data-testid="stMain"] {
