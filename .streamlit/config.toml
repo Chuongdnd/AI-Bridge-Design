@@ -1,4 +1,9 @@
-# Nền cơ sở: TỐI — bị lật sang SÁNG khi OS = sáng (qua @media prefers-color-scheme
-# trong 00-Interface.py) hoặc khi người dùng đổi thủ công ☰ → Settings → Theme.
-[theme]
-base = "dark"
+# KHÔNG khai báo [theme] → Streamlit TỰ BÁM hệ điều hành (prefers-color-scheme):
+# OS sáng → widget gốc (nút, ô chọn, dropdown, sidebar) render SÁNG;
+# OS tối  → render TỐI. Người dùng vẫn đổi tay được ở ☰ → Settings → Theme.
+#
+# Các thẻ/hộp tô màu TỐI CỨNG (topbar, ds-card, metric…) được lật riêng bằng
+# class html.cau-light trong 00-Interface.py (JS đọc nền THỰC do Streamlit render).
+#
+# ĐỪNG đặt base = "dark" ở đây: nó ép widget gốc luôn tối, trong khi CSS chỉ lật
+# được nền/chữ → sinh ra chữ đậm trên nền đen, không đọc được.
