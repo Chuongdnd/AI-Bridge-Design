@@ -272,6 +272,21 @@ _DARK_BG_FIRST  = ["0", "1"]                       # nền tối → sáng
 _LT_TXT_FIRST   = ["4","5","6","7","8","9","a","b","c","d","e","f"]
 
 _LIGHT_ITEMS = [
+    # ── Streamlit native: bị config.toml theme="dark" ghi → flip sang sáng ──────
+    ('body,[data-testid="stApp"],.stApp,[data-testid="stMain"]',
+     "background-color:#ffffff !important;color:#31333f !important"),
+    ('[data-testid="stSidebar"],section[data-testid="stSidebar"] > div',
+     "background-color:#f0f2f6 !important;color:#31333f !important"),
+    ('.stTextInput input,.stNumberInput input,.stTextArea textarea',
+     "background-color:#ffffff !important;color:#31333f !important;border-color:#d3d3d3 !important"),
+    ('[data-baseweb="select"] > div:first-child,[data-baseweb="input"]',
+     "background-color:#ffffff !important;color:#31333f !important"),
+    ('[data-baseweb="menu"],[data-baseweb="option"]',
+     "background-color:#ffffff !important;color:#31333f !important"),
+    ('[data-testid="stWidgetLabel"] p,[data-testid="stMarkdownContainer"] p,'
+     '[data-testid="stCaptionContainer"] p',
+     "color:#31333f !important"),
+    # ── Custom components (màu cứng tối) ─────────────────────────────────────────
     ('[data-testid="stMetric"]', "background:#eef2f8 !important;border-color:#cdd5e0 !important"),
     ('[data-testid="stMetricValue"]', "color:#1769aa !important"),
     ('.uth-topbar', "background:#e8edf4 !important;border-bottom-color:#bcd0e8 !important"),
@@ -300,13 +315,14 @@ def _light_css(pfx: str = "") -> str:
         lines.append(f"{flat} {{{decl};}}")
     return "\n".join(lines)
 
-# MẶC ĐỊNH TỐI (.streamlit/config.toml: base="dark") — KHÔNG bám OS nữa.
-# Lật màu SÁNG chỉ khi người dùng đổi ☰ Theme = Light: JS đọc NỀN THỰC của
-# .stApp rồi gắn class html.cau-light (bỏ đường @media prefers-color-scheme để
-# máy OS-sáng không bị card sáng trên nền tối).
+# BẮT SÁNG/TỐI THEO HỆ THỐNG (prefers-color-scheme) + cho phép đổi thủ công ☰.
+# • @media(prefers-color-scheme:light) → áp ngay, không cần JS (chống flash).
+# • html.cau-light → JS đọc nền thực sau render (bắt override thủ công qua Settings).
+# • JS matchMedia fallback → đặt class trước khi Streamlit render xong.
 st.markdown(
     "<style>\n"
     + _light_css("html.cau-light") + "\n"
+    + "@media(prefers-color-scheme:light){\n" + _light_css("") + "\n}\n"
     "</style>",
     unsafe_allow_html=True,
 )
@@ -322,6 +338,8 @@ _cc_theme.html(
           var m=(getComputedStyle(els[i]).backgroundColor||'').match(/[\\d.]+/g);
           if(m&&m.length>=3&&(m.length<4||parseFloat(m[3])>0.1)){
             var L=0.299*+m[0]+0.587*+m[1]+0.114*+m[2]; return L>140; } }
+        // Fallback: OS preference (khi nền chưa render xong)
+        try{ return !window.parent.matchMedia('(prefers-color-scheme:dark)').matches; }catch(e){}
         return null;
       }
       function apply(){ try{
@@ -331,6 +349,11 @@ _cc_theme.html(
       }catch(e){} }
       apply();
       [120,300,700,1500,3000,6000].forEach(function(t){setTimeout(apply,t);});
+      // Theo dõi khi người dùng bật/tắt Dark Mode trên hệ điều hành
+      try{
+        var _mq=window.parent.matchMedia('(prefers-color-scheme:dark)');
+        try{_mq.addEventListener('change',apply);}catch(e){try{_mq.addListener(apply);}catch(e2){}}
+      }catch(e){}
       try{ new MutationObserver(apply).observe(
              window.parent.document.documentElement,
              {attributes:true, attributeFilter:['style','class']}); }catch(e){}
