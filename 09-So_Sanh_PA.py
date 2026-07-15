@@ -570,44 +570,8 @@ def render_comparison_tab(alternatives, st):
         )
         st.plotly_chart(fig_tgt, use_container_width=True, key="chart_tgt_pa")
 
-    # ── Bieu do so do nhip ─────────────────────────────────────────────────
-    st.markdown("---")
-    st.markdown("### So sánh sơ đồ nhịp")
-
-    fig_span = go.Figure()
-    for alt in alternatives:
-        kcn = alt["kcn"]
-        n   = kcn["tong_so_nhip"]
-        L   = kcn["chieu_dai"]
-        # Ve cac nhip nhu cac thanh ngang
-        x_vals, y_vals = [], []
-        for i in range(n):
-            x_start = i * L
-            x_end   = (i + 1) * L
-            x_vals += [x_start, x_end, None]
-            y_vals += [0, 0, None]
-        fig_span.add_trace(go.Scatter(
-            x=x_vals, y=y_vals,
-            mode="lines",
-            line=dict(color=alt["color"], width=10),
-            name=f"{alt['label']} ({n}x{L:.1f}m)",
-        ))
-        # Ve tru
-        for i in range(1, n):
-            fig_span.add_shape(
-                type="line",
-                x0=i * L, y0=-0.5, x1=i * L, y1=0,
-                line=dict(color=alt["color"], width=3),
-            )
-
-    fig_span.update_layout(
-        xaxis_title="Chieu dai (m)", yaxis=dict(visible=False),
-        plot_bgcolor="rgba(0,0,0,0)", paper_bgcolor="rgba(0,0,0,0)",
-        height=220, margin=dict(t=10, b=30, l=10, r=10),
-        showlegend=True,
-        legend=dict(orientation="h", y=-0.3),
-    )
-    st.plotly_chart(fig_span, use_container_width=True, key="chart_span_pa")
+    # (Đã BỎ biểu đồ "So sánh sơ đồ nhịp" theo yêu cầu — bố trí nhịp xem ở tab
+    #  Bố trí chung từng phương án; so sánh tổng hợp dùng chấm điểm MCDA-AHP.)
 
     # ── Radar chart ────────────────────────────────────────────────────────
     st.markdown("---")
