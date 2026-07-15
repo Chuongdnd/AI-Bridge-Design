@@ -508,6 +508,44 @@ def apply_pier_stem_layout(pier: dict, bc: float, overhang: float = 3.0,
     return _widen_footing(p, target + float(foot_margin))
 
 
+def footing_dims_m(pier: dict):
+    """(B_ngang, B_dọc) BỆ TRỤ (m) từ footprint THẬT của hệ lắp ghép (sau khi
+    nới theo bc) — GỐC để bố trí lưới cọc đồng bộ 3D ↔ mọi mặt cắt."""
+    p = migrate_pier(pier or {})
+    lays = stem_layers_of(p.get("parts", {}).get("be", {}))
+    umin = vmin = 1e18; umax = vmax = -1e18; found = False
+    for lay in lays:
+        for s in _section_solids(lay["section"]):
+            a, b, c, d2 = _solids_bbox([s])
+            umin, umax = min(umin, a), max(umax, b)
+            vmin, vmax = min(vmin, c), max(vmax, d2)
+            found = True
+    if not found:
+        return 0.0, 0.0
+    return (umax - umin) * MM, (vmax - vmin) * MM
+
+
+def abut_footing_dims_m(mo: dict, target_width: float = None):
+    """(B_ngang, B_dọc) BỆ MỐ (m): ngang = tổng bề rộng mố (co theo cầu nếu
+    target_width), dọc = u-extent VÙNG BỆ (w ≤ đỉnh bệ) của đoạn thân chính —
+    GỐC bố trí cọc mố đồng bộ với khối bệ vẽ trong 3D/mặt cắt."""
+    p = migrate_abutment(mo or {})
+    layers = abut_body_layers(p.get("parts", {}).get("than", {}))
+    if not layers:
+        return 0.0, 0.0
+    ngang = (float(target_width) if target_width
+             else abut_body_total_B(layers))
+    sw, wb = _abut_seat_w(layers)
+    ftop = _abut_footing_top_w(layers, sw, wb) if (sw and wb) else None
+    body = max(layers, key=lambda l: float(l.get("B", 0) or 0))
+    pts = body["section"]["outer"]
+    fu = ([u for (u, w) in pts if w <= ftop + 1e-6] if ftop is not None
+          else [u for (u, _w) in pts])
+    if not fu:
+        return ngang, 0.0
+    return ngang, (max(fu) - min(fu)) * MM
+
+
 def widen_footing_to_cover_stem(pier: dict, margin: float = 1.0) -> dict:
     """Nới BỆ phủ hết THÂN (mép ngoài thân + margin) — dùng sau khi chỉnh thân
     (khai báo TAY spacing/width) để cột ngoài LUÔN có bệ đỡ. Trả pier mới."""

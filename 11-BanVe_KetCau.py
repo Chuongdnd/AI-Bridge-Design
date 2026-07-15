@@ -1443,17 +1443,44 @@ def mong_dims(mong):
     return D, L, max(1, n)
 
 
-def mong_pile_grid(mong):
-    """LƯỚI CỌC CHUẨN từ mong_result (Module 08) — MỘT NGUỒN cho mọi bản vẽ
-    (trắc dọc, MCN, mặt bằng, 3D) khi chưa khai sơ đồ cọc DXF.
+def pile_grid_fit(be_ngang, be_doc, D, la_ckn):
+    """Lưới cọc LẤP ĐẦY BỆ HIỆN TẠI với tim-tim ≥ tối thiểu TCVN 10304:2025:
+      • Khoan nhồi: S_min = max(3.0D, D+1.0m thông thủy); tim cọc ngoài cách
+        mép bệ ≥ D/2 + 300mm.
+      • Đóng/ép:    S_min = max(750mm, 2.5D); mép ≥ D/2 + 225mm.
+    Số cọc mỗi phương = số lớn nhất đặt vừa (bệ rộng → nhiều cọc, bệ hẹp → ít)
+    → mật độ luôn KHỚP kích thước bệ. Trả (xs_ngang, ys_doc, S_ngang, S_doc)."""
+    D = max(float(D or 0.6), 0.2)
+    S_min = max(3.0 * D, D + 1.0) if la_ckn else max(0.75, 2.5 * D)
+    edge = D / 2.0 + (0.30 if la_ckn else 0.225)
 
-    Trả (xs_ngang, ys_doc, D_m, L_m, S_m):
-      xs_ngang: tọa độ tim cọc theo NGANG cầu (n_cols cọc, tim-tim S, giữa 0)
-      ys_doc  : tọa độ tim cọc theo DỌC cầu  (n_rows cọc, tim-tim S, giữa 0)
-    Số hàng/cột + khoảng cách LẤY THẲNG từ Module 08 (n_cols_be, n_rows_be,
-    khoang_cach_tim) — KHÔNG tự chế lưới trang trí."""
+    def _axis(B):
+        avail = max(0.0, float(B or 0) - 2.0 * edge)
+        n = max(1, int(np.floor(avail / S_min + 1e-9)) + 1)
+        if n == 1:
+            return [0.0], S_min
+        S = avail / (n - 1)
+        return [(i - (n - 1) / 2.0) * S for i in range(n)], S
+
+    xs, S_ng = _axis(be_ngang)
+    ys, S_dc = _axis(be_doc)
+    return xs, ys, S_ng, S_dc
+
+
+def mong_pile_grid(mong, be_ngang=None, be_doc=None):
+    """LƯỚI CỌC CHUẨN — MỘT NGUỒN cho mọi bản vẽ (trắc dọc, MCN, mặt bằng, 3D)
+    khi chưa khai sơ đồ cọc DXF.
+
+    be_ngang/be_doc cho → lưới LẤP ĐẦY BỆ THẬT đó (pile_grid_fit, gốc = bệ của
+    mô hình 3D); không cho → dùng layout Module 08 (n_cols_be, n_rows_be,
+    khoang_cach_tim). Trả (xs_ngang, ys_doc, D_m, L_m, S_m)."""
     m = mong or {}
     D, L, n = mong_dims(m)
+    la_ckn = (D >= 0.8 or "khoan" in str(m.get("loai_coc")
+                                         or m.get("loai_mong") or "").lower())
+    if be_ngang and be_doc and float(be_ngang) > 0 and float(be_doc) > 0:
+        xs, ys, S_ng, S_dc = pile_grid_fit(be_ngang, be_doc, D, la_ckn)
+        return xs, ys, D, L, round(min(S_ng, S_dc), 2)
     nc = int(float(m.get("n_cols_be") or 0) or 0)
     nr = int(float(m.get("n_rows_be") or 0) or 0)
     if nc <= 0:
@@ -1986,8 +2013,19 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                 color="rgba(120,90,50,0.75)",
                 legend_name=(f"Cọc mố ({len(_piles_mo)} cọc)" if side == "Trái" else None))
         else:
-            # Lưới cọc Module 08: trắc dọc thấy n_rows cọc, tim-tim đúng S.
-            coc_xs_mo = [_pile_xc + _yy for _yy in _pg_ys]
+            # Lưới cọc LẤP ĐẦY BỆ MỐ THẬT (gốc 3D): trắc dọc thấy n_rows cọc
+            # theo DỌC, tim-tim ≥ tối thiểu TCVN.
+            _ys_mo = _pg_ys
+            if abutment_assembly:
+                try:
+                    _bnm, _bdm = _get_PB().abut_footing_dims_m(
+                        abutment_assembly, target_width=bc)
+                    if _bdm > 0.3:
+                        _, _ys_mo, _, _, _ = mong_pile_grid(
+                            mong, be_ngang=_bnm, be_doc=_bdm)
+                except Exception:
+                    pass
+            coc_xs_mo = [_pile_xc + _yy for _yy in _ys_mo]
             for j, xc in enumerate(coc_xs_mo):
                 fig.add_trace(go.Scatter(
                     x=[xc, xc], y=[_pile_ztop, _pile_ztop - L_coc],
@@ -4999,9 +5037,18 @@ def _pos_geometry(d, vi_tri, pier_assembly=None, df_geology=None, df_tim_line=No
         be_half_doc   = max(abs(min(ys)), abs(max(ys))) + 0.75 * Dmax
         be_half_ngang = max(be_W, max(abs(min(xs)), abs(max(xs))) + 0.75 * Dmax)
     else:
-        # Bệ theo KÍCH THƯỚC MODULE 08 (Be_ngang × Be_doc từ lưới cọc thật)
+        # BỆ THẬT làm GỐC (đồng bộ 3D): mố → bệ mố thư viện (co theo bc);
+        # trụ → bệ hệ trụ (mong đã sync theo footing_dims_m ở Interface).
         _bn = float(mong.get("Be_ngang") or 0)
         _bd = float(mong.get("Be_doc") or 0)
+        if is_mo and d.get("_mo_model"):
+            try:
+                _bnm, _bdm = _get_PB().abut_footing_dims_m(
+                    d["_mo_model"], target_width=bc)
+                if _bnm > 0.5 and _bdm > 0.3:
+                    _bn, _bd = _bnm, _bdm
+            except Exception:
+                pass
         be_half_doc   = (_bd / 2.0) if _bd > 0 else max(1.6, be_W * 0.5)
         be_half_ngang = max(be_W, _bn / 2.0) if _bn > 0 else be_W
     cap_half_doc = max(0.8, min(be_half_doc * 0.85, H_dam * 0.55 + 0.45))
@@ -5032,9 +5079,13 @@ def _circle(fig, xc, yc, r, line_c, fill, name="", showlegend=False):
 
 
 def _auto_pile_grid(g):
-    """Lưới cọc khi chưa khai DXF — LẤY THẲNG từ Module 08 (mong_pile_grid:
-    n_cols × n_rows, tim-tim = khoang_cach_tim, D/L thật) thay lưới trang trí."""
-    xs, ys, D, L, _S = mong_pile_grid(g.get("mong"))
+    """Lưới cọc khi chưa khai DXF — LẤP ĐẦY BỆ THẬT của vị trí (gốc 3D:
+    be_half_ngang/doc từ hệ trụ/mố lắp ghép) với tim-tim ≥ tối thiểu TCVN;
+    D/L từ Module 08. Bệ rộng → nhiều cọc, bệ hẹp → ít — luôn khớp bệ."""
+    xs, ys, D, L, _S = mong_pile_grid(
+        g.get("mong"),
+        be_ngang=2.0 * float(g.get("be_half_ngang") or 0),
+        be_doc=2.0 * float(g.get("be_half_doc") or 0))
     out = []
     for yy in ys:
         for xx in xs:

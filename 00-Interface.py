@@ -7714,6 +7714,41 @@ with _col_main:
             d["_mo_model"]   = _resolve_assembly(d, "mo")
         except Exception:
             d["_pier_model"] = d["_mo_model"] = None
+        # ── ĐỒNG BỘ LƯỚI CỌC THEO BỆ 3D (gốc = bệ hệ trụ lắp ghép, đã nới theo
+        # bc): lưới lấp đầy bệ với tim-tim ≥ tối thiểu TCVN → mong_result cập
+        # nhật (n_cols/n_rows/so_coc/S/Be) → MỌI view + khối lượng cùng 1 lưới.
+        try:
+            _mg_s = d.get("mong_result")
+            if d.get("_pier_model") and isinstance(_mg_s, dict):
+                _bn_s, _bd_s = PB.footing_dims_m(d["_pier_model"])
+                if _bn_s > 0.5 and _bd_s > 0.5:
+                    _D_s = BVK.mong_dims(_mg_s)[0]
+                    _ckn_s = (_D_s >= 0.8 or "khoan" in str(
+                        _mg_s.get("loai_coc") or _mg_s.get("loai_mong") or "").lower())
+                    _xs_s, _ys_s, _Sn_s, _Sd_s = BVK.pile_grid_fit(
+                        _bn_s, _bd_s, _D_s, _ckn_s)
+                    _nc_s, _nr_s = len(_xs_s), len(_ys_s)
+                    _req_s = int(_mg_s.get("so_coc_yeu_cau")
+                                 or _mg_s.get("so_coc_be") or 4)
+                    _mg_s.setdefault("so_coc_yeu_cau", _req_s)   # n theo tải (08)
+                    _mg_s.update({
+                        "n_cols_be": _nc_s, "n_rows_be": _nr_s,
+                        "so_coc_be": _nc_s * _nr_s, "So_coc_tu": _nc_s * _nr_s,
+                        "khoang_cach_tim": round(min(_Sn_s, _Sd_s), 2),
+                        "khoang_cach_tim_coc": round(min(_Sn_s, _Sd_s), 2),
+                        "Be_ngang": round(_bn_s, 2), "Be_doc": round(_bd_s, 2),
+                        "kich_thuoc_be": (f"{_bn_s:.2f}m × {_bd_s:.2f}m × "
+                                          f"{float(_mg_s.get('Be_cao') or 1.5):.2f}m"),
+                    })
+                    if _nc_s * _nr_s < _req_s:
+                        _w_s = (f"⚠️ Bệ hiện tại chỉ bố trí được {_nc_s*_nr_s} cọc "
+                                f"(tim-tim tối thiểu TCVN) < {_req_s} cọc yêu cầu "
+                                f"theo tải trọng — cần NỚI BỆ hoặc tăng D cọc.")
+                        _ws_s = list(_mg_s.get("warnings") or [])
+                        if _w_s not in _ws_s:
+                            _mg_s["warnings"] = _ws_s + [_w_s]
+        except Exception:
+            pass
 
         st.markdown("---")
     
