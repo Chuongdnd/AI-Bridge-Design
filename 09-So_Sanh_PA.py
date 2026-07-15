@@ -489,14 +489,26 @@ def render_comparison_tab(alternatives, st):
         f"{('<br>' + b) if b else ''}</th>"
         for c, lb, b in zip(pa_colors, pa_labels, _badges)
     )
+    # Mau BAM THEME: dung rgba() BAN TRONG SUOT thay vi ma mau dac.
+    # Truoc day bang ep cung mau SANG (#f0f0f0 / #f8f9fa / #ffffff) trong khi than
+    # bang KHONG dat mau chu -> chu thua huong theme. O nen TOI: chu trang tren o
+    # trang = khong doc duoc. rgba phu len nen trang nen tu hop voi ca sang lan toi.
+    # (Co y dung rgba chu khong phai rgb: bo lat mau trong 00-Interface.py chi khop
+    #  'rgb(' — rgba duoc bo qua, tranh bi lat nguoc lai.)
+    _BG_HEAD = "rgba(128,128,128,0.18)"     # header
+    _BG_ODD  = "rgba(128,128,128,0.07)"     # soc xen ke
+    _BG_EVEN = "transparent"
+    _LINE    = "rgba(128,128,128,0.40)"
+    _OK      = "rgba(46,204,113,0.28)"      # xanh: tot nhat / trong dai
+    _BAD     = "rgba(231,76,60,0.22)"       # do: ngoai pham vi
     html = (
         "<table style='width:100%;border-collapse:collapse;font-size:14px'>"
-        f"<tr><th style='text-align:left;padding:8px;background:#f0f0f0'>Tieu chi</th>{hdr}</tr>"
+        f"<tr><th style='text-align:left;padding:8px;background:{_BG_HEAD}'>Tieu chi</th>{hdr}</tr>"
     )
     separators = {5, 8}
     for idx, (label, vals, hint) in enumerate(rows):
-        bg = "#f8f9fa" if idx % 2 == 0 else "#ffffff"
-        border = "border-top:2px solid #dee2e6;" if idx in separators else ""
+        bg = _BG_ODD if idx % 2 == 0 else _BG_EVEN
+        border = f"border-top:2px solid {_LINE};" if idx in separators else ""
         cells = ""
         for vi, (v, alt) in enumerate(zip(vals, alternatives)):
             # Danh dau o "tot nhat" bang mau xanh nhat
@@ -504,14 +516,14 @@ def render_comparison_tab(alternatives, st):
             if hint == "min_best":
                 raw_vals = [a["n_tru"] for a in alternatives]
                 if int(v) == min(raw_vals):
-                    mark = " background:#d5f5e3!important;font-weight:bold;"
+                    mark = f" background:{_OK}!important;font-weight:bold;"
             elif hint == "lh_check":
                 lo, hi = _LH_RANGE.get(alt["loai_dam_key"], (15, 20))
                 lh_val = alt["kcn"].get("ti_le_L_H", 0) or 0
                 if lo <= lh_val <= hi:
-                    mark = " background:#d5f5e3!important;font-weight:bold;"
+                    mark = f" background:{_OK}!important;font-weight:bold;"
                 elif lh_val < lo * 0.9 or lh_val > hi * 1.1:
-                    mark = " background:#fde8e8!important;"
+                    mark = f" background:{_BAD}!important;"
             cells += f"<td style='text-align:center;padding:6px;background:{bg};{border}{mark}'>{v}</td>"
         html += (
             f"<tr><td style='padding:6px;background:{bg};font-weight:500;{border}'>{label}</td>"
