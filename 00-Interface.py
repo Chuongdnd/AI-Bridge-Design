@@ -271,22 +271,12 @@ _DARK_BG_FIRST  = ["0", "1"]                       # nền tối → sáng
 # (xanh #007acc, xanh lá #2ecc71, xám đậm #333) vì vẫn đọc tốt trên nền sáng.
 _LT_TXT_FIRST   = ["4","5","6","7","8","9","a","b","c","d","e","f"]
 
+# LƯU Ý: KHÔNG đụng tới nền/chữ của widget GỐC Streamlit ở đây — config.toml đã bỏ
+# [theme] nên Streamlit tự render sáng/tối theo OS. Ép thêm ở đây sẽ:
+#   • đá nhau với theme gốc (vd chữ đậm đè lên nút nền tối → mất chữ), và
+#   • ép nền .stApp → JS isLight() đọc lại chính màu mình ép ra → KHÓA ở sáng.
+# Chỉ lật những thứ Streamlit KHÔNG quản: thẻ/hộp tô màu tối cứng trong app.
 _LIGHT_ITEMS = [
-    # ── Streamlit native: bị config.toml theme="dark" ghi → flip sang sáng ──────
-    ('body,[data-testid="stApp"],.stApp,[data-testid="stMain"]',
-     "background-color:#ffffff !important;color:#31333f !important"),
-    ('[data-testid="stSidebar"],section[data-testid="stSidebar"] > div',
-     "background-color:#f0f2f6 !important;color:#31333f !important"),
-    ('.stTextInput input,.stNumberInput input,.stTextArea textarea',
-     "background-color:#ffffff !important;color:#31333f !important;border-color:#d3d3d3 !important"),
-    ('[data-baseweb="select"] > div:first-child,[data-baseweb="input"]',
-     "background-color:#ffffff !important;color:#31333f !important"),
-    ('[data-baseweb="menu"],[data-baseweb="option"]',
-     "background-color:#ffffff !important;color:#31333f !important"),
-    ('[data-testid="stWidgetLabel"] p,[data-testid="stMarkdownContainer"] p,'
-     '[data-testid="stCaptionContainer"] p',
-     "color:#31333f !important"),
-    # ── Custom components (màu cứng tối) ─────────────────────────────────────────
     ('[data-testid="stMetric"]', "background:#eef2f8 !important;border-color:#cdd5e0 !important"),
     ('[data-testid="stMetricValue"]', "color:#1769aa !important"),
     ('.uth-topbar', "background:#e8edf4 !important;border-bottom-color:#bcd0e8 !important"),
@@ -315,14 +305,16 @@ def _light_css(pfx: str = "") -> str:
         lines.append(f"{flat} {{{decl};}}")
     return "\n".join(lines)
 
-# BẮT SÁNG/TỐI THEO HỆ THỐNG (prefers-color-scheme) + cho phép đổi thủ công ☰.
-# • @media(prefers-color-scheme:light) → áp ngay, không cần JS (chống flash).
-# • html.cau-light → JS đọc nền thực sau render (bắt override thủ công qua Settings).
-# • JS matchMedia fallback → đặt class trước khi Streamlit render xong.
+# BÁM HỆ THỐNG: config.toml không khai [theme] → Streamlit tự chọn sáng/tối theo OS
+# và lo hết widget gốc. Ở đây chỉ lật các thẻ/hộp tô màu tối cứng, bám vào NỀN THỰC
+# mà Streamlit đã render (JS → class html.cau-light).
+#
+# KHÔNG dùng @media(prefers-color-scheme:light) cho khối này: nó bám OS chứ không bám
+# theme đang hiển thị → khi người dùng đổi tay ☰ Settings = Dark trên máy OS-sáng thì
+# thẻ vẫn hoá sáng nằm giữa nền tối. Đọc nền thực đúng cho CẢ hai đường.
 st.markdown(
     "<style>\n"
     + _light_css("html.cau-light") + "\n"
-    + "@media(prefers-color-scheme:light){\n" + _light_css("") + "\n}\n"
     "</style>",
     unsafe_allow_html=True,
 )
