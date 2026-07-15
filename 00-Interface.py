@@ -136,6 +136,8 @@ footer                            { display: none !important; }
     width: 100% !important;
     min-width: 100% !important;
   }
+  /* (Panel phải trên ĐT do media query ≤768px bên dưới lo — bám cùng MỐC
+     .st-key-cau_right_panel, đứng sau nên thắng. Không lặp lại ở đây.) */
   /* Biểu đồ trên điện thoại: chú giải + thanh CAO ĐỘ mặc định ẨN (che khung
      nhìn nhỏ) nhưng BẬT/TẮT được bằng nút 👁 (JS gắn) — không ẩn hẳn. */
   .js-plotly-plot:not(.cau-show-legend) .legend { display: none !important; }
@@ -189,17 +191,27 @@ section[data-testid="stMain"] {
     will-change: margin-left;
 }
 
-/* Right panel — kích thước do JS điều khiển */
-[data-testid="stHorizontalBlock"] > div:last-child {
+/* ── Panel PHẢI (bố cục gốc) — bề rộng do JS điều khiển ──
+   ⚠ PHẢI khoanh vùng bằng :has(.st-key-cau_right_panel).
+   Trước đây rule bám [data-testid="stHorizontalBlock"] > div:last-child → trúng
+   CỘT CUỐI của MỌI st.columns() trong app, không riêng panel phải. Hậu quả: ở tab
+   Bố trí chung, st.columns([2,1]) mất tác dụng — bản vẽ phải bị ép cứng 220px còn
+   cột trái nuốt hết chỗ. (Dòng vá riêng cho hộp thoại trước đây cũng vì lỗi này;
+   nay bỏ được — nó ép mọi cột trong hộp thoại chia ĐỀU, phá tỉ lệ st.columns.) */
+[data-testid="stColumn"]:has(.st-key-cau_right_panel) {
     min-width: var(--right-panel-width, 220px) !important;
     max-width: var(--right-panel-width, 220px) !important;
     flex: 0 0 var(--right-panel-width, 220px) !important;
+    transition: min-width .12s, max-width .12s, flex-basis .12s;
 }
-/* Cột trong HỘP THOẠI không dính bề rộng panel phải cố định → chia ĐỀU */
-[data-testid="stDialog"] [data-testid="stHorizontalBlock"] > div:last-child {
+/* THU GỌN panel phải → trả lại toàn bộ bề ngang cho nội dung chính */
+html.cau-rp-collapsed [data-testid="stColumn"]:has(.st-key-cau_right_panel) {
     min-width: 0 !important;
-    max-width: none !important;
-    flex: 1 1 0% !important;
+    max-width: 0 !important;
+    flex: 0 0 0 !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    opacity: 0;
 }
 
 /* ── Topbar cố định (vị trí điều khiển qua CSS var để responsive) ── */
@@ -229,10 +241,13 @@ section[data-testid="stMain"] {
     div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) {
         left: 0 !important;
     }
-    /* Right panel xuống full-width thay vì cố định 220px */
-    [data-testid="stHorizontalBlock"] > div:last-child {
+    /* Right panel xuống full-width thay vì cố định 220px.
+       Bám MỐC .st-key-cau_right_panel — KHÔNG bám "cột cuối của mọi
+       stHorizontalBlock" (sẽ ép luôn bản vẽ phải ở tab Bố trí chung).
+       Cùng độ ưu tiên với rule desktop nhưng đứng SAU → thắng ở ≤768px. */
+    [data-testid="stColumn"]:has(.st-key-cau_right_panel) {
         min-width: 100% !important;
-        max-width: 100% !important;
+        max-width: none !important;
         flex: 1 1 100% !important;
     }
     /* Giảm padding ngang để không tràn */
@@ -1639,6 +1654,137 @@ body.cau-resizing, body.cau-resizing * {
 
 # Gọi ngay sau định nghĩa — trước khi sidebar và columns được render
 _inject_resizable_panels()
+
+
+# =========================================================================
+# ↔ PANEL PHẢI — kéo rộng + thu gọn (đối xứng với sidebar trái)
+# =========================================================================
+def _inject_right_panel_ctl() -> None:
+    """Tay nắm kéo + nút thu gọn cho panel phải, cùng lối dùng như sidebar trái:
+    kéo mép để chỉnh rộng · nháy đúp để đặt lại · nút ▶/◀ để thu gọn/mở.
+    Nhớ trạng thái qua localStorage. Mốc nhận cột = .st-key-cau_right_panel.
+    Gọi SAU khi cột đã render (JS vẫn có vòng thử lại + MutationObserver)."""
+    st.markdown(
+        """
+<style>
+#cau-rp-drag {
+    position: fixed; top: 44px; bottom: 0; width: 7px; z-index: 99990;
+    cursor: col-resize; background: transparent; transition: background .15s;
+}
+#cau-rp-drag:hover, #cau-rp-drag.dragging { background: rgba(0,122,204,0.55); }
+#cau-rp-toggle {
+    position: fixed; top: 52px; z-index: 99991; width: 22px; height: 34px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+    border: 1px solid rgba(128,128,128,0.45); border-right: none;
+    border-radius: 6px 0 0 6px; background: rgba(128,128,128,0.16);
+    font-size: 11px; line-height: 1; user-select: none; transition: background .15s;
+}
+#cau-rp-toggle:hover { background: rgba(0,122,204,0.5); }
+@media (max-width: 768px) { #cau-rp-drag, #cau-rp-toggle { display: none !important; } }
+</style>
+<div id="cau-rp-drag" title="Kéo để chỉnh rộng panel phải · nháy đúp để đặt lại"></div>
+<div id="cau-rp-toggle" title="Thu gọn / mở panel phải">▶</div>
+""",
+        unsafe_allow_html=True,
+    )
+    st.components.v1.html(
+        """
+<script>
+(function(){
+  var D = window.parent.document, W = window.parent;
+  var MINW = 170, MAXW = 560;
+  var KEY = 'cau_ai_right_w', KEYC = 'cau_ai_right_collapsed';
+  function panel(){
+    var m = D.querySelector('.st-key-cau_right_panel');
+    return m ? m.closest('[data-testid="stColumn"]') : null;
+  }
+  function drag(){ return D.getElementById('cau-rp-drag'); }
+  function tog(){  return D.getElementById('cau-rp-toggle'); }
+
+  var curW = parseInt(W.localStorage.getItem(KEY) || '') || 0;
+  var collapsed = W.localStorage.getItem(KEYC) === '1';
+  var _lastLeft = -1, _lastCol = null;   // chỉ ghi DOM khi ĐỔI THẬT → tránh
+                                         // MutationObserver tự kích lại vô hạn
+
+  function applyCollapsed(){
+    if (_lastCol === collapsed) return;
+    _lastCol = collapsed;
+    D.documentElement.classList.toggle('cau-rp-collapsed', collapsed);
+    var t = tog();  if (t) t.textContent = collapsed ? '◀' : '▶';
+    var h = drag(); if (h) h.style.display = collapsed ? 'none' : 'block';
+  }
+  function sync(){
+    var p = panel(); if (!p) return;
+    var r = p.getBoundingClientRect();
+    if (Math.abs(r.left - _lastLeft) > 0.5){
+      _lastLeft = r.left;
+      var h = drag(); if (h && !collapsed) h.style.left = (r.left - 3) + 'px';
+      var t = tog();  if (t) t.style.left = (r.left - 22) + 'px';
+    }
+  }
+  function applyW(w){
+    D.documentElement.style.setProperty('--right-panel-width', w + 'px');
+    sync();
+  }
+  function refresh(){ applyCollapsed(); if (curW >= MINW) applyW(curW); else sync(); }
+
+  function setup(){
+    var h = drag(), t = tog(), p = panel();
+    if (!h || !t || !p) return false;
+    refresh();
+    if (h.__bound) return true;
+    h.__bound = true;
+    var dragging = false, startX = 0, startW = 0;
+    h.addEventListener('mousedown', function(e){
+      e.preventDefault(); dragging = true; startX = e.clientX;
+      startW = panel().getBoundingClientRect().width;
+      h.classList.add('dragging'); D.body.classList.add('cau-resizing');
+    });
+    D.addEventListener('mousemove', function(e){
+      if (!dragging) return;
+      // Panel nằm BÊN PHẢI → kéo sang TRÁI là RỘNG ra (ngược dấu sidebar trái)
+      var w = Math.min(MAXW, Math.max(MINW, startW - (e.clientX - startX)));
+      curW = w; applyW(w);
+    });
+    D.addEventListener('mouseup', function(){
+      if (!dragging) return;
+      dragging = false; h.classList.remove('dragging');
+      D.body.classList.remove('cau-resizing');
+      W.localStorage.setItem(KEY, curW);
+    });
+    h.addEventListener('dblclick', function(){
+      curW = 0; W.localStorage.removeItem(KEY);
+      D.documentElement.style.removeProperty('--right-panel-width');  // về 220px
+      sync();
+    });
+    t.addEventListener('click', function(){
+      collapsed = !collapsed;
+      W.localStorage.setItem(KEYC, collapsed ? '1' : '0');
+      applyCollapsed();
+      [0, 60, 150, 300].forEach(function(ms){ setTimeout(sync, ms); });
+    });
+    return true;
+  }
+
+  var tries = 0;
+  (function tryInit(){
+    if (setup()){
+      var _raf = 0;
+      var mo = new W.MutationObserver(function(){
+        if (_raf) return;
+        _raf = W.requestAnimationFrame(function(){ _raf = 0; refresh(); });
+      });
+      mo.observe(D.body, {childList: true, subtree: true, attributes: true,
+                          attributeFilter: ['style', 'class']});
+      W.addEventListener('resize', sync);
+      [120, 250, 450].forEach(function(t){ setTimeout(sync, t); });
+    } else if (tries < 40){ tries++; setTimeout(tryInit, 200); }
+  })();
+})();
+</script>
+""",
+        height=0, scrolling=False,
+    )
 
 
 # =========================================================================
@@ -6711,11 +6857,18 @@ def render_thu_vien() -> None:
 
 selected_ribbon = st.session_state.get('current_tab', 'THUYẾT MINH')
 
-#  Layout: Main canvas + Right panel (tỷ lệ cố định 7:3)
+#  Layout: Main canvas + Right panel (bề rộng panel phải do CSS/JS chốt, xem
+#  --right-panel-width; tỉ lệ 7:3 chỉ là giá trị ban đầu trước khi CSS áp).
 _col_main, _col_right = st.columns([7, 3], gap="small")
 
 with _col_right:
-    _render_right_panel(st.session_state.design_data)
+    # Container CÓ KEY → sinh class .st-key-cau_right_panel làm MỐC cho CSS/JS
+    # nhận đúng cột này (xem rule :has(...)). Không có mốc thì buộc phải bám
+    # "cột cuối của mọi stHorizontalBlock" — chính là lỗi ép bản vẽ còn 220px.
+    with st.container(key="cau_right_panel"):
+        _render_right_panel(st.session_state.design_data)
+
+_inject_right_panel_ctl()
 
 with _col_main:
     if selected_ribbon == "THUYẾT MINH":
