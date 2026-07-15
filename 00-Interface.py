@@ -287,6 +287,38 @@ section[data-testid="stMain"] .block-container {
     max-width: 100% !important;
 }
 
+/* ── BỎ KHOẢNG TRỐNG ĐẦU TRANG ───────────────────────────────────────────────
+   stVerticalBlock gốc đặt gap 16px giữa các phần tử con. Các phần tử "VÔ HÌNH"
+   (khối <style>, script component height=0, div position:fixed như topbar/tay
+   nắm kéo) VẪN là con của nó → mỗi cái ăn trọn 16px gap dù cao 0px.
+   Đo trên bản chạy thật: 10 phần tử đầu đều cao 0px, xếp bậc thang
+   top 52→68→84→…→196, nội dung thật mãi tới top 212 → 160px trống thuần.
+   Cách chữa: cho chúng position:absolute để RỜI khỏi luồng flex → không còn
+   được tính gap. Nội dung lên sát topbar (top ≈ 52px).
+
+   ⚠ KHÔNG dùng display:none cho nhóm iframe/div-fixed:
+     • display:none sẽ đổ xuống cả con → .uth-topbar và tay nắm kéo (đang
+       position:fixed) biến mất luôn;
+     • iframe component chứa JS sống còn (theme, cảm ứng, chặn thao tác khi chạy).
+   Riêng markdown chỉ chứa <style> thì display:none AN TOÀN — thẻ <style> vẫn áp
+   dụng toàn cục kể cả trong cây bị ẩn.
+   Quét cả stIFrame là an toàn: MỌI lời gọi html() trong repo đều height=0
+   (đã đối chiếu bằng AST, 8/8). */
+[data-testid="stElementContainer"]:has([data-testid="stMarkdownContainer"] > style:only-child) {
+    display: none !important;
+}
+[data-testid="stElementContainer"]:has(> [data-testid="stIFrame"]),
+[data-testid="stElementContainer"]:has(.uth-topbar),
+[data-testid="stElementContainer"]:has(#cau-sb-drag),
+[data-testid="stElementContainer"]:has(#cau-rp-drag),
+[data-testid="stElementContainer"]:has(#cau-rp-toggle) {
+    position: absolute !important;
+    height: 0 !important;
+    min-height: 0 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+}
+
 /* ── Nav buttons phủ lên topbar ── */
 div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) {
     position: fixed !important;
