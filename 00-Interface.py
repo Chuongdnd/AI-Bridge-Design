@@ -2745,17 +2745,45 @@ def dialog_step3():
                     else 'Thân cột 2 trụ'
                 )
                 fnd_models = MONG.train_foundation_ai(v3_path=v3_path)
+                _L_nhip_mg = (res.get('kcn_result', {}).get('chieu_dai')
+                              if res.get('kcn_result') else None)
+                # ĐẶC TRƯNG ĐỊA CHẤT (Module 00) → Module 08 chạy 4 nhóm logic
+                # A–D theo TCVN 10304:2025 (predict_foundation_geo). Chọn hố có
+                # LỚP TỰA MŨI đề xuất; chưa nạp địa chất → fallback ước tính.
+                _dtth = ((st.session_state.get("dia_chat_data") or {})
+                         .get("dac_trung_tong_hop") or {})
+                _dc_mg = (next((c for c in _dtth.values()
+                                if c.get("lop_tua_mui_de_xuat")), None)
+                          or (next(iter(_dtth.values())) if _dtth else None))
+                # P_bệ ước tính từ Module 06 (nhịp) + 07 (trụ)
+                _P_be = MONG.estimate_tai_trong_be(
+                    res['bc'], _L_nhip_mg, res.get('H_tru_est', 8.0))
                 res['mong_result'] = MONG.predict_foundation(
                     H_tru=res.get('H_tru_est', 8.0),
                     loai_tru=loai_tru_str,
                     is_river=is_river, cap_song=res['cap_song'],
                     B_cau=res['bc'], vtk=res['vtk'],
-                    L_nhip=(res.get('kcn_result', {}).get('chieu_dai')
-                            if res.get('kcn_result') else None),
+                    L_nhip=_L_nhip_mg,
                     is_urban=is_urban_val,
                     foundation_models=fnd_models,
+                    dac_trung_dia_chat=_dc_mg,
+                    tai_trong_dau_coc=(_P_be if _dc_mg else None),
                 )
                 _mg = res.get('mong_result') or {}
+                # Key tương thích cũ khi chạy nhánh geo (loai_mong, D_coc_mm…)
+                if _dc_mg and _mg:
+                    _mg.setdefault('loai_mong', _mg.get('loai_coc', ''))
+                    _mg.setdefault('D_coc_mm', _mg.get('kich_thuoc_mm'))
+                    _mg.setdefault('duong_kinh_coc',
+                                   float(_mg.get('kich_thuoc_mm') or 800) / 1000.0)
+                    _mg.setdefault('L_coc_tu', _mg.get('chieu_dai_coc'))
+                    _mg.setdefault('So_coc_tu', _mg.get('so_coc_be'))
+                    _mg.setdefault('D_coc_chon_txt', _mg.get('kich_thuoc_coc'))
+                    _mg.setdefault('kich_thuoc_be_goi_y', _mg.get('kich_thuoc_be'))
+                    _mg.setdefault('phuong_phap_thi_cong',
+                                   ('Khoan nhồi' if 'khoan' in
+                                    str(_mg.get('loai_coc', '')).lower()
+                                    else 'Ép tĩnh / đóng'))
                 tracker.done("MONG",
                     f"{_mg.get('loai_mong','?')}  "
                     f"D={_mg.get('duong_kinh_coc','?')}m  "
@@ -3445,6 +3473,66 @@ def _decl_box_dia_hinh():
                         "Tải file mới ở trên để thay thế.")
 
 
+def _geo_characteristics(hk_list, df_spt):
+    """Đặc trưng địa kỹ thuật từng hố khoan cho Module 08 (móng cọc A–D):
+    dùng bộ trích của 00-DiaChat_Loader (_compute_characteristics +
+    _find_bearing_layer) trên lop_dat (loai_dat suy từ tên lớp) + chuỗi SPT.
+    Trả {ten_hk: dac_trung}; {} nếu thiếu dữ liệu (Module 08 fallback ước tính)."""
+    try:
+        import importlib.util as _iu
+        _sp = _iu.spec_from_file_location(
+            "dcl", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "00-DiaChat_Loader.py"))
+        DCL = _iu.module_from_spec(_sp); _sp.loader.exec_module(DCL)
+    except Exception:
+        return {}
+    out = {}
+    for hk in (hk_list or []):
+        try:
+            ten = hk.get("ten", "")
+            z_m = float(hk.get("Z", 0) or 0)
+            # SPT của hố: (do_sau_tu, do_sau_den, N) — dò cột linh hoạt
+            spt_list = []
+            if df_spt is not None and not getattr(df_spt, "empty", True):
+                _c = {c: c for c in df_spt.columns}
+                _chk = next((c for c in _c if "HO_KHOAN" in c or "HK" == c), None)
+                _ctu = next((c for c in _c if "TU" in c or "DO_SAU" in c), None)
+                _cde = next((c for c in _c if "DEN" in c), None)
+                _cn  = next((c for c in _c
+                             if c in ("N", "N30", "SPT", "SPT_N", "N_SPT")
+                             or "SPT" in c), None)
+                if _chk and _ctu and _cn:
+                    _rows = df_spt[df_spt[_chk].astype(str).str.strip()
+                                   .str.upper() == ten]
+                    for _, _r in _rows.iterrows():
+                        try:
+                            _s = float(_r[_ctu])
+                            _e = float(_r[_cde]) if _cde else _s + 0.45
+                            _n = DCL._parse_spt_value(_r[_cn])
+                            spt_list.append((_s, _e, _n))
+                        except (TypeError, ValueError):
+                            continue
+                    spt_list.sort(key=lambda t: t[0])
+            # loai_dat suy từ tên lớp (frames không có cột riêng)
+            lop_dat = []
+            for lop in (hk.get("lop_dat") or []):
+                _l = dict(lop)
+                _l["loai_dat"] = (_l.get("loai_dat")
+                                  or DCL._infer_loai_dat_from_name(
+                                      _l.get("ten_lop", "")))
+                lop_dat.append(_l)
+            chars = DCL._compute_characteristics(spt_list)
+            chars.update(DCL._find_bearing_layer(lop_dat, spt_list, z_m))
+            chars["Z"] = z_m
+            _n10 = [n for s, e, n in spt_list if n is not None and s <= 10.0]
+            chars["spt_n_tb_10m"] = (round(sum(_n10) / len(_n10), 1)
+                                     if _n10 else None)
+            out[ten] = chars
+        except Exception:
+            continue
+    return out
+
+
 def _process_geology_excel(file, persist=True):
     """Đọc file Excel địa chất 3 sheet → lưu session (dùng chung 3 phương án).
     Lưu cả dia_chat_data (cho trắc dọc) và dia_chat_frames (df thô cho 3D).
@@ -3477,7 +3565,9 @@ def _process_geology_excel(file, persist=True):
         })
     st.session_state["dia_chat_data"] = {
         "ho_khoan_list": _hk_list_ss, "validation_errors": [],
-        "dac_trung_tong_hop": {},
+        # Đặc trưng địa kỹ thuật từng hố (lớp tựa mũi, SPT-N, cờ đá mồ côi…)
+        # → Module 08 tư vấn móng theo 4 nhóm logic A–D (predict_foundation_geo).
+        "dac_trung_tong_hop": _geo_characteristics(_hk_list_ss, df_spt),
     }
     st.session_state["dia_chat_frames"] = (df_hk, df_layers, df_spt)
     if persist:

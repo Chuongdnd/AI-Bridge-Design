@@ -529,6 +529,25 @@ def _calc_pile_layout(loai_coc, D_m, so_coc, coc_ma_sat=False,
             "warnings": warnings, "quy_tac": quy_tac}
 
 
+def estimate_tai_trong_be(B_cau, L_nhip, H_tru=6.0):
+    """Ước tính TẢI TRỌNG TÍNH TOÁN lên một bệ cọc P_bệ (kN) từ kết quả
+    Module 06 (kết cấu nhịp) + Module 07 (mố trụ) — mỗi trụ đỡ trọn 1 nhịp
+    (2 nửa nhịp kề).
+
+    Thành phần (sơ bộ, quy đổi trên m² mặt cầu):
+      • Tĩnh tải KCN (dầm + bản mặt cầu)          ≈ 10.5 kN/m²
+      • Tĩnh tải phụ (lớp phủ, lan can, tiện ích) ≈ 3.0 kN/m²
+      • Hoạt tải HL-93 quy đổi sơ bộ              ≈ 4.5 kN/m²
+      • Thân trụ + xà mũ + bệ: 25 kN/m³ × (H_trụ × 2.5m² + B_cầu × 1.2m²)
+    """
+    B = max(float(B_cau or 12.0), 1.0)
+    L = max(float(L_nhip or 33.0), 5.0)
+    H = max(float(H_tru or 6.0), 1.0)
+    deck = (10.5 + 3.0 + 4.5) * B * L          # kN — bản thân + phụ + hoạt tải
+    sub  = 25.0 * (H * 2.5 + B * 1.2)          # kN — trụ/xà mũ/bệ
+    return round(deck + sub)
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # HÀM CHÍNH
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -578,8 +597,11 @@ def predict_foundation_geo(dac_trung_dia_chat, tai_trong_dau_coc,
 
     loai_coc = "Cọc khoan nhồi" if category == "large" else "Cọc ép BTCT"
 
-    # Kích thước cọc — thuần theo Q_tk yêu cầu (không ràng buộc D_trụ)
-    size_key, spec = _select_pile_size(loai_coc, P_be)
+    # Kích thước cọc — thuần theo Q_tk yêu cầu (không ràng buộc D_trụ).
+    # Tải ĐỊNH CỠ = P_bệ / 4 (bệ tối thiểu 4 cọc — đồng bộ nhóm A và công thức
+    # C: n = max(4, ⌈P/(Q×η)⌉)); dùng cả P_bệ sẽ chọn cọc quá lớn (1 cọc gánh
+    # trọn bệ) → lãng phí.
+    size_key, spec = _select_pile_size(loai_coc, P_be / 4.0)
     D_m = size_key / 1000.0
     if loai_coc == "Cọc ép BTCT":
         kich_thuoc_str = f"{size_key}×{size_key} mm"
