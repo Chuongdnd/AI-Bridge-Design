@@ -2658,7 +2658,7 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
         # Kích thước bệ cọc và khoảng cách cọc (đặt ngay dưới đáy bệ)
         _dim_h(fig, z_be_b_s - 0.35,
                -be_W_sub, be_W_sub, f"B_bệ = {be_W_sub*2:.1f}m", dy=0)
-        if n_coc_show >= 2:
+        if len(coc_ys) >= 2:
             kc_coc_show = abs(coc_ys[1] - coc_ys[0])
             _dim_h(fig, z_be_b_s - 0.90,
                    coc_ys[0], coc_ys[1], f"a_cọc={kc_coc_show:.2f}m",
