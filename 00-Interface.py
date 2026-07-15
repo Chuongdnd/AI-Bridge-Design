@@ -9518,6 +9518,18 @@ with _col_main:
                 import traceback
                 st.code(traceback.format_exc())
 
+        # ── 🎯 CHẤM ĐIỂM MCDA / AHP-SAATY (module mcda/) ──────────────────
+        # Dữ liệu 3 PA tự động từ kcn_3_pa + suất đầu tư (Module 12); trọng số
+        # người dùng khai báo so sánh cặp AHP (hoặc bộ mặc định 35/35/20/10).
+        st.markdown("---")
+        try:
+            import mcda.ahp_interface as _MCDA
+            _MCDA.render_mcda_tab(st)
+        except Exception as _mcda_err:
+            st.error(f"Lỗi module chấm điểm MCDA-AHP: {_mcda_err}")
+            import traceback
+            st.code(traceback.format_exc())
+
     elif selected_ribbon == "THƯ VIỆN":
         try:
             render_thu_vien()
