@@ -1,5 +1,4 @@
-# Giao diện mặc định: TỐI (không theo hệ điều hành).
-# Người dùng vẫn đổi được ở ☰ → Settings → Theme; các thẻ/hộp tùy chỉnh sẽ tự
-# lật màu theo (JS đọc nền thực → class html.cau-light trong 00-Interface.py).
+# Nền cơ sở: TỐI — bị lật sang SÁNG khi OS = sáng (qua @media prefers-color-scheme
+# trong 00-Interface.py) hoặc khi người dùng đổi thủ công ☰ → Settings → Theme.
 [theme]
 base = "dark"
