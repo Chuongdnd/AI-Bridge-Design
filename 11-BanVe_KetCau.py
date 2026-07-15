@@ -1986,6 +1986,12 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
             if _mo_allx:                  # cọc ĐI THEO BỆ mố mới
                 _pile_xc   = (min(_mo_allx) + max(_mo_allx)) / 2.0
                 _pile_span = max(_mo_allx) - min(_mo_allx)
+            # Tâm nhóm cọc = TÂM BỆ MỐ (không phải giữa toàn khối gồm cánh).
+            try:
+                _pile_xc = _xf_mo + sign * _PB.abut_footing_center_u_m(
+                    abutment_assembly)
+            except Exception:
+                pass
             # Cọc bắt đầu từ ĐÁY BỆ thực (đáy mố sâu nhất, dưới ĐTN).
             _pile_ztop = min(_mo_allz) if _mo_allz else _z_base_mo
         else:
@@ -3765,8 +3771,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                         target_width=bc)       # co bề rộng mố theo bề rộng cầu
                 except Exception as _me:
                     print(f"[add_all] mố lỗi: {_me}"); _mtr = []
+                _z_be_bot_mo = None      # đáy bệ mố thực (min z khối "Bệ mố")
                 for _tr in _mtr:
                     try:
+                        if "Bệ mố" in str(getattr(_tr, "name", "") or ""):
+                            _zmin_t = min(_tr.z)
+                            _z_be_bot_mo = (_zmin_t if _z_be_bot_mo is None
+                                            else min(_z_be_bot_mo, _zmin_t))
                         _nx, _ny = [], []
                         for _vx, _vy in zip(list(_tr.x), list(_tr.y)):
                             _gx, _gy = _vn(_vx, _vy); _nx.append(_gx); _ny.append(_gy)
@@ -3778,6 +3789,37 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                     except Exception:
                         pass
                     fig.add_trace(_tr)
+                # ── CỌC MỐ (3D) — LƯỚI LẤP ĐẦY BỆ MỐ THẬT (đồng bộ mọi view):
+                # ưu tiên sơ đồ DXF khai báo; auto = pile_grid_fit theo bệ mố.
+                try:
+                    _grp_state["g"] = "Mố"
+                    _mkey = "mo_trai" if sgn > 0 else "mo_phai"
+                    _pls_mo = _layout_piles(d, _mkey)
+                    _xc_mo = _xf_mo3d + sgn * _PBm2.abut_footing_center_u_m(_mo_model)
+                    if _pls_mo:
+                        _pts_mo = [(float(p.get("y", 0)), float(p.get("x", 0)),
+                                    float(p.get("L", 0) or 0)) for p in _pls_mo]
+                        _D_mo = float(_pls_mo[0].get("D", 0) or 0) or mong_dims(mong_r)[0]
+                    else:
+                        _xs_mo, _ys_mo, _D_mo, _L_mo, _ = mong_pile_grid(
+                            mong_r,
+                            *_PBm2.abut_footing_dims_m(_mo_model, target_width=bc))
+                        _pts_mo = [(_yy, _xx, _L_mo) for _yy in _ys_mo
+                                   for _xx in _xs_mo]
+                    _ztop_mo = (_z_be_bot_mo if _z_be_bot_mo is not None
+                                else _zbase_mo)
+                    for _k, (_dy, _dx, _Lp) in enumerate(_pts_mo):
+                        _gx, _gy = _vn(_xc_mo + _dy, _dx)
+                        _Lp = _Lp or mong_dims(mong_r)[1]
+                        _ag(go.Scatter3d(
+                            x=[_gx, _gx], y=[_gy, _gy],
+                            z=[_ztop_mo * hz, (_ztop_mo - _Lp) * hz],
+                            mode="lines", line=dict(color="#7d5a32", width=5),
+                            name=(f"Cọc mố Ø{int(_D_mo*1000)}mm L={_Lp:.0f}m"
+                                  if (sl and _k == 0) else ""),
+                            showlegend=bool(sl and _k == 0)))
+                except Exception as _pe_mo:
+                    print(f"[add_all] cọc mố lỗi: {_pe_mo}")
             else:
                 _ag(_abox(xm, xm + sgn*mo_L, -bc/2-0.5, bc/2+0.5,
                                     z_beb, z_deck, "#c0a06b", 0.85, nm, sl=sl))
@@ -5250,8 +5292,16 @@ def ve_mat_bang_mo_tru(d, vi_tri='mo_trai', pier_assembly=None, x_half=None,
 
     # Cọc (chấm tròn mờ để định vị)
     _piles = g["piles"] or _auto_pile_grid(g)
+    # Cọc AUTO của MỐ: dịch DỌC về TÂM KHỐI BỆ (mặt bằng mố căn theo vai kê,
+    # bệ KHÔNG nằm tại dọc=0) → lưới cọc nằm ĐÚNG trong khối bệ vẽ.
+    _dc_off = 0.0
+    if (not g["piles"]) and _use_mo:
+        try:
+            _dc_off = _get_PB().abut_footing_center_doc_m(abutment_assembly)
+        except Exception:
+            _dc_off = 0.0
     for j, p in enumerate(_piles):
-        _circS(p["x"], p["y"], p["D"] / 2.0, "rgba(86,101,115,0.55)",
+        _circS(p["x"], p["y"] + _dc_off, p["D"] / 2.0, "rgba(86,101,115,0.55)",
                "rgba(86,101,115,0.12)",
                name=("Cọc" if j == 0 else ""), showlegend=(j == 0))
 

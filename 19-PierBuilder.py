@@ -546,6 +546,31 @@ def abut_footing_dims_m(mo: dict, target_width: float = None):
     return ngang, (max(fu) - min(fu)) * MM
 
 
+def abut_footing_center_u_m(mo: dict) -> float:
+    """u (m) TÂM VÙNG BỆ MỐ trong hệ mặt cắt (u=0 tại gốc mặt cắt thư viện) —
+    để đặt LƯỚI CỌC đúng tâm bệ trên trắc dọc/3D (x = x_face + out_dir·u)."""
+    p = migrate_abutment(mo or {})
+    layers = abut_body_layers(p.get("parts", {}).get("than", {}))
+    if not layers:
+        return 0.0
+    sw, wb = _abut_seat_w(layers)
+    ftop = _abut_footing_top_w(layers, sw, wb) if (sw and wb) else None
+    body = max(layers, key=lambda l: float(l.get("B", 0) or 0))
+    pts = body["section"]["outer"]
+    fu = ([u for (u, w) in pts if w <= ftop + 1e-6] if ftop is not None
+          else [u for (u, _w) in pts])
+    if not fu:
+        return 0.0
+    return (min(fu) + max(fu)) / 2.0 * MM
+
+
+def abut_footing_center_doc_m(mo: dict) -> float:
+    """Tâm bệ mố theo DỌC trong HỆ MẶT BẰNG 'vai kê tại 0' (abutment_plan_polys
+    căn dọc theo vai kê) = tâm_u_bệ − u_tâm_vai_kê. Cọc auto phải dịch dọc theo
+    giá trị này mới nằm ĐÚNG TÂM khối bệ vẽ trên mặt bằng."""
+    return abut_footing_center_u_m(mo) - abut_seat_u_m(mo)
+
+
 def widen_footing_to_cover_stem(pier: dict, margin: float = 1.0) -> dict:
     """Nới BỆ phủ hết THÂN (mép ngoài thân + margin) — dùng sau khi chỉnh thân
     (khai báo TAY spacing/width) để cột ngoài LUÔN có bệ đỡ. Trả pier mới."""
