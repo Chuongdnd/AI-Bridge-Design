@@ -27,6 +27,55 @@ for _tpl_name in ("plotly_white", "plotly_dark", "plotly", "none"):
     except Exception:
         pass
 
+# ── NỀN 3D BÁM THEME HỆ THỐNG ────────────────────────────────────────────────
+# Hình 3D được dựng ở NHIỀU file với nền ép cứng, mâu thuẫn nhau:
+#   00-Terrain_Viewer / 17-BeamBuilder* / 19-PierBuilder → template="plotly_dark"
+#     → LUÔN tối (kể cả khi hệ thống sáng). 3D cầu tổng vẽ đè lên hình địa hình
+#       nên cũng thừa hưởng nền tối này.
+#   11-BanVe_KetCau / 00-Drawing_Utils / 12-ChiTiet_Dam  → scene bgcolor="white"
+#     → LUÔN trắng (kể cả khi hệ thống tối).
+# Python chạy ở server nên KHÔNG biết theme của máy người dùng → không thể chọn
+# màu nền đúng. Cách bám chắc: để nền 3D TRONG SUỐT cho lộ nền trang (Streamlit
+# đã tự sáng/tối theo OS), chữ/lưới dùng XÁM TRUNG TÍNH đọc được trên cả hai.
+# Sửa tại ĐÂY — chỗ nghẽn duy nhất mọi biểu đồ đi qua — thay vì vá 8 file.
+_TRANSPARENT   = "rgba(0,0,0,0)"
+_NEUTRAL_TXT   = "#8a90a0"                 # xám trung tính: đọc được trên sáng & tối
+_NEUTRAL_GRID  = "rgba(128,128,128,0.35)"
+
+def _is_3d(fig):
+    try:
+        if (fig.layout.scene or {}) and fig.layout.scene.to_plotly_json():
+            return True
+    except Exception:
+        pass
+    try:
+        for _tr in fig.data:
+            if str(getattr(_tr, "type", "")) in ("mesh3d", "scatter3d", "surface", "cone",
+                                                 "volume", "isosurface", "streamtube"):
+                return True
+    except Exception:
+        pass
+    return False
+
+def _theme_neutral_3d(fig):
+    """Nền 3D trong suốt → hiện nền trang → tự bám sáng/tối của hệ thống.
+
+    Đặt tường minh qua update_layout nên THẮNG cả template (plotly_dark) lẫn giá
+    trị ép cứng trong figure (bgcolor="white"). update_layout MERGE sâu → tiêu đề
+    trục, camera, aspectmode… trong scene đều được giữ nguyên.
+    """
+    try:
+        _ax = dict(backgroundcolor=_TRANSPARENT, gridcolor=_NEUTRAL_GRID,
+                   zerolinecolor=_NEUTRAL_GRID, color=_NEUTRAL_TXT)
+        fig.update_layout(
+            paper_bgcolor=_TRANSPARENT, plot_bgcolor=_TRANSPARENT,
+            font=dict(color=_NEUTRAL_TXT),
+            scene=dict(bgcolor=_TRANSPARENT, xaxis=_ax, yaxis=_ax, zaxis=_ax),
+        )
+    except Exception:
+        pass                                  # hỏng màu mè không được làm sập bản vẽ
+    return fig
+
 # ── CẢM ỨNG (điện thoại): bật cử chỉ chạm cho MỌI biểu đồ ────────────────────
 # Bọc st.plotly_chart để mọi biểu đồ đều có:
 #   • scrollZoom=True  → 2D & 3D: chụm/xoè 2 ngón để phóng to/thu nhỏ (pinch).
@@ -42,6 +91,12 @@ def _plotly_chart_touch(fig, *a, **kw):
     _cfg.setdefault("displaylogo", False)
     _cfg.setdefault("responsive", True)              # bám kích thước khung (mobile)
     kw["config"] = _cfg
+    # CHỈ 3D: bản vẽ 2D giữ nền giấy trắng theo quy ước bản vẽ kỹ thuật.
+    try:
+        if hasattr(fig, "update_layout") and _is_3d(fig):
+            _theme_neutral_3d(fig)
+    except Exception:
+        pass
     return _orig_plotly_chart(fig, *a, **kw)
 st.plotly_chart = _plotly_chart_touch
 
