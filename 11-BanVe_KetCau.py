@@ -1443,6 +1443,31 @@ def mong_dims(mong):
     return D, L, max(1, n)
 
 
+def mong_pile_grid(mong):
+    """LƯỚI CỌC CHUẨN từ mong_result (Module 08) — MỘT NGUỒN cho mọi bản vẽ
+    (trắc dọc, MCN, mặt bằng, 3D) khi chưa khai sơ đồ cọc DXF.
+
+    Trả (xs_ngang, ys_doc, D_m, L_m, S_m):
+      xs_ngang: tọa độ tim cọc theo NGANG cầu (n_cols cọc, tim-tim S, giữa 0)
+      ys_doc  : tọa độ tim cọc theo DỌC cầu  (n_rows cọc, tim-tim S, giữa 0)
+    Số hàng/cột + khoảng cách LẤY THẲNG từ Module 08 (n_cols_be, n_rows_be,
+    khoang_cach_tim) — KHÔNG tự chế lưới trang trí."""
+    m = mong or {}
+    D, L, n = mong_dims(m)
+    nc = int(float(m.get("n_cols_be") or 0) or 0)
+    nr = int(float(m.get("n_rows_be") or 0) or 0)
+    if nc <= 0:
+        nc = max(2, int(np.ceil(np.sqrt(n))))
+    if nr <= 0:
+        nr = max(1, int(np.ceil(n / nc)))
+    S = float(m.get("khoang_cach_tim") or m.get("khoang_cach_tim_coc") or 0)
+    if S <= 0:
+        S = max(0.75, (3.0 if D >= 0.8 else 2.5) * D)
+    xs = [(i - (nc - 1) / 2.0) * S for i in range(nc)]
+    ys = [(j - (nr - 1) / 2.0) * S for j in range(nr)]
+    return xs, ys, D, L, S
+
+
 def validate_span_layout(d, x0, x_end, x_tim, B_tk):
     """Kiểm tra bố trí NHỊP / DẦM / BỀ RỘNG → list cảnh báo (rỗng nếu hợp lệ)."""
     d = d or {}
@@ -1744,7 +1769,9 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     H_tk    = float(d.get("H", 3.0))
     mong    = d.get("mong_result") or {}
     D_coc_m, L_coc, _n_coc = mong_dims(mong)
-    n_coc_row = max(2, min(4, _n_coc))
+    # Lưới cọc CHUẨN Module 08 — trắc dọc (x = DỌC cầu) thấy n_rows cọc tim-tim S.
+    _pg_xs, _pg_ys, _, _, _pg_S = mong_pile_grid(mong)
+    n_coc_row = max(2, min(4, _n_coc))     # (giữ cho code cũ còn tham chiếu)
 
     # TRỤ / MỐ lấy từ MÔ HÌNH 3D (d['_pier_model'] / d['_mo_model']) nếu người gọi
     # không truyền assembly → trắc dọc hiển thị ĐÚNG trụ/mố như 3D cầu, KHÔNG dùng
@@ -1959,9 +1986,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                 color="rgba(120,90,50,0.75)",
                 legend_name=(f"Cọc mố ({len(_piles_mo)} cọc)" if side == "Trái" else None))
         else:
-            n_mo = max(2, min(3, n_coc_row))
-            coc_xs_mo = np.linspace(_pile_xc - _pile_span*0.3,
-                                    _pile_xc + _pile_span*0.3, n_mo)
+            # Lưới cọc Module 08: trắc dọc thấy n_rows cọc, tim-tim đúng S.
+            coc_xs_mo = [_pile_xc + _yy for _yy in _pg_ys]
             for j, xc in enumerate(coc_xs_mo):
                 fig.add_trace(go.Scatter(
                     x=[xc, xc], y=[_pile_ztop, _pile_ztop - L_coc],
@@ -1972,7 +1998,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                     showlegend=(side == "Trái" and j == 0),
                 ))
             fig.add_trace(go.Scatter(
-                x=list(coc_xs_mo), y=[_pile_ztop - L_coc] * n_mo,
+                x=list(coc_xs_mo), y=[_pile_ztop - L_coc] * len(coc_xs_mo),
                 mode="markers",
                 marker=dict(symbol="triangle-down", size=5, color="rgba(120,90,50,0.8)"),
                 showlegend=False, hoverinfo="skip",
@@ -2030,8 +2056,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                     fig, _piles_tru, x_center=xt, z_top=z_be_b_i, color=_C["be_dk"],
                     legend_name=(f"Cọc trụ ({len(_piles_tru)} cọc)" if sl else None))
             else:
-                n_show = max(2, min(n_coc_row, 4))
-                coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
+                # Lưới cọc Module 08: n_rows cọc theo DỌC cầu, tim-tim đúng S.
+                coc_xs_tru = [xt + _yy for _yy in _pg_ys]
                 for j, xc in enumerate(coc_xs_tru):
                     fig.add_trace(go.Scatter(
                         x=[xc, xc], y=[z_be_b_i, z_be_b_i - L_coc], mode="lines",
@@ -2040,7 +2066,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                               if (sl and j == 0) else ""),
                         showlegend=(sl and j == 0)))
                 fig.add_trace(go.Scatter(
-                    x=list(coc_xs_tru), y=[z_be_b_i - L_coc] * n_show, mode="markers",
+                    x=list(coc_xs_tru), y=[z_be_b_i - L_coc] * len(coc_xs_tru),
+                    mode="markers",
                     marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
                     showlegend=False, hoverinfo="skip"))
             continue
@@ -2105,8 +2132,8 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                 fig, _piles_tru, x_center=xt, z_top=z_be_b_i, color=_C["be_dk"],
                 legend_name=(f"Cọc trụ ({len(_piles_tru)} cọc)" if sl else None))
         else:
-            n_show = max(2, min(n_coc_row, 4))
-            coc_xs_tru = np.linspace(xt - W_be * 0.65, xt + W_be * 0.65, n_show)
+            # Lưới cọc Module 08: n_rows cọc theo DỌC cầu, tim-tim đúng S.
+            coc_xs_tru = [xt + _yy for _yy in _pg_ys]
             for j, xc in enumerate(coc_xs_tru):
                 fig.add_trace(go.Scatter(
                     x=[xc, xc], y=[z_be_b_i, z_be_b_i - L_coc],
@@ -2117,7 +2144,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
                     showlegend=(sl and j == 0),
                 ))
             fig.add_trace(go.Scatter(
-                x=list(coc_xs_tru), y=[z_be_b_i - L_coc] * n_show,
+                x=list(coc_xs_tru), y=[z_be_b_i - L_coc] * len(coc_xs_tru),
                 mode="markers",
                 marker=dict(symbol="triangle-down", size=5, color=_C["be_dk"]),
                 showlegend=False, hoverinfo="skip",
@@ -2610,9 +2637,9 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
                 showarrow=False, font=dict(size=7, color=_C["dim"]),
                 bgcolor="rgba(255,255,255,0.8)")
 
-        # Cọc — MẶT ĐỨNG: cọc thẳng đứng từ đáy bệ đi xuống
-        n_coc_show = max(3, min(n_coc_sub, 8))
-        coc_ys = np.linspace(-be_W_sub * 0.80, be_W_sub * 0.80, n_coc_show)
+        # Cọc — MẶT ĐỨNG: lưới Module 08 (MCN = ngang cầu → n_cols cọc, tim-tim S)
+        _mg_xs, _, _, _, _ = mong_pile_grid(d.get("mong_result"))
+        coc_ys = list(_mg_xs)
         _z_pile_top = z_be_b_s
         _z_pile_bot = z_be_b_s - L_coc_sub
         _pile_lw    = max(3, int(D_coc_sub * 12))
@@ -2624,7 +2651,7 @@ def ve_mat_cat_ngang_2d(d, beam_params=None, pier_assembly=None, cap_top_y=None,
                 showlegend=(j == 0), hoverinfo="skip",
             ))
         fig.add_trace(go.Scatter(
-            x=list(coc_ys), y=[_z_pile_bot] * n_coc_show, mode="markers",
+            x=list(coc_ys), y=[_z_pile_bot] * len(coc_ys), mode="markers",
             marker=dict(symbol="triangle-down", size=6, color=_C["be_dk"]),
             showlegend=False, hoverinfo="skip"))
 
@@ -4745,10 +4772,9 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
                 fig, _piles_vt, x_center=0.0, z_top=z_beb, color=_C["be_dk"],
                 legend_name=f"Cọc ({len(_piles_vt)} cọc)")
         else:
-            D_coc = mong_dims(mong)[0]
-            L_coc = mong_dims(mong)[1]
-            n_coc = 3 if be_W >= 2.5 else 2
-            for i_coc, xc in enumerate(np.linspace(-be_W * 0.7, be_W * 0.7, n_coc)):
+            # Lưới cọc Module 08: MCN (ngang cầu) thấy n_cols cọc, tim-tim S.
+            _mg_xs, _, D_coc, L_coc, _ = mong_pile_grid(mong)
+            for i_coc, xc in enumerate(_mg_xs):
                 fig.add_trace(go.Scatter(
                     x=[xc, xc], y=[z_beb, z_beb - L_coc],
                     mode="lines",
@@ -4973,8 +4999,11 @@ def _pos_geometry(d, vi_tri, pier_assembly=None, df_geology=None, df_tim_line=No
         be_half_doc   = max(abs(min(ys)), abs(max(ys))) + 0.75 * Dmax
         be_half_ngang = max(be_W, max(abs(min(xs)), abs(max(xs))) + 0.75 * Dmax)
     else:
-        be_half_doc   = max(1.6, be_W * 0.5)
-        be_half_ngang = be_W
+        # Bệ theo KÍCH THƯỚC MODULE 08 (Be_ngang × Be_doc từ lưới cọc thật)
+        _bn = float(mong.get("Be_ngang") or 0)
+        _bd = float(mong.get("Be_doc") or 0)
+        be_half_doc   = (_bd / 2.0) if _bd > 0 else max(1.6, be_W * 0.5)
+        be_half_ngang = max(be_W, _bn / 2.0) if _bn > 0 else be_W
     cap_half_doc = max(0.8, min(be_half_doc * 0.85, H_dam * 0.55 + 0.45))
 
     return dict(
@@ -4985,7 +5014,7 @@ def _pos_geometry(d, vi_tri, pier_assembly=None, df_geology=None, df_tim_line=No
         cap_W=cap_W, be_W=be_W, cap_H=cap_H, be_H=be_H,
         is_mo=is_mo, x_cut=x_cut, title_vt=title_vt,
         n_cot=n_cot, W_cot=W_cot, col_offs=col_offs, loai_t=loai_t,
-        piles=piles, D_coc=D_coc, L_coc=L_coc,
+        piles=piles, D_coc=D_coc, L_coc=L_coc, mong=mong,
         be_half_doc=be_half_doc, be_half_ngang=be_half_ngang,
         cap_half_doc=cap_half_doc,
     )
@@ -5003,16 +5032,14 @@ def _circle(fig, xc, yc, r, line_c, fill, name="", showlegend=False):
 
 
 def _auto_pile_grid(g):
-    """Sinh lưới cọc tự động (khi chưa khai DXF) để vẫn có hình minh hoạ."""
-    n_ng = 3 if g["be_W"] >= 2.5 else 2
-    n_dc = 2
-    xs = np.linspace(-g["be_W"] * 0.7, g["be_W"] * 0.7, n_ng)
-    ys = np.linspace(-g["be_half_doc"] * 0.6, g["be_half_doc"] * 0.6, n_dc)
+    """Lưới cọc khi chưa khai DXF — LẤY THẲNG từ Module 08 (mong_pile_grid:
+    n_cols × n_rows, tim-tim = khoang_cach_tim, D/L thật) thay lưới trang trí."""
+    xs, ys, D, L, _S = mong_pile_grid(g.get("mong"))
     out = []
     for yy in ys:
         for xx in xs:
-            out.append({"x": float(xx), "y": float(yy), "D": g["D_coc"],
-                        "L": g["L_coc"], "ix": 0.0, "iy": 0.0})
+            out.append({"x": float(xx), "y": float(yy), "D": D,
+                        "L": L, "ix": 0.0, "iy": 0.0})
     return out
 
 
