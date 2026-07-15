@@ -251,24 +251,53 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
 </style>
 """, unsafe_allow_html=True)
 
-# ── LẬT MÀU HỘP/THẺ TỐI theo HỆ THỐNG (prefers-color-scheme) ────────────────
-# Khi hệ điều hành / Streamlit "Use system setting" ở chế độ SÁNG: các thành phần
-# tô màu tối cố định (metric, topbar, ds-card, card inline #1e1e2e/#141420/#0a1f35…,
-# dialog, chữ trắng) tự lật sang sáng. Thuần CSS @media (prefers-color-scheme:light)
-# — không nút, không JS dò → chạy chắc trên Streamlit Cloud.
-# Bắt màu theo CHỮ SỐ HEX ĐẦU (bền vững, không cần liệt kê từng mã):
-#  • Nền TỐI = background bắt đầu #0… hoặc #1… (đen/navy)  → lật SÁNG.
-#  • Chữ SÁNG/XÁM = color bắt đầu #6…–#f… (trắng, xám nhạt) → lật ĐẬM.
-#    Accent (xanh #0…, xanh lá #2…, tím #9…) giữ nguyên nếu là chữ số 0–5;
-#    #9,#a…#f là xám/trắng nên lật để đọc được.
+# ── LẬT MÀU HỘP/THẺ TỐI khi giao diện đang SÁNG ─────────────────────────────
+# Các thành phần tô màu tối CỨNG trong app (topbar, ds-card, card inline
+# #1e1e2e/#141420/#0a0a14…, chữ trắng) không do Streamlit quản → phải tự lật.
+#
+# ⚠ QUAN TRỌNG — vì sao KHÔNG khớp được '#141420':
+# Streamlit sanitize HTML của st.markdown và CHUẨN HOÁ lại thuộc tính style qua
+# CSSOM → mọi mã hex bị viết lại thành rgb():  background:#141420
+#                                           → style="background: rgb(20, 20, 32)"
+# Đo trên bản chạy thật: 0/492 phần tử còn giữ hex, 239 phần tử ở dạng rgb().
+# Nên selector [style*="background:#1"] KHỚP 0 phần tử — cơ chế cũ là code chết.
+#
+# Cách bắt ĐÚNG: vẫn giữ ngữ nghĩa "theo CHỮ SỐ HEX ĐẦU của kênh ĐỎ", nhưng trải
+# chữ số đó ra dải R thập phân rồi khớp tiền tố 'prop: rgb(R,':
+#   hex '1' → R = 16…31   |   hex 'f' → R = 240…255
+#  • Nền TỐI  = background #0…/#1… (R ≤ 31)      → lật SÁNG.
+#  • Chữ SÁNG = color #4…–#f… (R ≥ 64, trắng/xám) → lật ĐẬM. Giữ 0–3
+#    (xanh #007acc, xanh lá #2ecc71, xám đậm #333) vì vẫn đọc tốt trên nền sáng.
 def _attr(prop, ch):
-    # khớp cả 'prop:#x' và 'prop: #x' (có/không dấu cách), hoa & thường
-    return (f'[style*="{prop}:#{ch}"],[style*="{prop}: #{ch}"],'
-            f'[style*="{prop}:#{ch.upper()}"],[style*="{prop}: #{ch.upper()}"]')
+    """Selector khớp 'prop' có màu với kênh ĐỎ nằm trong dải của chữ số hex `ch`.
 
+    Neo đầu chuỗi ([style^=) hoặc sau '; ' để 'color:' KHÔNG ăn nhầm
+    'border-color:'. Chỉ khớp rgb( — không khớp rgba( — vì rgba(0,0,0,0) là
+    TRONG SUỐT, lật nó sẽ biến mọi nền trong suốt thành hộp xám.
+    Trả về LIST (không phải chuỗi nối ','): bản thân selector đã chứa dấu ','.
+    """
+    v = int(ch, 16)
+    out = []
+    for n in range(v * 16, v * 16 + 16):
+        out.append(f'[style^="{prop}: rgb({n},"]')
+        out.append(f'[style*="; {prop}: rgb({n},"]')
+    return out
+
+def _attr_many(props, chars):
+    out = []
+    for prop in props:
+        for ch in chars:
+            out.extend(_attr(prop, ch))
+    return out
+
+def _hexsel(h):
+    """Selector cho MỘT mã hex cụ thể — đổi sang đúng dạng rgb() đã chuẩn hoá."""
+    h = h.lstrip("#")
+    r, g, b = int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+    return [f'[style*="rgb({r}, {g}, {b})"]']
+
+_BG_PROPS       = ("background", "background-color")
 _DARK_BG_FIRST  = ["0", "1"]                       # nền tối → sáng
-# chữ có mã đầu 4…f (trắng, xám, cyan nhạt #4fc3f7…) → lật ĐẬM; giữ 0–3
-# (xanh #007acc, xanh lá #2ecc71, xám đậm #333) vì vẫn đọc tốt trên nền sáng.
 _LT_TXT_FIRST   = ["4","5","6","7","8","9","a","b","c","d","e","f"]
 
 # LƯU Ý: KHÔNG đụng tới nền/chữ của widget GỐC Streamlit ở đây — config.toml đã bỏ
@@ -286,22 +315,25 @@ _LIGHT_ITEMS = [
     ('div[data-testid="stExpander"] > details', "background:#f4f6f9 !important;border-color:#cdd5e0 !important"),
     ('div[data-testid="stExpander"] summary', "color:#1a1f2b !important"),
     # (1) NỀN tối #0…/#1… → sáng (cả border cùng mã)
-    (",".join(_attr("background", d) for d in _DARK_BG_FIRST),
+    (_attr_many(_BG_PROPS, _DARK_BG_FIRST),
      "background:#eef2f8 !important;border-color:#cdd5e0 !important"),
     # (2) tint ngữ nghĩa — đặt SAU nền chung để thắng
-    ('[style*="#1a2000"]', "background:#eafaf1 !important"),
-    ('[style*="#1f1600"]', "background:#fff8e1 !important"),
-    ('[style*="#2d0a0a"]', "background:#fdecea !important"),
-    ('[style*="#0d3d1f"]', "background:#eafaf1 !important"),
+    (_hexsel("#1a2000"), "background:#eafaf1 !important"),
+    (_hexsel("#1f1600"), "background:#fff8e1 !important"),
+    (_hexsel("#2d0a0a"), "background:#fdecea !important"),
+    (_hexsel("#0d3d1f"), "background:#eafaf1 !important"),
     # (3) CHỮ sáng/xám → đậm (đặt CUỐI để thắng mọi rule nền ở trên)
-    (",".join(_attr("color", c) for c in _LT_TXT_FIRST), "color:#1a1f2b !important"),
+    (_attr_many(("color",), _LT_TXT_FIRST), "color:#1a1f2b !important"),
 ]
 
 def _light_css(pfx: str = "") -> str:
     p = (pfx + " ") if pfx else ""
     lines = []
     for sels, decl in _LIGHT_ITEMS:
-        flat = ",".join(p + s.strip() for s in sels.split(","))
+        # selector sinh từ _attr/_hexsel đã là LIST (bên trong có dấu ',' của rgb(),
+        # không tách được bằng split); chuỗi viết tay thì tách theo ','.
+        lst = sels if isinstance(sels, (list, tuple)) else [s.strip() for s in sels.split(",")]
+        flat = ",".join(p + s for s in lst)
         lines.append(f"{flat} {{{decl};}}")
     return "\n".join(lines)
 
