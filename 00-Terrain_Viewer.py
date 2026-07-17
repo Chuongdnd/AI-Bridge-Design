@@ -266,10 +266,14 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3,
         # Dùng hovertemplate với %{z:.2f} thay vì customdata
         if che_do in ["Bề mặt mịn", "Lưới tam giác"]:
             show_wireframe = (che_do == "Lưới tam giác")
+            # name + showlegend + legendgroup → ẨN/HIỆN ĐỊA HÌNH bằng chú giải
+            # (trước đây mặt địa hình không khai báo gì nên không tắt được, che
+            #  mất kết cấu bên dưới khi muốn xem riêng cầu).
             fig.add_trace(go.Surface(
                 x=matrix_x, y=matrix_y, z=z_scaled,
                 colorscale='Earth', reversescale=True, opacity=0.95,
                 colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
+                name="Địa hình", legendgroup="Địa hình", showlegend=True,
                 hovertemplate="X: %{x:.1f} m<br>Y: %{y:.1f} m<br>Z: %{z:.2f} m<extra></extra>",
                 contours=dict(
                     x=dict(show=show_wireframe, color="rgba(0,0,0,0.2)", width=1),
@@ -281,6 +285,7 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3,
                 x=matrix_x, y=matrix_y, z=z_scaled,
                 colorscale='Viridis', opacity=0.95,
                 colorbar=dict(title=dict(text="Cao độ Z (m)", side="right"), thickness=15),
+                name="Địa hình", legendgroup="Địa hình", showlegend=True,
                 contours_z=dict(show=True, usecolormap=False, color="rgb(0,0,0)", width=2, project=dict(z=True)),
                 hovertemplate="X: %{x:.1f}<br>Y: %{y:.1f}<br>Z: %{z:.2f} m<extra></extra>"
             ))

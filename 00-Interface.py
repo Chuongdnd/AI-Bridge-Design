@@ -8120,14 +8120,26 @@ with _col_main:
                                 # Bỏ tiêu đề figure (bị chồng lên chú giải) — thông
                                 # tin cầu đã hiển thị ở dòng trên các tab.
                                 title=dict(text=""),
-                                margin=dict(t=84, l=0, r=0, b=0),
-                                # Chú giải ngang đặt trên cùng (trong vùng margin
-                                # trống) để bấm ẩn/hiện cấu kiện, không đè text.
+                                # Chú giải ĐỨNG, neo mép TRÁI-TRÊN trong khung vẽ:
+                                #  • dọc → không trải ngang hết đầu hình như trước,
+                                #    chừa nguyên góc phải cho thanh công cụ Plotly
+                                #    (chụp ảnh/zoom/xoay/home) — trước đây chú giải
+                                #    ngang y=1.0 đè lên đúng dãy nút đó;
+                                #  • bỏ margin t=84 → không còn dải trống đầu hình.
+                                margin=dict(t=8, l=0, r=0, b=0),
                                 showlegend=True,
-                                legend=dict(orientation="h", x=0, y=1.0,
-                                            yanchor="bottom", font=dict(size=9),
+                                legend=dict(orientation="v", x=0, y=1,
+                                            xanchor="left", yanchor="top",
+                                            # chữ TO hơn (9 → 12) cho dễ đọc/bấm
+                                            font=dict(size=12),
                                             groupclick="togglegroup",
-                                            bgcolor="rgba(255,255,255,0.75)"),
+                                            itemsizing="constant",
+                                            # bám theme: nền xám bán trong suốt thay
+                                            # cho trắng đặc (chữ theo theme → ở nền
+                                            # tối từng là chữ trắng trên nền trắng)
+                                            bgcolor="rgba(128,128,128,0.14)",
+                                            bordercolor="rgba(128,128,128,0.35)",
+                                            borderwidth=1),
                                 scene_camera=dict(
                                     eye=dict(x=0.0, y=-2.5, z=1.2),
                                     center=dict(x=0.0, y=0.0, z=0.0),
@@ -8142,6 +8154,24 @@ with _col_main:
                                 ),
                                 # chữ trục xám trung tính → đọc được trên cả sáng lẫn tối
                                 font=dict(color="#8a90a0"),
+                                # Nút THU GỌN chú giải: chú giải nhiều dòng vẫn chiếm
+                                # góc trái; bấm để giấu hẳn, lấy trọn khung nhìn cho
+                                # mô hình. Dùng updatemenus (chạy ở trình duyệt) nên
+                                # KHÔNG rerun Streamlit và không tốn RAM session.
+                                updatemenus=[dict(
+                                    type="buttons", direction="right",
+                                    x=1, y=1.06, xanchor="right", yanchor="bottom",
+                                    showactive=False, pad=dict(r=2, t=2),
+                                    bgcolor="rgba(128,128,128,0.14)",
+                                    bordercolor="rgba(128,128,128,0.35)",
+                                    font=dict(size=11, color="#8a90a0"),
+                                    buttons=[
+                                        dict(label="🏷 Ẩn chú giải", method="relayout",
+                                             args=[{"showlegend": False}]),
+                                        dict(label="Hiện", method="relayout",
+                                             args=[{"showlegend": True}]),
+                                    ],
+                                )],
                             )
 
                             # Lưu LƯỚI cầu (mesh) đã dựng để XUẤT IFC khớp ĐÚNG 3D

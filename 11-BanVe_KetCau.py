@@ -1794,6 +1794,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     MNTN    = float(d.get("MNTN", 0.5))
     B_tk    = float(d.get("B", 20.0))
     H_tk    = float(d.get("H", 3.0))
+    bc      = float(d.get("bc", 12.0))   # bề rộng cầu — dùng cho abut_footing_dims_m
     mong    = d.get("mong_result") or {}
     D_coc_m, L_coc, _n_coc = mong_dims(mong)
     # Lưới cọc CHUẨN Module 08 — trắc dọc (x = DỌC cầu) thấy n_rows cọc tim-tim S.
@@ -3457,11 +3458,22 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             )
 
         # Gán nhóm + thêm trace; click chú giải ẩn/hiện cả cụm (groupclick).
+        # MỖI NHÓM CHỈ HIỆN 1 DÒNG chú giải: cầu 9 nhịp có hàng chục cấu kiện
+        # (mỗi trụ vài đốt, mỗi mố vài bộ phận, hàng trăm cọc) → nếu để từng cái
+        # tự khai báo thì chú giải dài hơn cả khung nhìn. Dòng đầu của nhóm mang
+        # TÊN NHÓM; click nó ẩn/hiện CẢ CỤM (kể cả cọc của mố/trụ đó).
         _grp_state = {"g": None}
+        _legend_seen = set()
         def _ag(tr):
-            if _grp_state["g"]:
+            g = _grp_state["g"]
+            if g:
                 try:
-                    tr.legendgroup = _grp_state["g"]
+                    tr.legendgroup = g
+                    _first = g not in _legend_seen
+                    if _first:
+                        _legend_seen.add(g)
+                        tr.name = g          # tên gọn: "Trụ", "Mố", "Cọc"…
+                    tr.showlegend = bool(_first)
                 except Exception:
                     pass
             fig.add_trace(tr)
@@ -3667,8 +3679,18 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                         _tr.x = _nx; _tr.y = _ny
                         _tr.z = [_vz * hz for _vz in list(_tr.z)]
                         # Nhóm chú giải: bệ → "Bệ cọc", còn lại → "Trụ"
-                        _tr.legendgroup = "Bệ cọc" if "Bệ" in _nm else "Trụ"
-                        _tr.showlegend = bool(sl and _nm)
+                        _grp = "Bệ cọc" if "Bệ" in _nm else "Trụ"
+                        _tr.legendgroup = _grp
+                        # MỖI NHÓM CHỈ 1 DÒNG chú giải. Trước đây mọi bộ phận có
+                        # name đều showlegend → xà mũ nhiều đốt sinh "Xà mũ #1/#2/
+                        # #3"… (PierBuilder đánh số khi trụ nhiều đốt) làm chú giải
+                        # dài mấy chục dòng. Giờ chỉ bộ phận ĐẦU TIÊN của nhóm hiện
+                        # 1 dòng gọn; click dòng đó ẩn/hiện CẢ CỤM (groupclick).
+                        _first = _nm and _grp not in _legend_seen
+                        if _first:
+                            _legend_seen.add(_grp)
+                            _tr.name = _grp          # "Trụ" / "Bệ cọc" — bỏ "#N"
+                        _tr.showlegend = bool(_first)
                     except Exception:
                         pass
                     fig.add_trace(_tr)
@@ -3784,8 +3806,16 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                         _tr.x = _nx; _tr.y = _ny
                         _tr.z = [_vz * hz for _vz in list(_tr.z)]
                         _tr.legendgroup = "Mố"
-                        _tr.name = nm if sl else ""
-                        _tr.showlegend = bool(sl)
+                        # Gộp CẢ HAI mố (trái+phải) + mọi bộ phận vào 1 dòng "Mố".
+                        # Trước đây mỗi bộ phận của mố trái đều showlegend=True →
+                        # chú giải lặp "Mố trái" 6 lần.
+                        _first = "Mố" not in _legend_seen
+                        if _first:
+                            _legend_seen.add("Mố")
+                            _tr.name = "Mố"
+                        else:
+                            _tr.name = ""
+                        _tr.showlegend = bool(_first)
                     except Exception:
                         pass
                     fig.add_trace(_tr)
