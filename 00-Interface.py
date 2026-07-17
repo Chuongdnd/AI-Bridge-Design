@@ -244,7 +244,7 @@ html.cau-rp-collapsed [data-testid="stColumn"]:has(.st-key-cau_right_panel) {
     }
     /* Topbar + overlay nút ribbon bám mép trái */
     .uth-topbar { left: 0 !important; }
-    div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) {
+    div[data-testid="stHorizontalBlock"]:has([class*="st-key-ribbonbtn"]) {
         left: 0 !important;
     }
     /* Right panel xuống full-width thay vì cố định 220px.
@@ -325,86 +325,96 @@ section[data-testid="stMain"] .block-container {
     padding: 0 !important;
 }
 
-/* ── Nav buttons phủ lên topbar ── */
-div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) {
+/* ── Nav buttons phủ lên topbar ──
+   ⚠ Bám [class*="st-key-ribbonbtn"], KHÔNG bám button[data-testid^="ribbonbtn"]:
+   Streamlit 1.57 KHÔNG còn biến key= thành data-testid — key thành CLASS
+   .st-key-<key> trên stElementContainer, còn nút mang data-testid="stBaseButton-*".
+   Đo trên bản 1.57 dựng tại máy: selector cũ khớp ĐÚNG 0 phần tử → cả khối CSS
+   này thành code chết → hàng tab không được fixed (rơi xuống thành hàng nút thứ 2
+   dưới ribbon) và không opacity:0 (hiện rõ) — đúng lỗi người dùng gặp. */
+div[data-testid="stHorizontalBlock"]:has([class*="st-key-ribbonbtn"]) {
     position: fixed !important;
     top: 0 !important;
-    left: var(--sidebar-edge, var(--sidebar-width, 300px)) !important;
-    right: 0 !important;
-    z-index: 501 !important;
+    /* chừa ~92px cho logo 🏗️ UTH mà .uth-topbar vẽ ở mép trái */
+    left: calc(var(--sidebar-edge, var(--sidebar-width, 300px)) + 92px) !important;
+    /* chừa ~104px cho cụm ☰ / stStatusWidget của Streamlit ở góc phải */
+    right: 104px !important;
+    /* stHeader/stToolbar dùng z-index 999990 và phủ cả dải trên → phải cao hơn,
+       nếu không nút hiện ra nhưng KHÔNG bấm được (đã đo bằng elementFromPoint). */
+    z-index: 999991 !important;
     height: 44px !important;
+    /* ⚠ Streamlit đặt width:100% cho stHorizontalBlock. Với position:fixed, WIDTH
+       TƯỜNG MINH THẮNG cặp left/right → hộp rộng bằng cả khung nhìn nhưng bắt đầu
+       từ left:…+92px ⇒ TRÀN ra ngoài mép phải đúng 92px, nuốt mất tab cuối (đo
+       được: right = viewport + 92, tab THƯ VIỆN nằm ngoài khung → không bấm được).
+       Phải trả width về auto để left/right quyết định bề rộng. */
+    width: auto !important;
+    max-width: none !important;
+    min-width: 0 !important;
     margin: 0 !important;
     padding: 0 !important;
     gap: 0 !important;
     background: transparent !important;
+    overflow: visible !important;
     transition: left 0.15s !important;
 }
-div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) > div {
+div[data-testid="stHorizontalBlock"]:has([class*="st-key-ribbonbtn"]) > div {
     padding: 0 !important;
     margin: 0 !important;
     min-width: 0 !important;
 }
-/* Nút TAB: trong suốt — chỉ là vùng bấm đè lên chữ tab do .uth-topbar vẽ. */
-div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) button[data-testid^="ribbonbtn"] {
-    opacity: 0 !important;
+/* Nút TAB: HIỆN RÕ, tự vẽ lấy (không còn opacity:0 đè lên chữ HTML). */
+div[data-testid="stHorizontalBlock"]:has([class*="st-key-ribbonbtn"]) [class*="st-key-ribbonbtn"] button {
     height: 44px !important;
     min-height: 44px !important;
     width: 100% !important;
-    padding: 0 !important;
+    padding: 0 4px !important;
     margin: 0 !important;
     border-radius: 0 !important;
     border: none !important;
+    border-bottom: 3px solid transparent !important;
+    background: transparent !important;
+    font-size: 11px !important;
+    font-weight: 600 !important;
+    line-height: 1.15 !important;
+    white-space: normal !important;      /* nhãn dài xuống dòng thay vì tràn */
     pointer-events: auto !important;
 }
-/* ── ⚙️ Khai báo: neo vào GÓC PHẢI topbar (mốc .st-key-cau_decl_pop) ──
-   Đặt fixed ở dải 44px của topbar. z-index cao hơn topbar (500), hàng tab (501)
-   và stHeader để bấm được. Menu popover render ra portal ở body → không bị dải
-   44px cắt.
-   ⚠ right: 344px — KHÔNG phải 96px: góc phải là chỗ stStatusWidget ("Running…")
-   của Streamlit, đo được RỘNG 288px với mép trái cách phải 336px. Đặt ở 96px thì
-   nút nằm TRỌN dưới widget đó → nhìn thấy nhưng KHÔNG BẤM ĐƯỢC (đã đo:
-   elementFromPoint tại tâm nút trả về stStatusWidget).
-   ⚠ z-index 999991 — stHeader/stToolbar của Streamlit dùng 999990 và phủ CẢ dải
-   trên; z-index 600 (trên topbar 500 / hàng tab 501) vẫn THUA → nút bị chặn.
-   Chính vì header phủ vậy nên CSS phía trên mới phải cho nó pointer-events:none. */
-.st-key-cau_decl_pop {
-    position: fixed !important;
-    top: 0 !important;
-    right: 344px !important;
-    width: 168px !important;
-    height: 44px !important;
-    z-index: 999991 !important;
-    margin: 0 !important;
-    padding: 0 !important;
-    pointer-events: auto !important;
+div[data-testid="stHorizontalBlock"]:has([class*="st-key-ribbonbtn"]) [class*="st-key-ribbonbtn"] button:hover {
+    background: rgba(0,122,204,0.22) !important;
 }
-/* Màn hẹp: không đủ chỗ cạnh stStatusWidget → nhường, về luồng thường */
-@media (max-width: 1100px) {
-    .st-key-cau_decl_pop { right: 8px !important; top: 46px !important; }
+/* Tab ĐANG MỞ (type="primary") — gạch chân xanh, nền nhấn nhẹ */
+div[data-testid="stHorizontalBlock"]:has([class*="st-key-ribbonbtn"])
+    [class*="st-key-ribbonbtn"] button[data-testid="stBaseButton-primary"] {
+    background: rgba(0,122,204,0.30) !important;
+    border-bottom: 3px solid #007acc !important;
 }
+/* Tab KHÓA — mờ đi, con trỏ báo không bấm được */
+div[data-testid="stHorizontalBlock"]:has([class*="st-key-ribbonbtn"]) [class*="st-key-ribbonbtn"] button:disabled {
+    opacity: 0.45 !important;
+    cursor: not-allowed !important;
+}
+/* ── ⚙️ Khai báo: nằm TRONG hàng ribbon (cột đầu) → không cần neo riêng, chỉ cần
+   cho giống tab. Nút popover thật là button[data-testid="stPopoverButton"], KHÔNG
+   phải con trực tiếp của stPopover (DOM thật: stPopover > div[aria-haspopup] >
+   button) — selector "stPopover > button" khớp 0 phần tử. */
 .st-key-cau_decl_pop button[data-testid="stPopoverButton"] {
     height: 44px !important;
     min-height: 44px !important;
     width: 100% !important;
     margin: 0 !important;
+    padding: 0 4px !important;
     border-radius: 0 !important;
     border: none !important;
-    border-left: 1px solid rgba(128,128,128,0.35) !important;
+    border-right: 1px solid rgba(128,128,128,0.35) !important;
     background: rgba(128,128,128,0.16) !important;   /* bám theme sáng/tối */
-    font-size: 12px !important;
+    font-size: 11px !important;
     font-weight: 600 !important;
+    white-space: normal !important;
     pointer-events: auto !important;
 }
-.st-key-cau_decl_pop [data-testid="stPopover"] > button:hover {
+.st-key-cau_decl_pop button[data-testid="stPopoverButton"]:hover {
     background: rgba(0,122,204,0.40) !important;
-}
-/* ĐT: topbar hẹp → trả nút về luồng thường, không đè lên tab */
-@media (max-width: 768px) {
-    .st-key-cau_decl_pop {
-        position: static !important;
-        width: 100% !important;
-        height: auto !important;
-    }
 }
 
 </style>
@@ -3369,33 +3379,16 @@ def _render_topbar(d: dict, cur_tab: str) -> None:
     _uname = _u.get('name', _u.get('username', ''))
     _crown = '👑' if AUTH.is_admin() else '👤'
 
-    _tabs_h = ""
-    for _m in _TAB_META:
-        _sc      = _STATE_STYLE[_m['state']]
-        _is_act  = (cur_tab == _m['key'])
-        _sc_text = _sc['text']
-        _sc_bbg  = _sc['badge_bg']
-        _sc_btxt = _sc['badge_text']
-        _sc_icon = _sc['icon']
-        _bb      = f"border-bottom:3px solid {_sc['border']}" if _is_act else "border-bottom:3px solid transparent"
-        _bg      = f"background:{_sc['bg']}" if _is_act else "background:transparent"
-        _tabs_h += (
-            f"<div style='padding:0 14px;height:44px;display:flex;align-items:center;"
-            f"gap:5px;cursor:pointer;{_bg};{_bb};flex-shrink:0'>"
-            f"<span style='font-size:13px'>{_m['icon']}</span>"
-            f"<span style='font-size:11px;font-weight:600;color:{_sc_text}'>{_m['key']}</span>"
-            f"<span style='font-size:9px;background:{_sc_bbg};"
-            f"color:{_sc_btxt};padding:1px 6px;border-radius:9px'>"
-            f"{_sc_icon}</span>"
-            f"</div>"
-        )
-
+    # Topbar CHỈ còn dải nền + logo UTH. Chữ tab TRƯỚC ĐÂY vẽ ở đây bằng HTML, còn
+    # nút bấm thật thì trong suốt (opacity:0) nằm đè lên — hai thứ ĐO KHÁC NHAU:
+    # HTML rộng theo nội dung (padding:0 14px, flex-shrink:0) còn nút chia ĐỀU theo
+    # st.columns → vùng bấm không bao giờ khớp chữ. Nay NÚT THẬT chính là tab (hiện
+    # rõ, tự vẽ lấy) → một nguồn duy nhất, hết lệch.
     st.markdown(
         f"<div class='uth-topbar'>"
-        f"<div style='padding:0 14px;font-size:14px;font-weight:700;"
-        f"color:#007acc;white-space:nowrap;border-right:1px solid #1e1e2e;"
+        f"<div class='uth-logo' style='padding:0 14px;font-size:14px;font-weight:700;"
+        f"color:#007acc;white-space:nowrap;border-right:1px solid rgba(128,128,128,0.35);"
         f"height:44px;display:flex;align-items:center'>🏗️ UTH</div>"
-        f"<div class='uth-tabs'>{_tabs_h}</div>"
         # Đã BỎ cụm "L=… · Super-T" và "👤 Administrator" ở góc phải topbar vì
         # đè lên cụm icon GitHub của Streamlit. (Chỉ bỏ 2 cụm này, giữ ribbon.)
         f"</div>",
@@ -3586,11 +3579,15 @@ _has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
 _has_geo = bool(st.session_state.get("df_geology") is not None
                 or st.session_state.get("dia_chat_frames"))
 
-# Nút Khai báo đặt ở CONTAINER RIÊNG, neo lên góc phải topbar bằng CSS (mốc
-# .st-key-cau_decl_pop). KHÔNG nhét vào hàng nút tab: các nút tab là vùng bấm VÔ
-# HÌNH (opacity:0) chia ĐỀU theo cột, đè lên chữ tab mà .uth-topbar vẽ theo chiều
-# rộng nội dung — thêm 1 cột vào hàng đó sẽ xô lệch vùng bấm khỏi chữ của MỌI tab.
-with st.container(key="cau_decl_pop"):
+# HÀNG RIBBON: [⚙️ Khai báo ▾] + 6 tab — TẤT CẢ trong 1 st.columns, neo lên topbar.
+# Trước đây nút Khai báo phải tách container riêng vì nút tab là vùng bấm vô hình
+# đè lên chữ HTML (thêm cột sẽ xô lệch). Nay tab là nút thật tự vẽ → ghép chung
+# hàng được, mọi thứ tự chia cột đều nhau.
+_col_decl, *_col_tabs = st.columns([1.25] + [1] * len(_TAB_META))
+
+with _col_decl:
+  # container CÓ KEY → class .st-key-cau_decl_pop làm mốc cho CSS bắt nút popover
+  with st.container(key="cau_decl_pop"):
     # ✓ khi đã có địa chất và đã chạy ra kết quả; ▾ khi còn phải khai báo.
     _lbl_decl = "⚙️ Khai báo" + (" ✓" if (_has_geo and _has_kq_decl) else " ▾")
     with st.popover(_lbl_decl, use_container_width=True,
@@ -3623,12 +3620,14 @@ with st.container(key="cau_decl_pop"):
             st.session_state.open_dialog = "step3"
             st.rerun()
 
-_col_tabs = st.columns(len(_TAB_META))
 for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
     with _col:
+        # Nhãn mang luôn HUY HIỆU trạng thái (✓ / 📍 / ○) — trước đây badge do
+        # HTML topbar vẽ riêng; nay nút tự vẽ nên gộp vào nhãn.
+        _lbl = f"{_m['icon']} {_m['key']} {_STATE_STYLE[_m['state']]['icon']}"
         if _m['state'] == 'locked':
             st.button(
-                f"{_m['icon']} {_m['key']}",
+                _lbl,
                 disabled=True,
                 use_container_width=True,
                 help=f"🔒 {_m['lock_msg']}",
@@ -3636,9 +3635,10 @@ for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
             )
         else:
             if st.button(
-                f"{_m['icon']} {_m['key']}",
+                _lbl,
                 use_container_width=True,
                 type="primary" if (_cur_tab == _m['key']) else "secondary",
+                help=_m['tip'],
                 key=f"ribbonbtn_{_ci}",
             ):
                 st.session_state.current_tab = _m['key']
