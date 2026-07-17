@@ -344,7 +344,8 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) > div
     margin: 0 !important;
     min-width: 0 !important;
 }
-div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) button {
+/* Nút TAB: trong suốt — chỉ là vùng bấm đè lên chữ tab do .uth-topbar vẽ. */
+div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) button[data-testid^="ribbonbtn"] {
     opacity: 0 !important;
     height: 44px !important;
     min-height: 44px !important;
@@ -354,6 +355,56 @@ div[data-testid="stHorizontalBlock"]:has(button[data-testid^="ribbonbtn"]) butto
     border-radius: 0 !important;
     border: none !important;
     pointer-events: auto !important;
+}
+/* ── ⚙️ Khai báo: neo vào GÓC PHẢI topbar (mốc .st-key-cau_decl_pop) ──
+   Đặt fixed ở dải 44px của topbar. z-index cao hơn topbar (500), hàng tab (501)
+   và stHeader để bấm được. Menu popover render ra portal ở body → không bị dải
+   44px cắt.
+   ⚠ right: 344px — KHÔNG phải 96px: góc phải là chỗ stStatusWidget ("Running…")
+   của Streamlit, đo được RỘNG 288px với mép trái cách phải 336px. Đặt ở 96px thì
+   nút nằm TRỌN dưới widget đó → nhìn thấy nhưng KHÔNG BẤM ĐƯỢC (đã đo:
+   elementFromPoint tại tâm nút trả về stStatusWidget).
+   ⚠ z-index 999991 — stHeader/stToolbar của Streamlit dùng 999990 và phủ CẢ dải
+   trên; z-index 600 (trên topbar 500 / hàng tab 501) vẫn THUA → nút bị chặn.
+   Chính vì header phủ vậy nên CSS phía trên mới phải cho nó pointer-events:none. */
+.st-key-cau_decl_pop {
+    position: fixed !important;
+    top: 0 !important;
+    right: 344px !important;
+    width: 168px !important;
+    height: 44px !important;
+    z-index: 999991 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    pointer-events: auto !important;
+}
+/* Màn hẹp: không đủ chỗ cạnh stStatusWidget → nhường, về luồng thường */
+@media (max-width: 1100px) {
+    .st-key-cau_decl_pop { right: 8px !important; top: 46px !important; }
+}
+.st-key-cau_decl_pop button[data-testid="stPopoverButton"] {
+    height: 44px !important;
+    min-height: 44px !important;
+    width: 100% !important;
+    margin: 0 !important;
+    border-radius: 0 !important;
+    border: none !important;
+    border-left: 1px solid rgba(128,128,128,0.35) !important;
+    background: rgba(128,128,128,0.16) !important;   /* bám theme sáng/tối */
+    font-size: 12px !important;
+    font-weight: 600 !important;
+    pointer-events: auto !important;
+}
+.st-key-cau_decl_pop [data-testid="stPopover"] > button:hover {
+    background: rgba(0,122,204,0.40) !important;
+}
+/* ĐT: topbar hẹp → trả nút về luồng thường, không đè lên tab */
+@media (max-width: 768px) {
+    .st-key-cau_decl_pop {
+        position: static !important;
+        width: 100% !important;
+        height: auto !important;
+    }
 }
 
 </style>
@@ -3527,43 +3578,50 @@ def _render_statusbar(d: dict) -> None:
 _cur_tab = st.session_state.get('current_tab', 'THUYẾT MINH')
 _render_topbar(st.session_state.design_data, _cur_tab)
 
-# ── 3 HỘP KHAI BÁO ĐỘC LẬP — đặt TRÊN ribbon, mỗi nút mở 1 hộp thoại riêng
-#    (không gôm chung thành 1 wizard tuần tự) ──────────────────────────────────
+# ── RIBBON: [⚙️ Khai báo ▾] + các tab ────────────────────────────────────────
+# 4 nút khai báo GỘP vào 1 popover ngay trên ribbon (trước đây là dải 4 nút riêng
+# chiếm gần 90px chiều cao ngay dưới ribbon). Popover = menu xổ chạy phía trình
+# duyệt → mở/đóng KHÔNG rerun; chỉ khi bấm 1 mục mới rerun để mở hộp thoại.
 _has_kq_decl = bool(st.session_state.design_data.get('kcn_result'))
-# Thứ tự khai báo: ĐỊA HÌNH & ĐỊA CHẤT trước (nền tảng vị trí/cao độ) → Thủy văn
-# → Hình học → Tổng hợp.
-_dk4, _dk1, _dk2, _dk3 = st.columns(4)
-with _dk4:
-    _has_geo = bool(st.session_state.get("df_geology") is not None
-                    or st.session_state.get("dia_chat_frames"))
-    if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
-                 use_container_width=True, key="declbtn_geodata",
-                 help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
-        st.session_state.open_dialog = "geodata"
-        st.rerun()
-with _dk1:
-    if st.button("🌊 Thông số thủy văn & vị trí cầu",
-                 use_container_width=True, key="declbtn_step1",
-                 help="Khai báo thủy văn, mực nước, vị trí & tĩnh không"):
-        st.session_state.field_touched = set()
-        st.session_state.field_errors = {}
-        st.session_state.field_warnings = {}
-        st.session_state.d1_show_feedback = False
-        st.session_state.open_dialog = "step1"
-        st.rerun()
-with _dk2:
-    if st.button("🛣️ Yếu tố hình học",
-                 use_container_width=True, key="declbtn_step2",
-                 help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
-        st.session_state.open_dialog = "step2"
-        st.rerun()
-with _dk3:
-    if st.button("✅ Tổng hợp các thông số",
-                 use_container_width=True, key="declbtn_step3",
-                 type="primary" if not _has_kq_decl else "secondary",
-                 help="Tổng hợp toàn bộ thông số rồi chạy hệ thống"):
-        st.session_state.open_dialog = "step3"
-        st.rerun()
+_has_geo = bool(st.session_state.get("df_geology") is not None
+                or st.session_state.get("dia_chat_frames"))
+
+# Nút Khai báo đặt ở CONTAINER RIÊNG, neo lên góc phải topbar bằng CSS (mốc
+# .st-key-cau_decl_pop). KHÔNG nhét vào hàng nút tab: các nút tab là vùng bấm VÔ
+# HÌNH (opacity:0) chia ĐỀU theo cột, đè lên chữ tab mà .uth-topbar vẽ theo chiều
+# rộng nội dung — thêm 1 cột vào hàng đó sẽ xô lệch vùng bấm khỏi chữ của MỌI tab.
+with st.container(key="cau_decl_pop"):
+    # ✓ khi đã có địa chất và đã chạy ra kết quả; ▾ khi còn phải khai báo.
+    _lbl_decl = "⚙️ Khai báo" + (" ✓" if (_has_geo and _has_kq_decl) else " ▾")
+    with st.popover(_lbl_decl, use_container_width=True,
+                    help="Khai báo thông số đầu vào — theo thứ tự từ trên xuống"):
+        # Thứ tự: ĐỊA HÌNH & ĐỊA CHẤT trước (nền tảng vị trí/cao độ) → Thủy văn
+        # → Hình học → Tổng hợp.
+        if st.button("🪨 Địa hình & Địa chất" + (" ✓" if _has_geo else ""),
+                     use_container_width=True, key="declbtn_geodata",
+                     help="Nạp .NTD/VN-2000 + Excel địa chất — DÙNG CHUNG cho cả 3 phương án"):
+            st.session_state.open_dialog = "geodata"
+            st.rerun()
+        if st.button("🌊 Thủy văn & vị trí cầu",
+                     use_container_width=True, key="declbtn_step1",
+                     help="Khai báo thủy văn, mực nước, vị trí & tĩnh không"):
+            st.session_state.field_touched = set()
+            st.session_state.field_errors = {}
+            st.session_state.field_warnings = {}
+            st.session_state.d1_show_feedback = False
+            st.session_state.open_dialog = "step1"
+            st.rerun()
+        if st.button("🛣️ Yếu tố hình học",
+                     use_container_width=True, key="declbtn_step2",
+                     help="Loại đường, vận tốc, bề rộng, bán kính, độ dốc"):
+            st.session_state.open_dialog = "step2"
+            st.rerun()
+        if st.button("✅ Tổng hợp các thông số",
+                     use_container_width=True, key="declbtn_step3",
+                     type="primary" if not _has_kq_decl else "secondary",
+                     help="Tổng hợp toàn bộ thông số rồi chạy hệ thống"):
+            st.session_state.open_dialog = "step3"
+            st.rerun()
 
 _col_tabs = st.columns(len(_TAB_META))
 for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
