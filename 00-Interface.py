@@ -1726,6 +1726,14 @@ body.cau-resizing, body.cau-resizing * {
     return true;
   }
 
+  // BẮT KỊP ANIMATION: mỗi lần có mutation liên quan, ngoài refresh() ngay còn
+  // lịch vài lần sync() TRỄ. LÝ DO (bug đã bắt): khi MỞ LẠI sidebar, observer
+  // kích lúc aria đổi và đo NGAY khi sidebar còn đang trượt (translateX 0.15s) →
+  // r.right còn nhỏ → tưởng vẫn thu gọn → --sidebar-edge=0; animation xong thì
+  // KHÔNG mutation nào kích lại → edge kẹt 0 → topbar/ribbon dính mép trái dù
+  // sidebar đã bung ra. Các nhịp trễ này đo lại sau khi animation ổn định.
+  function bumpSyncs(){ [60, 180, 340, 520].forEach(function(t){ setTimeout(sync, t); }); }
+
   var tries = 0;
   (function tryInit(){
     if (setup()){
@@ -1735,12 +1743,18 @@ body.cau-resizing, body.cau-resizing * {
       var _raf = 0;
       var mo = new W.MutationObserver(function(){
         if (_raf) return;
-        _raf = W.requestAnimationFrame(function(){ _raf = 0; refresh(); });
+        _raf = W.requestAnimationFrame(function(){ _raf = 0; refresh(); bumpSyncs(); });
       });
       mo.observe(D.body, {childList: true, subtree: true, attributes: true,
                           attributeFilter: ['style', 'class', 'aria-expanded']});
       W.addEventListener('resize', sync);
-      // Đồng bộ thêm vài nhịp để bắt kịp animation thu gọn/mở của Streamlit.
+      // Khi animation trượt/co của sidebar KẾT THÚC → đo lại lần chót (chắc ăn).
+      var _s = sb();
+      if (_s) _s.addEventListener('transitionend', sync);
+      // Lưới an toàn: nhịp thưa phòng khi cả observer lẫn transitionend đều lỡ
+      // (sync() rất nhẹ + có guard _lastEdge/_lastCollapsed nên không tốn gì).
+      setInterval(sync, 1200);
+      // Đồng bộ thêm vài nhịp đầu để bắt kịp lần render đầu tiên.
       [120, 250, 450].forEach(function(t){ setTimeout(sync, t); });
     } else if (tries < 40){ tries++; setTimeout(tryInit, 200); }
   })();
