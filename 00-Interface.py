@@ -831,7 +831,10 @@ except Exception as e:
     st.sidebar.error(f"Lỗi cấu hình AI: {e}")
     gemini_model = None
 
+@st.cache_data(show_spinner=False)
 def load_all_standards(folder_name="Documents"):
+    # @st.cache_data: đọc PDF tiêu chuẩn 1 LẦN cho CẢ SERVER (mọi phiên dùng chung),
+    # thay vì mỗi phiên tự đọc lại (trước đây chỉ guard theo session_state).
     knowledge_text = ""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     folder_path = os.path.join(current_dir, folder_name)
@@ -844,14 +847,14 @@ def load_all_standards(folder_name="Documents"):
                 text = ""
                 for page in doc:
                     text += page.get_text()
+                doc.close()   # giải phóng handle PDF ngay, không giữ trong RAM
                 knowledge_text += f"\n--- NGUỒN TÀI LIỆU: {file_name} ---\n{text}\n"
-            except:
+            except Exception:
                 pass
     return knowledge_text
 
 if 'bridge_library' not in st.session_state:
-    with st.spinner("📚 Đang nạp hệ thống tiêu chuẩn cầu đường..."):
-        st.session_state.bridge_library = load_all_standards()
+    st.session_state.bridge_library = load_all_standards()
 
 # ── KẾT NỐI HỆ THỐNG MODULES THÀNH PHẦN (CHỈ 1 LẦN) ────────────────────────
 if '_modules_loaded' not in st.session_state:
@@ -9644,3 +9647,4 @@ with _col_main:
             st.code(traceback.format_exc())
 
 _render_statusbar(st.session_state.design_data)
+

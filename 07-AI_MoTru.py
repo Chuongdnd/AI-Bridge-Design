@@ -20,9 +20,9 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+# sklearn KHÔNG import ở mức module (nặng ~62MB). Chỉ nạp bên trong các hàm huấn
+# luyện/đọc dữ liệu — chúng chỉ chạy khi bấm "Chạy AI", không phải lúc khởi động →
+# cold-start & mọi phiên chỉ-xem KHÔNG tốn 62MB nền (bớt áp lực bộ nhớ cloud).
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -310,6 +310,7 @@ def load_pier_data_v3(v3_path=None):
     Đọc dữ liệu trụ cầu từ Bridge_Train_Dataset_v3.xlsx.
     Trả về (DataFrame, le_dam) hoặc (rỗng, None).
     """
+    from sklearn.preprocessing import LabelEncoder   # lazy (xem chú thích đầu file)
     path = v3_path or _V3_DEFAULT
     if not os.path.exists(path):
         return pd.DataFrame(), None
@@ -393,6 +394,9 @@ def train_pier_ai(v3_path=None, **_):
     Trả về dict models khi v3 có >= 6 mẫu, ngược lại trả None
     (predict_pier() sẽ dùng Rule-Based fallback tự động).
     """
+    from sklearn.ensemble import RandomForestClassifier      # lazy (xem đầu file)
+    from sklearn.preprocessing import LabelEncoder
+    from sklearn.model_selection import StratifiedKFold, cross_val_score
     MIN_ROWS = 6
     v3p = v3_path or _V3_DEFAULT
 
