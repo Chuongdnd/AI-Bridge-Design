@@ -737,11 +737,8 @@ _cc_theme.html(
       d.addEventListener('touchend', endGesture, {capture:true, passive:false});
       d.addEventListener('touchcancel', endGesture, {capture:true, passive:false});
 
-      // ── Nút 👁 bật/tắt chú giải + thanh cao độ (chỉ màn hẹp ≤700px) ──────
-      var mq = d.defaultView.matchMedia ?
-               d.defaultView.matchMedia('(max-width: 700px)') : null;
+      // ── Nút 👁 bật/tắt chú giải + thanh cao độ (MỌI màn hình) ──────────
       function addBtns(){
-        if(!mq || !mq.matches) return;
         d.querySelectorAll('.js-plotly-plot').forEach(function(gd){
           if(gd.querySelector('.cau-lg-btn')) return;
           // chỉ gắn khi biểu đồ CÓ chú giải hoặc colorbar
@@ -750,21 +747,28 @@ _cc_theme.html(
              !gd.querySelector('.infolayer g[class^="cb"]')) return;
           var b = d.createElement('button');
           b.className = 'cau-lg-btn';
-          b.textContent = '\\uD83D\\uDC41 Chu giai';
-          b.style.cssText = 'position:absolute;left:6px;top:6px;z-index:1002;'
-            +'padding:4px 10px;font-size:11px;border-radius:14px;'
-            +'border:1px solid #4fc3f7;background:rgba(18,18,28,.72);'
-            +'color:#4fc3f7;cursor:pointer';
+          b.textContent = '\uD83D\uDC41 Chu giai';
+          // Z-index RẤT CAO + pointer-events:auto → click xuyên qua WebGL 3D
+          b.style.cssText = 'position:absolute;left:8px;top:8px;z-index:99999;'
+            +'pointer-events:auto !important;'
+            +'padding:4px 12px;font-size:11px;border-radius:14px;'
+            +'border:1px solid #4fc3f7;background:rgba(18,18,28,.85);'
+            +'color:#4fc3f7;cursor:pointer;user-select:none;'
+            +'box-shadow:0 2px 8px rgba(0,0,0,0.3);';
           b.addEventListener('click', function(ev){
             ev.stopPropagation();
             gd.classList.toggle('cau-show-legend');
           });
-          if(getComputedStyle(gd).position === 'static')
-            gd.style.position = 'relative';
-          gd.appendChild(b);
+          // Append vào CHA thay vì gd → button nằm trên mọi overlay WebGL
+          var container = gd.parentElement || gd;
+          if(getComputedStyle(container).position === 'static')
+            container.style.position = 'relative';
+          container.appendChild(b);
         });
       }
-      addBtns();
+      // Gọi nhiều lần để bắt kịp biểu đồ sinh sau
+      setTimeout(addBtns, 500);
+      setTimeout(addBtns, 1500);
       try{ new MutationObserver(addBtns).observe(d.body,
              {childList:true, subtree:true}); }catch(e){}
 
