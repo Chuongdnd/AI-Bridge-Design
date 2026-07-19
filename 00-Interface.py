@@ -796,10 +796,10 @@ if '_auth_loaded' not in st.session_state:
     _auth_spec = _iutil.spec_from_file_location('auth00', os.path.join(os.path.dirname(os.path.abspath(__file__)), '00-Auth.py'))
     AUTH = _iutil.module_from_spec(_auth_spec)
     _auth_spec.loader.exec_module(AUTH)
+    st.session_state['_AUTH'] = AUTH
     st.session_state['_auth_loaded'] = True
 else:
-    import sys as _sys
-    AUTH = _sys.modules.get('auth00')
+    AUTH = st.session_state['_AUTH']
 
 # ── TẠM ẨN ĐĂNG NHẬP ─────────────────────────────────────────────────────────
 # Bỏ qua trang đăng nhập: tự đăng nhập bằng tài khoản khách (quyền admin để mọi
