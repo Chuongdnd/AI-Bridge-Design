@@ -884,22 +884,28 @@ if '_modules_loaded' not in st.session_state:
         _cl_spec = _iutil.spec_from_file_location('component_library', os.path.join(_bb_dir, 'utils', 'component_library.py'))
         CLIB = _iutil.module_from_spec(_cl_spec)
         _cl_spec.loader.exec_module(CLIB)
+        _sys.modules['component_library'] = CLIB
         CLIB.set_lib_dir_resolver(lambda: st.session_state.get('user_lib_dir'))
         _ws_spec = _iutil.spec_from_file_location('workspace', os.path.join(_bb_dir, 'utils', 'workspace.py'))
         WS = _iutil.module_from_spec(_ws_spec)
         _ws_spec.loader.exec_module(WS)
+        _sys.modules['workspace'] = WS
         _pp_spec = _iutil.spec_from_file_location('pile_plan', os.path.join(_bb_dir, 'utils', 'pile_plan.py'))
         PP = _iutil.module_from_spec(_pp_spec)
         _pp_spec.loader.exec_module(PP)
+        _sys.modules['pile_plan'] = PP
         _ps_spec = _iutil.spec_from_file_location('pile_section', os.path.join(_bb_dir, 'utils', 'pile_section.py'))
         PS = _iutil.module_from_spec(_ps_spec)
         _ps_spec.loader.exec_module(PS)
+        _sys.modules['pile_section'] = PS
         _kl_spec = _iutil.spec_from_file_location('khoi_luong', os.path.join(_bb_dir, 'utils', 'khoi_luong.py'))
         KL = _iutil.module_from_spec(_kl_spec)
         _kl_spec.loader.exec_module(KL)
+        _sys.modules['khoi_luong'] = KL
         _sdt_spec = _iutil.spec_from_file_location('suat_dau_tu', os.path.join(_bb_dir, 'utils', 'suat_dau_tu.py'))
         SDT = _iutil.module_from_spec(_sdt_spec)
         _sdt_spec.loader.exec_module(SDT)
+        _sys.modules['suat_dau_tu'] = SDT
         st.session_state['_modules_loaded'] = True
     except Exception as e:
         st.error(f'Lỗi kết nối Module: {e}')
