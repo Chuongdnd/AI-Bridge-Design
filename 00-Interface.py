@@ -747,7 +747,7 @@ _cc_theme.html(
              !gd.querySelector('.infolayer g[class^="cb"]')) return;
           var b = d.createElement('button');
           b.className = 'cau-lg-btn';
-          b.textContent = '\uD83D\uDC41 Chu giai';
+          b.textContent = '👁 Chu giai';
           // Z-index RẤT CAO + pointer-events:auto → click xuyên qua WebGL 3D
           b.style.cssText = 'position:absolute;left:8px;top:8px;z-index:99999;'
             +'pointer-events:auto !important;'
