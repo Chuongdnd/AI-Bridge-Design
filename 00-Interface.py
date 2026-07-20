@@ -8261,127 +8261,150 @@ with _col_main:
                             _y_origin_vn2000 = float(_df_geo_cl2.loc[_idx_min_lt2, 'Y_Real'])
                     st.session_state['terrain_x_origin'] = _x_origin_vn2000
                     st.session_state['terrain_y_origin'] = _y_origin_vn2000
+                    # ── CACHE mô hình 3D — bỏ "load" khi rerun mà input KHÔNG đổi ──
+                    # Control 3D (render_mode/che_do/he_so_z…) là HẰNG SỐ → figure chỉ
+                    # đổi khi ĐỊA HÌNH / THIẾT KẾ / DẦM / PA đổi. Đóng hộp khai báo mà
+                    # chưa khai gì → các thứ đó y nguyên → TÁI DÙNG figure, khỏi dựng.
                     try:
-                        _fig_t, mx, my, mz = TV.ve_dia_hinh_3d(
-                            _df_geo, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view,
-                            x_origin=_x_origin_vn2000, y_origin=_y_origin_vn2000,
-                        )
+                        _terr_sig = (len(_df_geo),
+                                     round(float(_df_geo['Z'].sum()), 1)) \
+                            if 'Z' in getattr(_df_geo, 'columns', []) else (0, 0)
+                    except Exception:
+                        _terr_sig = (0, 0)
+                    try:
+                        _des_sig = hash(json.dumps(d, default=str, sort_keys=True))
+                    except Exception:
+                        _des_sig = id(d)
+                    _k3d = (selected_ribbon, _spt_pfx, _terr_sig, _des_sig)
+                    _c3d = st.session_state.get(f"_fig3dcache_{selected_ribbon}")
+                    _cached_hit = bool(_c3d and _c3d[0] == _k3d)
+                    try:
+                        if _cached_hit:
+                            _fig_t = _c3d[1]; mx = my = mz = None
+                        else:
+                            _fig_t, mx, my, mz = TV.ve_dia_hinh_3d(
+                                _df_geo, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view,
+                                x_origin=_x_origin_vn2000, y_origin=_y_origin_vn2000,
+                            )
                         if _fig_t:
                             _n_before = len(_fig_t.data)
+                            _n_after = len(_fig_t.data)
                             _err_overlay = None
-                            try:
-                                BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
-                                # Chèn dầm thực tế từ thư viện (hệ VN-2000 trừ origin,
-                                # khớp địa hình). add_all_to_terrain_fig KHÔNG vẽ dầm.
+                            if not _cached_hit:
                                 try:
-                                    _spt_t_traces = BBUI.get_beam_model_mesh_traces_vn2000(
-                                        d, _df_geo, he_so_z, pfx=_spt_pfx)
-                                    for _i_b, _spt_t in enumerate(_spt_t_traces or []):
-                                        _spt_t.legendgroup = "Dầm"
-                                        try: _spt_t.showlegend = (_i_b == 0)
-                                        except Exception: pass
-                                        _fig_t.add_trace(_spt_t)
+                                    BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
+                                    # Chèn dầm thực tế từ thư viện (hệ VN-2000 trừ origin,
+                                    # khớp địa hình). add_all_to_terrain_fig KHÔNG vẽ dầm.
+                                    try:
+                                        _spt_t_traces = BBUI.get_beam_model_mesh_traces_vn2000(
+                                            d, _df_geo, he_so_z, pfx=_spt_pfx)
+                                        for _i_b, _spt_t in enumerate(_spt_t_traces or []):
+                                            _spt_t.legendgroup = "Dầm"
+                                            try: _spt_t.showlegend = (_i_b == 0)
+                                            except Exception: pass
+                                            _fig_t.add_trace(_spt_t)
+                                    except Exception:
+                                        pass
+                                    try: BVK._hover3d(_fig_t)   # hover tên + cao độ (gồm dầm)
+                                    except Exception: pass
+                                    # Góc xiên ĐÃ nướng vào hình học (qua _vn theo tim
+                                    # tuyến) → KHÔNG hậu xử lý trượt toạ độ tuyệt đối.
+                                    BVK.apply_render_mode(_fig_t, render_mode_3d)
+                                    # Ẩn cấu kiện theo lựa chọn "Tùy chỉnh hiển thị"
+                                    _hide3d = [g for g in _COMP_GROUPS3D
+                                               if g not in _show_comps3d]
+                                    if _hide3d:
+                                        for _tr in _fig_t.data:
+                                            _kk = str(getattr(_tr, "legendgroup", "")
+                                                      or getattr(_tr, "name", "") or "").lower()
+                                            if any(_h.lower() in _kk for _h in _hide3d):
+                                                _tr.visible = False
+                                except Exception as _oe:
+                                    _err_overlay = str(_oe)
+                                _n_after = len(_fig_t.data)
+
+                                # Focus camera on bridge span (lý trình relative coords)
+                                _geo_cam = d.get("geo_logic", {})
+                                _x_cam_mid = (
+                                    float(_geo_cam.get("x_mo_trai", 0)) +
+                                    float(_geo_cam.get("x_mo_phai", 0))
+                                ) / 2.0
+                                _z_cam_ref = float(d.get("cao_mat_cau") or d.get("cao_day_dam", 8.0))
+                                _z_cam_sc  = _z_cam_ref * he_so_z
+                                _fig_t.update_layout(
+                                    # Bỏ tiêu đề figure (bị chồng lên chú giải) — thông
+                                    # tin cầu đã hiển thị ở dòng trên các tab.
+                                    title=dict(text=""),
+                                    # Chú giải ĐỨNG, neo mép TRÁI-TRÊN trong khung vẽ:
+                                    #  • dọc → không trải ngang hết đầu hình như trước,
+                                    #    chừa nguyên góc phải cho thanh công cụ Plotly
+                                    #    (chụp ảnh/zoom/xoay/home) — trước đây chú giải
+                                    #    ngang y=1.0 đè lên đúng dãy nút đó;
+                                    #  • margin t=34: chừa đúng 1 dải mỏng cho nút
+                                    #    "Ẩn chú thích" nằm TRÊN chú thích (không che hình).
+                                    margin=dict(t=34, l=0, r=0, b=0),
+                                    showlegend=True,
+                                    legend=dict(orientation="v", x=0, y=1,
+                                                xanchor="left", yanchor="top",
+                                                # chữ TO hơn (9 → 12) cho dễ đọc/bấm
+                                                font=dict(size=12),
+                                                groupclick="togglegroup",
+                                                itemsizing="constant",
+                                                # bám theme: nền xám bán trong suốt thay
+                                                # cho trắng đặc (chữ theo theme → ở nền
+                                                # tối từng là chữ trắng trên nền trắng)
+                                                bgcolor="rgba(128,128,128,0.14)",
+                                                bordercolor="rgba(128,128,128,0.35)",
+                                                borderwidth=1),
+                                    scene_camera=dict(
+                                        eye=dict(x=0.0, y=-2.5, z=1.2),
+                                        center=dict(x=0.0, y=0.0, z=0.0),
+                                    ),
+                                    scene=dict(
+                                        xaxis=dict(title="Lý trình (m)"),
+                                        yaxis=dict(title="Ngang cầu (m)"),
+                                        zaxis=dict(title="Cao độ (m)"),
+                                        # nền scene trong suốt → hiện nền trang (tự theo
+                                        # theme sáng/tối của hệ thống)
+                                        bgcolor="rgba(0,0,0,0)",
+                                    ),
+                                    # chữ trục xám trung tính → đọc được trên cả sáng lẫn tối
+                                    font=dict(color="#8a90a0"),
+                                    # Nút THU GỌN chú thích: bấm để giấu hẳn bảng chú
+                                    # thích, lấy trọn khung nhìn cho mô hình. Dùng
+                                    # updatemenus (chạy ở trình duyệt) nên KHÔNG rerun
+                                    # Streamlit và không tốn RAM session.
+                                    # ⚠ Neo TRÁI-TRÊN (x=0), NGAY TRÊN bảng chú thích —
+                                    # không đặt góc phải (x=1): đó là chỗ thanh công cụ
+                                    # Plotly (modebar) → nút bị đè, không bấm được.
+                                    updatemenus=[dict(
+                                        type="buttons", direction="right",
+                                        x=0, y=1.0, xanchor="left", yanchor="bottom",
+                                        showactive=False, pad=dict(r=2, t=2),
+                                        bgcolor="rgba(128,128,128,0.14)",
+                                        bordercolor="rgba(128,128,128,0.35)",
+                                        font=dict(size=11, color="#8a90a0"),
+                                        buttons=[
+                                            dict(label="🏷 Ẩn chú thích", method="relayout",
+                                                 args=[{"showlegend": False}]),
+                                            dict(label="Hiện", method="relayout",
+                                                 args=[{"showlegend": True}]),
+                                        ],
+                                    )],
+                                )
+
+                                # Lưu LƯỚI cầu (mesh) đã dựng để XUẤT IFC khớp ĐÚNG 3D
+                                # đang xem (kèm he_so_z để khôi phục cao độ thực khi xuất).
+                                try:
+                                    st.session_state[f"_bridge3d_{selected_ribbon}"] = (
+                                        [t for t in _fig_t.data
+                                         if getattr(t, "type", "") == "mesh3d"],
+                                        float(he_so_z) or 1.0,
+                                    )
                                 except Exception:
                                     pass
-                                try: BVK._hover3d(_fig_t)   # hover tên + cao độ (gồm dầm)
-                                except Exception: pass
-                                # Góc xiên ĐÃ nướng vào hình học (qua _vn theo tim
-                                # tuyến) → KHÔNG hậu xử lý trượt toạ độ tuyệt đối.
-                                BVK.apply_render_mode(_fig_t, render_mode_3d)
-                                # Ẩn cấu kiện theo lựa chọn "Tùy chỉnh hiển thị"
-                                _hide3d = [g for g in _COMP_GROUPS3D
-                                           if g not in _show_comps3d]
-                                if _hide3d:
-                                    for _tr in _fig_t.data:
-                                        _kk = str(getattr(_tr, "legendgroup", "")
-                                                  or getattr(_tr, "name", "") or "").lower()
-                                        if any(_h.lower() in _kk for _h in _hide3d):
-                                            _tr.visible = False
-                            except Exception as _oe:
-                                _err_overlay = str(_oe)
-                            _n_after = len(_fig_t.data)
 
-                            # Focus camera on bridge span (lý trình relative coords)
-                            _geo_cam = d.get("geo_logic", {})
-                            _x_cam_mid = (
-                                float(_geo_cam.get("x_mo_trai", 0)) +
-                                float(_geo_cam.get("x_mo_phai", 0))
-                            ) / 2.0
-                            _z_cam_ref = float(d.get("cao_mat_cau") or d.get("cao_day_dam", 8.0))
-                            _z_cam_sc  = _z_cam_ref * he_so_z
-                            _fig_t.update_layout(
-                                # Bỏ tiêu đề figure (bị chồng lên chú giải) — thông
-                                # tin cầu đã hiển thị ở dòng trên các tab.
-                                title=dict(text=""),
-                                # Chú giải ĐỨNG, neo mép TRÁI-TRÊN trong khung vẽ:
-                                #  • dọc → không trải ngang hết đầu hình như trước,
-                                #    chừa nguyên góc phải cho thanh công cụ Plotly
-                                #    (chụp ảnh/zoom/xoay/home) — trước đây chú giải
-                                #    ngang y=1.0 đè lên đúng dãy nút đó;
-                                #  • margin t=34: chừa đúng 1 dải mỏng cho nút
-                                #    "Ẩn chú thích" nằm TRÊN chú thích (không che hình).
-                                margin=dict(t=34, l=0, r=0, b=0),
-                                showlegend=True,
-                                legend=dict(orientation="v", x=0, y=1,
-                                            xanchor="left", yanchor="top",
-                                            # chữ TO hơn (9 → 12) cho dễ đọc/bấm
-                                            font=dict(size=12),
-                                            groupclick="togglegroup",
-                                            itemsizing="constant",
-                                            # bám theme: nền xám bán trong suốt thay
-                                            # cho trắng đặc (chữ theo theme → ở nền
-                                            # tối từng là chữ trắng trên nền trắng)
-                                            bgcolor="rgba(128,128,128,0.14)",
-                                            bordercolor="rgba(128,128,128,0.35)",
-                                            borderwidth=1),
-                                scene_camera=dict(
-                                    eye=dict(x=0.0, y=-2.5, z=1.2),
-                                    center=dict(x=0.0, y=0.0, z=0.0),
-                                ),
-                                scene=dict(
-                                    xaxis=dict(title="Lý trình (m)"),
-                                    yaxis=dict(title="Ngang cầu (m)"),
-                                    zaxis=dict(title="Cao độ (m)"),
-                                    # nền scene trong suốt → hiện nền trang (tự theo
-                                    # theme sáng/tối của hệ thống)
-                                    bgcolor="rgba(0,0,0,0)",
-                                ),
-                                # chữ trục xám trung tính → đọc được trên cả sáng lẫn tối
-                                font=dict(color="#8a90a0"),
-                                # Nút THU GỌN chú thích: bấm để giấu hẳn bảng chú
-                                # thích, lấy trọn khung nhìn cho mô hình. Dùng
-                                # updatemenus (chạy ở trình duyệt) nên KHÔNG rerun
-                                # Streamlit và không tốn RAM session.
-                                # ⚠ Neo TRÁI-TRÊN (x=0), NGAY TRÊN bảng chú thích —
-                                # không đặt góc phải (x=1): đó là chỗ thanh công cụ
-                                # Plotly (modebar) → nút bị đè, không bấm được.
-                                updatemenus=[dict(
-                                    type="buttons", direction="right",
-                                    x=0, y=1.0, xanchor="left", yanchor="bottom",
-                                    showactive=False, pad=dict(r=2, t=2),
-                                    bgcolor="rgba(128,128,128,0.14)",
-                                    bordercolor="rgba(128,128,128,0.35)",
-                                    font=dict(size=11, color="#8a90a0"),
-                                    buttons=[
-                                        dict(label="🏷 Ẩn chú thích", method="relayout",
-                                             args=[{"showlegend": False}]),
-                                        dict(label="Hiện", method="relayout",
-                                             args=[{"showlegend": True}]),
-                                    ],
-                                )],
-                            )
-
-                            # Lưu LƯỚI cầu (mesh) đã dựng để XUẤT IFC khớp ĐÚNG 3D
-                            # đang xem (kèm he_so_z để khôi phục cao độ thực khi xuất).
-                            try:
-                                st.session_state[f"_bridge3d_{selected_ribbon}"] = (
-                                    [t for t in _fig_t.data
-                                     if getattr(t, "type", "") == "mesh3d"],
-                                    float(he_so_z) or 1.0,
-                                )
-                            except Exception:
-                                pass
-
+                                st.session_state[f"_fig3dcache_{selected_ribbon}"] = (_k3d, _fig_t)
                             st.plotly_chart(_fig_t, use_container_width=True,
                                             config={"displayModeBar": True})
                             st.caption(
