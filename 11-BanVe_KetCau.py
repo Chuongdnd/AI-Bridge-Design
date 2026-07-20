@@ -4488,10 +4488,43 @@ def ktt_label(deg):
     return f"{dd}°{mm:02d}'"
 
 
+def _vn2000_datum_to_wgs84(lat_d, lon_d):
+    """Chuyển DATUM VN-2000 → WGS-84 quốc tế (Helmert 7 tham số, QĐ 05/2007/QĐ-
+    BTNMT). VN-2000 dùng ellipsoid WGS84 nhưng datum CỤC BỘ — bỏ qua bước này thì
+    điểm lệch ~100–200m so với ảnh vệ tinh (đo được trên bình đồ). Sai số sau
+    chuyển ~vài m (đủ cho nền ảnh)."""
+    a = 6378137.0; f = 1 / 298.257223563; e2 = f * (2 - f)
+    lat = np.radians(np.asarray(lat_d, float))
+    lon = np.radians(np.asarray(lon_d, float))
+    # geodetic (VN-2000) → ECEF (h≈0 — cầu gần mặt ellipsoid, sai số mm)
+    N = a / np.sqrt(1 - e2 * np.sin(lat)**2)
+    Xc = N * np.cos(lat) * np.cos(lon)
+    Yc = N * np.cos(lat) * np.sin(lon)
+    Zc = N * (1 - e2) * np.sin(lat)
+    # Helmert VN-2000 → WGS-84 (position-vector)
+    dX, dY, dZ = -191.90441429, -39.30318279, -111.45032835
+    _as = np.pi / 648000.0            # arcsec → rad
+    rx, ry, rz = -0.00928836 * _as, 0.01975479 * _as, -0.00427372 * _as
+    s = 0.252906278e-6
+    X2 = dX + (1 + s) * (Xc - rz * Yc + ry * Zc)
+    Y2 = dY + (1 + s) * (rz * Xc + Yc - rx * Zc)
+    Z2 = dZ + (1 + s) * (-ry * Xc + rx * Yc + Zc)
+    # ECEF → geodetic (WGS-84) — lặp Bowring rút gọn (đủ hội tụ ở h nhỏ)
+    p = np.hypot(X2, Y2)
+    lat2 = np.arctan2(Z2, p * (1 - e2))
+    for _ in range(4):
+        N2 = a / np.sqrt(1 - e2 * np.sin(lat2)**2)
+        h2 = p / np.cos(lat2) - N2
+        lat2 = np.arctan2(Z2, p * (1 - e2 * N2 / (N2 + h2)))
+    lon2 = np.arctan2(Y2, X2)
+    return np.degrees(lat2), np.degrees(lon2)
+
+
 def vn2000_to_latlon(X, Y, lon0_deg=105.0, k0=0.9999):
-    """Đổi toạ độ VN-2000 (Transverse Mercator, ellipsoid WGS84) → (lat, lon) độ.
-    lon0_deg = KINH TUYẾN TRỤC của khu vực (theo tỉnh); k0 = 0.9999 (múi 3°) /
-    0.9996 (múi 6°). Công thức Snyder (không cần pyproj). Round-trip < 0.1mm."""
+    """Đổi toạ độ VN-2000 (Transverse Mercator, ellipsoid WGS84) → (lat, lon)
+    WGS-84 quốc tế (khớp ảnh vệ tinh). Gồm 2 bước: TM inverse (Snyder) trên datum
+    VN-2000, rồi Helmert 7 tham số VN-2000→WGS-84 (nếu thiếu bước này sẽ lệch
+    ~100–200m). lon0_deg = KINH TUYẾN TRỤC theo tỉnh; k0 = 0.9999 (múi 3°)."""
     X = np.asarray(X, float); Y = np.asarray(Y, float)
     a = 6378137.0; f = 1 / 298.257223563
     e2 = f * (2 - f); ep2 = e2 / (1 - e2)
@@ -4511,7 +4544,8 @@ def vn2000_to_latlon(X, Y, lon0_deg=105.0, k0=0.9999):
     lon = np.radians(lon0_deg) + (
         D - (1+2*T1+C1)*D**3/6
         + (5-2*C1+28*T1-3*C1**2+8*ep2+24*T1**2)*D**5/120) / np.cos(lat1)
-    return np.degrees(lat), np.degrees(lon)
+    # TM inverse xong (datum VN-2000) → đổi datum sang WGS-84 để khớp ảnh vệ tinh
+    return _vn2000_datum_to_wgs84(np.degrees(lat), np.degrees(lon))
 
 
 _SAT_CACHE = {}   # cache ảnh vệ tinh theo bbox (module-level, sống qua rerun)
@@ -4551,6 +4585,24 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
         mx = np.asarray(mx, float); my = np.asarray(my, float); mz = np.asarray(mz, float)
         if mx.ndim != 2:
             return None
+        # UPSAMPLE lưới ~3× mỗi chiều: độ nét vertexcolor bị giới hạn bởi MẬT ĐỘ
+        # LƯỚI (màu nội suy giữa các đỉnh cách nhau ~12m → NHÒE), không phải bởi
+        # ảnh. Bilinear đơn giản (interp hàng rồi cột) lên ~160×130 đỉnh.
+        def _ups(M, r2, c2):
+            R0, C0 = M.shape
+            t = np.zeros((R0, c2))
+            xo = np.linspace(0, 1, C0); xn = np.linspace(0, 1, c2)
+            for i in range(R0):
+                t[i] = np.interp(xn, xo, M[i])
+            out = np.zeros((r2, c2))
+            yo = np.linspace(0, 1, R0); yn = np.linspace(0, 1, r2)
+            for j in range(c2):
+                out[:, j] = np.interp(yn, yo, t[:, j])
+            return out
+        R0, C0 = mz.shape
+        R2, C2 = min(R0 * 3, 160), min(C0 * 3, 130)
+        if R2 > R0 or C2 > C0:
+            mx = _ups(mx, R2, C2); my = _ups(my, R2, C2); mz = _ups(mz, R2, C2)
         R, C = mz.shape
         ax = mx + x_org; ay = my + y_org               # tuyệt đối VN-2000
         # nhận easting/northing theo độ lớn (X=Bắc ~triệu → easting là cột nhỏ hơn)
@@ -4564,7 +4616,8 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
         lonmin, lonmax = float(np.nanmin(lon)), float(np.nanmax(lon))
         # nới nhẹ biên để ảnh phủ trọn
         _dl = (latmax - latmin) * 0.02 + 1e-4; _dg = (lonmax - lonmin) * 0.02 + 1e-4
-        img = _fetch_satellite(latmin-_dl, latmax+_dl, lonmin-_dg, lonmax+_dg)
+        img = _fetch_satellite(latmin-_dl, latmax+_dl, lonmin-_dg, lonmax+_dg,
+                               size=1024)
         if img is None:
             return None
         H, W = img.shape[:2]
@@ -4591,7 +4644,7 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
 
 
 def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
-                                 lon0=105.0, k0=0.9999, expand=1.6, grid=96):
+                                 lon0=105.0, k0=0.9999, expand=1.6, grid=160):
     """MẶT PHẲNG VỆ TINH RỘNG bao quanh cầu (ngoài phạm vi địa hình khảo sát).
     Lưới `grid`×`grid` phủ hình vuông rộng ~expand× phạm vi địa hình, PHẲNG ở cao
     độ nền (đáy địa hình), lấy màu ảnh vệ tinh cho từng ô. Dải địa hình (có cao độ)
@@ -4618,7 +4671,7 @@ def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
         lat = lat.reshape(grid, grid); lon = lon.reshape(grid, grid)
         la0, la1 = float(np.nanmin(lat)), float(np.nanmax(lat))
         lo0, lo1 = float(np.nanmin(lon)), float(np.nanmax(lon))
-        img = _fetch_satellite(la0, la1, lo0, lo1, size=768)
+        img = _fetch_satellite(la0, la1, lo0, lo1, size=1024)
         if img is None:
             return None
         H, W = img.shape[:2]
@@ -4713,124 +4766,106 @@ def _map_contour_latlon(df_geology, to_ll):
         return [], []
 
 
-def ve_binh_do_map(d, df_geology, df_route=None, lon0=105.0, k0=0.9999):
-    """Bình đồ trên NỀN ẢNH VỆ TINH thực (Esri World Imagery), đặt cầu theo
-    toạ độ VN-2000 → lat/lon. Vẽ: mặt cầu + tim cầu + mố/trụ. Cần df_geology có
-    X_VN2000/Y_VN2000. Trả None nếu thiếu dữ liệu georef."""
+def ve_binh_do_map(d, df_geology, df_route=None, lon0=105.0, k0=0.9999,
+                   show_labels=True):
+    """Bình đồ TRÊN NỀN ẢNH VỆ TINH: dựng bản vẽ kỹ thuật ĐẦY ĐỦ (_ve_binh_do_cong
+    — mặt cầu, lan can, taluy, đường đầu cầu, mố/trụ chiếu từ 3D, sông, tĩnh không,
+    đường đồng mức…) rồi CHUYỂN TỪNG NÉT sang lat/lon đặt lên ảnh vệ tinh — tức
+    "dời toàn bộ bình đồ về toạ độ vệ tinh", không phải vẽ lại bản rút gọn.
+    show_labels: bật thêm lớp TÊN ĐƯỜNG/ĐỊA DANH (Esri reference overlay).
+    Ghi chú: DIM/chữ annotation & nét đứt không hỗ trợ trên mapbox → lược bỏ."""
     try:
         need = {"Lý trình", "X_VN2000", "Y_VN2000", "Góc_Tuyến", "Offset"}
         if df_geology is None or need - set(getattr(df_geology, "columns", [])):
             return None
+        # Gốc toạ độ — LẶP ĐÚNG logic _ve_binh_do_cong (điểm lý-trình-nhỏ-nhất)
         df_cl = (df_geology[df_geology["Offset"] == 0]
-                 [["Lý trình", "X_VN2000", "Y_VN2000", "Góc_Tuyến"]]
+                 [["Lý trình", "X_VN2000", "Y_VN2000"]]
                  .drop_duplicates("Lý trình").sort_values("Lý trình"))
         if len(df_cl) < 2:
             return None
-        lt_v = df_cl["Lý trình"].values
-        vx = df_cl["X_VN2000"].values.astype(float)
-        vy = df_cl["Y_VN2000"].values.astype(float)
-        goc = df_cl["Góc_Tuyến"].values.astype(float)
-        # Tim cầu bám tim tuyến (nếu có) — giống bình đồ kỹ thuật
-        vx, vy, goc = _override_centerline_route(lt_v, vx, vy, goc, df_route)
-
-        kcn = d.get("kcn_result") or d.get("ai_result", {})
-        geo = d.get("geo_logic", {})
-        bc = float(d.get("bc", 12.0)); B_tk = float(d.get("B", 20.0))
-        L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
-        x0 = float(geo.get("x_mo_trai", float(lt_v.min())))
-        x_end = float(geo.get("x_mo_phai", float(lt_v.max())))
-        x_tim = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
-        supports, _ = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
-
-        def _at(s):
-            return (float(np.interp(s, lt_v, vx)),
-                    float(np.interp(s, lt_v, vy)),
-                    float(np.interp(s, lt_v, goc)))
-
-        def _off(s, o):
-            xc, yc, g = _at(s); perp = g + np.pi / 2
-            return (xc + o * np.cos(perp), yc + o * np.sin(perp))
-
-        # QUY ƯỚC TRỤC: VN-2000 Việt Nam thường ghi X = BẮC (northing, ~triệu m),
-        # Y = ĐÔNG (easting, ~500k). Nhưng vn2000_to_latlon nhận (easting, northing).
-        # Tự nhận theo ĐỘ LỚN: cột trung bình LỚN hơn (>1 triệu) là northing.
-        if float(np.nanmean(vx)) > float(np.nanmean(vy)):
-            _to_ll = lambda xs, ys: vn2000_to_latlon(ys, xs, lon0, k0)  # X=Bắc → easting=Y
+        _i0 = int(np.argmin(df_cl["Lý trình"].values))
+        x_org = float(df_cl["X_VN2000"].values[_i0])
+        y_org = float(df_cl["Y_VN2000"].values[_i0])
+        # auto nhận easting/northing theo độ lớn của GỐC
+        if x_org > y_org:
+            _to_ll = lambda xs, ys: vn2000_to_latlon(np.asarray(ys, float),
+                                                     np.asarray(xs, float), lon0, k0)
         else:
-            _to_ll = lambda xs, ys: vn2000_to_latlon(xs, ys, lon0, k0)  # X=Đông (quy ước toán)
+            _to_ll = lambda xs, ys: vn2000_to_latlon(np.asarray(xs, float),
+                                                     np.asarray(ys, float), lon0, k0)
 
-        ss = np.linspace(x0, x_end, max(24, int((x_end - x0) / 3)))
-        _left = [_off(s, -bc/2) for s in ss]
-        _right = [_off(s, bc/2) for s in ss]
-        _deck = _left + _right[::-1] + [_left[0]]
-        dlat, dlon = _to_ll([p[0] for p in _deck], [p[1] for p in _deck])
-        _ctr = [_at(s)[:2] for s in ss]
-        clat, clon = _to_ll([p[0] for p in _ctr], [p[1] for p in _ctr])
-        # MỐ/TRỤ dạng KHỐI (không phải chấm): footprint xà mũ vuông góc tim.
-        cap_W = max(2.0, bc * 0.18 + 1.0)   # nửa bề rộng xà mũ (ngang)
-        tru_L = 0.9                          # nửa bề dày (dọc cầu)
-        _sup_polys = []
-        for _si, s in enumerate(supports):
-            _is_mo = _si == 0 or _si == len(supports) - 1
-            _w = (cap_W + 0.6) if _is_mo else cap_W
-            _l = 3.2 if _is_mo else tru_L    # mố dày hơn trụ
-            _corner = [_off(s - _l, -_w), _off(s - _l, _w),
-                       _off(s + _l, _w), _off(s + _l, -_w), _off(s - _l, -_w)]
-            _plat, _plon = _to_ll([p[0] for p in _corner], [p[1] for p in _corner])
-            _sup_polys.append((list(_plat), list(_plon), _is_mo))
-        _snames = (["Mố trái"] + [f"Trụ T{i}" for i in range(1, len(supports)-1)]
-                   + ["Mố phải"])
-        _sup = [_at(s)[:2] for s in supports]
-        slat, slon = _to_ll([p[0] for p in _sup], [p[1] for p in _sup])
+        # 1) BẢN VẼ KỸ THUẬT đầy đủ (hệ mét tương đối)
+        fig_cart = _ve_binh_do_cong(d, df_geology, df_route=df_route)
 
-        # ĐƯỜNG ĐỒNG MỨC địa hình (lat/lon) — để bản đồ không còn "sơ họa"
-        _c_lat, _c_lon = _map_contour_latlon(df_geology, _to_ll)
-
+        # 2) CHUYỂN từng trace scatter → Scattermapbox (giữ fill/màu/tên/legend)
         fig = go.Figure()
-        if _c_lat:
-            fig.add_trace(go.Scattermapbox(
-                lat=_c_lat, lon=_c_lon, mode="lines",
-                line=dict(color="rgba(255,214,74,0.55)", width=1),
-                name="Đường đồng mức", hoverinfo="skip"))
-        # Mặt cầu + lan can
-        fig.add_trace(go.Scattermapbox(
-            lat=list(dlat), lon=list(dlon), mode="lines", fill="toself",
-            fillcolor="rgba(44,62,80,0.55)", line=dict(color="#ecf0f1", width=2),
-            name="Mặt cầu", hoverinfo="name"))
-        # Mố/Trụ khối
-        _mt_first = True
-        for _plat, _plon, _is_mo in _sup_polys:
-            fig.add_trace(go.Scattermapbox(
-                lat=_plat, lon=_plon, mode="lines", fill="toself",
-                fillcolor=("rgba(133,146,158,0.85)" if _is_mo else "rgba(200,214,192,0.9)"),
-                line=dict(color="#566573", width=1),
-                name="Mố/Trụ" if _mt_first else "", showlegend=_mt_first,
-                hoverinfo="name"))
-            _mt_first = False
-        # Tim cầu
-        fig.add_trace(go.Scattermapbox(
-            lat=list(clat), lon=list(clon), mode="lines",
-            line=dict(color="#e74c3c", width=1.5, ), name="Tim cầu", hoverinfo="name"))
-        # Nhãn mố/trụ
-        fig.add_trace(go.Scattermapbox(
-            lat=list(slat), lon=list(slon), mode="text", text=_snames,
-            textfont=dict(size=9, color="#fff"), name="Nhãn",
-            hoverinfo="skip", showlegend=False))
+        for tr in fig_cart.data:
+            if getattr(tr, "type", "") != "scatter":
+                continue
+            xs = list(tr.x or []); ys = list(tr.y or [])
+            if not xs:
+                continue
+            _xv = np.array([np.nan if v is None else float(v) for v in xs])
+            _yv = np.array([np.nan if v is None else float(v) for v in ys])
+            la, lo = _to_ll(_xv + x_org, _yv + y_org)
+            la = [None if np.isnan(v) else float(v) for v in np.atleast_1d(la)]
+            lo = [None if np.isnan(v) else float(v) for v in np.atleast_1d(lo)]
+            _ln = getattr(tr, "line", None)
+            _mk = getattr(tr, "marker", None)
+            _mode = getattr(tr, "mode", None) or "lines"
+            _mode = _mode.replace("+text", "") if "markers" in _mode else _mode
+            kw = dict(lat=la, lon=lo, mode=_mode,
+                      name=getattr(tr, "name", "") or "",
+                      showlegend=bool(getattr(tr, "showlegend", True)),
+                      legendgroup=getattr(tr, "legendgroup", None) or "",
+                      hoverinfo="name" if getattr(tr, "name", "") else "skip")
+            if getattr(tr, "fill", None) == "toself":
+                kw["fill"] = "toself"
+                kw["fillcolor"] = getattr(tr, "fillcolor", None) or "rgba(200,200,200,0.3)"
+            if _ln is not None and _ln.color:
+                kw["line"] = dict(color=_ln.color,
+                                  width=min(float(_ln.width or 1.5), 4))
+            if "markers" in _mode and _mk is not None:
+                kw["marker"] = dict(size=max(int(_mk.size or 6), 4)
+                                    if not hasattr(_mk.size, "__len__") else 6,
+                                    color=(_mk.color if isinstance(_mk.color, str)
+                                           else "#e74c3c"))
+            fig.add_trace(go.Scattermapbox(**kw))
 
-        _clat = float(np.mean(clat)); _clon = float(np.mean(clon))
-        _span = max(float(np.ptp(dlat)), float(np.ptp(dlon)), 1e-4)
+        # Tâm & zoom theo phạm vi mặt cầu (trace "Mặt cầu" nếu có, không thì tất cả)
+        _all_la = [v for t in fig.data for v in (t.lat or []) if v is not None]
+        _all_lo = [v for t in fig.data for v in (t.lon or []) if v is not None]
+        if not _all_la:
+            return None
+        _deck = next((t for t in fig.data if t.name == "Mặt cầu"), None)
+        _la_c = [v for v in (_deck.lat if _deck else _all_la) if v is not None]
+        _lo_c = [v for v in (_deck.lon if _deck else _all_lo) if v is not None]
+        _clat = float(np.mean(_la_c)); _clon = float(np.mean(_lo_c))
+        _span = max(float(np.ptp(_la_c)), float(np.ptp(_lo_c)), 1e-4)
         _zoom = float(np.clip(np.log2(360.0 / (_span * 2.5)), 10, 18))
+
+        # 3) NỀN ẢNH: vệ tinh + (tuỳ chọn) lớp THAM CHIẾU tên đường/địa danh
+        _layers = [dict(
+            sourcetype="raster", below="traces", sourceattribution="Esri",
+            source=["https://server.arcgisonline.com/ArcGIS/rest/services/"
+                    "World_Imagery/MapServer/tile/{z}/{y}/{x}"])]
+        if show_labels:
+            _layers.append(dict(
+                sourcetype="raster", below="traces",
+                source=["https://server.arcgisonline.com/ArcGIS/rest/services/"
+                        "Reference/World_Transportation/MapServer/tile/{z}/{y}/{x}"]))
+            _layers.append(dict(
+                sourcetype="raster", below="traces",
+                source=["https://server.arcgisonline.com/ArcGIS/rest/services/"
+                        "Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"]))
         fig.update_layout(
-            mapbox=dict(
-                style="white-bg",
-                center=dict(lat=_clat, lon=_clon), zoom=_zoom,
-                layers=[dict(
-                    sourcetype="raster", below="traces", sourceattribution="Esri",
-                    source=["https://server.arcgisonline.com/ArcGIS/rest/services/"
-                            "World_Imagery/MapServer/tile/{z}/{y}/{x}"])]),
-            height=540, margin=dict(l=0, r=0, t=0, b=0),
+            mapbox=dict(style="white-bg",
+                        center=dict(lat=_clat, lon=_clon), zoom=_zoom,
+                        layers=_layers),
+            height=560, margin=dict(l=0, r=0, t=0, b=0),
             legend=dict(orientation="h", y=1.0, x=0, yanchor="bottom",
-                        bgcolor="rgba(0,0,0,0.45)", font=dict(color="#fff", size=11)),
+                        bgcolor="rgba(0,0,0,0.45)", font=dict(color="#fff", size=10)),
             hovermode="closest",
         )
         return fig

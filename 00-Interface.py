@@ -8784,8 +8784,13 @@ with _col_main:
                             st.info("👉 Chọn **tỉnh/thành** nơi công trình để đặt cầu đúng "
                                     "vị trí trên ảnh vệ tinh.")
                         else:
+                            _show_lbl = st.toggle(
+                                "🏷️ Tên đường / địa danh",
+                                value=True, key=f"map_lbl_{selected_ribbon}",
+                                help="Hiện lớp tên đường & địa danh (Esri) trên ảnh vệ tinh.")
                             _fig_map = BVK.ve_binh_do_map(d, _dg_plan, df_route=_route_plan,
-                                                          lon0=_lon0, k0=0.9999)
+                                                          lon0=_lon0, k0=0.9999,
+                                                          show_labels=_show_lbl)
                             if _fig_map is not None:
                                 st.plotly_chart(_fig_map, use_container_width=True,
                                                 config={"scrollZoom": True, "displayModeBar": True})
