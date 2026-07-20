@@ -4451,6 +4451,43 @@ def _ve_binh_do_cong(d, df_geology, df_route=None):
     return fig
 
 
+# ── Kinh tuyến trục VN-2000 theo TỈNH (múi 3°, k0=0.9999) ────────────────────
+# Bảng tra cứu theo Thông tư 973/2001/TT-TCĐC (danh mục KTT các tỉnh). Là TRA CỨU
+# NHANH — vài tỉnh có nguồn khác nhau nên UI luôn HIỆN giá trị để đối chiếu + cho
+# nhập tay. Người dùng nên kiểm với hệ toạ độ Civil 3D của đơn vị.
+VN2000_KTT_TINH = {
+    "Điện Biên": 103.0, "Lai Châu": 103.0,
+    "Sơn La": 104.0,
+    "Kiên Giang": 104.5, "Cà Mau": 104.5,
+    "Lào Cai": 104.75, "Yên Bái": 104.75, "Nghệ An": 104.75,
+    "Phú Thọ": 104.75, "An Giang": 104.75,
+    "Vĩnh Phúc": 105.0, "Hà Nội": 105.0, "Thanh Hóa": 105.0,
+    "Đồng Tháp": 105.0, "Cần Thơ": 105.0, "Hậu Giang": 105.0, "Bạc Liêu": 105.0,
+    "Hòa Bình": 105.5, "Hà Nam": 105.5, "Ninh Bình": 105.5, "Nam Định": 105.5,
+    "Thái Bình": 105.5, "Hưng Yên": 105.5, "Hải Dương": 105.5, "Hà Tĩnh": 105.5,
+    "Bắc Ninh": 105.5, "Bắc Giang": 105.5, "Hà Giang": 105.5, "Tây Ninh": 105.5,
+    "Bình Dương": 105.75, "Bình Phước": 105.75, "Hồ Chí Minh": 105.75,
+    "Tuyên Quang": 106.0, "Hải Phòng": 106.0, "Bà Rịa - Vũng Tàu": 106.0,
+    "Quảng Bình": 106.0, "Quảng Trị": 106.0,
+    "Cao Bằng": 106.25, "Long An": 106.25, "Tiền Giang": 106.25, "Bến Tre": 106.25,
+    "Bắc Kạn": 106.5, "Thái Nguyên": 106.5, "Đồng Nai": 106.5,
+    "Vĩnh Long": 106.5, "Trà Vinh": 106.5, "Sóc Trăng": 106.5,
+    "Lạng Sơn": 107.0, "Bình Thuận": 107.0,
+    "Kon Tum": 107.25, "Thừa Thiên Huế": 107.0,
+    "Quảng Nam": 107.75, "Lâm Đồng": 107.75,
+    "Đà Nẵng": 107.75, "Đắk Nông": 108.5,
+    "Quảng Ngãi": 108.0, "Quảng Ninh": 107.75,
+    "Đắk Lắk": 108.5, "Khánh Hòa": 108.25, "Ninh Thuận": 108.25,
+    "Gia Lai": 108.5, "Bình Định": 108.25, "Phú Yên": 108.5,
+}
+
+
+def ktt_label(deg):
+    """105.75 → \"105°45'\"."""
+    dd = int(deg); mm = int(round((deg - dd) * 60))
+    return f"{dd}°{mm:02d}'"
+
+
 def vn2000_to_latlon(X, Y, lon0_deg=105.0, k0=0.9999):
     """Đổi toạ độ VN-2000 (Transverse Mercator, ellipsoid WGS84) → (lat, lon) độ.
     lon0_deg = KINH TUYẾN TRỤC của khu vực (theo tỉnh); k0 = 0.9999 (múi 3°) /
@@ -4475,6 +4512,78 @@ def vn2000_to_latlon(X, Y, lon0_deg=105.0, k0=0.9999):
         D - (1+2*T1+C1)*D**3/6
         + (5-2*C1+28*T1-3*C1**2+8*ep2+24*T1**2)*D**5/120) / np.cos(lat1)
     return np.degrees(lat), np.degrees(lon)
+
+
+def _map_contour_latlon(df_geology, to_ll):
+    """Đường đồng mức địa hình → (lat_list, lon_list) nối bằng None, để vẽ trên
+    nền bản đồ. Lưới mặt-cắt×offset từ X_Real/Y_Real + marching-squares (như bình
+    đồ kỹ thuật) nhưng toạ độ TUYỆT ĐỐI rồi đổi sang lat/lon qua to_ll."""
+    try:
+        _xc = "X_Real" if "X_Real" in df_geology.columns else "X_VN2000"
+        _yc = "Y_Real" if "Y_Real" in df_geology.columns else "Y_VN2000"
+        need = {"Lý trình", "Offset", _xc, _yc, "Z"}
+        if need - set(df_geology.columns):
+            return [], []
+        df = df_geology[list(need)].dropna()
+        lts = np.sort(df["Lý trình"].unique())
+        if len(lts) < 2:
+            return [], []
+        if len(lts) > 70:
+            lts = lts[np.linspace(0, len(lts) - 1, 70).astype(int)]
+        omin, omax = float(df["Offset"].min()), float(df["Offset"].max())
+        if omax - omin < 1e-6:
+            return [], []
+        oaxis = np.linspace(omin, omax, 20)
+        gx, gy, gz = [], [], []
+        for lt in lts:
+            sec = df[df["Lý trình"] == lt].sort_values("Offset")
+            o = sec["Offset"].values
+            if len(o) < 2:
+                continue
+            gx.append(np.interp(oaxis, o, sec[_xc].values))
+            gy.append(np.interp(oaxis, o, sec[_yc].values))
+            gz.append(np.interp(oaxis, o, sec["Z"].values))
+        if len(gx) < 2:
+            return [], []
+        gx = np.array(gx); gy = np.array(gy); gz = np.array(gz)
+        R, C = gz.shape
+        zmin, zmax = float(np.nanmin(gz)), float(np.nanmax(gz))
+        span = zmax - zmin
+        if span <= 1e-6:
+            return [], []
+        step = next((s for s in (0.25, 0.5, 1.0, 2.0, 5.0, 10.0)
+                     if span / s <= 24), 10.0)
+        levels = np.arange(np.ceil(zmin/step)*step, zmax, step)
+        xs_abs, ys_abs = [], []
+        for lv in levels:
+            for i in range(R - 1):
+                for j in range(C - 1):
+                    zc = (gz[i, j], gz[i, j+1], gz[i+1, j+1], gz[i+1, j])
+                    xc = (gx[i, j], gx[i, j+1], gx[i+1, j+1], gx[i+1, j])
+                    yc = (gy[i, j], gy[i, j+1], gy[i+1, j+1], gy[i+1, j])
+                    pts = []
+                    for k in range(4):
+                        za, zb = zc[k], zc[(k+1) % 4]
+                        if (za < lv) != (zb < lv) and (zb - za) != 0:
+                            t = (lv - za) / (zb - za)
+                            pts.append((xc[k] + t*(xc[(k+1) % 4]-xc[k]),
+                                        yc[k] + t*(yc[(k+1) % 4]-yc[k])))
+                    for a, b in (((0, 1), (2, 3)) if len(pts) == 4
+                                 else (((0, 1),) if len(pts) == 2 else ())):
+                        xs_abs += [pts[a][0], pts[b][0], None]
+                        ys_abs += [pts[a][1], pts[b][1], None]
+        if not xs_abs:
+            return [], []
+        # đổi sang lat/lon: giữ None làm ngắt đoạn
+        _xv = np.array([v if v is not None else np.nan for v in xs_abs])
+        _yv = np.array([v if v is not None else np.nan for v in ys_abs])
+        la, lo = to_ll(_xv, _yv)
+        la = [None if np.isnan(v) else float(v) for v in la]
+        lo = [None if np.isnan(v) else float(v) for v in lo]
+        return la, lo
+    except Exception as _e:
+        print(f"[map_contour] bỏ qua: {_e}")
+        return [], []
 
 
 def ve_binh_do_map(d, df_geology, df_route=None, lon0=105.0, k0=0.9999):
@@ -4530,24 +4639,56 @@ def ve_binh_do_map(d, df_geology, df_route=None, lon0=105.0, k0=0.9999):
         dlat, dlon = _to_ll([p[0] for p in _deck], [p[1] for p in _deck])
         _ctr = [_at(s)[:2] for s in ss]
         clat, clon = _to_ll([p[0] for p in _ctr], [p[1] for p in _ctr])
-        _sup = [_at(s)[:2] for s in supports]
-        slat, slon = _to_ll([p[0] for p in _sup], [p[1] for p in _sup])
+        # MỐ/TRỤ dạng KHỐI (không phải chấm): footprint xà mũ vuông góc tim.
+        cap_W = max(2.0, bc * 0.18 + 1.0)   # nửa bề rộng xà mũ (ngang)
+        tru_L = 0.9                          # nửa bề dày (dọc cầu)
+        _sup_polys = []
+        for _si, s in enumerate(supports):
+            _is_mo = _si == 0 or _si == len(supports) - 1
+            _w = (cap_W + 0.6) if _is_mo else cap_W
+            _l = 3.2 if _is_mo else tru_L    # mố dày hơn trụ
+            _corner = [_off(s - _l, -_w), _off(s - _l, _w),
+                       _off(s + _l, _w), _off(s + _l, -_w), _off(s - _l, -_w)]
+            _plat, _plon = _to_ll([p[0] for p in _corner], [p[1] for p in _corner])
+            _sup_polys.append((list(_plat), list(_plon), _is_mo))
         _snames = (["Mố trái"] + [f"Trụ T{i}" for i in range(1, len(supports)-1)]
                    + ["Mố phải"])
+        _sup = [_at(s)[:2] for s in supports]
+        slat, slon = _to_ll([p[0] for p in _sup], [p[1] for p in _sup])
+
+        # ĐƯỜNG ĐỒNG MỨC địa hình (lat/lon) — để bản đồ không còn "sơ họa"
+        _c_lat, _c_lon = _map_contour_latlon(df_geology, _to_ll)
 
         fig = go.Figure()
+        if _c_lat:
+            fig.add_trace(go.Scattermapbox(
+                lat=_c_lat, lon=_c_lon, mode="lines",
+                line=dict(color="rgba(255,214,74,0.55)", width=1),
+                name="Đường đồng mức", hoverinfo="skip"))
+        # Mặt cầu + lan can
         fig.add_trace(go.Scattermapbox(
             lat=list(dlat), lon=list(dlon), mode="lines", fill="toself",
-            fillcolor="rgba(231,76,60,0.35)", line=dict(color="#e74c3c", width=2),
+            fillcolor="rgba(44,62,80,0.55)", line=dict(color="#ecf0f1", width=2),
             name="Mặt cầu", hoverinfo="name"))
+        # Mố/Trụ khối
+        _mt_first = True
+        for _plat, _plon, _is_mo in _sup_polys:
+            fig.add_trace(go.Scattermapbox(
+                lat=_plat, lon=_plon, mode="lines", fill="toself",
+                fillcolor=("rgba(133,146,158,0.85)" if _is_mo else "rgba(200,214,192,0.9)"),
+                line=dict(color="#566573", width=1),
+                name="Mố/Trụ" if _mt_first else "", showlegend=_mt_first,
+                hoverinfo="name"))
+            _mt_first = False
+        # Tim cầu
         fig.add_trace(go.Scattermapbox(
             lat=list(clat), lon=list(clon), mode="lines",
-            line=dict(color="#f1c40f", width=2), name="Tim cầu", hoverinfo="name"))
+            line=dict(color="#e74c3c", width=1.5, ), name="Tim cầu", hoverinfo="name"))
+        # Nhãn mố/trụ
         fig.add_trace(go.Scattermapbox(
-            lat=list(slat), lon=list(slon), mode="markers+text",
-            marker=dict(size=10, color="#2ecc71"), text=_snames,
-            textposition="top center", textfont=dict(size=9, color="#eafaf1"),
-            name="Mố/Trụ", hovertext=_snames, hoverinfo="text"))
+            lat=list(slat), lon=list(slon), mode="text", text=_snames,
+            textfont=dict(size=9, color="#fff"), name="Nhãn",
+            hoverinfo="skip", showlegend=False))
 
         _clat = float(np.mean(clat)); _clon = float(np.mean(clon))
         _span = max(float(np.ptp(dlat)), float(np.ptp(dlon)), 1e-4)

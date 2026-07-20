@@ -8721,38 +8721,44 @@ with _col_main:
                         if _route_plan is not None:
                             st.session_state.df_tim_tuyen = _route_plan
                     # NỀN VỆ TINH (tuỳ chọn): đặt cầu lên ảnh vệ tinh thực theo VN-2000.
-                    _mc1, _mc2, _mc3 = st.columns([1.4, 1.4, 1])
+                    _mc1, _mc2 = st.columns([1, 2])
                     _map_on = _mc1.toggle(
                         "🛰️ Nền vệ tinh", key=f"binhdo_map_{selected_ribbon}",
                         help="Đặt cầu lên ảnh vệ tinh thực (Esri) theo toạ độ VN-2000. "
                              "Cần đã nạp địa hình có toạ độ VN-2000.")
-                    _KTT_OPTS = {
-                        "104°30'": 104.5, "104°45'": 104.75, "105°00'": 105.0,
-                        "105°30'": 105.5, "105°45'": 105.75, "106°00'": 106.0,
-                        "106°15'": 106.25, "106°30'": 106.5, "107°00'": 107.0,
-                        "107°15'": 107.25, "107°30'": 107.5, "107°45'": 107.75,
-                        "108°15'": 108.25, "108°30'": 108.5,
-                    }
-                    _ktt_lbl = _mc2.selectbox(
-                        "Kinh tuyến trục", list(_KTT_OPTS), index=2,
-                        key=f"ktt_{selected_ribbon}", disabled=not _map_on,
-                        help="Kinh tuyến trục VN-2000 theo TỈNH (sai → bản đồ lệch).")
-                    _mui = _mc3.selectbox("Múi", ["3° (k=0.9999)", "6° (k=0.9996)"],
-                                          key=f"mui_{selected_ribbon}", disabled=not _map_on)
+                    # Chọn theo TỈNH (như Civil 3D) → tự suy kinh tuyến trục; múi 3°
+                    # là chuẩn cho hệ toạ độ tỉnh nên ẩn đi. Có "Khác…" để nhập tay.
+                    _tinh_opts = ["— Chọn tỉnh —"] + sorted(BVK.VN2000_KTT_TINH.keys()) + ["Khác (nhập kinh tuyến trục)"]
+                    _tinh = _mc2.selectbox(
+                        "Tỉnh/Thành (hệ toạ độ VN-2000)", _tinh_opts,
+                        key=f"tinh_{selected_ribbon}", disabled=not _map_on,
+                        help="Chọn tỉnh nơi công trình → tự lấy kinh tuyến trục VN-2000. "
+                             "Nên đối chiếu với hệ toạ độ Civil 3D của đơn vị.")
+                    _lon0 = None
+                    if _tinh in BVK.VN2000_KTT_TINH:
+                        _lon0 = BVK.VN2000_KTT_TINH[_tinh]
+                    elif _tinh.startswith("Khác"):
+                        _lon0 = _mc2.number_input(
+                            "Kinh tuyến trục (độ)", min_value=102.0, max_value=110.0,
+                            value=105.0, step=0.25, format="%.2f",
+                            key=f"ktt_manual_{selected_ribbon}", disabled=not _map_on)
                     if _map_on:
-                        _lon0 = _KTT_OPTS[_ktt_lbl]
-                        _k0 = 0.9999 if _mui.startswith("3") else 0.9996
-                        _fig_map = BVK.ve_binh_do_map(d, _dg_plan, df_route=_route_plan,
-                                                      lon0=_lon0, k0=_k0)
-                        if _fig_map is not None:
-                            st.plotly_chart(_fig_map, use_container_width=True,
-                                            config={"scrollZoom": True, "displayModeBar": True})
-                            st.caption("Nền ảnh: Esri World Imagery · Cầu đặt theo VN-2000 "
-                                       f"(KTT {_ktt_lbl}, múi {_mui.split()[0]}). "
-                                       "Lệch → chỉnh lại kinh tuyến trục cho đúng tỉnh.")
+                        if _lon0 is None:
+                            st.info("👉 Chọn **tỉnh/thành** nơi công trình để đặt cầu đúng "
+                                    "vị trí trên ảnh vệ tinh.")
                         else:
-                            st.warning("⚠️ Chưa nạp địa hình có toạ độ VN-2000 → không đặt "
-                                       "được nền vệ tinh. Nạp .NTD + tọa độ tim khảo sát trước.")
+                            _fig_map = BVK.ve_binh_do_map(d, _dg_plan, df_route=_route_plan,
+                                                          lon0=_lon0, k0=0.9999)
+                            if _fig_map is not None:
+                                st.plotly_chart(_fig_map, use_container_width=True,
+                                                config={"scrollZoom": True, "displayModeBar": True})
+                                st.caption(f"Nền ảnh: Esri World Imagery · VN-2000 "
+                                           f"({_tinh if _tinh in BVK.VN2000_KTT_TINH else 'KTT'} "
+                                           f"— kinh tuyến trục {BVK.ktt_label(_lon0)}, múi 3°). "
+                                           "Cầu lệch vị trí → chọn lại đúng tỉnh / đối chiếu Civil 3D.")
+                            else:
+                                st.warning("⚠️ Chưa nạp địa hình có toạ độ VN-2000 → không đặt "
+                                           "được nền vệ tinh. Nạp .NTD + tọa độ tim khảo sát trước.")
                     else:
                         fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim,
                                                    df_geology=_dg_plan, df_route=_route_plan)
