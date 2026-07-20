@@ -8720,19 +8720,53 @@ with _col_main:
                         _route_plan = _load_route_default()
                         if _route_plan is not None:
                             st.session_state.df_tim_tuyen = _route_plan
-                    fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim,
-                                               df_geology=_dg_plan, df_route=_route_plan)
-                    # Dầm mặt bằng vẽ theo hệ toạ độ THẲNG → chỉ chèn khi bình đồ
-                    # KHÔNG cong (tránh dầm thẳng lệch khỏi mặt cầu cong).
-                    if not _plan_cong:
-                        try:
-                            for _bd_tr in BBUI.get_plan_beam_traces(d, pfx=_spt_pfx):
-                                fig_bd.add_trace(_bd_tr)
-                        except Exception:
-                            pass
-                    PLOT.aspect_control(fig_bd, "binh_do_btc")
-                    st.plotly_chart(fig_bd, use_container_width=True,
-                                    config={"scrollZoom": True, "displayModeBar": True})
+                    # NỀN VỆ TINH (tuỳ chọn): đặt cầu lên ảnh vệ tinh thực theo VN-2000.
+                    _mc1, _mc2, _mc3 = st.columns([1.4, 1.4, 1])
+                    _map_on = _mc1.toggle(
+                        "🛰️ Nền vệ tinh", key=f"binhdo_map_{selected_ribbon}",
+                        help="Đặt cầu lên ảnh vệ tinh thực (Esri) theo toạ độ VN-2000. "
+                             "Cần đã nạp địa hình có toạ độ VN-2000.")
+                    _KTT_OPTS = {
+                        "104°30'": 104.5, "104°45'": 104.75, "105°00'": 105.0,
+                        "105°30'": 105.5, "105°45'": 105.75, "106°00'": 106.0,
+                        "106°15'": 106.25, "106°30'": 106.5, "107°00'": 107.0,
+                        "107°15'": 107.25, "107°30'": 107.5, "107°45'": 107.75,
+                        "108°15'": 108.25, "108°30'": 108.5,
+                    }
+                    _ktt_lbl = _mc2.selectbox(
+                        "Kinh tuyến trục", list(_KTT_OPTS), index=2,
+                        key=f"ktt_{selected_ribbon}", disabled=not _map_on,
+                        help="Kinh tuyến trục VN-2000 theo TỈNH (sai → bản đồ lệch).")
+                    _mui = _mc3.selectbox("Múi", ["3° (k=0.9999)", "6° (k=0.9996)"],
+                                          key=f"mui_{selected_ribbon}", disabled=not _map_on)
+                    if _map_on:
+                        _lon0 = _KTT_OPTS[_ktt_lbl]
+                        _k0 = 0.9999 if _mui.startswith("3") else 0.9996
+                        _fig_map = BVK.ve_binh_do_map(d, _dg_plan, df_route=_route_plan,
+                                                      lon0=_lon0, k0=_k0)
+                        if _fig_map is not None:
+                            st.plotly_chart(_fig_map, use_container_width=True,
+                                            config={"scrollZoom": True, "displayModeBar": True})
+                            st.caption("Nền ảnh: Esri World Imagery · Cầu đặt theo VN-2000 "
+                                       f"(KTT {_ktt_lbl}, múi {_mui.split()[0]}). "
+                                       "Lệch → chỉnh lại kinh tuyến trục cho đúng tỉnh.")
+                        else:
+                            st.warning("⚠️ Chưa nạp địa hình có toạ độ VN-2000 → không đặt "
+                                       "được nền vệ tinh. Nạp .NTD + tọa độ tim khảo sát trước.")
+                    else:
+                        fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim,
+                                                   df_geology=_dg_plan, df_route=_route_plan)
+                        # Dầm mặt bằng vẽ theo hệ toạ độ THẲNG → chỉ chèn khi bình đồ
+                        # KHÔNG cong (tránh dầm thẳng lệch khỏi mặt cầu cong).
+                        if not _plan_cong:
+                            try:
+                                for _bd_tr in BBUI.get_plan_beam_traces(d, pfx=_spt_pfx):
+                                    fig_bd.add_trace(_bd_tr)
+                            except Exception:
+                                pass
+                        PLOT.aspect_control(fig_bd, "binh_do_btc")
+                        st.plotly_chart(fig_bd, use_container_width=True,
+                                        config={"scrollZoom": True, "displayModeBar": True})
 
                     # ── 3. MCN điển hình tại ĐẦU DẦM & GIỮA DẦM ─────────────────
                     st.markdown("**Mặt cắt ngang cầu** (kết cấu nhịp) — tại "
