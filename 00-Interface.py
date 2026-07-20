@@ -8301,18 +8301,27 @@ with _col_main:
                                 x_origin=_x_origin_vn2000, y_origin=_y_origin_vn2000,
                             )
                             # PHỦ ẢNH VỆ TINH: thay mặt địa hình tô-màu-cao-độ bằng
-                            # Mesh3d lấy màu từ ảnh vệ tinh thực (giữ đúng lưới cao độ).
+                            # Mesh3d lấy màu từ ảnh vệ tinh thực (giữ đúng lưới cao độ),
+                            # + MẶT PHẲNG VỆ TINH RỘNG bao quanh (ngoài phạm vi địa hình).
                             if _sat_active and _fig_t is not None and mx is not None:
-                                _sat_mesh = BVK.build_satellite_terrain_mesh(
-                                    mx, my, mz, he_so_z,
-                                    _x_origin_vn2000, _y_origin_vn2000,
-                                    lon0=_sat_lon0, k0=0.9999)
+                                with st.spinner("🛰️ Đang tải ảnh vệ tinh & phủ lên địa hình…"):
+                                    _sat_mesh = BVK.build_satellite_terrain_mesh(
+                                        mx, my, mz, he_so_z,
+                                        _x_origin_vn2000, _y_origin_vn2000,
+                                        lon0=_sat_lon0, k0=0.9999)
+                                    _sat_plane = BVK.build_satellite_ground_plane(
+                                        mx, my, mz, he_so_z,
+                                        _x_origin_vn2000, _y_origin_vn2000,
+                                        lon0=_sat_lon0, k0=0.9999)
                                 if _sat_mesh is not None:
                                     # bỏ mặt địa hình cũ (Surface "Địa hình…")
                                     _fig_t.data = tuple(
                                         t for t in _fig_t.data
                                         if not (getattr(t, "type", "") == "surface"
                                                 and "ịa hình" in str(getattr(t, "name", ""))))
+                                    # mặt phẳng rộng VẼ TRƯỚC (nằm dưới) → dải địa hình đè lên
+                                    if _sat_plane is not None:
+                                        _fig_t.add_trace(_sat_plane)
                                     _fig_t.add_trace(_sat_mesh)
                         if _fig_t:
                             _n_before = len(_fig_t.data)

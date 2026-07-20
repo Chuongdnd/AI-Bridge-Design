@@ -4590,6 +4590,57 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
         return None
 
 
+def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
+                                 lon0=105.0, k0=0.9999, expand=1.6, grid=96):
+    """MẶT PHẲNG VỆ TINH RỘNG bao quanh cầu (ngoài phạm vi địa hình khảo sát).
+    Lưới `grid`×`grid` phủ hình vuông rộng ~expand× phạm vi địa hình, PHẲNG ở cao
+    độ nền (đáy địa hình), lấy màu ảnh vệ tinh cho từng ô. Dải địa hình (có cao độ)
+    vẽ ĐÈ lên trên. Trả go.Mesh3d hoặc None."""
+    try:
+        mx = np.asarray(mx, float); my = np.asarray(my, float); mz = np.asarray(mz, float)
+        cx = float(np.nanmean(mx)); cy = float(np.nanmean(my))
+        half = max(float(np.nanmax(mx) - np.nanmin(mx)),
+                   float(np.nanmax(my) - np.nanmin(my))) * 0.5 * expand
+        if half < 10:
+            return None
+        # cao độ nền = đáy địa hình, hạ nhẹ 0.3m để không chọi z với dải địa hình
+        base_z = float(np.nanmin(mz)) * he_so_z - 0.3
+        gx1 = np.linspace(cx - half, cx + half, grid)
+        gy1 = np.linspace(cy - half, cy + half, grid)
+        GX, GY = np.meshgrid(gx1, gy1)               # grid×grid
+        # đổi sang lat/lon (tuyệt đối), tự nhận easting/northing
+        ax = GX + x_org; ay = GY + y_org
+        if float(np.nanmean(mx + x_org)) > float(np.nanmean(my + y_org)):
+            east, north = ay, ax
+        else:
+            east, north = ax, ay
+        lat, lon = vn2000_to_latlon(east.ravel(), north.ravel(), lon0, k0)
+        lat = lat.reshape(grid, grid); lon = lon.reshape(grid, grid)
+        la0, la1 = float(np.nanmin(lat)), float(np.nanmax(lat))
+        lo0, lo1 = float(np.nanmin(lon)), float(np.nanmax(lon))
+        img = _fetch_satellite(la0, la1, lo0, lo1, size=768)
+        if img is None:
+            return None
+        H, W = img.shape[:2]
+        col = np.clip(((lon - lo0)/max(lo1-lo0, 1e-9)*(W-1)).astype(int), 0, W-1)
+        row = np.clip(((la1 - lat)/max(la1-la0, 1e-9)*(H-1)).astype(int), 0, H-1)
+        rgb = (np.clip(img[row, col], 0, 1)*255).astype(int).reshape(-1, 3)
+        vcol = [f"rgb({r},{g},{b})" for r, g, b in rgb]
+        idx = np.arange(grid*grid).reshape(grid, grid)
+        i0 = idx[:-1, :-1].ravel(); i1 = idx[:-1, 1:].ravel()
+        i2 = idx[1:, 1:].ravel(); i3 = idx[1:, :-1].ravel()
+        I = np.concatenate([i0, i0]); J = np.concatenate([i1, i2]); K = np.concatenate([i2, i3])
+        return go.Mesh3d(
+            x=GX.ravel(), y=GY.ravel(), z=np.full(grid*grid, base_z),
+            i=I, j=J, k=K, vertexcolor=vcol, flatshading=False,
+            lighting=dict(ambient=1.0, diffuse=0.1, specular=0.0),
+            name="Nền vệ tinh", showlegend=True, legendgroup="Địa hình",
+            hoverinfo="skip", opacity=1.0)
+    except Exception as _e:
+        print(f"[satellite plane] lỗi: {_e}")
+        return None
+
+
 def _map_contour_latlon(df_geology, to_ll):
     """Đường đồng mức địa hình → (lat_list, lon_list) nối bằng None, để vẽ trên
     nền bản đồ. Lưới mặt-cắt×offset từ X_Real/Y_Real + marching-squares (như bình
