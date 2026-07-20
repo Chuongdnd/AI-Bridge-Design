@@ -4095,27 +4095,26 @@ def _add_terrain_contours(fig, df_geology, x_org, y_org, step=1.0):
             name="Ranh giới địa hình", legendgroup="contour_edge",
             showlegend=True, hoverinfo="skip"))
 
-        # ── BƯỚC ĐỒNG MỨC THÍCH ỨNG: nhắm 8–24 đường (trước 1m cố định → thưa) ─
-        z_span = float(np.nanmax(gz) - np.nanmin(gz))
-        step = 1.0
-        if z_span > 0:
-            for _cand in (5.0, 2.0, 1.0, 0.5, 0.25):
-                if 8 <= z_span / _cand <= 30:
-                    step = _cand
-                    break
-            else:
-                step = 1.0 if z_span >= 8 else max(0.25, round(z_span / 12.0, 2))
-        z_lo = np.ceil(np.nanmin(gz) / step) * step
-        z_hi = np.floor(np.nanmax(gz) / step) * step
+        # ── BƯỚC ĐỒNG MỨC THÍCH ỨNG THEO ĐỘ CHÊNH CAO ─────────────────────────
+        # Chênh cao THẤP → bước NHỎ → NHIỀU đường (contour mịn); chênh cao CAO →
+        # bước LỚN → ít đường. Chọn bước "đẹp" NHỎ NHẤT sao cho số đường ≤ MAX_LINES
+        # → luôn được nhiều đường nhất có thể mà không rối.
+        z_min = float(np.nanmin(gz)); z_max = float(np.nanmax(gz))
+        z_span = z_max - z_min
+        if z_span <= 1e-6:
+            return
+        MAX_LINES = 26
+        _nice = (0.05, 0.1, 0.2, 0.25, 0.5, 1.0, 2.0, 2.5, 5.0, 10.0, 20.0)
+        step = next((s for s in _nice if z_span / s <= MAX_LINES), 20.0)
+        z_lo = np.ceil(z_min / step) * step
+        z_hi = np.floor(z_max / step) * step
         if z_hi < z_lo:
             return
         levels = np.arange(z_lo, z_hi + step / 2, step)
-        # Số nhãn/đường: chia đều tổng ~60 nhãn cho các mức (không dày quá)
-        _lbl_per = max(1, min(5, 60 // max(1, len(levels))))
+        # Màu đường theo cao độ (thấp→xanh lá, cao→nâu) để đọc địa hình bằng mắt
         _first_legend = True
-        _step_txt = f"{step:g}m"
         for lv in levels:
-            xs_line, ys_line, seg_mids = [], [], []   # đoạn nối bằng None
+            xs_line, ys_line = [], []                 # đoạn nối bằng None
             for i in range(R - 1):
                 for j in range(C - 1):
                     zc = (gz[i, j], gz[i, j + 1], gz[i + 1, j + 1], gz[i + 1, j])
@@ -4132,25 +4131,21 @@ def _add_terrain_contours(fig, df_geology, x_org, y_org, step=1.0):
                     for a, b in (((0, 1), (2, 3)) if len(pts) == 4 else (((0, 1),) if len(pts) == 2 else ())):
                         xs_line += [pts[a][0], pts[b][0], None]
                         ys_line += [pts[a][1], pts[b][1], None]
-                        seg_mids.append(((pts[a][0] + pts[b][0]) / 2,
-                                         (pts[a][1] + pts[b][1]) / 2))
             if not xs_line:
                 continue
+            # Màu theo cao độ: nội suy xanh-lá(thấp)→vàng→nâu(cao)
+            _f = (lv - z_min) / z_span if z_span else 0.0
+            _r = int(90 + _f * (139 - 90)); _g = int(150 - _f * (150 - 109))
+            _b = int(70 - _f * (70 - 59))
+            # BỎ số ghi trên đường (theo yêu cầu); CAO ĐỘ hiện khi DI CHUỘT vào
+            # đường — lấy trực tiếp từ Z của file .NTD (df_geology).
             fig.add_trace(go.Scatter(
                 x=xs_line, y=ys_line, mode="lines",
-                line=dict(color="rgba(139,109,59,0.55)", width=0.8),
-                name=f"Đường đồng mức ({_step_txt})" if _first_legend else "",
+                line=dict(color=f"rgba({_r},{_g},{_b},0.7)", width=0.9),
+                name=f"Đường đồng mức ({step:g}m)" if _first_legend else "",
                 legendgroup="contour", showlegend=_first_legend,
-                hoverinfo="skip"))
+                hovertemplate=f"Cao độ {lv:g} m<extra></extra>"))
             _first_legend = False
-            # Ghi CAO ĐỘ NHIỀU điểm dọc theo đường (trước chỉ 1 nhãn/mức → thưa)
-            _n = min(len(seg_mids), _lbl_per)
-            for _ix in sorted(set(np.linspace(0, len(seg_mids) - 1, _n).astype(int))):
-                _mx, _my = seg_mids[_ix]
-                fig.add_annotation(
-                    x=_mx, y=_my, text=f"{lv:g}",
-                    showarrow=False, font=dict(size=8, color="#8a6d3b"),
-                    bgcolor="rgba(255,255,255,0.6)", borderpad=0)
     except Exception as _e:
         print(f"[contours] bỏ qua đường đồng mức: {_e}")
 
