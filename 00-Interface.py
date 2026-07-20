@@ -8246,6 +8246,17 @@ with _col_main:
                     che_do_view = "Bề mặt mịn"
                     do_min_view = 3
                     he_so_z     = 0.5
+                    # ── NỀN VỆ TINH cho 3D (tuỳ chọn) — phủ ảnh vệ tinh lên địa hình ──
+                    _s3c1, _s3c2 = st.columns([1, 2])
+                    _sat3d_on = _s3c1.toggle(
+                        "🛰️ Địa hình vệ tinh", key=f"sat3d_{selected_ribbon}",
+                        help="Phủ ảnh vệ tinh thực (Esri) lên mặt địa hình 3D theo VN-2000.")
+                    _sat_tinh = _s3c2.selectbox(
+                        "Tỉnh/Thành (VN-2000)", ["— Chọn tỉnh —"] + sorted(BVK.VN2000_KTT_TINH),
+                        key=f"sat3d_tinh_{selected_ribbon}", disabled=not _sat3d_on,
+                        help="Chọn tỉnh nơi công trình → lấy kinh tuyến trục cho ảnh vệ tinh.")
+                    _sat_lon0 = BVK.VN2000_KTT_TINH.get(_sat_tinh)
+                    _sat_active = bool(_sat3d_on and _sat_lon0 is not None)
                     # Compute VN-2000 origin from min-lý-trình centre-line point
                     _x_origin_vn2000 = 0.0
                     _y_origin_vn2000 = 0.0
@@ -8275,7 +8286,10 @@ with _col_main:
                         _des_sig = hash(json.dumps(d, default=str, sort_keys=True))
                     except Exception:
                         _des_sig = id(d)
-                    _k3d = (selected_ribbon, _spt_pfx, _terr_sig, _des_sig)
+                    # Nền vệ tinh + kinh tuyến trục THAM GIA khoá cache → bật/đổi tỉnh
+                    # thì dựng lại; giữ nguyên thì tái dùng.
+                    _k3d = (selected_ribbon, _spt_pfx, _terr_sig, _des_sig,
+                            _sat_active, _sat_lon0)
                     _c3d = st.session_state.get(f"_fig3dcache_{selected_ribbon}")
                     _cached_hit = bool(_c3d and _c3d[0] == _k3d)
                     try:
@@ -8286,6 +8300,20 @@ with _col_main:
                                 _df_geo, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view,
                                 x_origin=_x_origin_vn2000, y_origin=_y_origin_vn2000,
                             )
+                            # PHỦ ẢNH VỆ TINH: thay mặt địa hình tô-màu-cao-độ bằng
+                            # Mesh3d lấy màu từ ảnh vệ tinh thực (giữ đúng lưới cao độ).
+                            if _sat_active and _fig_t is not None and mx is not None:
+                                _sat_mesh = BVK.build_satellite_terrain_mesh(
+                                    mx, my, mz, he_so_z,
+                                    _x_origin_vn2000, _y_origin_vn2000,
+                                    lon0=_sat_lon0, k0=0.9999)
+                                if _sat_mesh is not None:
+                                    # bỏ mặt địa hình cũ (Surface "Địa hình…")
+                                    _fig_t.data = tuple(
+                                        t for t in _fig_t.data
+                                        if not (getattr(t, "type", "") == "surface"
+                                                and "ịa hình" in str(getattr(t, "name", ""))))
+                                    _fig_t.add_trace(_sat_mesh)
                         if _fig_t:
                             _n_before = len(_fig_t.data)
                             _n_after = len(_fig_t.data)

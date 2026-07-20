@@ -4514,6 +4514,82 @@ def vn2000_to_latlon(X, Y, lon0_deg=105.0, k0=0.9999):
     return np.degrees(lat), np.degrees(lon)
 
 
+_SAT_CACHE = {}   # cache ảnh vệ tinh theo bbox (module-level, sống qua rerun)
+
+
+def _fetch_satellite(latmin, latmax, lonmin, lonmax, size=640):
+    """Tải 1 ảnh vệ tinh Esri World Imagery cho bbox lat/lon → mảng HxWx3 (0..1).
+    None nếu lỗi mạng/giải mã. Có cache theo bbox (làm tròn) để khỏi tải lại."""
+    key = (round(latmin, 5), round(latmax, 5), round(lonmin, 5), round(lonmax, 5), size)
+    if key in _SAT_CACHE:
+        return _SAT_CACHE[key]
+    try:
+        import io as _io, urllib.request as _u
+        import matplotlib.image as _mpimg
+        url = ("https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/"
+               f"MapServer/export?bbox={lonmin},{latmin},{lonmax},{latmax}"
+               f"&bboxSR=4326&imageSR=4326&size={size},{size}&format=png32&f=image")
+        req = _u.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        raw = _u.urlopen(req, timeout=15).read()
+        img = _mpimg.imread(_io.BytesIO(raw), format="png")[:, :, :3]
+        _SAT_CACHE[key] = img
+        if len(_SAT_CACHE) > 8:                      # giới hạn RAM
+            _SAT_CACHE.pop(next(iter(_SAT_CACHE)))
+        return img
+    except Exception as _e:
+        print(f"[satellite] tải ảnh lỗi: {_e}")
+        _SAT_CACHE[key] = None
+        return None
+
+
+def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
+                                 lon0=105.0, k0=0.9999, name="Địa hình (vệ tinh)"):
+    """Dựng mặt địa hình 3D PHỦ ẢNH VỆ TINH: lấy màu ảnh Esri gán cho từng đỉnh
+    lưới (Mesh3d vertexcolor). mx,my là toạ độ TƯƠNG ĐỐI của scene (đã trừ gốc);
+    x_org,y_org là gốc VN-2000 để đổi ra lat/lon. Trả go.Mesh3d hoặc None."""
+    try:
+        mx = np.asarray(mx, float); my = np.asarray(my, float); mz = np.asarray(mz, float)
+        if mx.ndim != 2:
+            return None
+        R, C = mz.shape
+        ax = mx + x_org; ay = my + y_org               # tuyệt đối VN-2000
+        # nhận easting/northing theo độ lớn (X=Bắc ~triệu → easting là cột nhỏ hơn)
+        if float(np.nanmean(ax)) > float(np.nanmean(ay)):
+            east, north = ay, ax
+        else:
+            east, north = ax, ay
+        lat, lon = vn2000_to_latlon(east.ravel(), north.ravel(), lon0, k0)
+        lat = lat.reshape(R, C); lon = lon.reshape(R, C)
+        latmin, latmax = float(np.nanmin(lat)), float(np.nanmax(lat))
+        lonmin, lonmax = float(np.nanmin(lon)), float(np.nanmax(lon))
+        # nới nhẹ biên để ảnh phủ trọn
+        _dl = (latmax - latmin) * 0.02 + 1e-4; _dg = (lonmax - lonmin) * 0.02 + 1e-4
+        img = _fetch_satellite(latmin-_dl, latmax+_dl, lonmin-_dg, lonmax+_dg)
+        if img is None:
+            return None
+        H, W = img.shape[:2]
+        _lo0, _lo1 = lonmin-_dg, lonmax+_dg
+        _la0, _la1 = latmin-_dl, latmax+_dl
+        col = np.clip(((lon - _lo0)/max(_lo1-_lo0, 1e-9)*(W-1)).astype(int), 0, W-1)
+        row = np.clip(((_la1 - lat)/max(_la1-_la0, 1e-9)*(H-1)).astype(int), 0, H-1)
+        rgb = (np.clip(img[row, col], 0, 1) * 255).astype(int).reshape(-1, 3)
+        vcol = [f"rgb({r},{g},{b})" for r, g, b in rgb]
+        # tam giác hoá lưới R×C
+        idx = np.arange(R*C).reshape(R, C)
+        i0 = idx[:-1, :-1].ravel(); i1 = idx[:-1, 1:].ravel()
+        i2 = idx[1:, 1:].ravel(); i3 = idx[1:, :-1].ravel()
+        I = np.concatenate([i0, i0]); J = np.concatenate([i1, i2]); K = np.concatenate([i2, i3])
+        return go.Mesh3d(
+            x=mx.ravel(), y=my.ravel(), z=(mz*he_so_z).ravel(),
+            i=I, j=J, k=K, vertexcolor=vcol, flatshading=False,
+            lighting=dict(ambient=0.95, diffuse=0.35, specular=0.05),
+            name=name, showlegend=True, legendgroup="Địa hình",
+            hoverinfo="skip", opacity=1.0)
+    except Exception as _e:
+        print(f"[satellite mesh] lỗi: {_e}")
+        return None
+
+
 def _map_contour_latlon(df_geology, to_ll):
     """Đường đồng mức địa hình → (lat_list, lon_list) nối bằng None, để vẽ trên
     nền bản đồ. Lưới mặt-cắt×offset từ X_Real/Y_Real + marching-squares (như bình
