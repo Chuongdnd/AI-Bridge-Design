@@ -8564,7 +8564,7 @@ with _col_main:
                                     config={"scrollZoom": True, "displayModeBar": True})
 
                     # ── 2. Mặt bằng cầu ──────────────────────────────────────
-                    st.markdown("**Mặt bằng cầu** (nhìn từ trên)")
+                    st.markdown("**Mặt bằng cầu**")
                     _dg_plan = st.session_state.get("df_geology")
                     _plan_cong = (_dg_plan is not None and hasattr(_dg_plan, "columns")
                                   and {"X_VN2000", "Y_VN2000", "Góc_Tuyến", "Offset"}

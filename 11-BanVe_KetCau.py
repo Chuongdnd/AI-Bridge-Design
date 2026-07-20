@@ -4038,6 +4038,95 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 # ===========================================================================
 # 7. BÌNH ĐỒ CẦU (MẶT BẰNG — nhìn từ trên xuống)
 # ===========================================================================
+def _add_terrain_contours(fig, df_geology, x_org, y_org, step=1.0):
+    """Vẽ ĐƯỜNG ĐỒNG MỨC địa hình (cách nhau `step` m) lên bình đồ, mỗi đường
+    ghi cao độ. Toạ độ = VN-2000 tương đối (X_VN2000-x_org, Y_VN2000-y_org) —
+    ĐÚNG hệ với _ve_binh_do_cong nên đường đồng mức khớp mặt cầu.
+
+    Cách làm: dựng LƯỚI có cấu trúc (mặt cắt × offset) từ dữ liệu khảo sát rồi
+    marching-squares thuần numpy → tách đoạn contour theo từng mức Z nguyên.
+    Không dùng scipy/matplotlib (nhẹ RAM). Lỗi màu mè không được làm sập bình đồ."""
+    try:
+        need = {"Lý trình", "Offset", "X_VN2000", "Y_VN2000", "Z"}
+        if need - set(df_geology.columns):
+            return
+        df = df_geology[list(need)].dropna()
+        lts = np.sort(df["Lý trình"].unique())
+        if len(lts) < 2:
+            return
+        # Giới hạn số mặt cắt cho nhẹ (lấy mẫu đều nếu quá dày)
+        MAX_SEC = 90
+        if len(lts) > MAX_SEC:
+            lts = lts[np.linspace(0, len(lts) - 1, MAX_SEC).astype(int)]
+        # Trục offset chung
+        off_min = float(df["Offset"].min())
+        off_max = float(df["Offset"].max())
+        if off_max - off_min < 1e-6:
+            return
+        N_OFF = 24
+        off_axis = np.linspace(off_min, off_max, N_OFF)
+        gx, gy, gz = [], [], []
+        for lt in lts:
+            sec = df[df["Lý trình"] == lt].sort_values("Offset")
+            o = sec["Offset"].values
+            if len(o) < 2:
+                continue
+            gx.append(np.interp(off_axis, o, sec["X_VN2000"].values) - x_org)
+            gy.append(np.interp(off_axis, o, sec["Y_VN2000"].values) - y_org)
+            gz.append(np.interp(off_axis, o, sec["Z"].values))
+        if len(gx) < 2:
+            return
+        gx = np.array(gx); gy = np.array(gy); gz = np.array(gz)
+        z_lo = np.ceil(np.nanmin(gz) / step) * step
+        z_hi = np.floor(np.nanmax(gz) / step) * step
+        if z_hi < z_lo:
+            return
+        levels = np.arange(z_lo, z_hi + step / 2, step)
+        if len(levels) > 40:          # chống dày quá (địa hình chênh lớn)
+            levels = levels[:: int(np.ceil(len(levels) / 40))]
+        R, C = gz.shape
+        _first_legend = True
+        for lv in levels:
+            xs_line, ys_line = [], []          # đoạn nối bằng None
+            label_xy = None
+            for i in range(R - 1):
+                for j in range(C - 1):
+                    zc = (gz[i, j], gz[i, j + 1], gz[i + 1, j + 1], gz[i + 1, j])
+                    xc = (gx[i, j], gx[i, j + 1], gx[i + 1, j + 1], gx[i + 1, j])
+                    yc = (gy[i, j], gy[i, j + 1], gy[i + 1, j + 1], gy[i + 1, j])
+                    pts = []
+                    for k in range(4):
+                        za, zb = zc[k], zc[(k + 1) % 4]
+                        if (za < lv) != (zb < lv) and (zb - za) != 0:
+                            t = (lv - za) / (zb - za)
+                            pts.append((xc[k] + t * (xc[(k + 1) % 4] - xc[k]),
+                                        yc[k] + t * (yc[(k + 1) % 4] - yc[k])))
+                    # 2 giao điểm → 1 đoạn; 4 (yên ngựa) → nối theo cặp cạnh
+                    for a, b in (((0, 1), (2, 3)) if len(pts) == 4 else (((0, 1),) if len(pts) == 2 else ())):
+                        xs_line += [pts[a][0], pts[b][0], None]
+                        ys_line += [pts[a][1], pts[b][1], None]
+                        if label_xy is None:
+                            label_xy = ((pts[a][0] + pts[b][0]) / 2,
+                                        (pts[a][1] + pts[b][1]) / 2)
+            if not xs_line:
+                continue
+            fig.add_trace(go.Scatter(
+                x=xs_line, y=ys_line, mode="lines",
+                line=dict(color="rgba(139,109,59,0.55)", width=0.8),
+                name="Đường đồng mức (1m)" if _first_legend else "",
+                legendgroup="contour", showlegend=_first_legend,
+                hoverinfo="skip"))
+            _first_legend = False
+            # Ghi CAO ĐỘ trên đường (mỗi mức 1 nhãn, ở đoạn đầu tiên)
+            if label_xy is not None:
+                fig.add_annotation(
+                    x=label_xy[0], y=label_xy[1], text=f"{lv:.0f}",
+                    showarrow=False, font=dict(size=8, color="#8a6d3b"),
+                    bgcolor="rgba(255,255,255,0.55)", borderpad=0)
+    except Exception as _e:
+        print(f"[contours] bỏ qua đường đồng mức: {_e}")
+
+
 def _ve_binh_do_cong(d, df_geology):
     """Mặt bằng cầu CONG theo tim tuyến khảo sát — khớp với 3D tổng
     (add_all_to_terrain_fig): dùng cùng phép chiếu _vn(lý_trình, offset) sang
@@ -4093,6 +4182,8 @@ def _ve_binh_do_cong(d, df_geology):
         return [p[0] for p in pts], [p[1] for p in pts]
 
     fig = go.Figure()
+    # Địa hình nền: đường đồng mức 1m (vẽ TRƯỚC để cầu/mố/trụ đè lên trên)
+    _add_terrain_contours(fig, df_geology, x_org, y_org, step=1.0)
     _ns = max(24, int(L_cau / 2))
     ss  = np.linspace(x0, x_end, _ns)
 
