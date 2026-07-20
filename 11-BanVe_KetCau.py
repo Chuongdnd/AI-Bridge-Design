@@ -4040,14 +4040,21 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 # ===========================================================================
 def _add_terrain_contours(fig, df_geology, x_org, y_org, step=1.0):
     """Vẽ ĐƯỜNG ĐỒNG MỨC địa hình (cách nhau `step` m) lên bình đồ, mỗi đường
-    ghi cao độ. Toạ độ = VN-2000 tương đối (X_VN2000-x_org, Y_VN2000-y_org) —
-    ĐÚNG hệ với _ve_binh_do_cong nên đường đồng mức khớp mặt cầu.
+    ghi cao độ. DÙNG CHÍNH ĐỊA HÌNH MÀ 3D ĐANG DÙNG: cột X_Real/Y_Real (vị trí
+    THẬT từng điểm = tim + offset·⊥). Trừ cùng gốc x_org/y_org (= X_VN2000 tại
+    tim lý-trình-nhỏ-nhất) như _ve_binh_do_cong VÀ như origin của ve_dia_hinh_3d
+    → contour khớp cả mặt cầu (bình đồ) lẫn mặt địa hình (3D).
 
-    Cách làm: dựng LƯỚI có cấu trúc (mặt cắt × offset) từ dữ liệu khảo sát rồi
-    marching-squares thuần numpy → tách đoạn contour theo từng mức Z nguyên.
-    Không dùng scipy/matplotlib (nhẹ RAM). Lỗi màu mè không được làm sập bình đồ."""
+    ⚠ KHÔNG dùng X_VN2000/Y_VN2000: đó là toạ độ TIM, GIỐNG NHAU cho mọi offset
+    trong một mặt cắt → lưới suy biến (bề ngang = 0) → contour sai.
+
+    Cách làm: dựng LƯỚI có cấu trúc (mặt cắt × offset) rồi marching-squares thuần
+    numpy → tách đoạn theo mức Z nguyên. Không scipy/matplotlib (nhẹ RAM). Lỗi
+    màu mè không được làm sập bình đồ."""
     try:
-        need = {"Lý trình", "Offset", "X_VN2000", "Y_VN2000", "Z"}
+        _xcol = "X_Real" if "X_Real" in df_geology.columns else "X_VN2000"
+        _ycol = "Y_Real" if "Y_Real" in df_geology.columns else "Y_VN2000"
+        need = {"Lý trình", "Offset", _xcol, _ycol, "Z"}
         if need - set(df_geology.columns):
             return
         df = df_geology[list(need)].dropna()
@@ -4071,8 +4078,8 @@ def _add_terrain_contours(fig, df_geology, x_org, y_org, step=1.0):
             o = sec["Offset"].values
             if len(o) < 2:
                 continue
-            gx.append(np.interp(off_axis, o, sec["X_VN2000"].values) - x_org)
-            gy.append(np.interp(off_axis, o, sec["Y_VN2000"].values) - y_org)
+            gx.append(np.interp(off_axis, o, sec[_xcol].values) - x_org)
+            gy.append(np.interp(off_axis, o, sec[_ycol].values) - y_org)
             gz.append(np.interp(off_axis, o, sec["Z"].values))
         if len(gx) < 2:
             return
