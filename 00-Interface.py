@@ -8,7 +8,8 @@ import importlib
 import time
 import json
 import pathlib
-import google.generativeai as genai
+# google.generativeai KHÔNG import ở đây: tốn 852ms + 39MB lúc khởi động nhưng chỉ
+# dùng khi bấm "Hỏi AI" → nạp lười trong _get_gemini() (@st.cache_resource).
 import fitz
 try:
     from streamlit_option_menu import option_menu
@@ -818,18 +819,21 @@ elif not AUTH.is_authenticated():
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-# --- CẤU HÌNH AI GEMINI ASSISTANT ---
-try:
-    if "GEMINI_API_KEY" in st.secrets:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        genai.configure(api_key=api_key)
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
-    else:
-        st.sidebar.error("🚨 Không tìm thấy mã GEMINI_API_KEY trong Secrets!")
-        gemini_model = None
-except Exception as e:
-    st.sidebar.error(f"Lỗi cấu hình AI: {e}")
-    gemini_model = None
+# --- CẤU HÌNH AI GEMINI ASSISTANT (LƯỜI — chỉ nạp khi bấm "Hỏi AI") ---
+# Trước đây import + configure ngay khi khởi động (852ms + 39MB cho MỌI phiên,
+# kể cả người không chat). @st.cache_resource → nạp đúng 1 lần cho cả server
+# vào lần chat đầu tiên; các phiên sau lấy lại từ cache.
+@st.cache_resource(show_spinner=False)
+def _get_gemini():
+    """Trả về GenerativeModel hoặc None (thiếu key/lỗi cấu hình)."""
+    try:
+        if "GEMINI_API_KEY" not in st.secrets:
+            return None
+        import google.generativeai as genai
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        return genai.GenerativeModel('gemini-2.5-flash')
+    except Exception:
+        return None
 
 @st.cache_data(show_spinner=False)
 def load_all_standards(folder_name="Documents"):
@@ -1687,6 +1691,10 @@ body.cau-resizing, body.cau-resizing * {
       _lastCollapsed = collapsed;
       D.documentElement.classList.toggle('cau-sb-collapsed', collapsed);
       if (h) h.style.display = collapsed ? 'none' : 'block';
+      // Trạng thái thu/mở VỪA ĐỔI → animation 0.15s đang chạy: đo lại vài nhịp
+      // để bắt mép cuối cùng. CHỈ bump ở đây (sự kiện hiếm), tuyệt đối không
+      // bump theo mọi mutation — xem chú thích "BẮT KỊP ANIMATION" bên dưới.
+      if (typeof bumpSyncs === 'function') bumpSyncs();
     }
     if (Math.abs(edge - _lastEdge) > 0.5){
       _lastEdge = edge;
@@ -1732,12 +1740,13 @@ body.cau-resizing, body.cau-resizing * {
     return true;
   }
 
-  // BẮT KỊP ANIMATION: mỗi lần có mutation liên quan, ngoài refresh() ngay còn
-  // lịch vài lần sync() TRỄ. LÝ DO (bug đã bắt): khi MỞ LẠI sidebar, observer
-  // kích lúc aria đổi và đo NGAY khi sidebar còn đang trượt (translateX 0.15s) →
-  // r.right còn nhỏ → tưởng vẫn thu gọn → --sidebar-edge=0; animation xong thì
-  // KHÔNG mutation nào kích lại → edge kẹt 0 → topbar/ribbon dính mép trái dù
-  // sidebar đã bung ra. Các nhịp trễ này đo lại sau khi animation ổn định.
+  // BẮT KỊP ANIMATION: khi trạng thái thu/mở VỪA ĐỔI (trong sync()), lịch vài lần
+  // sync() TRỄ để đo lại sau khi sidebar trượt xong (translateX 0.15s) — nếu đo
+  // ngay lúc aria đổi thì r.right còn nhỏ → tưởng vẫn thu gọn → edge kẹt 0.
+  // ⚠ KHÔNG gọi bumpSyncs theo MỌI mutation: mỗi rAF-batch 4 setTimeout, khi trang
+  // render lớn (sau khai báo, dựng 3D) mutation nổ liên tục → hàng trăm sync()/giây,
+  // mỗi sync đọc getBoundingClientRect = ép reflow đúng lúc WebGL đang dựng →
+  // trình duyệt ĐỨNG. Đã gây "đứng web" thật.
   function bumpSyncs(){ [60, 180, 340, 520].forEach(function(t){ setTimeout(sync, t); }); }
 
   var tries = 0;
@@ -1749,7 +1758,7 @@ body.cau-resizing, body.cau-resizing * {
       var _raf = 0;
       var mo = new W.MutationObserver(function(){
         if (_raf) return;
-        _raf = W.requestAnimationFrame(function(){ _raf = 0; refresh(); bumpSyncs(); });
+        _raf = W.requestAnimationFrame(function(){ _raf = 0; refresh(); });
       });
       mo.observe(D.body, {childList: true, subtree: true, attributes: true,
                           attributeFilter: ['style', 'class', 'aria-expanded']});
@@ -4545,7 +4554,10 @@ def _render_floating_chat():
                 _system_msg = (f"Bạn là chuyên gia thiết kế cầu UTH. "
                                f"Tri thức: {st.session_state.bridge_library}. "
                                f"Dữ liệu: {_design_info}")
-                _resp = gemini_model.generate_content(
+                _gm = _get_gemini()          # nạp lười lần chat đầu (cache_resource)
+                if _gm is None:
+                    raise RuntimeError("Chưa cấu hình GEMINI_API_KEY trong Secrets")
+                _resp = _gm.generate_content(
                     f"{_system_msg}\n\nCâu hỏi: {_prompt}")
                 st.session_state.messages.append(
                     {"role": "assistant", "content": _resp.text})
@@ -9647,4 +9659,5 @@ with _col_main:
             st.code(traceback.format_exc())
 
 _render_statusbar(st.session_state.design_data)
+
 
