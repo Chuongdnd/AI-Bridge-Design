@@ -3643,6 +3643,30 @@ with _col_decl:
             st.session_state.open_dialog = "step3"
             st.rerun()
 
+# THU POPOVER NGAY khi bấm 1 mục (không đợi server rerun ~1–8s): gắn 1 listener
+# bắt click trên nút TRONG menu popover → nhấn trigger để đóng tức thì. Nhờ đó
+# menu biến mất ngay, không xổ lơ lửng trong lúc chờ hộp thoại tải.
+st.components.v1.html(
+    """<script>(function(){
+      var d = window.parent.document;
+      if(d.__cauPopClose) return; d.__cauPopClose = true;
+      d.addEventListener('click', function(ev){
+        var b = ev.target && ev.target.closest &&
+                ev.target.closest('button[data-testid^="stBaseButton"]');
+        if(!b) return;
+        // chỉ khi nút NẰM TRONG menu popover đang mở
+        if(!b.closest('[data-baseweb="popover"]')) return;
+        var w = d.querySelector('[aria-haspopup="true"][aria-expanded="true"]');
+        if(!w) return;
+        var t = w.querySelector('button[data-testid="stPopoverButton"]') ||
+                w.querySelector('button');
+        // đóng SAU khi click của mục đã phát (setTimeout 0) → không nuốt thao tác
+        if(t) setTimeout(function(){ t.click(); }, 0);
+      }, true);
+    })();</script>""",
+    height=0,
+)
+
 for _ci, (_col, _m) in enumerate(zip(_col_tabs, _TAB_META)):
     with _col:
         # Nhãn mang luôn HUY HIỆU trạng thái (✓ / 📍 / ○) — trước đây badge do
@@ -4062,6 +4086,12 @@ if _od:
         dialog_step3()
     elif _od == "geodata":
         dialog_geo_data()
+    # DỪNG render phần dưới (sidebar + nội dung chính + 3D) khi hộp thoại đang mở:
+    # modal + nền mờ CHE HẾT nền sau nên phần đó vô hình → khỏi dựng lại (tiết kiệm
+    # 3D/bảng nặng mỗi lần MỞ hộp khai báo). Đóng hộp → rerun (open_dialog=None) →
+    # dựng lại đầy đủ. Pipeline "Áp dụng" chạy TRONG dialog_step3 (trước dòng này)
+    # nên KHÔNG bị bỏ. @st.dialog render đồng bộ → modal đã hiện xong trước st.stop.
+    st.stop()
 
 # (3 hộp khai báo đã chuyển LÊN TRÊN ribbon — xem khối "3 HỘP KHAI BÁO ĐỘC LẬP".
 #  Hộp khai báo địa hình nằm trong tab BẢN VẼ KỸ THUẬT.)
