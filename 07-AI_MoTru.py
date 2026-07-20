@@ -308,9 +308,9 @@ def _encode_cap_duong(val):
 def load_pier_data_v3(v3_path=None):
     """
     Đọc dữ liệu trụ cầu từ Bridge_Train_Dataset_v3.xlsx.
-    Trả về (DataFrame, le_dam) hoặc (rỗng, None).
+    Trả về (DataFrame, le_dam) — le_dam luôn None; train_pier_ai tự tạo lại
+    LabelEncoder khi (và chỉ khi) đủ dữ liệu để huấn luyện.
     """
-    from sklearn.preprocessing import LabelEncoder   # lazy (xem chú thích đầu file)
     path = v3_path or _V3_DEFAULT
     if not os.path.exists(path):
         return pd.DataFrame(), None
@@ -367,10 +367,14 @@ def load_pier_data_v3(v3_path=None):
         else:
             df["Is_River"] = 1
 
+    # Dùng pd.factorize thay LabelEncoder → KHÔNG kéo sklearn vào đường LOAD (luôn
+    # chạy mỗi lần khai báo xong). Trước đây import sklearn ở đây tốn ~1.3–3s lần
+    # đầu → chính là "khai báo xong load rất lâu". Cột enc chỉ dùng khi training
+    # tiến hành, mà train_pier_ai tự tạo lại LabelEncoder sau ngưỡng MIN_ROWS.
     le_dam = None
     if "Loai_dam" in df.columns:
-        le_dam = LabelEncoder()
-        df["Loai_dam_enc"] = le_dam.fit_transform(df["Loai_dam"].astype(str).str.strip().fillna("Unknown"))
+        df["Loai_dam_enc"] = pd.factorize(
+            df["Loai_dam"].astype(str).str.strip().fillna("Unknown"))[0]
     else:
         df["Loai_dam_enc"] = 0
 
@@ -394,9 +398,6 @@ def train_pier_ai(v3_path=None, **_):
     Trả về dict models khi v3 có >= 6 mẫu, ngược lại trả None
     (predict_pier() sẽ dùng Rule-Based fallback tự động).
     """
-    from sklearn.ensemble import RandomForestClassifier      # lazy (xem đầu file)
-    from sklearn.preprocessing import LabelEncoder
-    from sklearn.model_selection import StratifiedKFold, cross_val_score
     MIN_ROWS = 6
     v3p = v3_path or _V3_DEFAULT
 
@@ -406,6 +407,11 @@ def train_pier_ai(v3_path=None, **_):
         print(f"[Pier-AI] Chưa đủ dữ liệu (v3={n_v3}, cần >={MIN_ROWS}). Dùng Rule-Based.")
         return None
     print(f"[Pier-AI] Dùng v3: {n_v3} mẫu")
+
+    # Lazy-import SAU ngưỡng bail: sklearn chỉ nạp khi THẬT SỰ huấn luyện (xem đầu file)
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.preprocessing import LabelEncoder
+    from sklearn.model_selection import StratifiedKFold, cross_val_score
 
     try:
         if "Loai_dam" in df.columns:
