@@ -8,8 +8,7 @@ import importlib
 import time
 import json
 import pathlib
-# google.generativeai KHÔNG import ở đây: tốn 852ms + 39MB lúc khởi động nhưng chỉ
-# dùng khi bấm "Hỏi AI" → nạp lười trong _get_gemini() (@st.cache_resource).
+import google.generativeai as genai
 import fitz
 try:
     from streamlit_option_menu import option_menu
@@ -551,7 +550,7 @@ _cc_theme.html(
       try{ new MutationObserver(apply).observe(
              window.parent.document.documentElement,
              {attributes:true, attributeFilter:['style','class']}); }catch(e){}
-      try{ setInterval(apply, 5000); }catch(e){}
+      try{ setInterval(apply, 2500); }catch(e){}
     })();
     </script>""", height=0)
 
@@ -596,7 +595,7 @@ _cc_theme.html(
         return true;
       }
       function tick(){ bl.classList.toggle('on', running()); }
-      setInterval(tick, 300);
+      setInterval(tick, 120);
       try{ new MutationObserver(tick).observe(d.body,
              {childList:true, subtree:true}); }catch(e){}
       tick();
@@ -738,8 +737,11 @@ _cc_theme.html(
       d.addEventListener('touchend', endGesture, {capture:true, passive:false});
       d.addEventListener('touchcancel', endGesture, {capture:true, passive:false});
 
-      // ── Nút 👁 bật/tắt chú giải + thanh cao độ (MỌI màn hình) ──────────
+      // ── Nút 👁 bật/tắt chú giải + thanh cao độ (chỉ màn hẹp ≤700px) ──────
+      var mq = d.defaultView.matchMedia ?
+               d.defaultView.matchMedia('(max-width: 700px)') : null;
       function addBtns(){
+        if(!mq || !mq.matches) return;
         d.querySelectorAll('.js-plotly-plot').forEach(function(gd){
           if(gd.querySelector('.cau-lg-btn')) return;
           // chỉ gắn khi biểu đồ CÓ chú giải hoặc colorbar
@@ -748,27 +750,21 @@ _cc_theme.html(
              !gd.querySelector('.infolayer g[class^="cb"]')) return;
           var b = d.createElement('button');
           b.className = 'cau-lg-btn';
-          b.textContent = '👁 Chu giai';
-          // Z-index RẤT CAO + pointer-events:auto → click xuyên qua WebGL 3D
-          b.style.cssText = 'position:absolute;left:8px;top:8px;z-index:99999;'
-            +'pointer-events:auto !important;'
-            +'padding:4px 12px;font-size:11px;border-radius:14px;'
-            +'border:1px solid #4fc3f7;background:rgba(18,18,28,.85);'
-            +'color:#4fc3f7;cursor:pointer;user-select:none;'
-            +'box-shadow:0 2px 8px rgba(0,0,0,0.3);';
+          b.textContent = '\\uD83D\\uDC41 Chu giai';
+          b.style.cssText = 'position:absolute;left:6px;top:6px;z-index:1002;'
+            +'padding:4px 10px;font-size:11px;border-radius:14px;'
+            +'border:1px solid #4fc3f7;background:rgba(18,18,28,.72);'
+            +'color:#4fc3f7;cursor:pointer';
           b.addEventListener('click', function(ev){
             ev.stopPropagation();
             gd.classList.toggle('cau-show-legend');
           });
-          // Append vào CHA thay vì gd → button nằm trên mọi overlay WebGL
-          var container = gd.parentElement || gd;
-          if(getComputedStyle(container).position === 'static')
-            container.style.position = 'relative';
-          container.appendChild(b);
+          if(getComputedStyle(gd).position === 'static')
+            gd.style.position = 'relative';
+          gd.appendChild(b);
         });
       }
-      // Gọi nhiều lần để bắt kịp biểu đồ sinh sau
-      setTimeout(addBtns, 600);
+      addBtns();
       try{ new MutationObserver(addBtns).observe(d.body,
              {childList:true, subtree:true}); }catch(e){}
 
@@ -791,16 +787,11 @@ _cc_theme.html(
     })();
     </script>""", height=0)
 
-# ── XÁC THỰC NGƯỜI DÙNG (CHỈ 1 LẦN) ────────────────────────────────────────
-if '_auth_loaded' not in st.session_state:
-    import importlib.util as _iutil
-    _auth_spec = _iutil.spec_from_file_location('auth00', os.path.join(os.path.dirname(os.path.abspath(__file__)), '00-Auth.py'))
-    AUTH = _iutil.module_from_spec(_auth_spec)
-    _auth_spec.loader.exec_module(AUTH)
-    st.session_state['_AUTH'] = AUTH
-    st.session_state['_auth_loaded'] = True
-else:
-    AUTH = st.session_state['_AUTH']
+# ── XÁC THỰC NGƯỜI DÙNG ─────────────────────────────────────────────────────
+import importlib.util as _iutil
+_auth_spec = _iutil.spec_from_file_location("auth00", os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-Auth.py"))
+AUTH = _iutil.module_from_spec(_auth_spec)
+_auth_spec.loader.exec_module(AUTH)
 
 # ── TẠM ẨN ĐĂNG NHẬP ─────────────────────────────────────────────────────────
 # Bỏ qua trang đăng nhập: tự đăng nhập bằng tài khoản khách (quyền admin để mọi
@@ -819,26 +810,20 @@ elif not AUTH.is_authenticated():
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-# --- CẤU HÌNH AI GEMINI ASSISTANT (LƯỜI — chỉ nạp khi bấm "Hỏi AI") ---
-# Trước đây import + configure ngay khi khởi động (852ms + 39MB cho MỌI phiên,
-# kể cả người không chat). @st.cache_resource → nạp đúng 1 lần cho cả server
-# vào lần chat đầu tiên; các phiên sau lấy lại từ cache.
-@st.cache_resource(show_spinner=False)
-def _get_gemini():
-    """Trả về GenerativeModel hoặc None (thiếu key/lỗi cấu hình)."""
-    try:
-        if "GEMINI_API_KEY" not in st.secrets:
-            return None
-        import google.generativeai as genai
-        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
-        return genai.GenerativeModel('gemini-2.5-flash')
-    except Exception:
-        return None
+# --- CẤU HÌNH AI GEMINI ASSISTANT ---
+try:
+    if "GEMINI_API_KEY" in st.secrets:
+        api_key = st.secrets["GEMINI_API_KEY"]
+        genai.configure(api_key=api_key)
+        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
+    else:
+        st.sidebar.error("🚨 Không tìm thấy mã GEMINI_API_KEY trong Secrets!")
+        gemini_model = None
+except Exception as e:
+    st.sidebar.error(f"Lỗi cấu hình AI: {e}")
+    gemini_model = None
 
-@st.cache_data(show_spinner=False)
 def load_all_standards(folder_name="Documents"):
-    # @st.cache_data: đọc PDF tiêu chuẩn 1 LẦN cho CẢ SERVER (mọi phiên dùng chung),
-    # thay vì mỗi phiên tự đọc lại (trước đây chỉ guard theo session_state).
     knowledge_text = ""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     folder_path = os.path.join(current_dir, folder_name)
@@ -851,96 +836,100 @@ def load_all_standards(folder_name="Documents"):
                 text = ""
                 for page in doc:
                     text += page.get_text()
-                doc.close()   # giải phóng handle PDF ngay, không giữ trong RAM
                 knowledge_text += f"\n--- NGUỒN TÀI LIỆU: {file_name} ---\n{text}\n"
-            except Exception:
+            except:
                 pass
     return knowledge_text
 
 if 'bridge_library' not in st.session_state:
-    st.session_state.bridge_library = load_all_standards()
+    with st.spinner("📚 Đang nạp hệ thống tiêu chuẩn cầu đường..."):
+        st.session_state.bridge_library = load_all_standards()
 
-# ── KẾT NỐI HỆ THỐNG MODULES THÀNH PHẦN (CHỈ 1 LẦN) ────────────────────────
-if '_modules_loaded' not in st.session_state:
-    try:
-        TK   = importlib.import_module('01-Tinh_khong')
-        YTHH = importlib.import_module('02-Yeuto_Hinhhoc')
-        KCN  = importlib.import_module('06-AI_KetCauNhip')
-        MOT  = importlib.import_module('07-AI_MoTru')
-        MONG = importlib.import_module('08-AI_Mong')
-        EXP  = importlib.import_module('09-Export_CAD_IFC')
-        IFCX = importlib.import_module('18-IFC_Exporter')
-        PLOT = importlib.import_module('00-Drawing_Utils')
-        TV   = importlib.import_module('00-Terrain_Viewer')
-        LPC  = importlib.import_module('10-LopPhu_MatCau')
-        BVK  = importlib.import_module('11-BanVe_KetCau')
-        SSP  = importlib.import_module('09-So_Sanh_PA')
-        CTD  = importlib.import_module('12-ChiTiet_Dam')
-        _bb_dir  = os.path.dirname(os.path.abspath(__file__))
-        _bb_espec = _iutil.spec_from_file_location('BeamBuilder', os.path.join(_bb_dir, '17-BeamBuilder.py'))
-        _BB_ENGINE = _iutil.module_from_spec(_bb_espec)
-        import sys as _sys
-        _sys.modules['BeamBuilder'] = _BB_ENGINE
-        _bb_espec.loader.exec_module(_BB_ENGINE)
-        _bb_uspec = _iutil.spec_from_file_location('BeamBuilderUI', os.path.join(_bb_dir, '17-BeamBuilderUI.py'))
-        BBUI = _iutil.module_from_spec(_bb_uspec)
-        _bb_uspec.loader.exec_module(BBUI)
-        _pb_spec = _iutil.spec_from_file_location('PierBuilder', os.path.join(_bb_dir, '19-PierBuilder.py'))
-        PB = _iutil.module_from_spec(_pb_spec)
-        _pb_spec.loader.exec_module(PB)
-        _cl_spec = _iutil.spec_from_file_location('component_library', os.path.join(_bb_dir, 'utils', 'component_library.py'))
-        CLIB = _iutil.module_from_spec(_cl_spec)
-        _cl_spec.loader.exec_module(CLIB)
-        _sys.modules['component_library'] = CLIB
-        CLIB.set_lib_dir_resolver(lambda: st.session_state.get('user_lib_dir'))
-        _ws_spec = _iutil.spec_from_file_location('workspace', os.path.join(_bb_dir, 'utils', 'workspace.py'))
-        WS = _iutil.module_from_spec(_ws_spec)
-        _ws_spec.loader.exec_module(WS)
-        _sys.modules['workspace'] = WS
-        _pp_spec = _iutil.spec_from_file_location('pile_plan', os.path.join(_bb_dir, 'utils', 'pile_plan.py'))
-        PP = _iutil.module_from_spec(_pp_spec)
-        _pp_spec.loader.exec_module(PP)
-        _sys.modules['pile_plan'] = PP
-        _ps_spec = _iutil.spec_from_file_location('pile_section', os.path.join(_bb_dir, 'utils', 'pile_section.py'))
-        PS = _iutil.module_from_spec(_ps_spec)
-        _ps_spec.loader.exec_module(PS)
-        _sys.modules['pile_section'] = PS
-        _kl_spec = _iutil.spec_from_file_location('khoi_luong', os.path.join(_bb_dir, 'utils', 'khoi_luong.py'))
-        KL = _iutil.module_from_spec(_kl_spec)
-        _kl_spec.loader.exec_module(KL)
-        _sys.modules['khoi_luong'] = KL
-        _sdt_spec = _iutil.spec_from_file_location('suat_dau_tu', os.path.join(_bb_dir, 'utils', 'suat_dau_tu.py'))
-        SDT = _iutil.module_from_spec(_sdt_spec)
-        _sdt_spec.loader.exec_module(SDT)
-        _sys.modules['suat_dau_tu'] = SDT
-        st.session_state['_modules_loaded'] = True
-    except Exception as e:
-        st.error(f'Lỗi kết nối Module: {e}')
-        st.stop()
-else:
+# --- KẾT NỐI HỆ THỐNG MODULES THÀNH PHẦN ---
+try:
+    TK   = importlib.import_module("01-Tinh_khong")
+    YTHH = importlib.import_module("02-Yeuto_Hinhhoc")  # Yếu tố hình học + MCN
+    KCN  = importlib.import_module("06-AI_KetCauNhip")  # AI Kết cấu nhịp v2
+    MOT  = importlib.import_module("07-AI_MoTru")       # AI Mố – Trụ v2
+    MONG = importlib.import_module("08-AI_Mong")        # Móng (rule-based)
+    EXP  = importlib.import_module("09-Export_CAD_IFC") # Export DXF / IFC
+    IFCX = importlib.import_module("18-IFC_Exporter")   # IFC từ lưới 3D thực
+    PLOT = importlib.import_module("00-Drawing_Utils")
+    TV   = importlib.import_module("00-Terrain_Viewer")
+    LPC  = importlib.import_module("10-LopPhu_MatCau")  # Lớp phủ mặt cầu
+    BVK  = importlib.import_module("11-BanVe_KetCau")   # Bản vẽ kết cấu 2D/3D
+    SSP  = importlib.import_module("09-So_Sanh_PA")     # So sánh 3 phương án
+    CTD  = importlib.import_module("12-ChiTiet_Dam")    # Chi tiết dầm
+    # reload() chỉ để bắt sửa code lúc dev; ở môi trường deploy (multipage/
+    # CWD khác) find_spec có thể không tìm lại được module tên có số → bỏ qua
+    # lỗi reload, dùng bản đã import (vẫn chạy đúng).
+    for _m in (PLOT, BVK, CTD):
+        try:
+            importlib.reload(_m)
+        except Exception:
+            pass
+
+    # ── Section Sketcher + Beam Builder (module nạp bằng spec vì tên có số) ──
+    _bb_dir  = os.path.dirname(os.path.abspath(__file__))
+    _bb_espec = _iutil.spec_from_file_location(
+        "BeamBuilder", os.path.join(_bb_dir, "17-BeamBuilder.py"))
+    _BB_ENGINE = _iutil.module_from_spec(_bb_espec)
     import sys as _sys
-    TK   = _sys.modules.get('01-Tinh_khong')
-    YTHH = _sys.modules.get('02-Yeuto_Hinhhoc')
-    KCN  = _sys.modules.get('06-AI_KetCauNhip')
-    MOT  = _sys.modules.get('07-AI_MoTru')
-    MONG = _sys.modules.get('08-AI_Mong')
-    EXP  = _sys.modules.get('09-Export_CAD_IFC')
-    IFCX = _sys.modules.get('18-IFC_Exporter')
-    PLOT = _sys.modules.get('00-Drawing_Utils')
-    TV   = _sys.modules.get('00-Terrain_Viewer')
-    LPC  = _sys.modules.get('10-LopPhu_MatCau')
-    BVK  = _sys.modules.get('11-BanVe_KetCau')
-    SSP  = _sys.modules.get('09-So_Sanh_PA')
-    CTD  = _sys.modules.get('12-ChiTiet_Dam')
-    _BB_ENGINE = _sys.modules.get('BeamBuilder')
-    BBUI = _sys.modules.get('BeamBuilderUI')
-    PB   = _sys.modules.get('PierBuilder')
-    CLIB = _sys.modules.get('component_library')
-    WS   = _sys.modules.get('workspace')
-    PP   = _sys.modules.get('pile_plan')
-    PS   = _sys.modules.get('pile_section')
-    KL   = _sys.modules.get('khoi_luong')
-    SDT  = _sys.modules.get('suat_dau_tu')
+    _sys.modules["BeamBuilder"] = _BB_ENGINE
+    _bb_espec.loader.exec_module(_BB_ENGINE)
+
+    _bb_uspec = _iutil.spec_from_file_location(
+        "BeamBuilderUI", os.path.join(_bb_dir, "17-BeamBuilderUI.py"))
+    BBUI = _iutil.module_from_spec(_bb_uspec)
+    _bb_uspec.loader.exec_module(BBUI)
+
+    # ── Pier Builder (trụ lắp ghép — Phase 1) ───────────────────────────────
+    _pb_spec = _iutil.spec_from_file_location(
+        "PierBuilder", os.path.join(_bb_dir, "19-PierBuilder.py"))
+    PB = _iutil.module_from_spec(_pb_spec)
+    _pb_spec.loader.exec_module(PB)
+
+    # ── Thư viện cấu kiện dùng chung (mố/trụ/dầm/móng) ──────────────────────
+    _cl_spec = _iutil.spec_from_file_location(
+        "component_library", os.path.join(_bb_dir, "utils", "component_library.py"))
+    CLIB = _iutil.module_from_spec(_cl_spec)
+    _cl_spec.loader.exec_module(CLIB)
+
+    # ── Không gian làm việc đa người dùng (thư viện + dự án theo tài khoản) ──
+    _ws_spec = _iutil.spec_from_file_location(
+        "workspace", os.path.join(_bb_dir, "utils", "workspace.py"))
+    WS = _iutil.module_from_spec(_ws_spec)
+    _ws_spec.loader.exec_module(WS)
+    # Resolver đọc st.session_state (thread-local theo phiên) → mỗi user 1 thư viện
+    CLIB.set_lib_dir_resolver(lambda: st.session_state.get("user_lib_dir"))
+
+    # ── Sơ đồ cọc: đọc DXF mặt bằng + schema bố trí cọc ─────────────────────
+    _pp_spec = _iutil.spec_from_file_location(
+        "pile_plan", os.path.join(_bb_dir, "utils", "pile_plan.py"))
+    PP = _iutil.module_from_spec(_pp_spec)
+    _pp_spec.loader.exec_module(PP)
+
+    # ── Chi tiết mặt cắt cọc (parametric) ───────────────────────────────────
+    _ps_spec = _iutil.spec_from_file_location(
+        "pile_section", os.path.join(_bb_dir, "utils", "pile_section.py"))
+    PS = _iutil.module_from_spec(_ps_spec)
+    _ps_spec.loader.exec_module(PS)
+
+    # ── Thống kê khối lượng cấu kiện (sơ bộ) ────────────────────────────────
+    _kl_spec = _iutil.spec_from_file_location(
+        "khoi_luong", os.path.join(_bb_dir, "utils", "khoi_luong.py"))
+    KL = _iutil.module_from_spec(_kl_spec)
+    _kl_spec.loader.exec_module(KL)
+
+    # ── Suất vốn đầu tư cầu (Bảng 76) → ước giá trị công trình ──────────────
+    _sdt_spec = _iutil.spec_from_file_location(
+        "suat_dau_tu", os.path.join(_bb_dir, "utils", "suat_dau_tu.py"))
+    SDT = _iutil.module_from_spec(_sdt_spec)
+    _sdt_spec.loader.exec_module(SDT)
+
+except Exception as e:
+    st.error(f"Lỗi kết nối Module: {e}")
+    st.stop()
 
 # ── Bối cảnh người dùng: thư viện + dự án theo tài khoản ────────────────────
 # Chạy mỗi lần rerun; khởi tạo (seed thư viện, chọn dự án) khi user vừa đổi.
@@ -1425,23 +1414,24 @@ class PipelineTracker:
         )
 
 
-# ── Design System + Validation (CHỈ 1 LẦN) ────────────────────────────────────
-if '_design_sys_loaded' not in st.session_state:
-    import importlib.util as _dsutil
-    _dsspec = _dsutil.spec_from_file_location('ds00', os.path.join(os.path.dirname(os.path.abspath(__file__)), '00-DesignSystem.py'))
-    DS = _dsutil.module_from_spec(_dsspec)
-    _dsspec.loader.exec_module(DS)
-    st.session_state['_DS'] = DS
-    import importlib.util as _vutil
-    _vspec = _vutil.spec_from_file_location('val00', os.path.join(os.path.dirname(os.path.abspath(__file__)), '00-Validation.py'))
-    VAL = _vutil.module_from_spec(_vspec)
-    _vspec.loader.exec_module(VAL)
-    st.session_state['_VAL'] = VAL
-    st.session_state['_design_sys_loaded'] = True
-else:
-    DS = st.session_state['_DS']
-    VAL = st.session_state['_VAL']
+# ── Design System ────────────────────────────────────────────────────────────
+import importlib.util as _dsutil
+_dsspec = _dsutil.spec_from_file_location(
+    "ds00",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-DesignSystem.py")
+)
+DS = _dsutil.module_from_spec(_dsspec)
+_dsspec.loader.exec_module(DS)
 st.markdown(DS.GLOBAL_CSS, unsafe_allow_html=True)
+
+# ── Import module validation ──────────────────────────────────────────────────
+import importlib.util as _vutil
+_vspec = _vutil.spec_from_file_location(
+    "val00",
+    os.path.join(os.path.dirname(os.path.abspath(__file__)), "00-Validation.py")
+)
+VAL = _vutil.module_from_spec(_vspec)
+_vspec.loader.exec_module(VAL)
 
 
 def _calc_be_rong_ban(l_hinhhoc: str, mcn: dict, w_lan_can: float):
@@ -1691,10 +1681,6 @@ body.cau-resizing, body.cau-resizing * {
       _lastCollapsed = collapsed;
       D.documentElement.classList.toggle('cau-sb-collapsed', collapsed);
       if (h) h.style.display = collapsed ? 'none' : 'block';
-      // Trạng thái thu/mở VỪA ĐỔI → animation 0.15s đang chạy: đo lại vài nhịp
-      // để bắt mép cuối cùng. CHỈ bump ở đây (sự kiện hiếm), tuyệt đối không
-      // bump theo mọi mutation — xem chú thích "BẮT KỊP ANIMATION" bên dưới.
-      if (typeof bumpSyncs === 'function') bumpSyncs();
     }
     if (Math.abs(edge - _lastEdge) > 0.5){
       _lastEdge = edge;
@@ -1740,13 +1726,12 @@ body.cau-resizing, body.cau-resizing * {
     return true;
   }
 
-  // BẮT KỊP ANIMATION: khi trạng thái thu/mở VỪA ĐỔI (trong sync()), lịch vài lần
-  // sync() TRỄ để đo lại sau khi sidebar trượt xong (translateX 0.15s) — nếu đo
-  // ngay lúc aria đổi thì r.right còn nhỏ → tưởng vẫn thu gọn → edge kẹt 0.
-  // ⚠ KHÔNG gọi bumpSyncs theo MỌI mutation: mỗi rAF-batch 4 setTimeout, khi trang
-  // render lớn (sau khai báo, dựng 3D) mutation nổ liên tục → hàng trăm sync()/giây,
-  // mỗi sync đọc getBoundingClientRect = ép reflow đúng lúc WebGL đang dựng →
-  // trình duyệt ĐỨNG. Đã gây "đứng web" thật.
+  // BẮT KỊP ANIMATION: mỗi lần có mutation liên quan, ngoài refresh() ngay còn
+  // lịch vài lần sync() TRỄ. LÝ DO (bug đã bắt): khi MỞ LẠI sidebar, observer
+  // kích lúc aria đổi và đo NGAY khi sidebar còn đang trượt (translateX 0.15s) →
+  // r.right còn nhỏ → tưởng vẫn thu gọn → --sidebar-edge=0; animation xong thì
+  // KHÔNG mutation nào kích lại → edge kẹt 0 → topbar/ribbon dính mép trái dù
+  // sidebar đã bung ra. Các nhịp trễ này đo lại sau khi animation ổn định.
   function bumpSyncs(){ [60, 180, 340, 520].forEach(function(t){ setTimeout(sync, t); }); }
 
   var tries = 0;
@@ -1758,7 +1743,7 @@ body.cau-resizing, body.cau-resizing * {
       var _raf = 0;
       var mo = new W.MutationObserver(function(){
         if (_raf) return;
-        _raf = W.requestAnimationFrame(function(){ _raf = 0; refresh(); });
+        _raf = W.requestAnimationFrame(function(){ _raf = 0; refresh(); bumpSyncs(); });
       });
       mo.observe(D.body, {childList: true, subtree: true, attributes: true,
                           attributeFilter: ['style', 'class', 'aria-expanded']});
@@ -1768,7 +1753,7 @@ body.cau-resizing, body.cau-resizing * {
       if (_s) _s.addEventListener('transitionend', sync);
       // Lưới an toàn: nhịp thưa phòng khi cả observer lẫn transitionend đều lỡ
       // (sync() rất nhẹ + có guard _lastEdge/_lastCollapsed nên không tốn gì).
-      setInterval(sync, 2000);
+      setInterval(sync, 1200);
       // Đồng bộ thêm vài nhịp đầu để bắt kịp lần render đầu tiên.
       [120, 250, 450].forEach(function(t){ setTimeout(sync, t); });
     } else if (tries < 40){ tries++; setTimeout(tryInit, 200); }
@@ -4554,10 +4539,7 @@ def _render_floating_chat():
                 _system_msg = (f"Bạn là chuyên gia thiết kế cầu UTH. "
                                f"Tri thức: {st.session_state.bridge_library}. "
                                f"Dữ liệu: {_design_info}")
-                _gm = _get_gemini()          # nạp lười lần chat đầu (cache_resource)
-                if _gm is None:
-                    raise RuntimeError("Chưa cấu hình GEMINI_API_KEY trong Secrets")
-                _resp = _gm.generate_content(
+                _resp = gemini_model.generate_content(
                     f"{_system_msg}\n\nCâu hỏi: {_prompt}")
                 st.session_state.messages.append(
                     {"role": "assistant", "content": _resp.text})
@@ -7648,17 +7630,13 @@ with _col_main:
                             "Số làn xe (tối thiểu)", "Chiều rộng 1 làn (m)",
                             "Lề đường tối thiểu (m)", "Lề đường tối đa (m)",
                         ],
-                        # Ép TOÀN BỘ về str: cột trộn chuỗi + float làm Arrow
-                        # serialize THẤT BẠI → Streamlit fallback "tự sửa" CHẬM
-                        # ở MỖI lần render (ArrowTypeError trong log server).
                         f"Tiêu chuẩn Bảng 10/13": [
                             f"{tra_tt['so_lan_toi_thieu']} (mong {tra_tt['so_lan_mong_muon']})",
-                            str(tra_tt["w_lan_min"]), str(tra_tt["w_le_min"]),
-                            str(tra_tt["w_le_max"]),
+                            tra_tt["w_lan_min"], tra_tt["w_le_min"], tra_tt["w_le_max"],
                         ],
                         "Thiết kế (nhập)": [
-                            str(res_mcn["n_lan"]), str(res_mcn["w_lan"]),
-                            str(res_mcn["w_le"]), str(res_mcn["w_le"]),
+                            res_mcn["n_lan"], res_mcn["w_lan"],
+                            res_mcn["w_le"], res_mcn["w_le"],
                         ],
                     })
                     st.table(df_10_13)
@@ -9663,5 +9641,3 @@ with _col_main:
             st.code(traceback.format_exc())
 
 _render_statusbar(st.session_state.design_data)
-
-

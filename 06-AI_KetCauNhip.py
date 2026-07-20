@@ -22,9 +22,9 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-# sklearn KHÔNG import ở đây (nặng ~62MB RAM). Chỉ nạp bên trong train_kcn_ai khi
-# THẬT SỰ đủ dữ liệu để huấn luyện — hiện dataset < MIN_ROWS nên luôn Rule-Based,
-# sklearn không bao giờ nạp → giảm 62MB nền, bớt áp lực bộ nhớ Streamlit Cloud.
+from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier
+from sklearn.preprocessing import LabelEncoder
+from sklearn.model_selection import cross_val_score
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -412,12 +412,6 @@ def train_kcn_ai(v3_path=None, **_):
         print(f"[KCN-AI] Chua du du lieu (v3={n_v3}, can >={MIN_ROWS}). Dung Rule-Based.")
         return None
     print(f"[KCN-AI] Dung v3: {n_v3} mau")
-
-    # Lazy-import: chỉ nạp sklearn khi ĐÃ qua ngưỡng dữ liệu (xem chú thích đầu file)
-    from sklearn.ensemble import (RandomForestClassifier, RandomForestRegressor,
-                                  GradientBoostingClassifier)
-    from sklearn.preprocessing import LabelEncoder
-    from sklearn.model_selection import cross_val_score
 
     try:
 
