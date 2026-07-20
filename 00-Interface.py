@@ -7648,13 +7648,17 @@ with _col_main:
                             "Số làn xe (tối thiểu)", "Chiều rộng 1 làn (m)",
                             "Lề đường tối thiểu (m)", "Lề đường tối đa (m)",
                         ],
+                        # Ép TOÀN BỘ về str: cột trộn chuỗi + float làm Arrow
+                        # serialize THẤT BẠI → Streamlit fallback "tự sửa" CHẬM
+                        # ở MỖI lần render (ArrowTypeError trong log server).
                         f"Tiêu chuẩn Bảng 10/13": [
                             f"{tra_tt['so_lan_toi_thieu']} (mong {tra_tt['so_lan_mong_muon']})",
-                            tra_tt["w_lan_min"], tra_tt["w_le_min"], tra_tt["w_le_max"],
+                            str(tra_tt["w_lan_min"]), str(tra_tt["w_le_min"]),
+                            str(tra_tt["w_le_max"]),
                         ],
                         "Thiết kế (nhập)": [
-                            res_mcn["n_lan"], res_mcn["w_lan"],
-                            res_mcn["w_le"], res_mcn["w_le"],
+                            str(res_mcn["n_lan"]), str(res_mcn["w_lan"]),
+                            str(res_mcn["w_le"]), str(res_mcn["w_le"]),
                         ],
                     })
                     st.table(df_10_13)
