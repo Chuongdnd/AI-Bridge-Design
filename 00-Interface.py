@@ -750,7 +750,7 @@ _cc_theme.html(
              !gd.querySelector('.infolayer g[class^="cb"]')) return;
           var b = d.createElement('button');
           b.className = 'cau-lg-btn';
-          b.textContent = '\\uD83D\\uDC41 Chu giai';
+          b.textContent = '\\uD83D\\uDC41 Chú thích';
           b.style.cssText = 'position:absolute;left:6px;top:6px;z-index:1002;'
             +'padding:4px 10px;font-size:11px;border-radius:14px;'
             +'border:1px solid #4fc3f7;background:rgba(18,18,28,.72);'
@@ -8197,8 +8197,9 @@ with _col_main:
                                 #    chừa nguyên góc phải cho thanh công cụ Plotly
                                 #    (chụp ảnh/zoom/xoay/home) — trước đây chú giải
                                 #    ngang y=1.0 đè lên đúng dãy nút đó;
-                                #  • bỏ margin t=84 → không còn dải trống đầu hình.
-                                margin=dict(t=8, l=0, r=0, b=0),
+                                #  • margin t=34: chừa đúng 1 dải mỏng cho nút
+                                #    "Ẩn chú thích" nằm TRÊN chú thích (không che hình).
+                                margin=dict(t=34, l=0, r=0, b=0),
                                 showlegend=True,
                                 legend=dict(orientation="v", x=0, y=1,
                                             xanchor="left", yanchor="top",
@@ -8226,19 +8227,22 @@ with _col_main:
                                 ),
                                 # chữ trục xám trung tính → đọc được trên cả sáng lẫn tối
                                 font=dict(color="#8a90a0"),
-                                # Nút THU GỌN chú giải: chú giải nhiều dòng vẫn chiếm
-                                # góc trái; bấm để giấu hẳn, lấy trọn khung nhìn cho
-                                # mô hình. Dùng updatemenus (chạy ở trình duyệt) nên
-                                # KHÔNG rerun Streamlit và không tốn RAM session.
+                                # Nút THU GỌN chú thích: bấm để giấu hẳn bảng chú
+                                # thích, lấy trọn khung nhìn cho mô hình. Dùng
+                                # updatemenus (chạy ở trình duyệt) nên KHÔNG rerun
+                                # Streamlit và không tốn RAM session.
+                                # ⚠ Neo TRÁI-TRÊN (x=0), NGAY TRÊN bảng chú thích —
+                                # không đặt góc phải (x=1): đó là chỗ thanh công cụ
+                                # Plotly (modebar) → nút bị đè, không bấm được.
                                 updatemenus=[dict(
                                     type="buttons", direction="right",
-                                    x=1, y=1.06, xanchor="right", yanchor="bottom",
+                                    x=0, y=1.0, xanchor="left", yanchor="bottom",
                                     showactive=False, pad=dict(r=2, t=2),
                                     bgcolor="rgba(128,128,128,0.14)",
                                     bordercolor="rgba(128,128,128,0.35)",
                                     font=dict(size=11, color="#8a90a0"),
                                     buttons=[
-                                        dict(label="🏷 Ẩn chú giải", method="relayout",
+                                        dict(label="🏷 Ẩn chú thích", method="relayout",
                                              args=[{"showlegend": False}]),
                                         dict(label="Hiện", method="relayout",
                                              args=[{"showlegend": True}]),
