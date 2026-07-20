@@ -121,6 +121,15 @@ footer                            { display: none !important; }
    bằng ribbon ở trên cùng */
 [data-testid="stSidebarNav"]      { display: none !important; }
 
+/* ── HỘP KHAI BÁO (dialog) LUÔN NẰM TRÊN CÙNG ──────────────────────────────
+   Ribbon + popover "⚙️ Khai báo" đặt z-index 999991 (để nổi trên header
+   Streamlit). Khi hộp thoại mở mà bấm mở popover → popover che hộp thoại
+   (thấy ở ảnh người dùng). Nâng dialog + nền mờ lên CAO HƠN ribbon để hộp
+   thoại luôn phủ trọn, popover không đè lên được. */
+   (Đặt DƯỚI busy-block 2147483000 để lớp chặn-khi-chạy vẫn phủ được hộp thoại.) */
+[data-testid="stDialog"]          { z-index: 2147482000 !important; }
+[data-testid="stDialog"] > div    { z-index: 2147482000 !important; }
+
 /* ── ĐIỆN THOẠI: các CỘT trong hộp khai báo & nội dung chính XẾP CHỒNG DỌC ──
    Màn hẹp mà giữ tỉ lệ cột ngang → cột phải bị ép còn 1 ký tự/dòng. */
 @media (max-width: 700px){

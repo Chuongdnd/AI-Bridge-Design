@@ -4084,18 +4084,38 @@ def _add_terrain_contours(fig, df_geology, x_org, y_org, step=1.0):
         if len(gx) < 2:
             return
         gx = np.array(gx); gy = np.array(gy); gz = np.array(gz)
+        R, C = gz.shape
+
+        # ── ĐƯỜNG BAO NGOÀI địa hình (chu vi lưới khảo sát) ──────────────────
+        bx = (list(gx[0, :]) + list(gx[:, -1]) + list(gx[-1, ::-1]) + list(gx[::-1, 0]))
+        by = (list(gy[0, :]) + list(gy[:, -1]) + list(gy[-1, ::-1]) + list(gy[::-1, 0]))
+        fig.add_trace(go.Scatter(
+            x=bx + [bx[0]], y=by + [by[0]], mode="lines",
+            line=dict(color="rgba(120,90,50,0.9)", width=1.8),
+            name="Ranh giới địa hình", legendgroup="contour_edge",
+            showlegend=True, hoverinfo="skip"))
+
+        # ── BƯỚC ĐỒNG MỨC THÍCH ỨNG: nhắm 8–24 đường (trước 1m cố định → thưa) ─
+        z_span = float(np.nanmax(gz) - np.nanmin(gz))
+        step = 1.0
+        if z_span > 0:
+            for _cand in (5.0, 2.0, 1.0, 0.5, 0.25):
+                if 8 <= z_span / _cand <= 30:
+                    step = _cand
+                    break
+            else:
+                step = 1.0 if z_span >= 8 else max(0.25, round(z_span / 12.0, 2))
         z_lo = np.ceil(np.nanmin(gz) / step) * step
         z_hi = np.floor(np.nanmax(gz) / step) * step
         if z_hi < z_lo:
             return
         levels = np.arange(z_lo, z_hi + step / 2, step)
-        if len(levels) > 40:          # chống dày quá (địa hình chênh lớn)
-            levels = levels[:: int(np.ceil(len(levels) / 40))]
-        R, C = gz.shape
+        # Số nhãn/đường: chia đều tổng ~60 nhãn cho các mức (không dày quá)
+        _lbl_per = max(1, min(5, 60 // max(1, len(levels))))
         _first_legend = True
+        _step_txt = f"{step:g}m"
         for lv in levels:
-            xs_line, ys_line = [], []          # đoạn nối bằng None
-            label_xy = None
+            xs_line, ys_line, seg_mids = [], [], []   # đoạn nối bằng None
             for i in range(R - 1):
                 for j in range(C - 1):
                     zc = (gz[i, j], gz[i, j + 1], gz[i + 1, j + 1], gz[i + 1, j])
@@ -4112,24 +4132,25 @@ def _add_terrain_contours(fig, df_geology, x_org, y_org, step=1.0):
                     for a, b in (((0, 1), (2, 3)) if len(pts) == 4 else (((0, 1),) if len(pts) == 2 else ())):
                         xs_line += [pts[a][0], pts[b][0], None]
                         ys_line += [pts[a][1], pts[b][1], None]
-                        if label_xy is None:
-                            label_xy = ((pts[a][0] + pts[b][0]) / 2,
-                                        (pts[a][1] + pts[b][1]) / 2)
+                        seg_mids.append(((pts[a][0] + pts[b][0]) / 2,
+                                         (pts[a][1] + pts[b][1]) / 2))
             if not xs_line:
                 continue
             fig.add_trace(go.Scatter(
                 x=xs_line, y=ys_line, mode="lines",
                 line=dict(color="rgba(139,109,59,0.55)", width=0.8),
-                name="Đường đồng mức (1m)" if _first_legend else "",
+                name=f"Đường đồng mức ({_step_txt})" if _first_legend else "",
                 legendgroup="contour", showlegend=_first_legend,
                 hoverinfo="skip"))
             _first_legend = False
-            # Ghi CAO ĐỘ trên đường (mỗi mức 1 nhãn, ở đoạn đầu tiên)
-            if label_xy is not None:
+            # Ghi CAO ĐỘ NHIỀU điểm dọc theo đường (trước chỉ 1 nhãn/mức → thưa)
+            _n = min(len(seg_mids), _lbl_per)
+            for _ix in sorted(set(np.linspace(0, len(seg_mids) - 1, _n).astype(int))):
+                _mx, _my = seg_mids[_ix]
                 fig.add_annotation(
-                    x=label_xy[0], y=label_xy[1], text=f"{lv:.0f}",
+                    x=_mx, y=_my, text=f"{lv:g}",
                     showarrow=False, font=dict(size=8, color="#8a6d3b"),
-                    bgcolor="rgba(255,255,255,0.55)", borderpad=0)
+                    bgcolor="rgba(255,255,255,0.6)", borderpad=0)
     except Exception as _e:
         print(f"[contours] bỏ qua đường đồng mức: {_e}")
 
