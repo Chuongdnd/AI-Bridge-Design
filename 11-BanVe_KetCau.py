@@ -4150,7 +4150,41 @@ def _add_terrain_contours(fig, df_geology, x_org, y_org, step=1.0):
         print(f"[contours] bỏ qua đường đồng mức: {_e}")
 
 
-def _ve_binh_do_cong(d, df_geology):
+def _override_centerline_route(lt_v, vx_v, vy_v, goc_v, df_route):
+    """Nếu có TIM TUYẾN (df_route: chuỗi điểm X_VN2000/Y_VN2000, KHÔNG có lý trình)
+    → thay tim khảo sát bằng tuyến này để TIM CẦU BÁM tuyến. Map theo vị trí CHUẨN
+    HOÁ 0..1 dọc tuyến ↔ dọc dải lý trình khảo sát (giữ nguyên lt_v & gốc toạ độ
+    khảo sát → cầu vẫn khớp địa hình). Trả (vx_v, vy_v, goc_v) mới; lỗi/thiếu →
+    trả nguyên bản (fallback an toàn = hành vi hiện tại)."""
+    try:
+        if df_route is None or not hasattr(df_route, "columns"):
+            return vx_v, vy_v, goc_v
+        if not {"X_VN2000", "Y_VN2000"} <= set(df_route.columns):
+            return vx_v, vy_v, goc_v
+        rx = np.asarray(df_route["X_VN2000"].values, dtype=float)
+        ry = np.asarray(df_route["Y_VN2000"].values, dtype=float)
+        m = np.isfinite(rx) & np.isfinite(ry)
+        rx, ry = rx[m], ry[m]
+        if len(rx) < 2:
+            return vx_v, vy_v, goc_v
+        seg = np.hypot(np.diff(rx), np.diff(ry))
+        u = np.concatenate([[0.0], np.cumsum(seg)])
+        if u[-1] <= 1e-6:
+            return vx_v, vy_v, goc_v
+        u = u / u[-1]                                   # chuẩn hoá 0..1
+        lt_min, lt_max = float(np.min(lt_v)), float(np.max(lt_v))
+        p = np.clip((np.asarray(lt_v, float) - lt_min) / max(lt_max - lt_min, 1e-6),
+                    0.0, 1.0)
+        nvx = np.interp(p, u, rx)
+        nvy = np.interp(p, u, ry)
+        ngoc = np.arctan2(np.gradient(nvy), np.gradient(nvx))  # radian, như khảo sát
+        return nvx, nvy, ngoc
+    except Exception as _e:
+        print(f"[route] bỏ qua tim tuyến: {_e}")
+        return vx_v, vy_v, goc_v
+
+
+def _ve_binh_do_cong(d, df_geology, df_route=None):
     """Mặt bằng cầu CONG theo tim tuyến khảo sát — khớp với 3D tổng
     (add_all_to_terrain_fig): dùng cùng phép chiếu _vn(lý_trình, offset) sang
     tọa độ VN-2000 (đã trừ gốc). Vẽ: mặt cầu + lan can + tim + đường đầu cầu +
@@ -4180,7 +4214,11 @@ def _ve_binh_do_cong(d, df_geology):
     vy_v  = df_cl["Y_VN2000"].values
     goc_v = df_cl["Góc_Tuyến"].values
     _i0   = int(np.argmin(lt_v))
+    # GỐC toạ độ = điểm lý-trình-nhỏ-nhất của KHẢO SÁT (địa hình bám gốc này).
+    # Lấy TRƯỚC khi có thể thay tuyến → cầu & địa hình chung 1 hệ tương đối.
     x_org = float(vx_v[_i0]); y_org = float(vy_v[_i0])
+    # TIM CẦU bám TIM TUYẾN (nếu có) — giữ lt_v & gốc khảo sát để khớp địa hình.
+    vx_v, vy_v, goc_v = _override_centerline_route(lt_v, vx_v, vy_v, goc_v, df_route)
     _cot  = (0.0 if goc >= 89.9 or goc <= 0
              else 1.0 / np.tan(np.radians(max(30.0, min(89.9, goc)))))
 
@@ -4413,18 +4451,19 @@ def _ve_binh_do_cong(d, df_geology):
     return fig
 
 
-def ve_binh_do_2d(d, df_tim_line=None, df_geology=None):
+def ve_binh_do_2d(d, df_tim_line=None, df_geology=None, df_route=None):
     """Bình đồ cầu: mặt bằng nhìn từ trên, bao gồm dầm, mố, trụ, TK, góc xiên.
 
     Nếu có df_geology (VN-2000: X_VN2000, Y_VN2000, Góc_Tuyến, Offset) → vẽ
     bình đồ CONG theo tim khảo sát (khớp 3D tổng). Ngược lại vẽ bình đồ THẲNG
-    có xét góc xiên (fallback khi chưa nạp khảo sát)."""
+    có xét góc xiên (fallback khi chưa nạp khảo sát).
+    df_route (tuỳ chọn): tim tuyến để TIM CẦU bám theo; None → bám tim khảo sát."""
     _align = df_geology if df_geology is not None else df_tim_line
     _need = {"X_VN2000", "Y_VN2000", "Góc_Tuyến", "Offset", "Lý trình"}
     if (_align is not None and hasattr(_align, "columns")
             and not _align.empty and _need <= set(_align.columns)):
         try:
-            return _ve_binh_do_cong(d, _align)
+            return _ve_binh_do_cong(d, _align, df_route=df_route)
         except Exception as _e:
             print(f"[ve_binh_do_2d] fallback thẳng do lỗi bình đồ cong: {_e}")
 

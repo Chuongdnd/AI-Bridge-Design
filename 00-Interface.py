@@ -3778,6 +3778,49 @@ def _terrain_coord_path():
     return None
 
 
+def _route_coord_path():
+    """Đường dẫn file tọa độ TIM TUYẾN đã lưu (ưu tiên .xlsx → .csv)."""
+    for _ext in (".xlsx", ".csv"):
+        _p = os.path.join(_TERRAIN_DIR, "route_coord" + _ext)
+        if os.path.exists(_p):
+            return _p
+    return None
+
+
+def _save_route_default(route_bytes: bytes, route_name: str) -> None:
+    """Lưu file tim tuyến vừa tải để tái dùng cho lần sau."""
+    try:
+        os.makedirs(_TERRAIN_DIR, exist_ok=True)
+        _ext = ".csv" if str(route_name).lower().endswith(".csv") else ".xlsx"
+        _p = os.path.join(_TERRAIN_DIR, "route_coord" + _ext)
+        _other = os.path.join(_TERRAIN_DIR,
+                              "route_coord" + (".xlsx" if _ext == ".csv" else ".csv"))
+        if os.path.exists(_other):
+            try:
+                os.remove(_other)
+            except OSError:
+                pass
+        with open(_p, "wb") as _f:
+            _f.write(route_bytes)
+    except Exception:
+        pass
+
+
+def _load_route_default():
+    """Đọc file tim tuyến mặc định đã lưu → DataFrame (X_VN2000/Y_VN2000). None nếu chưa có."""
+    _p = _route_coord_path()
+    if not _p:
+        return None
+    try:
+        with open(_p, "rb") as _f:
+            _buf = io.BytesIO(_f.read())
+            _buf.name = os.path.basename(_p)
+        _dr = TV.parse_coordinate_file(_buf)
+        return _dr if (_dr is not None and not _dr.empty) else None
+    except Exception:
+        return None
+
+
 def _save_terrain_defaults(ntd_bytes: bytes, coord_bytes: bytes,
                            coord_name: str) -> None:
     """Auto-save file địa hình vừa tải để tái dùng cho lần sau."""
@@ -3835,7 +3878,25 @@ def _decl_box_dia_hinh():
                 "📂 File .NTD (trắc dọc – ngang)", type=["ntd"], key="ntd_up")
         with _c2:
             file_toa_do = st.file_uploader(
-                "📍 Tọa độ tim tuyến (.CSV/.XLSX)", type=["csv", "xlsx"], key="coord_up")
+                "📍 Tọa độ tim khảo sát (.CSV/.XLSX)", type=["csv", "xlsx"],
+                key="coord_up",
+                help="Định vị dữ liệu địa hình khảo sát vào hệ VN-2000.")
+        # ── Tọa độ TIM TUYẾN (tim cầu chạy theo) — tuỳ chọn ─────────────────
+        file_tim_tuyen = st.file_uploader(
+            "🛣️ Tọa độ tim tuyến — tim cầu chạy theo (.CSV/.XLSX, tuỳ chọn)",
+            type=["csv", "xlsx"], key="route_up",
+            help="Tim cầu sẽ bám tuyến này. Chưa nạp → dùng tim khảo sát như hiện tại.")
+        if file_tim_tuyen is not None:
+            _dr = TV.parse_coordinate_file(file_tim_tuyen)
+            if _dr is not None and not _dr.empty:
+                st.session_state.df_tim_tuyen = _dr
+                try:
+                    _save_route_default(file_tim_tuyen.getvalue(),
+                                        file_tim_tuyen.name)
+                except Exception:
+                    pass
+                st.success(f"✅ Đã nạp tim tuyến ({len(_dr)} điểm) — tim cầu sẽ "
+                           "bám tuyến này. (đã lưu làm mặc định)")
         if file_khao_sat and file_toa_do:
             with st.spinner("⚡ Đang đồng bộ tọa độ VN-2000..."):
                 df_ntd   = TV.parse_ntd_file(file_khao_sat)
@@ -8629,7 +8690,15 @@ with _col_main:
                     _plan_cong = (_dg_plan is not None and hasattr(_dg_plan, "columns")
                                   and {"X_VN2000", "Y_VN2000", "Góc_Tuyến", "Offset"}
                                       <= set(_dg_plan.columns))
-                    fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim, df_geology=_dg_plan)
+                    # TIM TUYẾN (tim cầu chạy theo) — ưu tiên file đã nạp, chưa có
+                    # thì tự nạp bản mặc định đã lưu; vẫn None → bám tim khảo sát.
+                    _route_plan = st.session_state.get("df_tim_tuyen")
+                    if _route_plan is None:
+                        _route_plan = _load_route_default()
+                        if _route_plan is not None:
+                            st.session_state.df_tim_tuyen = _route_plan
+                    fig_bd = BVK.ve_binh_do_2d(d, df_tim_line=_df_tim,
+                                               df_geology=_dg_plan, df_route=_route_plan)
                     # Dầm mặt bằng vẽ theo hệ toạ độ THẲNG → chỉ chèn khi bình đồ
                     # KHÔNG cong (tránh dầm thẳng lệch khỏi mặt cầu cong).
                     if not _plan_cong:
