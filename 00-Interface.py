@@ -4033,6 +4033,27 @@ def dialog_geo_data():
 _od = st.session_state.get('open_dialog')
 if _od:
     st.session_state.open_dialog = None
+    # ĐÓNG popover "⚙️ Khai báo" khi mở hộp thoại: Streamlit KHÔNG tự thu popover
+    # khi bấm nút bên trong (giữ mở để bấm nhiều mục) → menu còn xổ đè lên hộp
+    # thoại. Nhấn nút trigger đang mở (aria-expanded="true") để thu lại. Thử vài
+    # nhịp vì menu có thể còn mở một lúc sau rerun. .click() gọi trực tiếp handler
+    # nên không bị nền mờ hộp thoại chặn.
+    st.components.v1.html(
+        """<script>(function(){
+          var d = window.parent.document;
+          function shut(){
+            // aria-expanded nằm trên DIV bao (aria-haspopup="true"), KHÔNG trên
+            // button. Popover đang mở → nhấn nút trigger bên trong để thu lại.
+            var w = d.querySelector('[aria-haspopup="true"][aria-expanded="true"]');
+            if(!w) return;
+            var t = w.querySelector('button[data-testid="stPopoverButton"]') ||
+                    w.querySelector('button');
+            if(t){ t.click(); }
+          }
+          [0,60,150,300,500,800].forEach(function(ms){ setTimeout(shut, ms); });
+        })();</script>""",
+        height=0,
+    )
     if _od == "step1":
         dialog_step1()
     elif _od == "step2":
