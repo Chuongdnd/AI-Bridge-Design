@@ -8276,9 +8276,16 @@ with _col_main:
                     # thể hiện địa hình nhấp nhô nhưng ảnh uốn theo mặt đất.
                     _sat_mode = st.radio(
                         "Kiểu vệ tinh",
-                        ["Ảnh phẳng (chuẩn tỷ lệ)", "Dán theo cao độ địa hình"],
+                        ["Bản đồ nghiêng (nét, xoay được)",
+                         "Ảnh phẳng (mô hình 3D)",
+                         "Dán theo cao độ (mô hình 3D)"],
                         horizontal=True, key=f"sat3d_mode_{selected_ribbon}",
-                        disabled=not _sat3d_on, label_visibility="collapsed")
+                        disabled=not _sat3d_on, label_visibility="collapsed",
+                        help="Bản đồ nghiêng: CÙNG công nghệ tile với bình đồ — ảnh "
+                             "nét gốc, nghiêng sẵn, Ctrl+kéo (hoặc chuột phải) để "
+                             "xoay; cầu thể hiện dạng mặt bằng. Hai chế độ còn lại "
+                             "giữ MÔ HÌNH 3D đầy đủ (ảnh theo lưới đỉnh).")
+                    _sat_ban_do = _sat_mode.startswith("Bản đồ")
                     _sat_flat = _sat_mode.startswith("Ảnh phẳng")
                     _sat_lon0 = BVK.VN2000_KTT_TINH.get(_sat_tinh)
                     _sat_active = bool(_sat3d_on and _sat_lon0 is not None)
@@ -8297,211 +8304,243 @@ with _col_main:
                             _y_origin_vn2000 = float(_df_geo_cl2.loc[_idx_min_lt2, 'Y_Real'])
                     st.session_state['terrain_x_origin'] = _x_origin_vn2000
                     st.session_state['terrain_y_origin'] = _y_origin_vn2000
-                    # ── CACHE mô hình 3D — bỏ "load" khi rerun mà input KHÔNG đổi ──
-                    # Control 3D (render_mode/che_do/he_so_z…) là HẰNG SỐ → figure chỉ
-                    # đổi khi ĐỊA HÌNH / THIẾT KẾ / DẦM / PA đổi. Đóng hộp khai báo mà
-                    # chưa khai gì → các thứ đó y nguyên → TÁI DÙNG figure, khỏi dựng.
-                    try:
-                        _terr_sig = (len(_df_geo),
-                                     round(float(_df_geo['Z'].sum()), 1)) \
-                            if 'Z' in getattr(_df_geo, 'columns', []) else (0, 0)
-                    except Exception:
-                        _terr_sig = (0, 0)
-                    try:
-                        _des_sig = hash(json.dumps(d, default=str, sort_keys=True))
-                    except Exception:
-                        _des_sig = id(d)
-                    # Nền vệ tinh + kinh tuyến trục THAM GIA khoá cache → bật/đổi tỉnh
-                    # thì dựng lại; giữ nguyên thì tái dùng.
-                    # ⚠ PHIÊN BẢN CODE trong khoá: không có nó, sau khi deploy công
-                    # thức mới (vd sửa datum VN2000→WGS84) phiên cũ vẫn hiện figure
-                    # CŨ từ cache → "3D vẫn lệch dù 2D đã đúng". Đổi chuỗi này mỗi
-                    # khi thay đổi cách dựng 3D/toạ độ.
-                    _SAT_CODE_VER = "satv5-flatmode"
-                    _k3d = (selected_ribbon, _spt_pfx, _terr_sig, _des_sig,
-                            _sat_active, _sat_lon0, _sat_q if _sat_active else "",
-                            _sat_flat if _sat_active else "", _SAT_CODE_VER)
-                    _c3d = st.session_state.get(f"_fig3dcache_{selected_ribbon}")
-                    _cached_hit = bool(_c3d and _c3d[0] == _k3d)
-                    try:
-                        if _cached_hit:
-                            _fig_t = _c3d[1]; mx = my = mz = None
+                    if _sat_active and _sat_ban_do:
+                        # ── BẢN ĐỒ NGHIÊNG: cùng renderer TILE với bình đồ (ảnh nét gốc,
+                        #    sáng đẹp), nghiêng sẵn + xoay bằng Ctrl+kéo / kéo chuột phải.
+                        #    Đây là cách duy nhất có tile trong "3D": WebGL scene của Plotly
+                        #    KHÔNG nhận tile — chỉ tô màu đỉnh (nên không thể nét bằng).
+                        #    Đổi lại cầu thể hiện dạng MẶT BẰNG (không phải khối 3D).
+                        _rt3 = st.session_state.get("df_tim_tuyen")
+                        # Hướng xoay ban đầu: bám trục cầu (phương vị tuyến ở giữa)
+                        _br3 = 0.0
+                        try:
+                            _cl3 = (_df_geo[_df_geo["Offset"] == 0]
+                                    .drop_duplicates("Lý trình").sort_values("Lý trình"))
+                            _xv3 = _cl3["X_VN2000"].values; _yv3 = _cl3["Y_VN2000"].values
+                            _dx3 = float(_xv3[-1] - _xv3[0]); _dy3 = float(_yv3[-1] - _yv3[0])
+                            # X=Bắc/Y=Đông nếu X lớn hơn — phương vị = atan2(ΔĐông, ΔBắc)
+                            _dE, _dN = (_dy3, _dx3) if _xv3.mean() > _yv3.mean() else (_dx3, _dy3)
+                            _br3 = float(np.degrees(np.arctan2(_dE, _dN)))
+                        except Exception:
+                            pass
+                        _fig_m3 = BVK.ve_binh_do_map(
+                            d, _df_geo, df_route=_rt3, lon0=_sat_lon0, k0=0.9999,
+                            show_labels=True, pitch=55.0, bearing=_br3, height=640)
+                        if _fig_m3 is not None:
+                            st.plotly_chart(_fig_m3, use_container_width=True,
+                                            config={"scrollZoom": True, "displayModeBar": True})
+                            st.caption("🛰️ Bản đồ nghiêng (tile Esri, nét gốc) — GIỮ CTRL + KÉO"
+                                       " chuột (hoặc kéo CHUỘT PHẢI) để xoay/nghiêng · cuộn để"
+                                       " zoom. Cầu thể hiện dạng mặt bằng; chọn 2 chế độ kia để"
+                                       " xem mô hình khối 3D.")
                         else:
-                            _fig_t, mx, my, mz = TV.ve_dia_hinh_3d(
-                                _df_geo, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view,
-                                x_origin=_x_origin_vn2000, y_origin=_y_origin_vn2000,
-                            )
-                            # PHỦ ẢNH VỆ TINH: thay mặt địa hình tô-màu-cao-độ bằng
-                            # Mesh3d lấy màu từ ảnh vệ tinh thực (giữ đúng lưới cao độ),
-                            # + MẶT PHẲNG VỆ TINH RỘNG bao quanh (ngoài phạm vi địa hình).
-                            if _sat_active and _fig_t is not None and mx is not None:
-                                with st.spinner("🛰️ Đang tải ảnh vệ tinh & phủ lên địa hình…"):
-                                    _qcfg = _SAT_QUALITY.get(_sat_q,
-                                                             _SAT_QUALITY["Nét"])
-                                    # PHẲNG: chỉ mặt phẳng ảnh (không dải cao độ)
-                                    #  → ảnh chuẩn tỷ lệ tuyệt đối, không biến dạng.
-                                    # DÁN CAO ĐỘ: dải địa hình texture + mặt phẳng
-                                    #  CẮT LỖ dưới dải (tránh cùng vùng ảnh vẽ 2 lần
-                                    #  → nhân đôi/lệch thị sai = "tỷ lệ sai").
-                                    _sat_mesh = None
-                                    if not _sat_flat:
-                                        _sat_mesh = BVK.build_satellite_terrain_mesh(
+                            st.warning("⚠️ Thiếu dữ liệu toạ độ VN-2000 cho bản đồ nghiêng.")
+                    else:
+                        # ── CACHE mô hình 3D — bỏ "load" khi rerun mà input KHÔNG đổi ──
+                        # Control 3D (render_mode/che_do/he_so_z…) là HẰNG SỐ → figure chỉ
+                        # đổi khi ĐỊA HÌNH / THIẾT KẾ / DẦM / PA đổi. Đóng hộp khai báo mà
+                        # chưa khai gì → các thứ đó y nguyên → TÁI DÙNG figure, khỏi dựng.
+                        try:
+                            _terr_sig = (len(_df_geo),
+                                         round(float(_df_geo['Z'].sum()), 1)) \
+                                if 'Z' in getattr(_df_geo, 'columns', []) else (0, 0)
+                        except Exception:
+                            _terr_sig = (0, 0)
+                        try:
+                            _des_sig = hash(json.dumps(d, default=str, sort_keys=True))
+                        except Exception:
+                            _des_sig = id(d)
+                        # Nền vệ tinh + kinh tuyến trục THAM GIA khoá cache → bật/đổi tỉnh
+                        # thì dựng lại; giữ nguyên thì tái dùng.
+                        # ⚠ PHIÊN BẢN CODE trong khoá: không có nó, sau khi deploy công
+                        # thức mới (vd sửa datum VN2000→WGS84) phiên cũ vẫn hiện figure
+                        # CŨ từ cache → "3D vẫn lệch dù 2D đã đúng". Đổi chuỗi này mỗi
+                        # khi thay đổi cách dựng 3D/toạ độ.
+                        _SAT_CODE_VER = "satv5-flatmode"
+                        _k3d = (selected_ribbon, _spt_pfx, _terr_sig, _des_sig,
+                                _sat_active, _sat_lon0, _sat_q if _sat_active else "",
+                                _sat_flat if _sat_active else "", _SAT_CODE_VER)
+                        _c3d = st.session_state.get(f"_fig3dcache_{selected_ribbon}")
+                        _cached_hit = bool(_c3d and _c3d[0] == _k3d)
+                        try:
+                            if _cached_hit:
+                                _fig_t = _c3d[1]; mx = my = mz = None
+                            else:
+                                _fig_t, mx, my, mz = TV.ve_dia_hinh_3d(
+                                    _df_geo, he_so_z=he_so_z, che_do=che_do_view, do_min=do_min_view,
+                                    x_origin=_x_origin_vn2000, y_origin=_y_origin_vn2000,
+                                )
+                                # PHỦ ẢNH VỆ TINH: thay mặt địa hình tô-màu-cao-độ bằng
+                                # Mesh3d lấy màu từ ảnh vệ tinh thực (giữ đúng lưới cao độ),
+                                # + MẶT PHẲNG VỆ TINH RỘNG bao quanh (ngoài phạm vi địa hình).
+                                if _sat_active and _fig_t is not None and mx is not None:
+                                    with st.spinner("🛰️ Đang tải ảnh vệ tinh & phủ lên địa hình…"):
+                                        _qcfg = _SAT_QUALITY.get(_sat_q,
+                                                                 _SAT_QUALITY["Nét"])
+                                        # PHẲNG: chỉ mặt phẳng ảnh (không dải cao độ)
+                                        #  → ảnh chuẩn tỷ lệ tuyệt đối, không biến dạng.
+                                        # DÁN CAO ĐỘ: dải địa hình texture + mặt phẳng
+                                        #  CẮT LỖ dưới dải (tránh cùng vùng ảnh vẽ 2 lần
+                                        #  → nhân đôi/lệch thị sai = "tỷ lệ sai").
+                                        _sat_mesh = None
+                                        if not _sat_flat:
+                                            _sat_mesh = BVK.build_satellite_terrain_mesh(
+                                                mx, my, mz, he_so_z,
+                                                _x_origin_vn2000, _y_origin_vn2000,
+                                                lon0=_sat_lon0, k0=0.9999,
+                                                cap_rc=_qcfg["cap_rc"],
+                                                img_size=_qcfg["img"])
+                                        _sat_plane = BVK.build_satellite_ground_plane(
                                             mx, my, mz, he_so_z,
                                             _x_origin_vn2000, _y_origin_vn2000,
                                             lon0=_sat_lon0, k0=0.9999,
-                                            cap_rc=_qcfg["cap_rc"],
-                                            img_size=_qcfg["img"])
-                                    _sat_plane = BVK.build_satellite_ground_plane(
-                                        mx, my, mz, he_so_z,
-                                        _x_origin_vn2000, _y_origin_vn2000,
-                                        lon0=_sat_lon0, k0=0.9999,
-                                        inner_n=_qcfg["inner_n"],
-                                        img_size=_qcfg["img"],
-                                        cut_hole=(_sat_mesh is not None))
-                                if _sat_plane is not None or _sat_mesh is not None:
-                                    # bỏ mặt địa hình cũ (Surface "Địa hình…")
-                                    _fig_t.data = tuple(
-                                        t for t in _fig_t.data
-                                        if not (getattr(t, "type", "") == "surface"
-                                                and "ịa hình" in str(getattr(t, "name", ""))))
-                                    # mặt phẳng rộng VẼ TRƯỚC (nằm dưới) → dải địa hình đè lên
-                                    if _sat_plane is not None:
-                                        _fig_t.add_trace(_sat_plane)
-                                    if _sat_mesh is not None:
-                                        _fig_t.add_trace(_sat_mesh)
-                        if _fig_t:
-                            _n_before = len(_fig_t.data)
-                            _n_after = len(_fig_t.data)
-                            _err_overlay = None
-                            if not _cached_hit:
-                                try:
-                                    BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
-                                    # Chèn dầm thực tế từ thư viện (hệ VN-2000 trừ origin,
-                                    # khớp địa hình). add_all_to_terrain_fig KHÔNG vẽ dầm.
+                                            inner_n=_qcfg["inner_n"],
+                                            img_size=_qcfg["img"],
+                                            cut_hole=(_sat_mesh is not None))
+                                    if _sat_plane is not None or _sat_mesh is not None:
+                                        # bỏ mặt địa hình cũ (Surface "Địa hình…")
+                                        _fig_t.data = tuple(
+                                            t for t in _fig_t.data
+                                            if not (getattr(t, "type", "") == "surface"
+                                                    and "ịa hình" in str(getattr(t, "name", ""))))
+                                        # mặt phẳng rộng VẼ TRƯỚC (nằm dưới) → dải địa hình đè lên
+                                        if _sat_plane is not None:
+                                            _fig_t.add_trace(_sat_plane)
+                                        if _sat_mesh is not None:
+                                            _fig_t.add_trace(_sat_mesh)
+                            if _fig_t:
+                                _n_before = len(_fig_t.data)
+                                _n_after = len(_fig_t.data)
+                                _err_overlay = None
+                                if not _cached_hit:
                                     try:
-                                        _spt_t_traces = BBUI.get_beam_model_mesh_traces_vn2000(
-                                            d, _df_geo, he_so_z, pfx=_spt_pfx)
-                                        for _i_b, _spt_t in enumerate(_spt_t_traces or []):
-                                            _spt_t.legendgroup = "Dầm"
-                                            try: _spt_t.showlegend = (_i_b == 0)
-                                            except Exception: pass
-                                            _fig_t.add_trace(_spt_t)
+                                        BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
+                                        # Chèn dầm thực tế từ thư viện (hệ VN-2000 trừ origin,
+                                        # khớp địa hình). add_all_to_terrain_fig KHÔNG vẽ dầm.
+                                        try:
+                                            _spt_t_traces = BBUI.get_beam_model_mesh_traces_vn2000(
+                                                d, _df_geo, he_so_z, pfx=_spt_pfx)
+                                            for _i_b, _spt_t in enumerate(_spt_t_traces or []):
+                                                _spt_t.legendgroup = "Dầm"
+                                                try: _spt_t.showlegend = (_i_b == 0)
+                                                except Exception: pass
+                                                _fig_t.add_trace(_spt_t)
+                                        except Exception:
+                                            pass
+                                        try: BVK._hover3d(_fig_t)   # hover tên + cao độ (gồm dầm)
+                                        except Exception: pass
+                                        # Góc xiên ĐÃ nướng vào hình học (qua _vn theo tim
+                                        # tuyến) → KHÔNG hậu xử lý trượt toạ độ tuyệt đối.
+                                        BVK.apply_render_mode(_fig_t, render_mode_3d)
+                                        # Ẩn cấu kiện theo lựa chọn "Tùy chỉnh hiển thị"
+                                        _hide3d = [g for g in _COMP_GROUPS3D
+                                                   if g not in _show_comps3d]
+                                        if _hide3d:
+                                            for _tr in _fig_t.data:
+                                                _kk = str(getattr(_tr, "legendgroup", "")
+                                                          or getattr(_tr, "name", "") or "").lower()
+                                                if any(_h.lower() in _kk for _h in _hide3d):
+                                                    _tr.visible = False
+                                    except Exception as _oe:
+                                        _err_overlay = str(_oe)
+                                    _n_after = len(_fig_t.data)
+
+                                    # Focus camera on bridge span (lý trình relative coords)
+                                    _geo_cam = d.get("geo_logic", {})
+                                    _x_cam_mid = (
+                                        float(_geo_cam.get("x_mo_trai", 0)) +
+                                        float(_geo_cam.get("x_mo_phai", 0))
+                                    ) / 2.0
+                                    _z_cam_ref = float(d.get("cao_mat_cau") or d.get("cao_day_dam", 8.0))
+                                    _z_cam_sc  = _z_cam_ref * he_so_z
+                                    _fig_t.update_layout(
+                                        # Bỏ tiêu đề figure (bị chồng lên chú giải) — thông
+                                        # tin cầu đã hiển thị ở dòng trên các tab.
+                                        title=dict(text=""),
+                                        # Chú giải ĐỨNG, neo mép TRÁI-TRÊN trong khung vẽ:
+                                        #  • dọc → không trải ngang hết đầu hình như trước,
+                                        #    chừa nguyên góc phải cho thanh công cụ Plotly
+                                        #    (chụp ảnh/zoom/xoay/home) — trước đây chú giải
+                                        #    ngang y=1.0 đè lên đúng dãy nút đó;
+                                        #  • margin t=34: chừa đúng 1 dải mỏng cho nút
+                                        #    "Ẩn chú thích" nằm TRÊN chú thích (không che hình).
+                                        margin=dict(t=34, l=0, r=0, b=0),
+                                        showlegend=True,
+                                        legend=dict(orientation="v", x=0, y=1,
+                                                    xanchor="left", yanchor="top",
+                                                    # chữ TO hơn (9 → 12) cho dễ đọc/bấm
+                                                    font=dict(size=12),
+                                                    groupclick="togglegroup",
+                                                    itemsizing="constant",
+                                                    # bám theme: nền xám bán trong suốt thay
+                                                    # cho trắng đặc (chữ theo theme → ở nền
+                                                    # tối từng là chữ trắng trên nền trắng)
+                                                    bgcolor="rgba(128,128,128,0.14)",
+                                                    bordercolor="rgba(128,128,128,0.35)",
+                                                    borderwidth=1),
+                                        scene_camera=dict(
+                                            eye=dict(x=0.0, y=-2.5, z=1.2),
+                                            center=dict(x=0.0, y=0.0, z=0.0),
+                                        ),
+                                        scene=dict(
+                                            xaxis=dict(title="Lý trình (m)"),
+                                            yaxis=dict(title="Ngang cầu (m)"),
+                                            zaxis=dict(title="Cao độ (m)"),
+                                            # nền scene trong suốt → hiện nền trang (tự theo
+                                            # theme sáng/tối của hệ thống)
+                                            bgcolor="rgba(0,0,0,0)",
+                                        ),
+                                        # chữ trục xám trung tính → đọc được trên cả sáng lẫn tối
+                                        font=dict(color="#8a90a0"),
+                                        # Nút THU GỌN chú thích: bấm để giấu hẳn bảng chú
+                                        # thích, lấy trọn khung nhìn cho mô hình. Dùng
+                                        # updatemenus (chạy ở trình duyệt) nên KHÔNG rerun
+                                        # Streamlit và không tốn RAM session.
+                                        # ⚠ Neo TRÁI-TRÊN (x=0), NGAY TRÊN bảng chú thích —
+                                        # không đặt góc phải (x=1): đó là chỗ thanh công cụ
+                                        # Plotly (modebar) → nút bị đè, không bấm được.
+                                        updatemenus=[dict(
+                                            type="buttons", direction="right",
+                                            x=0, y=1.0, xanchor="left", yanchor="bottom",
+                                            showactive=False, pad=dict(r=2, t=2),
+                                            bgcolor="rgba(128,128,128,0.14)",
+                                            bordercolor="rgba(128,128,128,0.35)",
+                                            font=dict(size=11, color="#8a90a0"),
+                                            buttons=[
+                                                dict(label="🏷 Ẩn chú thích", method="relayout",
+                                                     args=[{"showlegend": False}]),
+                                                dict(label="Hiện", method="relayout",
+                                                     args=[{"showlegend": True}]),
+                                            ],
+                                        )],
+                                    )
+
+                                    # Lưu LƯỚI cầu (mesh) đã dựng để XUẤT IFC khớp ĐÚNG 3D
+                                    # đang xem (kèm he_so_z để khôi phục cao độ thực khi xuất).
+                                    try:
+                                        st.session_state[f"_bridge3d_{selected_ribbon}"] = (
+                                            [t for t in _fig_t.data
+                                             if getattr(t, "type", "") == "mesh3d"],
+                                            float(he_so_z) or 1.0,
+                                        )
                                     except Exception:
                                         pass
-                                    try: BVK._hover3d(_fig_t)   # hover tên + cao độ (gồm dầm)
-                                    except Exception: pass
-                                    # Góc xiên ĐÃ nướng vào hình học (qua _vn theo tim
-                                    # tuyến) → KHÔNG hậu xử lý trượt toạ độ tuyệt đối.
-                                    BVK.apply_render_mode(_fig_t, render_mode_3d)
-                                    # Ẩn cấu kiện theo lựa chọn "Tùy chỉnh hiển thị"
-                                    _hide3d = [g for g in _COMP_GROUPS3D
-                                               if g not in _show_comps3d]
-                                    if _hide3d:
-                                        for _tr in _fig_t.data:
-                                            _kk = str(getattr(_tr, "legendgroup", "")
-                                                      or getattr(_tr, "name", "") or "").lower()
-                                            if any(_h.lower() in _kk for _h in _hide3d):
-                                                _tr.visible = False
-                                except Exception as _oe:
-                                    _err_overlay = str(_oe)
-                                _n_after = len(_fig_t.data)
 
-                                # Focus camera on bridge span (lý trình relative coords)
-                                _geo_cam = d.get("geo_logic", {})
-                                _x_cam_mid = (
-                                    float(_geo_cam.get("x_mo_trai", 0)) +
-                                    float(_geo_cam.get("x_mo_phai", 0))
-                                ) / 2.0
-                                _z_cam_ref = float(d.get("cao_mat_cau") or d.get("cao_day_dam", 8.0))
-                                _z_cam_sc  = _z_cam_ref * he_so_z
-                                _fig_t.update_layout(
-                                    # Bỏ tiêu đề figure (bị chồng lên chú giải) — thông
-                                    # tin cầu đã hiển thị ở dòng trên các tab.
-                                    title=dict(text=""),
-                                    # Chú giải ĐỨNG, neo mép TRÁI-TRÊN trong khung vẽ:
-                                    #  • dọc → không trải ngang hết đầu hình như trước,
-                                    #    chừa nguyên góc phải cho thanh công cụ Plotly
-                                    #    (chụp ảnh/zoom/xoay/home) — trước đây chú giải
-                                    #    ngang y=1.0 đè lên đúng dãy nút đó;
-                                    #  • margin t=34: chừa đúng 1 dải mỏng cho nút
-                                    #    "Ẩn chú thích" nằm TRÊN chú thích (không che hình).
-                                    margin=dict(t=34, l=0, r=0, b=0),
-                                    showlegend=True,
-                                    legend=dict(orientation="v", x=0, y=1,
-                                                xanchor="left", yanchor="top",
-                                                # chữ TO hơn (9 → 12) cho dễ đọc/bấm
-                                                font=dict(size=12),
-                                                groupclick="togglegroup",
-                                                itemsizing="constant",
-                                                # bám theme: nền xám bán trong suốt thay
-                                                # cho trắng đặc (chữ theo theme → ở nền
-                                                # tối từng là chữ trắng trên nền trắng)
-                                                bgcolor="rgba(128,128,128,0.14)",
-                                                bordercolor="rgba(128,128,128,0.35)",
-                                                borderwidth=1),
-                                    scene_camera=dict(
-                                        eye=dict(x=0.0, y=-2.5, z=1.2),
-                                        center=dict(x=0.0, y=0.0, z=0.0),
-                                    ),
-                                    scene=dict(
-                                        xaxis=dict(title="Lý trình (m)"),
-                                        yaxis=dict(title="Ngang cầu (m)"),
-                                        zaxis=dict(title="Cao độ (m)"),
-                                        # nền scene trong suốt → hiện nền trang (tự theo
-                                        # theme sáng/tối của hệ thống)
-                                        bgcolor="rgba(0,0,0,0)",
-                                    ),
-                                    # chữ trục xám trung tính → đọc được trên cả sáng lẫn tối
-                                    font=dict(color="#8a90a0"),
-                                    # Nút THU GỌN chú thích: bấm để giấu hẳn bảng chú
-                                    # thích, lấy trọn khung nhìn cho mô hình. Dùng
-                                    # updatemenus (chạy ở trình duyệt) nên KHÔNG rerun
-                                    # Streamlit và không tốn RAM session.
-                                    # ⚠ Neo TRÁI-TRÊN (x=0), NGAY TRÊN bảng chú thích —
-                                    # không đặt góc phải (x=1): đó là chỗ thanh công cụ
-                                    # Plotly (modebar) → nút bị đè, không bấm được.
-                                    updatemenus=[dict(
-                                        type="buttons", direction="right",
-                                        x=0, y=1.0, xanchor="left", yanchor="bottom",
-                                        showactive=False, pad=dict(r=2, t=2),
-                                        bgcolor="rgba(128,128,128,0.14)",
-                                        bordercolor="rgba(128,128,128,0.35)",
-                                        font=dict(size=11, color="#8a90a0"),
-                                        buttons=[
-                                            dict(label="🏷 Ẩn chú thích", method="relayout",
-                                                 args=[{"showlegend": False}]),
-                                            dict(label="Hiện", method="relayout",
-                                                 args=[{"showlegend": True}]),
-                                        ],
-                                    )],
+                                    st.session_state[f"_fig3dcache_{selected_ribbon}"] = (_k3d, _fig_t)
+                                st.plotly_chart(_fig_t, use_container_width=True,
+                                                config={"displayModeBar": True})
+                                st.caption(
+                                    f"Địa hình: {_n_before} trace | Kết cấu cầu: +{_n_after - _n_before} trace. "
+                                    "Kéo chuột xoay • Scroll zoom • Shift+drag pan."
                                 )
-
-                                # Lưu LƯỚI cầu (mesh) đã dựng để XUẤT IFC khớp ĐÚNG 3D
-                                # đang xem (kèm he_so_z để khôi phục cao độ thực khi xuất).
-                                try:
-                                    st.session_state[f"_bridge3d_{selected_ribbon}"] = (
-                                        [t for t in _fig_t.data
-                                         if getattr(t, "type", "") == "mesh3d"],
-                                        float(he_so_z) or 1.0,
-                                    )
-                                except Exception:
-                                    pass
-
-                                st.session_state[f"_fig3dcache_{selected_ribbon}"] = (_k3d, _fig_t)
-                            st.plotly_chart(_fig_t, use_container_width=True,
-                                            config={"displayModeBar": True})
-                            st.caption(
-                                f"Địa hình: {_n_before} trace | Kết cấu cầu: +{_n_after - _n_before} trace. "
-                                "Kéo chuột xoay • Scroll zoom • Shift+drag pan."
-                            )
-                            if _err_overlay:
-                                st.error(f"Lỗi overlay kết cấu: {_err_overlay}")
-                            elif _n_after == _n_before:
-                                st.warning("⚠️ Không thêm được trace kết cấu — kiểm tra dữ liệu địa chất.")
-                        else:
-                            st.error("Không tạo được mô hình địa hình.")
-                    except Exception as _e:
-                        st.error(f"Lỗi 3D tổng hợp: {_e}")
+                                if _err_overlay:
+                                    st.error(f"Lỗi overlay kết cấu: {_err_overlay}")
+                                elif _n_after == _n_before:
+                                    st.warning("⚠️ Không thêm được trace kết cấu — kiểm tra dữ liệu địa chất.")
+                            else:
+                                st.error("Không tạo được mô hình địa hình.")
+                        except Exception as _e:
+                            st.error(f"Lỗi 3D tổng hợp: {_e}")
                 else:
                     st.info("📌 Nạp file địa hình ở trên để xem kết cấu tích hợp địa hình thực đo. "
                             "Hiện đang hiển thị mô hình sơ đồ cầu.")
