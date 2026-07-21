@@ -4807,7 +4807,7 @@ def _map_contour_latlon(df_geology, to_ll):
 
 
 def ve_binh_do_map(d, df_geology, df_route=None, lon0=105.0, k0=0.9999,
-                   show_labels=True, pitch=0.0, bearing=0.0, height=560):
+                   show_labels=True):
     """Bình đồ TRÊN NỀN ẢNH VỆ TINH: dựng bản vẽ kỹ thuật ĐẦY ĐỦ (_ve_binh_do_cong
     — mặt cầu, lan can, taluy, đường đầu cầu, mố/trụ chiếu từ 3D, sông, tĩnh không,
     đường đồng mức…) rồi CHUYỂN TỪNG NÉT sang lat/lon đặt lên ảnh vệ tinh — tức
@@ -4900,14 +4900,10 @@ def ve_binh_do_map(d, df_geology, df_route=None, lon0=105.0, k0=0.9999,
                 source=["https://server.arcgisonline.com/ArcGIS/rest/services/"
                         "Reference/World_Boundaries_and_Places/MapServer/tile/{z}/{y}/{x}"]))
         fig.update_layout(
-            # pitch/bearing: chế độ "bản đồ nghiêng" trong tab 3D — cùng renderer
-            # tile với bình đồ (nét gốc), nghiêng sẵn và XOAY được (Ctrl+kéo /
-            # kéo chuột phải — maplibre hỗ trợ sẵn).
             mapbox=dict(style="white-bg",
                         center=dict(lat=_clat, lon=_clon), zoom=_zoom,
-                        pitch=float(pitch), bearing=float(bearing),
                         layers=_layers),
-            height=int(height), margin=dict(l=0, r=0, t=0, b=0),
+            height=560, margin=dict(l=0, r=0, t=0, b=0),
             legend=dict(orientation="h", y=1.0, x=0, yanchor="bottom",
                         bgcolor="rgba(0,0,0,0.45)", font=dict(color="#fff", size=10)),
             hovermode="closest",
