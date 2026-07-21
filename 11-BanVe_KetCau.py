@@ -4600,7 +4600,7 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
                 out[:, j] = np.interp(yn, yo, t[:, j])
             return out
         R0, C0 = mz.shape
-        R2, C2 = min(R0 * 3, 160), min(C0 * 3, 130)
+        R2, C2 = min(R0 * 5, 220), min(C0 * 5, 170)
         if R2 > R0 or C2 > C0:
             mx = _ups(mx, R2, C2); my = _ups(my, R2, C2); mz = _ups(mz, R2, C2)
         R, C = mz.shape
@@ -4617,7 +4617,7 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
         # nới nhẹ biên để ảnh phủ trọn
         _dl = (latmax - latmin) * 0.02 + 1e-4; _dg = (lonmax - lonmin) * 0.02 + 1e-4
         img = _fetch_satellite(latmin-_dl, latmax+_dl, lonmin-_dg, lonmax+_dg,
-                               size=1024)
+                               size=1536)
         if img is None:
             return None
         H, W = img.shape[:2]
@@ -4658,9 +4658,23 @@ def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
             return None
         # cao độ nền = đáy địa hình, hạ nhẹ 0.3m để không chọi z với dải địa hình
         base_z = float(np.nanmin(mz)) * he_so_z - 0.3
-        gx1 = np.linspace(cx - half, cx + half, grid)
-        gy1 = np.linspace(cy - half, cy + half, grid)
-        GX, GY = np.meshgrid(gx1, gy1)               # grid×grid
+        # LƯỚI HAI MẬT ĐỘ (độ nét vertexcolor = mật độ lưới): DÀY quanh phạm vi
+        # cầu/địa hình (~5m/đỉnh — nơi người dùng nhìn), THƯA ở vành ngoài
+        # (~25m/đỉnh). Lưới rectilinear không đều vẫn tam giác hoá theo chỉ số
+        # bình thường. Tổng ~180×180 = 32k đỉnh — WebGL chịu tốt.
+        def _axis(c, inner_half, outer_half):
+            inner = np.linspace(c - inner_half, c + inner_half, 140)
+            n_out = max(12, int((outer_half - inner_half) / 25.0))
+            left = np.linspace(c - outer_half, c - inner_half, n_out, endpoint=False)
+            right = np.linspace(c + inner_half, c + outer_half, n_out + 1)[1:]
+            return np.concatenate([left, inner, right])
+        _ihx = (float(np.nanmax(mx)) - float(np.nanmin(mx))) * 0.62
+        _ihy = (float(np.nanmax(my)) - float(np.nanmin(my))) * 0.62
+        _inner = max(_ihx, _ihy)
+        gx1 = _axis(cx, _inner, half)
+        gy1 = _axis(cy, _inner, half)
+        GX, GY = np.meshgrid(gx1, gy1)
+        gr_r, gr_c = GX.shape
         # đổi sang lat/lon (tuyệt đối), tự nhận easting/northing
         ax = GX + x_org; ay = GY + y_org
         if float(np.nanmean(mx + x_org)) > float(np.nanmean(my + y_org)):
@@ -4668,10 +4682,10 @@ def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
         else:
             east, north = ax, ay
         lat, lon = vn2000_to_latlon(east.ravel(), north.ravel(), lon0, k0)
-        lat = lat.reshape(grid, grid); lon = lon.reshape(grid, grid)
+        lat = lat.reshape(gr_r, gr_c); lon = lon.reshape(gr_r, gr_c)
         la0, la1 = float(np.nanmin(lat)), float(np.nanmax(lat))
         lo0, lo1 = float(np.nanmin(lon)), float(np.nanmax(lon))
-        img = _fetch_satellite(la0, la1, lo0, lo1, size=1024)
+        img = _fetch_satellite(la0, la1, lo0, lo1, size=1536)
         if img is None:
             return None
         H, W = img.shape[:2]
@@ -4679,12 +4693,12 @@ def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
         row = np.clip(((la1 - lat)/max(la1-la0, 1e-9)*(H-1)).astype(int), 0, H-1)
         rgb = (np.clip(img[row, col], 0, 1)*255).astype(int).reshape(-1, 3)
         vcol = [f"rgb({r},{g},{b})" for r, g, b in rgb]
-        idx = np.arange(grid*grid).reshape(grid, grid)
+        idx = np.arange(gr_r * gr_c).reshape(gr_r, gr_c)
         i0 = idx[:-1, :-1].ravel(); i1 = idx[:-1, 1:].ravel()
         i2 = idx[1:, 1:].ravel(); i3 = idx[1:, :-1].ravel()
         I = np.concatenate([i0, i0]); J = np.concatenate([i1, i2]); K = np.concatenate([i2, i3])
         return go.Mesh3d(
-            x=GX.ravel(), y=GY.ravel(), z=np.full(grid*grid, base_z),
+            x=GX.ravel(), y=GY.ravel(), z=np.full(gr_r * gr_c, base_z),
             i=I, j=J, k=K, vertexcolor=vcol, flatshading=False,
             lighting=dict(ambient=1.0, diffuse=0.1, specular=0.0),
             name="Nền vệ tinh", showlegend=True, legendgroup="Địa hình",

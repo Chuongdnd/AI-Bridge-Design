@@ -8288,8 +8288,13 @@ with _col_main:
                         _des_sig = id(d)
                     # Nền vệ tinh + kinh tuyến trục THAM GIA khoá cache → bật/đổi tỉnh
                     # thì dựng lại; giữ nguyên thì tái dùng.
+                    # ⚠ PHIÊN BẢN CODE trong khoá: không có nó, sau khi deploy công
+                    # thức mới (vd sửa datum VN2000→WGS84) phiên cũ vẫn hiện figure
+                    # CŨ từ cache → "3D vẫn lệch dù 2D đã đúng". Đổi chuỗi này mỗi
+                    # khi thay đổi cách dựng 3D/toạ độ.
+                    _SAT_CODE_VER = "satv3-datum-sharp"
                     _k3d = (selected_ribbon, _spt_pfx, _terr_sig, _des_sig,
-                            _sat_active, _sat_lon0)
+                            _sat_active, _sat_lon0, _SAT_CODE_VER)
                     _c3d = st.session_state.get(f"_fig3dcache_{selected_ribbon}")
                     _cached_hit = bool(_c3d and _c3d[0] == _k3d)
                     try:
