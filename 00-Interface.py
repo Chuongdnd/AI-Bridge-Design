@@ -8271,6 +8271,15 @@ with _col_main:
                         key=f"sat3d_q_{selected_ribbon}", disabled=not _sat3d_on,
                         help="Nét hơn = lưới đỉnh dày hơn = mô hình nặng hơn. "
                              "Tối đa: 1 đỉnh ≈ 1 pixel ảnh (máy yếu sẽ chậm).")
+                    # Kiểu hiển thị: ẢNH PHẲNG là mặc định — ảnh giữ nguyên tỷ lệ
+                    # tuyệt đối (không biến dạng theo mặt đất); "Dán theo cao độ"
+                    # thể hiện địa hình nhấp nhô nhưng ảnh uốn theo mặt đất.
+                    _sat_mode = st.radio(
+                        "Kiểu vệ tinh",
+                        ["Ảnh phẳng (chuẩn tỷ lệ)", "Dán theo cao độ địa hình"],
+                        horizontal=True, key=f"sat3d_mode_{selected_ribbon}",
+                        disabled=not _sat3d_on, label_visibility="collapsed")
+                    _sat_flat = _sat_mode.startswith("Ảnh phẳng")
                     _sat_lon0 = BVK.VN2000_KTT_TINH.get(_sat_tinh)
                     _sat_active = bool(_sat3d_on and _sat_lon0 is not None)
                     # Compute VN-2000 origin from min-lý-trình centre-line point
@@ -8308,10 +8317,10 @@ with _col_main:
                     # thức mới (vd sửa datum VN2000→WGS84) phiên cũ vẫn hiện figure
                     # CŨ từ cache → "3D vẫn lệch dù 2D đã đúng". Đổi chuỗi này mỗi
                     # khi thay đổi cách dựng 3D/toạ độ.
-                    _SAT_CODE_VER = "satv4-quality"
+                    _SAT_CODE_VER = "satv5-flatmode"
                     _k3d = (selected_ribbon, _spt_pfx, _terr_sig, _des_sig,
                             _sat_active, _sat_lon0, _sat_q if _sat_active else "",
-                            _SAT_CODE_VER)
+                            _sat_flat if _sat_active else "", _SAT_CODE_VER)
                     _c3d = st.session_state.get(f"_fig3dcache_{selected_ribbon}")
                     _cached_hit = bool(_c3d and _c3d[0] == _k3d)
                     try:
@@ -8329,19 +8338,27 @@ with _col_main:
                                 with st.spinner("🛰️ Đang tải ảnh vệ tinh & phủ lên địa hình…"):
                                     _qcfg = _SAT_QUALITY.get(_sat_q,
                                                              _SAT_QUALITY["Nét"])
-                                    _sat_mesh = BVK.build_satellite_terrain_mesh(
-                                        mx, my, mz, he_so_z,
-                                        _x_origin_vn2000, _y_origin_vn2000,
-                                        lon0=_sat_lon0, k0=0.9999,
-                                        cap_rc=_qcfg["cap_rc"],
-                                        img_size=_qcfg["img"])
+                                    # PHẲNG: chỉ mặt phẳng ảnh (không dải cao độ)
+                                    #  → ảnh chuẩn tỷ lệ tuyệt đối, không biến dạng.
+                                    # DÁN CAO ĐỘ: dải địa hình texture + mặt phẳng
+                                    #  CẮT LỖ dưới dải (tránh cùng vùng ảnh vẽ 2 lần
+                                    #  → nhân đôi/lệch thị sai = "tỷ lệ sai").
+                                    _sat_mesh = None
+                                    if not _sat_flat:
+                                        _sat_mesh = BVK.build_satellite_terrain_mesh(
+                                            mx, my, mz, he_so_z,
+                                            _x_origin_vn2000, _y_origin_vn2000,
+                                            lon0=_sat_lon0, k0=0.9999,
+                                            cap_rc=_qcfg["cap_rc"],
+                                            img_size=_qcfg["img"])
                                     _sat_plane = BVK.build_satellite_ground_plane(
                                         mx, my, mz, he_so_z,
                                         _x_origin_vn2000, _y_origin_vn2000,
                                         lon0=_sat_lon0, k0=0.9999,
                                         inner_n=_qcfg["inner_n"],
-                                        img_size=_qcfg["img"])
-                                if _sat_mesh is not None:
+                                        img_size=_qcfg["img"],
+                                        cut_hole=(_sat_mesh is not None))
+                                if _sat_plane is not None or _sat_mesh is not None:
                                     # bỏ mặt địa hình cũ (Surface "Địa hình…")
                                     _fig_t.data = tuple(
                                         t for t in _fig_t.data
@@ -8350,7 +8367,8 @@ with _col_main:
                                     # mặt phẳng rộng VẼ TRƯỚC (nằm dưới) → dải địa hình đè lên
                                     if _sat_plane is not None:
                                         _fig_t.add_trace(_sat_plane)
-                                    _fig_t.add_trace(_sat_mesh)
+                                    if _sat_mesh is not None:
+                                        _fig_t.add_trace(_sat_mesh)
                         if _fig_t:
                             _n_before = len(_fig_t.data)
                             _n_after = len(_fig_t.data)

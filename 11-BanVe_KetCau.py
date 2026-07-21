@@ -4648,11 +4648,13 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
 
 def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
                                  lon0=105.0, k0=0.9999, expand=1.6,
-                                 inner_n=140, img_size=1536):
+                                 inner_n=140, img_size=1536, cut_hole=False):
     """MẶT PHẲNG VỆ TINH RỘNG bao quanh cầu (ngoài phạm vi địa hình khảo sát).
     Lưới hai mật độ (dày `inner_n` điểm quanh cầu, thưa vành ngoài) phủ hình vuông
     rộng ~expand× phạm vi địa hình, PHẲNG ở cao độ nền, màu ảnh vệ tinh từng đỉnh.
-    Dải địa hình (có cao độ) vẽ ĐÈ lên trên. Trả go.Mesh3d hoặc None."""
+    cut_hole=True: CẮT LỖ đúng vệt dải địa hình — dùng khi dải (có cao độ) vẽ đè
+    lên, tránh CÙNG một vùng ảnh xuất hiện 2 LẦN (trên dải + dưới mặt phẳng) gây
+    cảnh nhân đôi/lệch thị sai khi nhìn nghiêng ("tỷ lệ sai"). Trả Mesh3d/None."""
     try:
         mx = np.asarray(mx, float); my = np.asarray(my, float); mz = np.asarray(mz, float)
         cx = float(np.nanmean(mx)); cy = float(np.nanmean(my))
@@ -4701,6 +4703,26 @@ def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
         i0 = idx[:-1, :-1].ravel(); i1 = idx[:-1, 1:].ravel()
         i2 = idx[1:, 1:].ravel(); i3 = idx[1:, :-1].ravel()
         I = np.concatenate([i0, i0]); J = np.concatenate([i1, i2]); K = np.concatenate([i2, i3])
+        if cut_hole:
+            # LOẠI tam giác nằm dưới VỆT dải địa hình: lưới chiếm-chỗ (ô ~10m)
+            # đánh dấu từ đỉnh dải + nở 1 ô; tam giác có TÂM rơi vào ô đánh dấu
+            # thì bỏ. Thuần numpy, không cần scipy.
+            _cell = 10.0
+            _sx = np.floor(mx.ravel() / _cell).astype(np.int64)
+            _sy = np.floor(my.ravel() / _cell).astype(np.int64)
+            occ = set()
+            for _dx in (-1, 0, 1):
+                for _dy in (-1, 0, 1):
+                    occ.update(zip((_sx + _dx).tolist(), (_sy + _dy).tolist()))
+            _fx = GX.ravel(); _fy = GY.ravel()
+            _cxs = (_fx[I] + _fx[J] + _fx[K]) / 3.0
+            _cys = (_fy[I] + _fy[J] + _fy[K]) / 3.0
+            _kx = np.floor(_cxs / _cell).astype(np.int64)
+            _ky = np.floor(_cys / _cell).astype(np.int64)
+            keep = np.fromiter(((int(a), int(b)) not in occ
+                                for a, b in zip(_kx, _ky)),
+                               dtype=bool, count=len(_kx))
+            I, J, K = I[keep], J[keep], K[keep]
         return go.Mesh3d(
             x=GX.ravel(), y=GY.ravel(), z=np.full(gr_r * gr_c, base_z),
             i=I, j=J, k=K, vertexcolor=vcol, flatshading=False,
