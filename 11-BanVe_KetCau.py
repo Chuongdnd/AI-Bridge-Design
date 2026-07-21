@@ -4628,7 +4628,9 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
         _la0, _la1 = latmin-_dl, latmax+_dl
         col = np.clip(((lon - _lo0)/max(_lo1-_lo0, 1e-9)*(W-1)).astype(int), 0, W-1)
         row = np.clip(((_la1 - lat)/max(_la1-_la0, 1e-9)*(H-1)).astype(int), 0, H-1)
-        rgb = (np.clip(img[row, col], 0, 1) * 255).astype(int).reshape(-1, 3)
+        _c = np.clip(img[row, col], 0, 1)
+        _c = np.clip(np.power(_c, 0.82) * 1.10, 0, 1)   # nâng sáng như ảnh thật
+        rgb = (_c * 255).astype(int).reshape(-1, 3)
         vcol = [f"rgb({r},{g},{b})" for r, g, b in rgb]
         # tam giác hoá lưới R×C
         idx = np.arange(R*C).reshape(R, C)
@@ -4638,7 +4640,8 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
         return go.Mesh3d(
             x=mx.ravel(), y=my.ravel(), z=(mz*he_so_z).ravel(),
             i=I, j=J, k=K, vertexcolor=vcol, flatshading=False,
-            lighting=dict(ambient=0.95, diffuse=0.35, specular=0.05),
+            lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0,
+                          roughness=1.0, fresnel=0.0),   # unlit — màu ảnh nguyên bản
             name=name, showlegend=True, legendgroup="Địa hình",
             hoverinfo="skip", opacity=1.0)
     except Exception as _e:
@@ -4697,7 +4700,11 @@ def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
         H, W = img.shape[:2]
         col = np.clip(((lon - lo0)/max(lo1-lo0, 1e-9)*(W-1)).astype(int), 0, W-1)
         row = np.clip(((la1 - lat)/max(la1-la0, 1e-9)*(H-1)).astype(int), 0, H-1)
-        rgb = (np.clip(img[row, col], 0, 1)*255).astype(int).reshape(-1, 3)
+        # NÂNG SÁNG như ảnh thật: gamma 0.82 + gain 1.10 — bù việc Mesh3d đi qua
+        # hệ chiếu sáng 3D (bình đồ 2D hiển thị ảnh thô nên trông sáng hơn).
+        _c = np.clip(img[row, col], 0, 1)
+        _c = np.clip(np.power(_c, 0.82) * 1.10, 0, 1)
+        rgb = (_c * 255).astype(int).reshape(-1, 3)
         vcol = [f"rgb({r},{g},{b})" for r, g, b in rgb]
         idx = np.arange(gr_r * gr_c).reshape(gr_r, gr_c)
         i0 = idx[:-1, :-1].ravel(); i1 = idx[:-1, 1:].ravel()
@@ -4726,7 +4733,10 @@ def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
         return go.Mesh3d(
             x=GX.ravel(), y=GY.ravel(), z=np.full(gr_r * gr_c, base_z),
             i=I, j=J, k=K, vertexcolor=vcol, flatshading=False,
-            lighting=dict(ambient=1.0, diffuse=0.1, specular=0.0),
+            # UNLIT thuần: chỉ ambient, KHÔNG diffuse/specular → màu ảnh giữ nguyên,
+            # không bị tối/sáng theo hướng đèn như mặc định của Mesh3d.
+            lighting=dict(ambient=1.0, diffuse=0.0, specular=0.0,
+                          roughness=1.0, fresnel=0.0),
             name="Nền vệ tinh", showlegend=True, legendgroup="Địa hình",
             hoverinfo="skip", opacity=1.0)
     except Exception as _e:
