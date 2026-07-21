@@ -8247,7 +8247,7 @@ with _col_main:
                     do_min_view = 3
                     he_so_z     = 0.5
                     # ── NỀN VỆ TINH cho 3D (tuỳ chọn) — phủ ảnh vệ tinh lên địa hình ──
-                    _s3c1, _s3c2 = st.columns([1, 2])
+                    _s3c1, _s3c2, _s3c3 = st.columns([1, 1.6, 1.4])
                     _sat3d_on = _s3c1.toggle(
                         "🛰️ Địa hình vệ tinh", key=f"sat3d_{selected_ribbon}",
                         help="Phủ ảnh vệ tinh thực (Esri) lên mặt địa hình 3D theo VN-2000.")
@@ -8255,6 +8255,22 @@ with _col_main:
                         "Tỉnh/Thành (VN-2000)", ["— Chọn tỉnh —"] + sorted(BVK.VN2000_KTT_TINH),
                         key=f"sat3d_tinh_{selected_ribbon}", disabled=not _sat3d_on,
                         help="Chọn tỉnh nơi công trình → lấy kinh tuyến trục cho ảnh vệ tinh.")
+                    # Độ nét = mật độ lưới đỉnh (màu nội suy giữa các đỉnh).
+                    # "Tối đa (1:1)": đỉnh dày ~1.5m ≈ 1 pixel ảnh — nét nhất có thể,
+                    # nhưng mô hình rất nặng (tải + xoay chậm trên máy yếu).
+                    # img giữ 1536 mọi mức: 1536px/~1.8km ≈ 1.17 m/pixel — đã MỊN
+                    # HƠN lưới Tối đa (~1.9 m/đỉnh) nên tăng ảnh không thêm nét,
+                    # chỉ thêm timeout (Esri size 2048 hay quá 15-30s).
+                    _SAT_QUALITY = {
+                        "Tiêu chuẩn":      dict(cap_rc=(220, 170), inner_n=140, img=1536),
+                        "Nét":             dict(cap_rc=(340, 260), inner_n=200, img=1536),
+                        "Tối đa (1:1 ảnh)": dict(cap_rc=(520, 390), inner_n=280, img=1536),
+                    }
+                    _sat_q = _s3c3.selectbox(
+                        "Độ nét", list(_SAT_QUALITY), index=1,
+                        key=f"sat3d_q_{selected_ribbon}", disabled=not _sat3d_on,
+                        help="Nét hơn = lưới đỉnh dày hơn = mô hình nặng hơn. "
+                             "Tối đa: 1 đỉnh ≈ 1 pixel ảnh (máy yếu sẽ chậm).")
                     _sat_lon0 = BVK.VN2000_KTT_TINH.get(_sat_tinh)
                     _sat_active = bool(_sat3d_on and _sat_lon0 is not None)
                     # Compute VN-2000 origin from min-lý-trình centre-line point
@@ -8292,9 +8308,10 @@ with _col_main:
                     # thức mới (vd sửa datum VN2000→WGS84) phiên cũ vẫn hiện figure
                     # CŨ từ cache → "3D vẫn lệch dù 2D đã đúng". Đổi chuỗi này mỗi
                     # khi thay đổi cách dựng 3D/toạ độ.
-                    _SAT_CODE_VER = "satv3-datum-sharp"
+                    _SAT_CODE_VER = "satv4-quality"
                     _k3d = (selected_ribbon, _spt_pfx, _terr_sig, _des_sig,
-                            _sat_active, _sat_lon0, _SAT_CODE_VER)
+                            _sat_active, _sat_lon0, _sat_q if _sat_active else "",
+                            _SAT_CODE_VER)
                     _c3d = st.session_state.get(f"_fig3dcache_{selected_ribbon}")
                     _cached_hit = bool(_c3d and _c3d[0] == _k3d)
                     try:
@@ -8310,14 +8327,20 @@ with _col_main:
                             # + MẶT PHẲNG VỆ TINH RỘNG bao quanh (ngoài phạm vi địa hình).
                             if _sat_active and _fig_t is not None and mx is not None:
                                 with st.spinner("🛰️ Đang tải ảnh vệ tinh & phủ lên địa hình…"):
+                                    _qcfg = _SAT_QUALITY.get(_sat_q,
+                                                             _SAT_QUALITY["Nét"])
                                     _sat_mesh = BVK.build_satellite_terrain_mesh(
                                         mx, my, mz, he_so_z,
                                         _x_origin_vn2000, _y_origin_vn2000,
-                                        lon0=_sat_lon0, k0=0.9999)
+                                        lon0=_sat_lon0, k0=0.9999,
+                                        cap_rc=_qcfg["cap_rc"],
+                                        img_size=_qcfg["img"])
                                     _sat_plane = BVK.build_satellite_ground_plane(
                                         mx, my, mz, he_so_z,
                                         _x_origin_vn2000, _y_origin_vn2000,
-                                        lon0=_sat_lon0, k0=0.9999)
+                                        lon0=_sat_lon0, k0=0.9999,
+                                        inner_n=_qcfg["inner_n"],
+                                        img_size=_qcfg["img"])
                                 if _sat_mesh is not None:
                                     # bỏ mặt địa hình cũ (Surface "Địa hình…")
                                     _fig_t.data = tuple(

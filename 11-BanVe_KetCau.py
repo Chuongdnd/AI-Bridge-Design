@@ -4564,7 +4564,7 @@ def _fetch_satellite(latmin, latmax, lonmin, lonmax, size=640):
                f"MapServer/export?bbox={lonmin},{latmin},{lonmax},{latmax}"
                f"&bboxSR=4326&imageSR=4326&size={size},{size}&format=png32&f=image")
         req = _u.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        raw = _u.urlopen(req, timeout=15).read()
+        raw = _u.urlopen(req, timeout=30).read()
         img = _mpimg.imread(_io.BytesIO(raw), format="png")[:, :, :3]
         _SAT_CACHE[key] = img
         if len(_SAT_CACHE) > 8:                      # giới hạn RAM
@@ -4577,10 +4577,13 @@ def _fetch_satellite(latmin, latmax, lonmin, lonmax, size=640):
 
 
 def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
-                                 lon0=105.0, k0=0.9999, name="Địa hình (vệ tinh)"):
+                                 lon0=105.0, k0=0.9999, name="Địa hình (vệ tinh)",
+                                 cap_rc=(220, 170), img_size=1536):
     """Dựng mặt địa hình 3D PHỦ ẢNH VỆ TINH: lấy màu ảnh Esri gán cho từng đỉnh
     lưới (Mesh3d vertexcolor). mx,my là toạ độ TƯƠNG ĐỐI của scene (đã trừ gốc);
-    x_org,y_org là gốc VN-2000 để đổi ra lat/lon. Trả go.Mesh3d hoặc None."""
+    x_org,y_org là gốc VN-2000 để đổi ra lat/lon. Trả go.Mesh3d hoặc None.
+    cap_rc/img_size: trần lưới & cỡ ảnh — chỉnh theo mức độ nét người dùng chọn
+    (độ nét vertexcolor = mật độ lưới; 1:1 với pixel ảnh cần đỉnh dày cỡ ~1.5m)."""
     try:
         mx = np.asarray(mx, float); my = np.asarray(my, float); mz = np.asarray(mz, float)
         if mx.ndim != 2:
@@ -4600,7 +4603,7 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
                 out[:, j] = np.interp(yn, yo, t[:, j])
             return out
         R0, C0 = mz.shape
-        R2, C2 = min(R0 * 5, 220), min(C0 * 5, 170)
+        R2, C2 = min(R0 * 12, cap_rc[0]), min(C0 * 12, cap_rc[1])
         if R2 > R0 or C2 > C0:
             mx = _ups(mx, R2, C2); my = _ups(my, R2, C2); mz = _ups(mz, R2, C2)
         R, C = mz.shape
@@ -4617,7 +4620,7 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
         # nới nhẹ biên để ảnh phủ trọn
         _dl = (latmax - latmin) * 0.02 + 1e-4; _dg = (lonmax - lonmin) * 0.02 + 1e-4
         img = _fetch_satellite(latmin-_dl, latmax+_dl, lonmin-_dg, lonmax+_dg,
-                               size=1536)
+                               size=img_size)
         if img is None:
             return None
         H, W = img.shape[:2]
@@ -4644,11 +4647,12 @@ def build_satellite_terrain_mesh(mx, my, mz, he_so_z, x_org, y_org,
 
 
 def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
-                                 lon0=105.0, k0=0.9999, expand=1.6, grid=160):
+                                 lon0=105.0, k0=0.9999, expand=1.6,
+                                 inner_n=140, img_size=1536):
     """MẶT PHẲNG VỆ TINH RỘNG bao quanh cầu (ngoài phạm vi địa hình khảo sát).
-    Lưới `grid`×`grid` phủ hình vuông rộng ~expand× phạm vi địa hình, PHẲNG ở cao
-    độ nền (đáy địa hình), lấy màu ảnh vệ tinh cho từng ô. Dải địa hình (có cao độ)
-    vẽ ĐÈ lên trên. Trả go.Mesh3d hoặc None."""
+    Lưới hai mật độ (dày `inner_n` điểm quanh cầu, thưa vành ngoài) phủ hình vuông
+    rộng ~expand× phạm vi địa hình, PHẲNG ở cao độ nền, màu ảnh vệ tinh từng đỉnh.
+    Dải địa hình (có cao độ) vẽ ĐÈ lên trên. Trả go.Mesh3d hoặc None."""
     try:
         mx = np.asarray(mx, float); my = np.asarray(my, float); mz = np.asarray(mz, float)
         cx = float(np.nanmean(mx)); cy = float(np.nanmean(my))
@@ -4663,7 +4667,7 @@ def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
         # (~25m/đỉnh). Lưới rectilinear không đều vẫn tam giác hoá theo chỉ số
         # bình thường. Tổng ~180×180 = 32k đỉnh — WebGL chịu tốt.
         def _axis(c, inner_half, outer_half):
-            inner = np.linspace(c - inner_half, c + inner_half, 140)
+            inner = np.linspace(c - inner_half, c + inner_half, int(inner_n))
             n_out = max(12, int((outer_half - inner_half) / 25.0))
             left = np.linspace(c - outer_half, c - inner_half, n_out, endpoint=False)
             right = np.linspace(c + inner_half, c + outer_half, n_out + 1)[1:]
@@ -4685,7 +4689,7 @@ def build_satellite_ground_plane(mx, my, mz, he_so_z, x_org, y_org,
         lat = lat.reshape(gr_r, gr_c); lon = lon.reshape(gr_r, gr_c)
         la0, la1 = float(np.nanmin(lat)), float(np.nanmax(lat))
         lo0, lo1 = float(np.nanmin(lon)), float(np.nanmax(lon))
-        img = _fetch_satellite(la0, la1, lo0, lo1, size=1536)
+        img = _fetch_satellite(la0, la1, lo0, lo1, size=img_size)
         if img is None:
             return None
         H, W = img.shape[:2]
