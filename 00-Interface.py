@@ -968,6 +968,7 @@ _DESIGN_SAVE_KEYS = [
     'abutment_assembly_id', 'pier_assembly_id',
     'pier_col_spacing_m', 'pier_solid_width_m',
     'extra_clearances',
+    'dia_diem_xay_dung',   # địa điểm XD: vệ tinh (KTT theo tỉnh) + suất đầu tư vùng
 ]
 
 def _cur_user_pid():
@@ -4064,6 +4065,25 @@ _autoload_geo_defaults()
 @st.dialog("🪨 Địa hình & Địa chất (dùng chung 3 phương án)", width="large")
 def dialog_geo_data():
     st.caption("Dữ liệu địa hình & địa chất dùng CHUNG cho cả 3 phương án.")
+    # ── 📍 ĐỊA ĐIỂM XÂY DỰNG ─────────────────────────────────────────────────
+    # Dùng cho: (1) ảnh vệ tinh bình đồ + 3D (tự suy kinh tuyến trục VN-2000 —
+    # các ô chọn tỉnh ở đó tự bám theo, vẫn đổi tay được); (2) chỉ số xây dựng
+    # theo SUẤT ĐẦU TƯ vùng (design_data["dia_diem_xay_dung"] — module sau dùng).
+    st.markdown("#### 📍 Địa điểm xây dựng")
+    _dd_opts = ["— Chưa chọn —"] + sorted(BVK.VN2000_KTT_TINH.keys())
+    _dd_cur = st.session_state.design_data.get("dia_diem_xay_dung")
+    _dd_idx = _dd_opts.index(_dd_cur) if _dd_cur in _dd_opts else 0
+    _dd_sel = st.selectbox(
+        "Tỉnh/Thành nơi xây dựng công trình", _dd_opts, index=_dd_idx,
+        key="dd_xd_sel",
+        help="Cập nhật cho ảnh vệ tinh (bình đồ + 3D) và dùng tính chỉ số "
+             "xây dựng theo suất đầu tư vùng.")
+    if _dd_sel != "— Chưa chọn —":
+        st.session_state.design_data["dia_diem_xay_dung"] = _dd_sel
+        st.caption(f"Kinh tuyến trục VN-2000: "
+                   f"**{BVK.ktt_label(BVK.VN2000_KTT_TINH[_dd_sel])}** (múi 3°) — "
+                   "ảnh vệ tinh sẽ tự dùng địa điểm này.")
+    st.markdown("---")
     st.markdown("#### 🗺️ Địa hình (.NTD + tọa độ VN-2000)")
     _decl_box_dia_hinh()
     st.markdown("---")
@@ -4096,6 +4116,10 @@ def dialog_geo_data():
     with _gd_a:
         if st.button("✅ Áp dụng", use_container_width=True, key="gd_apply",
                      help="LƯU dữ liệu đã nạp — hộp vẫn mở để khai báo tiếp"):
+            try:
+                _save_design_inputs(st.session_state.design_data)  # lưu cả địa điểm XD
+            except Exception:
+                pass
             st.toast("💾 Đã lưu Địa hình & Địa chất.", icon="✅")
             st.session_state.open_dialog = "geodata"   # ghi nhớ, không thoát hộp
             st.rerun()
@@ -8256,10 +8280,15 @@ with _col_main:
                         "🛰️ Nền vệ tinh", key=f"sat3d_{selected_ribbon}",
                         help="Hiện ảnh vệ tinh thực (Esri) làm nền phẳng dưới mô hình "
                              "3D, đặt theo toạ độ VN-2000.")
+                    # Tự bám ĐỊA ĐIỂM XÂY DỰNG đã khai (hộp Địa hình & Địa chất);
+                    # chỉ seed khi người dùng CHƯA đổi tay ô này.
+                    _dd_xd = st.session_state.design_data.get("dia_diem_xay_dung")
+                    if _dd_xd and f"sat3d_tinh_{selected_ribbon}" not in st.session_state:
+                        st.session_state[f"sat3d_tinh_{selected_ribbon}"] = _dd_xd
                     _sat_tinh = _s3c2.selectbox(
                         "Tỉnh/Thành (VN-2000)", ["— Chọn tỉnh —"] + sorted(BVK.VN2000_KTT_TINH),
                         key=f"sat3d_tinh_{selected_ribbon}", disabled=not _sat3d_on,
-                        help="Chọn tỉnh nơi công trình → lấy kinh tuyến trục cho ảnh vệ tinh.")
+                        help="Tự lấy theo Địa điểm xây dựng đã khai báo — vẫn đổi được.")
                     _sat_lon0 = BVK.VN2000_KTT_TINH.get(_sat_tinh)
                     _sat_active = bool(_sat3d_on and _sat_lon0 is not None)
                     # Compute VN-2000 origin from min-lý-trình centre-line point
@@ -8771,12 +8800,17 @@ with _col_main:
                              "Cần đã nạp địa hình có toạ độ VN-2000.")
                     # Chọn theo TỈNH (như Civil 3D) → tự suy kinh tuyến trục; múi 3°
                     # là chuẩn cho hệ toạ độ tỉnh nên ẩn đi. Có "Khác…" để nhập tay.
+                    # Tự bám ĐỊA ĐIỂM XÂY DỰNG đã khai (hộp Địa hình & Địa chất);
+                    # chỉ seed khi người dùng CHƯA đổi tay ô này.
                     _tinh_opts = ["— Chọn tỉnh —"] + sorted(BVK.VN2000_KTT_TINH.keys()) + ["Khác (nhập kinh tuyến trục)"]
+                    _dd_xd_bd = st.session_state.design_data.get("dia_diem_xay_dung")
+                    if _dd_xd_bd and f"tinh_{selected_ribbon}" not in st.session_state:
+                        st.session_state[f"tinh_{selected_ribbon}"] = _dd_xd_bd
                     _tinh = _mc2.selectbox(
                         "Tỉnh/Thành (hệ toạ độ VN-2000)", _tinh_opts,
                         key=f"tinh_{selected_ribbon}", disabled=not _map_on,
-                        help="Chọn tỉnh nơi công trình → tự lấy kinh tuyến trục VN-2000. "
-                             "Nên đối chiếu với hệ toạ độ Civil 3D của đơn vị.")
+                        help="Tự lấy theo Địa điểm xây dựng đã khai báo — vẫn đổi "
+                             "được. Nên đối chiếu với hệ toạ độ Civil 3D của đơn vị.")
                     _lon0 = None
                     if _tinh in BVK.VN2000_KTT_TINH:
                         _lon0 = BVK.VN2000_KTT_TINH[_tinh]
