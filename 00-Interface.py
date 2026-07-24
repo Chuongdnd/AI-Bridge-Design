@@ -802,10 +802,11 @@ _auth_spec = _iutil.spec_from_file_location("auth00", os.path.join(os.path.dirna
 AUTH = _iutil.module_from_spec(_auth_spec)
 _auth_spec.loader.exec_module(AUTH)
 
-# ── TẠM ẨN ĐĂNG NHẬP ─────────────────────────────────────────────────────────
-# Bỏ qua trang đăng nhập: tự đăng nhập bằng tài khoản khách (quyền admin để mọi
-# tính năng dùng được). ĐỂ BẬT LẠI: đặt _REQUIRE_LOGIN = True.
-_REQUIRE_LOGIN = False
+# ── ĐĂNG NHẬP ────────────────────────────────────────────────────────────────
+# Yêu cầu đăng nhập bằng tài khoản/mật khẩu. Tài khoản mặc định sau khi reset:
+# admin / admin123 (đổi ngay trong panel 👥 Tài khoản sau khi đăng nhập).
+# ĐỂ TẮT: đặt _REQUIRE_LOGIN = False (tự vào bằng tài khoản khách quyền admin).
+_REQUIRE_LOGIN = True
 if _REQUIRE_LOGIN:
     if not AUTH.is_authenticated():
         AUTH.show_login_page()

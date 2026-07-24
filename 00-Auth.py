@@ -196,6 +196,26 @@ def logout():
         st.session_state.pop(k, None)
 
 
+def reset_auth_db() -> tuple:
+    """Đặt lại TOÀN BỘ kho tài khoản về mặc định (admin / admin123).
+
+    - Xóa file auth_users.json cục bộ (nếu có) và ghi đè kho Gist (nếu cấu hình).
+    - Xóa cache phiên để lần _load() sau đọc kho mới.
+    - Tài khoản khai trong st.secrets[auth_users] không bị ảnh hưởng
+      (luôn được overlay lại khi load).
+    Trả về (ok: bool, msg: str).
+    """
+    db = _default_db()
+    st.session_state.pop("_auth_db_cache", None)
+    try:
+        if os.path.exists(_AUTH_FILE):
+            os.remove(_AUTH_FILE)
+    except Exception:
+        pass
+    _save(db)
+    return True, "Đã đặt lại kho tài khoản về mặc định: admin / admin123."
+
+
 # ─────────────────────────────────────────────────────────────────────────────
 # Dang ky tai khoan (tu phuc vu)
 # ─────────────────────────────────────────────────────────────────────────────
@@ -416,3 +436,27 @@ def show_account_panel():
                 users[chg_u]["password_hash"] = _hash(chg_p, salt)
                 _save(db)
                 st.success(f"Đã cập nhật mật khẩu cho **{chg_u}**.")
+
+    st.markdown("---")
+
+    # Dat lai toan bo tai khoan ve mac dinh
+    with st.expander("🔄 Đặt lại toàn bộ tài khoản (khôi phục mặc định)", expanded=False):
+        st.warning(
+            "Thao tác này **XÓA tất cả tài khoản** hiện có và khôi phục về "
+            "mặc định `admin / admin123`. Tài khoản khai trong Secrets "
+            "không bị ảnh hưởng. Không thể hoàn tác!"
+        )
+        rs_confirm = st.text_input(
+            "Gõ `RESET` để xác nhận", key="rs_confirm", placeholder="RESET"
+        )
+        if st.button("⚠️ Đặt lại tài khoản", key="btn_reset_db", type="primary"):
+            if rs_confirm.strip() != "RESET":
+                st.error("Chưa xác nhận: hãy gõ đúng chữ RESET.")
+            else:
+                ok, msg = reset_auth_db()
+                if ok:
+                    logout()   # phien hien tai dang nhap lai bang mat khau moi
+                    st.success("✅ " + msg + " Mời đăng nhập lại.")
+                    st.rerun()
+                else:
+                    st.error("❌ " + msg)
