@@ -67,9 +67,13 @@ def check_h98(h98: float, h10: float) -> FieldResult:
     return FieldResult(True)
 
 
-def check_x_tim(x: float, lt_min=None, lt_max=None) -> FieldResult:
-    """Lý trình tim cầu phải trong phạm vi địa hình (nếu đã nạp)."""
-    if x == 0:
+def check_x_tim(x: float, lt_min=None, lt_max=None,
+                allow_zero: bool = False) -> FieldResult:
+    """Lý trình tim cầu phải trong phạm vi địa hình (nếu đã nạp).
+
+    allow_zero=True (nguồn địa hình DXF bình đồ): lý trình 0 là HỢP LỆ — mốc
+    0-0 đặt tại giao tim luồng × tim tuyến TK, không phải 'chưa nhập'."""
+    if x == 0 and not allow_zero:
         return FieldResult(False,
             error="Chưa nhập lý trình tim cầu",
             hint="Nhập lý trình điểm cầu vượt sông/kênh (đơn vị: m)")

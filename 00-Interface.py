@@ -2099,9 +2099,12 @@ def dialog_step1():
         st.session_state.design_data['extra_clearances'] = _extra_tk
 
     def _d1_validate():
+        # Nguồn DXF: lý trình 0-0 (giao tim luồng) HỢP LỆ → allow_zero, nếu
+        # không check_x_tim báo "chưa nhập" → chặn nút và VĂNG khỏi hộp khai báo.
+        _az = (st.session_state.get("terrain_source") == "dxf_topo")
         _rs = [
             VAL.check_goc_giao(goc_giao),
-            VAL.check_x_tim(x_tim_clearance, _lt_min, _lt_max),
+            VAL.check_x_tim(x_tim_clearance, _lt_min, _lt_max, allow_zero=_az),
             VAL.check_h1(h1, h5), VAL.check_h5(h5, h1, h10),
             VAL.check_h10(h10, h5, h98), VAL.check_h98(h98, h10),
         ]
