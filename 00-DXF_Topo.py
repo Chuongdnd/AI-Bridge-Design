@@ -105,7 +105,12 @@ def parse_topo_dxf(data):
     if ezdxf is None:
         raise RuntimeError("Thiếu thư viện ezdxf")
     if isinstance(data, (bytes, bytearray)):
-        doc = ezdxf.read(io.StringIO(data.decode("utf-8", errors="ignore")))
+        # DXF thật ngoài công trường thường KHÔNG phải UTF-8 thuần (codepage
+        # tiếng Việt cp1258, khối preview nhị phân…) — decode utf-8 rồi đọc
+        # text sẽ vỡ ("Invalid binary data near line…"). ezdxf.recover nhận
+        # BYTES trực tiếp, tự dò codepage/binary + chịu lỗi → dùng làm chuẩn.
+        from ezdxf import recover as _recover
+        doc, _audit = _recover.read(io.BytesIO(bytes(data)))
     else:
         doc = ezdxf.readfile(str(data))
     msp = doc.modelspace()
