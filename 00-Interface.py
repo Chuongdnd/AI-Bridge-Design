@@ -2030,17 +2030,25 @@ def dialog_step1():
                 _lt_max = float(_tl[_lt_col].max())
                 st.info(f"🗺️ Địa hình: Lý trình {_lt_min:.1f} → {_lt_max:.1f}m  |  Gợi ý tim cầu ≈ **{(_lt_min+_lt_max)/2:.1f}m**")
 
-        x_tim_clearance = _field_with_feedback(
-            label     = "📍 Lý trình tim tĩnh không (m)",
-            value     = float(draft.get('x_tim_clearance', st.session_state.design_data.get('x_tim_clearance', 350.0))),
-            key       = "d1_xtim",
-            check_fn  = VAL.check_x_tim,
-            check_args= (_lt_min, _lt_max),
-            fmt       = "%.2f",
-            step      = 1.0,
-            help_txt  = "Lý trình điểm tim cầu vượt qua sông/kênh.",
-            show_feedback = _d1_show,
-        )
+        # Nguồn địa hình = DXF BÌNH ĐỒ → tim tĩnh không LẤY THEO TIM LUỒNG
+        # (mốc lý trình 0-0 tại giao tim luồng × tim TK) — KHÔNG khai tay,
+        # không dùng quy tắc mặc định 350 nữa.
+        if st.session_state.get("terrain_source") == "dxf_topo":
+            x_tim_clearance = 0.0
+            st.success("📍 Tim tĩnh không = **GIAO TIM LUỒNG × TIM TUYẾN TK** "
+                       "(lý trình 0-0, tự động từ DXF bình đồ) — không cần khai.")
+        else:
+            x_tim_clearance = _field_with_feedback(
+                label     = "📍 Lý trình tim tĩnh không (m)",
+                value     = float(draft.get('x_tim_clearance', st.session_state.design_data.get('x_tim_clearance', 350.0))),
+                key       = "d1_xtim",
+                check_fn  = VAL.check_x_tim,
+                check_args= (_lt_min, _lt_max),
+                fmt       = "%.2f",
+                step      = 1.0,
+                help_txt  = "Lý trình điểm tim cầu vượt qua sông/kênh.",
+                show_feedback = _d1_show,
+            )
 
         _d = st.session_state.design_data
         h1 = _field_with_feedback(
@@ -2830,6 +2838,10 @@ def dialog_step3():
         h98              = d.get('h98', _sd0.get('MNTN', 0.5))
         t_ban_mm         = d.get('t_ban_mm', _sd0.get('t_ban_mm', 200))
         x_tim_clearance  = d.get('x_tim_clearance', _sd0.get('x_tim_clearance', 350.0))
+        # Nguồn DXF bình đồ: tim tĩnh không LUÔN = tim luồng (lý trình 0-0) —
+        # CƯỠNG CHẾ tại pipeline, bỏ hẳn quy tắc khai tay/mặc định 350.
+        if st.session_state.get("terrain_source") == "dxf_topo":
+            x_tim_clearance = 0.0
         l_hinhhoc        = d.get('l_hinhhoc', _sd0.get('loai_duong', 'Do thi'))
         v_hinhhoc        = d.get('v_hinhhoc', _sd0.get('vtk', 60))
         d_hinhhoc        = d.get('d_hinhhoc', '1')
@@ -3983,6 +3995,7 @@ def _decl_box_dia_hinh():
                     _save_terrain_defaults(file_khao_sat.getvalue(),
                                            file_toa_do.getvalue(),
                                            file_toa_do.name)
+                    st.session_state.terrain_source = "ntd"
                     st.success(f"✅ Đã đồng bộ {len(_dg)} điểm địa hình theo "
                                "VN-2000! (đã lưu làm mặc định cho lần sau)")
 
@@ -4028,6 +4041,7 @@ def _decl_box_dia_hinh():
                     _tl = (_dg[_dg["Offset"] == 0][["Lý trình", "Z"]]
                            .drop_duplicates("Lý trình").sort_values("Lý trình"))
                     st.session_state.df_tim_line = _tl
+                    st.session_state.terrain_source = "ntd"
                     st.info(f"🗺️ Đã tự nạp địa hình mặc định ({len(_dg)} điểm). "
                             "Tải file mới ở trên để thay thế.")
 
@@ -4158,6 +4172,7 @@ def _autoload_geo_defaults() -> None:
                     _tl = (_dg[_dg["Offset"] == 0][["Lý trình", "Z"]]
                            .drop_duplicates("Lý trình").sort_values("Lý trình"))
                     st.session_state.df_tim_line = _tl
+                    st.session_state.terrain_source = "ntd"
         except Exception:
             pass
     if "dia_chat_frames" not in st.session_state and os.path.exists(_DIA_CHAT_SAVED):
