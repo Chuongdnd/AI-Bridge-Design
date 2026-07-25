@@ -3875,10 +3875,13 @@ def _process_topo_dxf(dxf_bytes: bytes, persist: bool = True):
     st.session_state.dxf_topo_features = feats
     st.session_state.terrain_source = "dxf_topo"
     # Mốc 0-0 tại giao tim luồng → tim tĩnh không = lý trình 0 (không khai tay).
+    # Phải ghi đè CẢ widget wizard (d1_xtim) — widget giữ state riêng, nếu không
+    # lần "Tính toán" sau vẫn lấy 350 cũ đè lên.
     try:
         st.session_state.design_data["x_tim_clearance"] = 0.0
         if isinstance(st.session_state.get("wizard_draft"), dict):
             st.session_state.wizard_draft["x_tim_clearance"] = 0.0
+        st.session_state["d1_xtim"] = 0.0
     except Exception:
         pass
     if persist:

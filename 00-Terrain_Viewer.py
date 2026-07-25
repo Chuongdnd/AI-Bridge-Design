@@ -293,7 +293,14 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3,
         # Đường tim tuyến
         df_tim_all = df_clean[df_clean['Offset'] == 0].drop_duplicates(subset=['Lý trình']).sort_values('Lý trình')
         if not df_tim_all.empty:
-            nhan_hien_thi = df_tim_all.apply(lambda r: f"{r['Cọc']} (LT: {r['Lý trình']:.1f}m)", axis=1).values
+            # Nguồn DXF bình đồ có thể không có cột 'Cọc' / cọc rỗng (trạm trung
+            # gian) → chỉ dán nhãn tại cọc CÓ TÊN (mỗi 20m, mốc 0-0 tại tim luồng).
+            if 'Cọc' not in df_tim_all.columns:
+                df_tim_all = df_tim_all.assign(**{'Cọc': ''})
+            nhan_hien_thi = df_tim_all.apply(
+                lambda r: (f"{r['Cọc']} (LT: {r['Lý trình']:.1f}m)"
+                           if str(r.get('Cọc') or '').strip() else ""),
+                axis=1).values
             fig.add_trace(go.Scatter3d(
                 x=df_tim_all['X_Real'].values, y=df_tim_all['Y_Real'].values, z=df_tim_all['Z'].values * he_so_z,
                 mode='lines+markers+text',

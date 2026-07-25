@@ -220,6 +220,18 @@ def chainage_zero(tim_tk, tim_luong):
     return None
 
 
+def _coc_name(ly, moc=20.0):
+    """Tên CỌC hiển thị: '0-0' tại giao tim luồng, mỗi 20m một cọc ('0+020',
+    '-0+540'…); trạm trung gian (5m) để RỖNG — không dán nhãn."""
+    a = abs(float(ly))
+    if a < 1e-6:
+        return "0-0"
+    if abs(a % moc) > 1e-6:
+        return ""
+    km, m = int(a // 1000), a % 1000
+    return f"{'-' if ly < 0 else ''}{km}+{m:03.0f}"
+
+
 # ── Dựng bảng chuẩn ─────────────────────────────────────────────────────────
 def build_geology(parsed, step=5.0, off_max=40.0, off_step=2.5):
     """Sinh (df_geology, df_tim_line, tin_fn, info) từ kết quả parse.
@@ -248,11 +260,15 @@ def build_geology(parsed, step=5.0, off_max=40.0, off_step=2.5):
     s0 = chainage_zero(tim, parsed["tims"].get("luong"))
     if s0 is None:
         s0 = 0.0
-    stations = np.arange(0.0, L + 1e-6, step)
+    # Lưới trạm NEO THEO LÝ TRÌNH (bội số step, ly=0 ĐÚNG giao tim luồng) —
+    # nếu neo theo s tuyệt đối thì mọi ly lệch s0 → không có cọc chẵn 20m.
+    ly0 = float(np.ceil((-s0) / step) * step)
+    stations_ly = np.arange(ly0, (L - s0) + 1e-6, step)
     offs = np.arange(-off_max, off_max + 1e-6, off_step)
 
     rows = []
-    for s in stations:
+    for ly_g in stations_ly:
+        s = float(ly_g) + s0
         cE = float(np.interp(s, ss, Ee)); cN = float(np.interp(s, ss, Nn))
         s2 = min(s + 1.0, L)
         tE = float(np.interp(s2, ss, Ee)) - float(np.interp(max(s2-1, 0), ss, Ee))
@@ -261,20 +277,26 @@ def build_geology(parsed, step=5.0, off_max=40.0, off_step=2.5):
         # (_vn: x = Xc + off·cos(goc+90°)) dùng y như nguồn .NTD.
         goc = float(np.arctan2(tE, tN))         # atan2(dYc, dXc)
         per = goc + np.pi / 2.0
-        ly = round(s - s0, 3)
+        ly = round(float(ly_g), 3)
         for off in offs:
-            Xc = cN + off * np.cos(per)         # Bắc
-            Yc = cE + off * np.sin(per)         # Đông
+            Xc = cN + off * np.cos(per)         # điểm thật — Bắc
+            Yc = cE + off * np.sin(per)         # điểm thật — Đông
             z = float(tin_fn(Yc, Xc))           # tin nhận (E, N)
-            rows.append((ly, round(float(off), 2), Xc, Yc, goc, round(z, 3)))
+            # SCHEMA .NTD: X/Y_VN2000 = TIM (lặp mọi offset của trạm);
+            # X/Y_Real = ĐIỂM THẬT (= tim + off·(cos,sin)(góc+90°)); 'Cọc' tên
+            # cọc 20m; 'Tag_Gốc'='TARGET' — TV dựng lưới TỪ các điểm TARGET
+            # (mỗi trạm cần ≥2), mọi offset ở đây đều là mẫu địa hình thật.
+            rows.append((ly, round(float(off), 2), cN, cE, goc,
+                         round(z, 3), Xc, Yc, _coc_name(ly), "TARGET"))
 
     df = pd.DataFrame(rows, columns=["Lý trình", "Offset", "X_VN2000",
-                                     "Y_VN2000", "Góc_Tuyến", "Z"])
+                                     "Y_VN2000", "Góc_Tuyến", "Z",
+                                     "X_Real", "Y_Real", "Cọc", "Tag_Gốc"])
     df_tim = (df[df["Offset"] == 0][["Lý trình", "Z"]]
               .drop_duplicates("Lý trình").sort_values("Lý trình")
               .reset_index(drop=True))
     info = {"L_tuyen": round(L, 1), "s0": round(s0, 2),
-            "n_tram": len(stations), "n_diem": len(df),
+            "n_tram": len(stations_ly), "n_diem": len(df),
             "z_min": float(df["Z"].min()), "z_max": float(df["Z"].max())}
     return df, df_tim, tin_fn, info
 
