@@ -3722,8 +3722,20 @@ def _decl_box_thuy_van():
                                      step=0.5, key="dinp_B")
             _day_dam = st.number_input("Cao trình đáy cầu (m)", value=float(_sd.get('day_dam', 0.0)),
                                         step=0.1, key="dinp_day_dam")
-            _xtim = st.number_input("Lý trình tim TK (m)", value=float(_sd.get('x_tim_clearance', 350.0)),
-                                     step=1.0, key="dinp_xtim")
+            # Nguồn DXF bình đồ → tim tĩnh không LẤY THEO TIM LUỒNG (lý trình
+            # 0-0), KHÓA ô nhập để không ghi đè bằng giá trị khai tay/350 cũ.
+            _tim_locked = (st.session_state.get("terrain_source") == "dxf_topo")
+            if _tim_locked:
+                _xtim = 0.0
+                st.number_input("Lý trình tim TK (m) — theo TIM LUỒNG", value=0.0,
+                                step=1.0, key="dinp_xtim", disabled=True,
+                                help="Nguồn địa hình DXF: tim tĩnh không = giao "
+                                     "tim luồng × tim tuyến TK (lý trình 0-0).")
+            else:
+                _xtim = st.number_input(
+                    "Lý trình tim TK (m)",
+                    value=float(_sd.get('x_tim_clearance', 350.0)),
+                    step=1.0, key="dinp_xtim")
         with _tc2:
             _mn2 = st.number_input("MNTT (m)", value=float(_sd.get('MNTT', 2.0)),
                                     step=0.1, format="%.2f", key="dinp_MNTT")
@@ -3910,7 +3922,17 @@ def _process_topo_dxf(dxf_bytes: bytes, persist: bool = True):
         st.session_state.design_data["x_tim_clearance"] = 0.0
         if isinstance(st.session_state.get("wizard_draft"), dict):
             st.session_state.wizard_draft["x_tim_clearance"] = 0.0
-        st.session_state["d1_xtim"] = 0.0
+        for _k in ("d1_xtim", "dinp_xtim"):
+            st.session_state[_k] = 0.0
+        # GHI ĐÈ LUÔN FILE design_data_saved.json — nếu không, lần mở app sau
+        # nạp lại 350 cũ (nguồn 350 dai dẳng nhất).
+        try:
+            _save_design_inputs(st.session_state.design_data)
+        except Exception:
+            pass
+        # Kết quả pipeline CŨ (tính theo tim 350) không còn đúng → xóa geo_logic
+        # để bản vẽ không dùng bố trí cầu cũ trước khi Tính toán lại.
+        st.session_state.design_data.pop("geo_logic", None)
     except Exception:
         pass
     if persist:
