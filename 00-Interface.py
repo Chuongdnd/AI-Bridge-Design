@@ -3861,14 +3861,26 @@ def _save_terrain_defaults(ntd_bytes: bytes, coord_bytes: bytes,
 _TOPO_DXF_SAVED = os.path.join(_TERRAIN_DIR, "topo_binhdo.dxf")
 
 
+_TOPO_MOD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                              "00-DXF_Topo.py")
+
+
+def _topo_mod_ver() -> str:
+    """Phiên bản module 00-DXF_Topo (mtime+size) — THAM GIA KHÓA CACHE: sửa
+    module thì cache cũ tự bỏ (Streamlit không thấy code nạp bằng importlib)."""
+    try:
+        _s = os.stat(_TOPO_MOD_PATH)
+        return f"{int(_s.st_mtime)}:{_s.st_size}"
+    except OSError:
+        return "0"
+
+
 @st.cache_data(show_spinner="⛰️ Đang dựng địa hình từ DXF bình đồ…")
-def _build_topo_cached(dxf_bytes: bytes):
+def _build_topo_cached(dxf_bytes: bytes, _ver: str = ""):
     """DXF bình đồ → (df_geology, df_tim_line, features, info) — cache theo
-    nội dung file (dựng TIN ~vài giây, chỉ chạy 1 lần mỗi file)."""
+    nội dung file + PHIÊN BẢN module (dựng TIN vài giây, chạy 1 lần/file)."""
     import importlib.util as _iu
-    _sp = _iu.spec_from_file_location(
-        "dxf_topo", os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                                 "00-DXF_Topo.py"))
+    _sp = _iu.spec_from_file_location("dxf_topo", _TOPO_MOD_PATH)
     _DXT = _iu.module_from_spec(_sp); _sp.loader.exec_module(_DXT)
     return _DXT.build_from_dxf(dxf_bytes)
 
@@ -3878,7 +3890,12 @@ def _process_topo_dxf(dxf_bytes: bytes, persist: bool = True):
     tim tĩnh không = lý trình 0 (giao tim luồng × tim TK), lưu làm mặc định.
     Trả info hoặc None nếu lỗi."""
     try:
-        df, df_tim, feats, info = _build_topo_cached(dxf_bytes)
+        df, df_tim, feats, info = _build_topo_cached(dxf_bytes, _topo_mod_ver())
+        # Cache cũ (sinh bởi bản module trước) thiếu cột schema → dựng lại sạch.
+        if not {"X_Real", "Y_Real", "Cọc", "Tag_Gốc"} <= set(df.columns):
+            _build_topo_cached.clear()
+            df, df_tim, feats, info = _build_topo_cached(dxf_bytes,
+                                                         _topo_mod_ver())
     except Exception as _e:
         st.error(f"Lỗi đọc DXF bình đồ: {_e}")
         return None

@@ -139,6 +139,17 @@ def ve_dia_hinh_3d(df, he_so_z=1.0, che_do="Bề mặt mịn", do_min=3,
         return None, None, None, None
     try:
         df_clean = df.sort_values(['Lý trình', 'Offset']).copy()
+        # ── TƯƠNG THÍCH MỌI NGUỒN (NTD / DXF bình đồ / df cũ đã lưu) ────────
+        # Thiếu cột phụ trợ thì TỰ BÙ thay vì vỡ ('X_Real', 'Cọc', 'Tag_Gốc'):
+        #   X/Y_Real = tim (X/Y_VN2000) + Offset·(cos,sin)(Góc_Tuyến + 90°)
+        if 'X_Real' not in df_clean.columns or 'Y_Real' not in df_clean.columns:
+            _ang = df_clean['Góc_Tuyến'] + (np.pi / 2)
+            df_clean['X_Real'] = df_clean['X_VN2000'] + df_clean['Offset'] * np.cos(_ang)
+            df_clean['Y_Real'] = df_clean['Y_VN2000'] + df_clean['Offset'] * np.sin(_ang)
+        if 'Cọc' not in df_clean.columns:
+            df_clean['Cọc'] = df_clean['Lý trình'].map(lambda v: f"{v:.0f}")
+        if 'Tag_Gốc' not in df_clean.columns:
+            df_clean['Tag_Gốc'] = 'TARGET'
         unique_lts = sorted(df_clean['Lý trình'].unique())
         
         # Mở rộng 50m mỗi đầu
