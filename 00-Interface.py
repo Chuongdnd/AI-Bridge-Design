@@ -3846,6 +3846,73 @@ def _save_terrain_defaults(ntd_bytes: bytes, coord_bytes: bytes,
         pass
 
 
+_TOPO_DXF_SAVED = os.path.join(_TERRAIN_DIR, "topo_binhdo.dxf")
+
+
+@st.cache_data(show_spinner="⛰️ Đang dựng địa hình từ DXF bình đồ…")
+def _build_topo_cached(dxf_bytes: bytes):
+    """DXF bình đồ → (df_geology, df_tim_line, features, info) — cache theo
+    nội dung file (dựng TIN ~vài giây, chỉ chạy 1 lần mỗi file)."""
+    import importlib.util as _iu
+    _sp = _iu.spec_from_file_location(
+        "dxf_topo", os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "00-DXF_Topo.py"))
+    _DXT = _iu.module_from_spec(_sp); _sp.loader.exec_module(_DXT)
+    return _DXT.build_from_dxf(dxf_bytes)
+
+
+def _process_topo_dxf(dxf_bytes: bytes, persist: bool = True):
+    """Áp nguồn địa hình DXF BÌNH ĐỒ: sinh bảng chuẩn → session (thay .NTD),
+    tim tĩnh không = lý trình 0 (giao tim luồng × tim TK), lưu làm mặc định.
+    Trả info hoặc None nếu lỗi."""
+    try:
+        df, df_tim, feats, info = _build_topo_cached(dxf_bytes)
+    except Exception as _e:
+        st.error(f"Lỗi đọc DXF bình đồ: {_e}")
+        return None
+    st.session_state.df_geology = df
+    st.session_state.df_tim_line = df_tim
+    st.session_state.dxf_topo_features = feats
+    st.session_state.terrain_source = "dxf_topo"
+    # Mốc 0-0 tại giao tim luồng → tim tĩnh không = lý trình 0 (không khai tay).
+    try:
+        st.session_state.design_data["x_tim_clearance"] = 0.0
+        if isinstance(st.session_state.get("wizard_draft"), dict):
+            st.session_state.wizard_draft["x_tim_clearance"] = 0.0
+    except Exception:
+        pass
+    if persist:
+        try:
+            os.makedirs(_TERRAIN_DIR, exist_ok=True)
+            with open(_TOPO_DXF_SAVED, "wb") as _f:
+                _f.write(dxf_bytes)
+        except Exception:
+            pass
+    return info
+
+
+def _newest_terrain_source():
+    """'topo' | 'ntd' | None — nguồn địa hình LƯU SAU CÙNG thắng (mtime)."""
+    _t_topo = (os.path.getmtime(_TOPO_DXF_SAVED)
+               if os.path.exists(_TOPO_DXF_SAVED) else -1.0)
+    _t_ntd = (os.path.getmtime(_TERRAIN_NTD)
+              if (os.path.exists(_TERRAIN_NTD) and _terrain_coord_path())
+              else -1.0)
+    if _t_topo < 0 and _t_ntd < 0:
+        return None
+    return "topo" if _t_topo >= _t_ntd else "ntd"
+
+
+def _load_topo_default() -> bool:
+    """Tự nạp DXF bình đồ đã lưu (nếu là nguồn mới nhất). True nếu nạp được."""
+    try:
+        with open(_TOPO_DXF_SAVED, "rb") as _f:
+            _b = _f.read()
+        return _process_topo_dxf(_b, persist=False) is not None
+    except Exception:
+        return False
+
+
 def _load_terrain_defaults():
     """Đọc dữ liệu địa hình đã lưu → df_geology. None nếu chưa có / lỗi."""
     _coord_path = _terrain_coord_path()
@@ -3915,16 +3982,51 @@ def _decl_box_dia_hinh():
                                            file_toa_do.name)
                     st.success(f"✅ Đã đồng bộ {len(_dg)} điểm địa hình theo "
                                "VN-2000! (đã lưu làm mặc định cho lần sau)")
-        elif "df_geology" not in st.session_state:
-            # Chưa tải file → tự nạp dữ liệu địa hình mặc định đã lưu.
-            _dg = _load_terrain_defaults()
-            if _dg is not None and not _dg.empty:
-                st.session_state.df_geology = _dg
-                _tl = (_dg[_dg["Offset"] == 0][["Lý trình", "Z"]]
-                       .drop_duplicates("Lý trình").sort_values("Lý trình"))
-                st.session_state.df_tim_line = _tl
-                st.info(f"🗺️ Đã tự nạp địa hình mặc định ({len(_dg)} điểm). "
-                        "Tải file mới ở trên để thay thế.")
+
+        # ── NGUỒN B: CHỈ CÓ BÌNH ĐỒ KHẢO SÁT DXF (không .NTD / tọa độ tim) ──
+        st.markdown("---")
+        st.markdown("**📐 HOẶC: Bình đồ khảo sát DXF** (khi không có .NTD)")
+        st.caption("Bản vẽ VN-2000 thật với 3 layer tim: `timtuyenTK` (tuyến đặt "
+                   "cầu), `timtuyenKS`, `timluong`; cao độ = TEXT số. Mốc lý "
+                   "trình **0-0 tại giao tim luồng × tim TK**; hệ tự dựng địa "
+                   "hình (TIN từ điểm đo) + cảnh quan (nhà, mương ao, ruộng…) "
+                   "và THAY bình đồ mặc định.")
+        _f_dxf = st.file_uploader("📐 Bình đồ khảo sát (.DXF)", type=["dxf"],
+                                  key="topo_dxf_up")
+        if _f_dxf is not None:
+            _sig_t = f"{_f_dxf.name}:{_f_dxf.size}"
+            if st.session_state.get("_topo_dxf_sig") != _sig_t:
+                _info = _process_topo_dxf(_f_dxf.getvalue(), persist=True)
+                if _info:
+                    st.session_state["_topo_dxf_sig"] = _sig_t
+                    _fc = _info.get("feat_counts") or {}
+                    st.success(
+                        f"✅ Địa hình từ DXF: {_info['n_z']} điểm cao độ · tuyến "
+                        f"{_info['L_tuyen']:.0f}m · lý trình "
+                        f"{-_info['s0']:.0f} → {_info['L_tuyen']-_info['s0']:.0f} "
+                        f"(0-0 tại tim luồng) · Z {_info['z_min']:.1f}→"
+                        f"{_info['z_max']:.1f}m · cảnh quan: "
+                        + ", ".join(f"{k} {v}" for k, v in _fc.items())
+                        + ". (đã lưu làm MẶC ĐỊNH thay bình đồ cũ — Tính toán "
+                          "lại để cập nhật cầu)")
+                    for _w in _info.get("warnings", []):
+                        st.warning(_w)
+
+        if "df_geology" not in st.session_state:
+            # Chưa tải file → tự nạp nguồn địa hình MẶC ĐỊNH MỚI NHẤT đã lưu.
+            _src = _newest_terrain_source()
+            if _src == "topo" and _load_topo_default():
+                st.info("🗺️ Đã tự nạp địa hình từ DXF BÌNH ĐỒ đã lưu "
+                        "(0-0 tại tim luồng). Tải file mới ở trên để thay thế.")
+            elif _src:
+                _dg = _load_terrain_defaults()
+                if _dg is not None and not _dg.empty:
+                    st.session_state.df_geology = _dg
+                    _tl = (_dg[_dg["Offset"] == 0][["Lý trình", "Z"]]
+                           .drop_duplicates("Lý trình").sort_values("Lý trình"))
+                    st.session_state.df_tim_line = _tl
+                    st.info(f"🗺️ Đã tự nạp địa hình mặc định ({len(_dg)} điểm). "
+                            "Tải file mới ở trên để thay thế.")
 
 
 def _geo_characteristics(hk_list, df_spt):
@@ -4042,12 +4144,17 @@ def _autoload_geo_defaults() -> None:
     Chỉ chạy 1 lần/phiên (đã có trong session thì bỏ qua)."""
     if "df_geology" not in st.session_state:
         try:
-            _dg = _load_terrain_defaults()
-            if _dg is not None and not _dg.empty:
-                st.session_state.df_geology = _dg
-                _tl = (_dg[_dg["Offset"] == 0][["Lý trình", "Z"]]
-                       .drop_duplicates("Lý trình").sort_values("Lý trình"))
-                st.session_state.df_tim_line = _tl
+            # Nguồn LƯU SAU CÙNG thắng: DXF bình đồ ⟷ .NTD + tọa độ tim.
+            _src = _newest_terrain_source()
+            if _src == "topo" and _load_topo_default():
+                pass
+            elif _src:
+                _dg = _load_terrain_defaults()
+                if _dg is not None and not _dg.empty:
+                    st.session_state.df_geology = _dg
+                    _tl = (_dg[_dg["Offset"] == 0][["Lý trình", "Z"]]
+                           .drop_duplicates("Lý trình").sort_values("Lý trình"))
+                    st.session_state.df_tim_line = _tl
         except Exception:
             pass
     if "dia_chat_frames" not in st.session_state and os.path.exists(_DIA_CHAT_SAVED):
@@ -8364,6 +8471,17 @@ with _col_main:
                             _n_after = len(_fig_t.data)
                             _err_overlay = None
                             if not _cached_hit:
+                                # 🏘️ CẢNH QUAN từ DXF bình đồ (nhà, mương ao,
+                                # ruộng…) — nút ẩn/hiện tổng + legend từng nhóm.
+                                _lsc_feats = st.session_state.get("dxf_topo_features")
+                                if _lsc_feats:
+                                    _show_lsc = st.checkbox(
+                                        "🏘️ Hiện cảnh quan địa hình khảo sát "
+                                        "(nhà, mương ao, ruộng lúa, đường, cột điện…)",
+                                        value=True,
+                                        key=f"lsc3d_{selected_ribbon}")
+                                    d["_landscape"] = (_lsc_feats if _show_lsc
+                                                       else None)
                                 try:
                                     BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
                                     # Chèn dầm thực tế từ thư viện (hệ VN-2000 trừ origin,

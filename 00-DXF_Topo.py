@@ -1,0 +1,303 @@
+"""
+00-DXF_Topo.py — Nguồn ĐỊA HÌNH thay thế: BÌNH ĐỒ KHẢO SÁT DXF duy nhất
+(khi không có .NTD + file tọa độ tim).
+
+Quy ước bản vẽ (thống nhất với đơn vị khảo sát):
+  • 3 tim đặt tên layer rõ: `timluong` (tim luồng/sông), `timtuyenKS` (tim tuyến
+    khảo sát), `timtuyenTK` (tim tuyến thiết kế — TUYẾN ĐẶT CẦU).
+  • MỐC LÝ TRÌNH 0-0 = giao điểm timluong × timtuyenTK (âm/dương về 2 phía)
+    → tim tĩnh không (x_tim_clearance) = 0.
+  • CAO ĐỘ = từng TEXT số trong bản vẽ (điểm chèn text = vị trí điểm đo) +
+    POINT/INSERT có Z ≠ 0 — dùng TRỰC TIẾP làm điểm địa hình, không bịa thêm.
+  • Tọa độ bản vẽ là VN-2000 THẬT (CAD x = Đông/Easting, y = Bắc/Northing).
+
+Đầu ra = BẢNG CHUẨN app đang dùng (như .NTD):
+  df_geology : Lý trình · Offset · X_VN2000(=Bắc) · Y_VN2000(=Đông) ·
+               Góc_Tuyến · Z   (trạm ~5m dọc timtuyenTK, offset ±40m @2.5m,
+               Z nội suy TIN từ đám điểm đo thật)
+  df_tim_line: Lý trình · Z (Offset=0)
+  features   : cảnh quan sơ họa 3D (nhà, mương ao, lúa, đường, rào, cột điện…)
+               tọa độ đã đổi về TRỤC CỘT (Xc=Bắc, Yc=Đông) + Z bám mặt địa hình.
+
+BẪY TRỤC: cột X_VN2000 = BẮC (~1.19M), Y_VN2000 = ĐÔNG (~584k) — NGƯỢC với
+CAD (x=Đông). Mọi phép dựng ở đây làm trong "hệ cột" (Xc=Bắc, Yc=Đông) để
+_vn/Góc_Tuyến của 11-BanVe dùng được y như nguồn .NTD.
+"""
+import io
+import numpy as np
+import pandas as pd
+
+try:
+    import ezdxf
+except ImportError:                                    # pragma: no cover
+    ezdxf = None
+
+# ── Bảng nhận diện layer (khớp chữ thường, dạng CHỨA chuỗi) ─────────────────
+TIM_LAYERS = {"tk": "timtuyentk", "ks": "timtuyenks", "luong": "timluong"}
+
+Z_TEXT_LAYERS = ["caodotn", "cao do binh do", "docao"]   # TEXT số = cao độ
+
+FEATURE_LAYERS = [   # (category, [mẫu tên layer, chứa-chuỗi, chữ thường])
+    ("nha",        ["ks.nha", "nha"]),
+    ("muong_ao",   ["muong ao", "ks_muong"]),
+    ("lua",        ["lua-khks", "lua"]),
+    ("duong_dat",  ["leduongdat"]),
+    ("duong_nhua", ["leduongnhua"]),
+    ("rao",        ["raoxay", "raokem", "rao"]),
+    ("cau_cong",   ["cau cong"]),
+    ("dien",       ["dienhathe", "dien ha the"]),
+]
+_FEAT_EXCLUDE = ["text nha"]        # layer nhãn chữ — không phải hình
+
+
+def _lay(e):
+    return str(e.dxf.layer or "").strip().lower()
+
+
+def _match(lay, patterns):
+    return any(p in lay for p in patterns)
+
+
+def _segments_of(e):
+    """LINE/LWPOLYLINE/POLYLINE → list [((xE, yN), (xE, yN)), …] (hệ CAD)."""
+    t = e.dxftype()
+    try:
+        if t == "LINE":
+            return [((e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y))]
+        if t == "LWPOLYLINE":
+            vs = [(p[0], p[1]) for p in e.get_points()]
+        elif t == "POLYLINE":
+            vs = [(v.dxf.location.x, v.dxf.location.y) for v in e.vertices]
+        else:
+            return []
+        segs = [(vs[i], vs[i + 1]) for i in range(len(vs) - 1)]
+        if getattr(e, "closed", False) or getattr(e, "is_closed", False):
+            segs.append((vs[-1], vs[0]))
+        return segs
+    except Exception:
+        return []
+
+
+def _poly_pts(e):
+    t = e.dxftype()
+    try:
+        if t == "LWPOLYLINE":
+            return [(p[0], p[1]) for p in e.get_points()]
+        if t == "POLYLINE":
+            return [(v.dxf.location.x, v.dxf.location.y) for v in e.vertices]
+        if t == "LINE":
+            return [(e.dxf.start.x, e.dxf.start.y), (e.dxf.end.x, e.dxf.end.y)]
+    except Exception:
+        pass
+    return []
+
+
+def _num(s):
+    try:
+        return float(str(s).strip().replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+
+
+def parse_topo_dxf(data):
+    """Đọc DXF (bytes | đường dẫn) → dict thô:
+    {z_points (E,N,Z), tims {tk|ks|luong: [(E,N)…]}, features, warnings, stats}."""
+    if ezdxf is None:
+        raise RuntimeError("Thiếu thư viện ezdxf")
+    if isinstance(data, (bytes, bytearray)):
+        doc = ezdxf.read(io.StringIO(data.decode("utf-8", errors="ignore")))
+    else:
+        doc = ezdxf.readfile(str(data))
+    msp = doc.modelspace()
+
+    z_points, warnings = [], []
+    tims_raw = {k: [] for k in TIM_LAYERS}
+    feats = {cat: {"segs": [], "pts": []} for cat, _ in FEATURE_LAYERS}
+
+    for e in msp:
+        lay = _lay(e)
+        t = e.dxftype()
+        # ── 3 TIM đặt tên rõ ────────────────────────────────────────────
+        hit_tim = next((k for k, p in TIM_LAYERS.items() if p in lay), None)
+        if hit_tim and t in ("LINE", "LWPOLYLINE", "POLYLINE"):
+            pts = _poly_pts(e)
+            if len(pts) >= 2:
+                tims_raw[hit_tim].append(pts)
+            continue
+        # ── ĐIỂM CAO ĐỘ ─────────────────────────────────────────────────
+        if t in ("TEXT", "MTEXT") and _match(lay, Z_TEXT_LAYERS):
+            v = _num(e.dxf.text if t == "TEXT" else e.text)
+            if v is not None and -100.0 < v < 1000.0:
+                ins = e.dxf.insert
+                z_points.append((ins.x, ins.y, v))
+            continue
+        if t == "POINT" and abs(e.dxf.location.z) > 1e-6:
+            z_points.append((e.dxf.location.x, e.dxf.location.y,
+                             e.dxf.location.z))
+            continue
+        # ── CẢNH QUAN sơ họa ────────────────────────────────────────────
+        if any(p in lay for p in _FEAT_EXCLUDE):
+            continue
+        cat = next((c for c, ps in FEATURE_LAYERS if _match(lay, ps)), None)
+        if cat:
+            if t == "INSERT":
+                feats[cat]["pts"].append((e.dxf.insert.x, e.dxf.insert.y))
+            else:
+                feats[cat]["segs"].extend(_segments_of(e))
+
+    # Mỗi tim lấy polyline DÀI NHẤT trên layer đó
+    tims = {}
+    for k, plist in tims_raw.items():
+        if not plist:
+            tims[k] = None
+            continue
+        def _len(pts):
+            return sum(np.hypot(pts[i+1][0]-pts[i][0], pts[i+1][1]-pts[i][1])
+                       for i in range(len(pts)-1))
+        tims[k] = max(plist, key=_len)
+
+    if tims.get("tk") is None:
+        warnings.append("Không tìm thấy layer `timtuyenTK` — cần polyline tim "
+                        "tuyến thiết kế đặt đúng tên layer.")
+    if tims.get("luong") is None:
+        warnings.append("Không tìm thấy layer `timluong` — không xác định được "
+                        "mốc lý trình 0-0 (sẽ lấy 0 tại đầu tuyến).")
+    if len(z_points) < 20:
+        warnings.append(f"Chỉ đọc được {len(z_points)} điểm cao độ — địa hình "
+                        "có thể không tin cậy (cần TEXT số trên layer cao độ).")
+
+    stats = {"n_z": len(z_points),
+             "n_z_text": sum(1 for *_xy, _z in z_points),
+             "feat_counts": {c: len(d_["segs"]) + len(d_["pts"])
+                             for c, d_ in feats.items() if d_["segs"] or d_["pts"]}}
+    return {"z_points": z_points, "tims": tims, "features": feats,
+            "warnings": warnings, "stats": stats}
+
+
+# ── Hình học tim tuyến ───────────────────────────────────────────────────────
+def _densify(pts, step=1.0):
+    """Polyline → mảng điểm dày (E,N) + lý trình cộng dồn s."""
+    P = np.asarray(pts, float)
+    seg = np.hypot(np.diff(P[:, 0]), np.diff(P[:, 1]))
+    s_v = np.concatenate([[0.0], np.cumsum(seg)])
+    L = float(s_v[-1])
+    n = max(2, int(L / step) + 1)
+    ss = np.linspace(0.0, L, n)
+    return (np.interp(ss, s_v, P[:, 0]), np.interp(ss, s_v, P[:, 1]), ss, L)
+
+
+def _seg_intersect(p1, p2, p3, p4):
+    """Giao 2 đoạn thẳng (mỗi đoạn 2 điểm) → (x, y) hoặc None."""
+    x1, y1 = p1; x2, y2 = p2; x3, y3 = p3; x4, y4 = p4
+    den = (x1-x2)*(y3-y4) - (y1-y2)*(x3-x4)
+    if abs(den) < 1e-12:
+        return None
+    t = ((x1-x3)*(y3-y4) - (y1-y3)*(x3-x4)) / den
+    u = ((x1-x3)*(y1-y2) - (y1-y3)*(x1-x2)) / den
+    if -1e-9 <= t <= 1 + 1e-9 and -1e-9 <= u <= 1 + 1e-9:
+        return (x1 + t*(x2-x1), y1 + t*(y2-y1))
+    return None
+
+
+def chainage_zero(tim_tk, tim_luong):
+    """Lý trình s0 (m, dọc tim TK) của GIAO ĐIỂM tim luồng × tim TK — mốc 0-0.
+    Không giao → None."""
+    if not tim_tk or not tim_luong:
+        return None
+    s_acc = 0.0
+    for i in range(len(tim_tk) - 1):
+        a, b = tim_tk[i], tim_tk[i + 1]
+        for j in range(len(tim_luong) - 1):
+            hit = _seg_intersect(a, b, tim_luong[j], tim_luong[j + 1])
+            if hit is not None:
+                return s_acc + float(np.hypot(hit[0]-a[0], hit[1]-a[1]))
+        s_acc += float(np.hypot(b[0]-a[0], b[1]-a[1]))
+    return None
+
+
+# ── Dựng bảng chuẩn ─────────────────────────────────────────────────────────
+def build_geology(parsed, step=5.0, off_max=40.0, off_step=2.5):
+    """Sinh (df_geology, df_tim_line, tin_fn, info) từ kết quả parse.
+
+    Trạm mỗi `step` m dọc timtuyenTK; tại mỗi trạm cắt ngang ±off_max bước
+    off_step; Z nội suy TIN (LinearND) từ đám điểm đo thật, ngoài biên dùng
+    điểm gần nhất. Lý trình = s − s0 (0-0 tại giao tim luồng)."""
+    from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
+
+    zp = np.asarray(parsed["z_points"], float)
+    if len(zp) < 4:
+        raise ValueError("Quá ít điểm cao độ để dựng địa hình.")
+    tim = parsed["tims"].get("tk") or parsed["tims"].get("ks")
+    if not tim:
+        raise ValueError("Thiếu tim tuyến TK/KS trong bản vẽ.")
+
+    lin = LinearNDInterpolator(zp[:, :2], zp[:, 2])
+    near = NearestNDInterpolator(zp[:, :2], zp[:, 2])
+
+    def tin_fn(E, N):
+        z = lin(E, N)
+        z = np.where(np.isnan(z), near(E, N), z)
+        return z
+
+    Ee, Nn, ss, L = _densify(tim, step=1.0)
+    s0 = chainage_zero(tim, parsed["tims"].get("luong"))
+    if s0 is None:
+        s0 = 0.0
+    stations = np.arange(0.0, L + 1e-6, step)
+    offs = np.arange(-off_max, off_max + 1e-6, off_step)
+
+    rows = []
+    for s in stations:
+        cE = float(np.interp(s, ss, Ee)); cN = float(np.interp(s, ss, Nn))
+        s2 = min(s + 1.0, L)
+        tE = float(np.interp(s2, ss, Ee)) - float(np.interp(max(s2-1, 0), ss, Ee))
+        tN = float(np.interp(s2, ss, Nn)) - float(np.interp(max(s2-1, 0), ss, Nn))
+        # HỆ CỘT: Xc = Bắc(N), Yc = Đông(E) — Góc_Tuyến trong hệ cột để 11-BanVe
+        # (_vn: x = Xc + off·cos(goc+90°)) dùng y như nguồn .NTD.
+        goc = float(np.arctan2(tE, tN))         # atan2(dYc, dXc)
+        per = goc + np.pi / 2.0
+        ly = round(s - s0, 3)
+        for off in offs:
+            Xc = cN + off * np.cos(per)         # Bắc
+            Yc = cE + off * np.sin(per)         # Đông
+            z = float(tin_fn(Yc, Xc))           # tin nhận (E, N)
+            rows.append((ly, round(float(off), 2), Xc, Yc, goc, round(z, 3)))
+
+    df = pd.DataFrame(rows, columns=["Lý trình", "Offset", "X_VN2000",
+                                     "Y_VN2000", "Góc_Tuyến", "Z"])
+    df_tim = (df[df["Offset"] == 0][["Lý trình", "Z"]]
+              .drop_duplicates("Lý trình").sort_values("Lý trình")
+              .reset_index(drop=True))
+    info = {"L_tuyen": round(L, 1), "s0": round(s0, 2),
+            "n_tram": len(stations), "n_diem": len(df),
+            "z_min": float(df["Z"].min()), "z_max": float(df["Z"].max())}
+    return df, df_tim, tin_fn, info
+
+
+def bake_features(parsed, tin_fn, max_seg_per_cat=1500):
+    """Cảnh quan sơ họa → HỆ CỘT (Xc=Bắc, Yc=Đông) + Z bám mặt địa hình:
+    {cat: {"segs": [((Xc,Yc,Z),(Xc,Yc,Z))…], "pts": [(Xc,Yc,Z)…]}}."""
+    out = {}
+    for cat, dd in parsed["features"].items():
+        segs, pts = dd["segs"], dd["pts"]
+        if not segs and not pts:
+            continue
+        o = {"segs": [], "pts": []}
+        for (a, b) in segs[:max_seg_per_cat]:
+            za = float(tin_fn(a[0], a[1])); zb = float(tin_fn(b[0], b[1]))
+            o["segs"].append(((a[1], a[0], za), (b[1], b[0], zb)))
+        for p in pts[:max_seg_per_cat]:
+            o["pts"].append((p[1], p[0], float(tin_fn(p[0], p[1]))))
+        out[cat] = o
+    return out
+
+
+def build_from_dxf(data, step=5.0, off_max=40.0, off_step=2.5):
+    """MỘT PHÁT ĂN NGAY: DXF → (df_geology, df_tim_line, features, info).
+    info gồm stats/warnings để UI hiển thị."""
+    parsed = parse_topo_dxf(data)
+    df, df_tim, tin_fn, info = build_geology(parsed, step, off_max, off_step)
+    feats = bake_features(parsed, tin_fn)
+    info.update(parsed["stats"])
+    info["warnings"] = parsed["warnings"]
+    return df, df_tim, feats, info

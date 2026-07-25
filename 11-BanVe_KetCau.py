@@ -3237,6 +3237,82 @@ def add_bridge_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         print(f"[add_bridge_to_terrain_fig] Lỗi: {exc}\n{traceback.format_exc()}")
 
 
+# ── CẢNH QUAN KHẢO SÁT (sơ họa từ DXF bình đồ — 00-DXF_Topo) ────────────────
+_LSC_STYLE = {   # category → (tên legend, màu)
+    "nha":        ("Nhà (sơ họa)",         "#b8bcc0"),
+    "muong_ao":   ("Mương / ao",           "#2e86c1"),
+    "lua":        ("Ruộng lúa",            "#58d68d"),
+    "duong_dat":  ("Đường đất",            "#a5866b"),
+    "duong_nhua": ("Đường nhựa",           "#5d6d7e"),
+    "rao":        ("Tường rào",            "#8e6e53"),
+    "cau_cong":   ("Cầu/cống hiện hữu",    "#16a085"),
+    "dien":       ("Cột điện",             "#f39c12"),
+}
+
+
+def _add_landscape_3d(fig, feats, x_org, y_org, hz):
+    """Vẽ CẢNH QUAN sơ họa lên 3D toàn cầu. feats từ 00-DXF_Topo.bake_features
+    (hệ CỘT Xc=Bắc, Yc=Đông + Z đã bám mặt địa hình):
+      • nhà: từng đoạn LINE đùn thành TƯỜNG ĐỨNG 3m (1 Mesh3d gộp — nhẹ)
+      • mương/ao, đường, rào, cầu cống: nét màu bám mặt đất (+5cm)
+      • lúa: chấm xanh; cột điện: cột đứng 8m + chấm đỉnh
+    Mỗi hạng mục 1 legendgroup riêng → ẩn/hiện độc lập trên legend."""
+    H_NHA, H_DIEN = 3.0, 8.0
+    for cat, dd in (feats or {}).items():
+        ten, col = _LSC_STYLE.get(cat, (str(cat), "#95a5a6"))
+        segs = dd.get("segs") or []
+        pts = dd.get("pts") or []
+        if cat == "nha" and segs:
+            vx, vy, vz, ii, jj, kk = [], [], [], [], [], []
+            for (a, b) in segs:
+                base = len(vx)
+                vx += [a[0]-x_org, b[0]-x_org, b[0]-x_org, a[0]-x_org]
+                vy += [a[1]-y_org, b[1]-y_org, b[1]-y_org, a[1]-y_org]
+                vz += [a[2]*hz, b[2]*hz, (b[2]+H_NHA)*hz, (a[2]+H_NHA)*hz]
+                ii += [base, base]; jj += [base+1, base+2]; kk += [base+2, base+3]
+            fig.add_trace(go.Mesh3d(
+                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk, color=col, opacity=0.85,
+                flatshading=True, name=ten, legendgroup=f"lsc_{cat}",
+                showlegend=True,
+                hovertemplate=f"<b>{ten}</b><extra></extra>"))
+            continue
+        if cat == "dien" and pts:
+            lx, ly, lz = [], [], []
+            for (X, Y, Z) in pts:
+                lx += [X-x_org, X-x_org, None]
+                ly += [Y-y_org, Y-y_org, None]
+                lz += [Z*hz, (Z+H_DIEN)*hz, None]
+            fig.add_trace(go.Scatter3d(
+                x=lx, y=ly, z=lz, mode="lines",
+                line=dict(color=col, width=4), name=ten,
+                legendgroup=f"lsc_{cat}", showlegend=True))
+            fig.add_trace(go.Scatter3d(
+                x=[p[0]-x_org for p in pts], y=[p[1]-y_org for p in pts],
+                z=[(p[2]+H_DIEN)*hz for p in pts], mode="markers",
+                marker=dict(size=3, color=col), legendgroup=f"lsc_{cat}",
+                showlegend=False, hoverinfo="skip"))
+            continue
+        if pts:                                     # lúa (và block điểm khác)
+            fig.add_trace(go.Scatter3d(
+                x=[p[0]-x_org for p in pts], y=[p[1]-y_org for p in pts],
+                z=[(p[2]+0.1)*hz for p in pts], mode="markers",
+                marker=dict(size=4, color=col, symbol="diamond"),
+                name=ten, legendgroup=f"lsc_{cat}", showlegend=True,
+                hovertemplate=f"<b>{ten}</b><extra></extra>"))
+        if segs:                                    # nét bám mặt đất
+            lx, ly, lz = [], [], []
+            for (a, b) in segs:
+                lx += [a[0]-x_org, b[0]-x_org, None]
+                ly += [a[1]-y_org, b[1]-y_org, None]
+                lz += [(a[2]+0.05)*hz, (b[2]+0.05)*hz, None]
+            fig.add_trace(go.Scatter3d(
+                x=lx, y=ly, z=lz, mode="lines",
+                line=dict(color=col, width=3), name=ten,
+                legendgroup=f"lsc_{cat}",
+                showlegend=not pts,
+                hovertemplate=f"<b>{ten}</b><extra></extra>"))
+
+
 # ===========================================================================
 # 6. MÔI TRƯỜNG 3D TỔNG HỢP — Digital Twin (Mesh3d khối thực sự)
 # ===========================================================================
@@ -4004,6 +4080,15 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             _ag(_bqd_slab(_s_far, _s_far + _od * 0.4,
                           _z_far - _t_bqd, _z_far - _t_bqd, 0.4,
                           "#6d7a87", "", sl=False))
+
+        # ── CẢNH QUAN KHẢO SÁT (sơ họa từ DXF bình đồ) — bật/tắt ở checkbox
+        # tab 3D + ẩn/hiện từng hạng mục trên legend ──────────────────────
+        _lsc = d.get("_landscape")
+        if _lsc:
+            try:
+                _add_landscape_3d(fig, _lsc, x_org, y_org, hz)
+            except Exception as _le:
+                print(f"[add_all] cảnh quan lỗi: {_le}")
 
         # Đường bao cấu kiện (viền tối các hộp trụ/mố/xà mũ/bệ…) → dễ nhìn
         _add_box_outlines(fig)
