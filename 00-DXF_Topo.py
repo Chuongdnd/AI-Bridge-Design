@@ -425,13 +425,23 @@ def bake_timluong(parsed, tin_fn, half=80.0, off_step=2.0, step=5.0):
 
     # ── 2 MÉP BỜ SÔNG thật (layer `ta ly duoi`) → đường bao mặt nước ────────
     # Có bờ thì mặt nước vẽ ĐÚNG THEO ĐƯỜNG BAO SÔNG trong hồ sơ khảo sát,
-    # không dò bờ từ TIN (TIN thưa điểm → mép nước lởm chởm, lệch sông).
-    banks = [b for b in (parsed.get("banks") or []) if len(b) >= 2]
-    if len(banks) >= 2:
-        def _plen(pts_):
-            P = np.asarray(pts_, float)
-            return float(np.hypot(np.diff(P[:, 0]), np.diff(P[:, 1])).sum())
+    # không dò bờ từ TIN. LỌC KỸ: nhiều bản vẽ có đối tượng rác trên layer này
+    # (đoạn dài 0m, nằm cách sông hàng trăm mét) — nhận nhầm thì dải nước suy
+    # biến/lệch hẳn khỏi sông. Chỉ nhận polyline dài ≥20m và bám sát tim luồng.
+    def _plen(pts_):
+        P = np.asarray(pts_, float)
+        return float(np.hypot(np.diff(P[:, 0]), np.diff(P[:, 1])).sum())
 
+    banks = []
+    for b in (parsed.get("banks") or []):
+        if len(b) < 2 or _plen(b) < 20.0:
+            continue
+        P = np.asarray(b, float)
+        d_ = np.min(np.hypot(P[:, None, 0] - Ee[None, ::5],
+                             P[:, None, 1] - Nn[None, ::5]), axis=1)
+        if float(np.median(d_)) <= max(2.0 * half, 60.0):
+            banks.append(b)
+    if len(banks) >= 2:
         def _resamp(pts_, n=100):
             P = np.asarray(pts_, float)
             seg = np.hypot(np.diff(P[:, 0]), np.diff(P[:, 1]))

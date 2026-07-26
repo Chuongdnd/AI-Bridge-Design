@@ -3251,22 +3251,58 @@ _LSC_STYLE = {   # category → (tên legend, màu)
 }
 
 
-def _river_water_mesh(tl, x_org, y_org, hz, z_w, col, op, name, w_min=6.0):
+def _terrain_strip_poly(df_geology):
+    """Đa giác BAO PHẠM VI ĐỊA HÌNH khảo sát (dải song song tim tuyến): mép
+    trái = điểm offset nhỏ nhất mỗi trạm, mép phải = offset lớn nhất (đi
+    ngược) → dùng để KẸP mặt nước khỏi chìa ra ngoài vùng đã mô hình."""
+    _cx = "X_Real" if "X_Real" in df_geology.columns else "X_VN2000"
+    _cy = "Y_Real" if "Y_Real" in df_geology.columns else "Y_VN2000"
+    if "Offset" not in df_geology.columns or _cx not in df_geology.columns:
+        return None
+    L_, R_ = [], []
+    for _lt, g in df_geology.groupby("Lý trình", sort=True):
+        gi = g.sort_values("Offset")
+        L_.append((float(gi[_cx].iloc[0]), float(gi[_cy].iloc[0])))
+        R_.append((float(gi[_cx].iloc[-1]), float(gi[_cy].iloc[-1])))
+    return (L_ + R_[::-1]) if len(L_) >= 2 else None
+
+
+def _pt_in_poly(x, y, poly):
+    """Ray-casting: điểm (x,y) nằm trong đa giác `poly` [(x,y)…]?"""
+    n, inside, j = len(poly), False, len(poly) - 1
+    for i in range(n):
+        xi, yi = poly[i]; xj, yj = poly[j]
+        if (yi > y) != (yj > y) and \
+           x < (xj - xi) * (y - yi) / ((yj - yi) or 1e-12) + xi:
+            inside = not inside
+        j = i
+    return inside
+
+
+def _river_water_mesh(tl, x_org, y_org, hz, z_w, col, op, name, w_min=6.0,
+                      clip_poly=None):
     """DẢI MẶT NƯỚC trải DỌC TIM LUỒNG (profile từ 00-DXF_Topo.bake_timluong).
-    Ưu tiên 2 MÉP BỜ SÔNG thật (layer `ta ly duoi` — bankL/bankR): mặt nước
-    đúng theo ĐƯỜNG BAO SÔNG hồ sơ khảo sát. Không có bờ → lan nước từ tim
-    ra 2 phía trên profile TIN tới khi chạm bờ (địa hình ≥ mực nước)."""
+    Ưu tiên 2 MÉP BỜ SÔNG thật (bankL/bankR khi bản vẽ có layer mép bờ hợp lệ);
+    không có → lan nước từ tim ra 2 phía trên profile TIN tới khi chạm bờ
+    (địa hình ≥ mực nước).
+
+    clip_poly: đa giác phạm vi ĐỊA HÌNH khảo sát (hệ cột, chưa trừ origin) —
+    dải nước bị CẮT về trong đó. Không kẹp thì nước chìa ra ngoài dải địa hình
+    (dải chạy song song tim tuyến, nước cắt ngang) → nhìn tổng thể rất kỳ."""
     bkL, bkR = tl.get("bankL"), tl.get("bankR")
+    # Lp/Rp dựng ở TỌA ĐỘ TUYỆT ĐỐI (hệ cột) để kẹp được với clip_poly; trừ
+    # origin ở bước phát mesh cuối cùng.
     if bkL and bkR and len(bkL) == len(bkR) >= 2:
-        Lp = [(p[0] - x_org, p[1] - y_org) for p in bkL]
-        Rp = [(p[0] - x_org, p[1] - y_org) for p in bkR]
+        Lp = [(float(p[0]), float(p[1])) for p in bkL]
+        Rp = [(float(p[0]), float(p[1])) for p in bkR]
+        Cp = [((a[0]+b[0])/2, (a[1]+b[1])/2) for a, b in zip(Lp, Rp)]
     else:
         offs = np.asarray(tl.get("offs") or [], float)
         sts = tl.get("st") or []
         if len(offs) < 2 or len(sts) < 2:
             return None
         i0 = int(np.argmin(np.abs(offs)))
-        Lp, Rp = [], []
+        Lp, Rp, Cp = [], [], []
         for stn in sts:
             zs = np.asarray(stn["zs"], float)
             cX, cY = stn["c"]; pX, pY = stn["per"]
@@ -3279,16 +3315,50 @@ def _river_water_mesh(tl, x_org, y_org, hz, z_w, col, op, name, w_min=6.0):
             oL, oR = float(offs[jL]), float(offs[jR])
             if oR - oL < w_min:        # mực nước dưới đáy/lệch tim → tối thiểu
                 oL, oR = -w_min / 2, w_min / 2
-            Lp.append((cX + oL * pX - x_org, cY + oL * pY - y_org))
-            Rp.append((cX + oR * pX - x_org, cY + oR * pY - y_org))
+            Lp.append((cX + oL * pX, cY + oL * pY))
+            Rp.append((cX + oR * pX, cY + oR * pY))
+            Cp.append((cX, cY))
+
+    # ── KẸP vào phạm vi địa hình khảo sát ──────────────────────────────────
+    if clip_poly:
+        def _pull_in(c, p):
+            """Kéo mép nước p về phía tim c cho tới khi nằm trong phạm vi."""
+            if _pt_in_poly(p[0], p[1], clip_poly):
+                return p
+            lo, hi = 0.0, 1.0                 # nhị phân trên đoạn c→p
+            for _ in range(12):
+                mid = (lo + hi) / 2
+                q = (c[0] + (p[0]-c[0])*mid, c[1] + (p[1]-c[1])*mid)
+                if _pt_in_poly(q[0], q[1], clip_poly):
+                    lo = mid
+                else:
+                    hi = mid
+            return (c[0] + (p[0]-c[0])*lo, c[1] + (p[1]-c[1])*lo)
+
+        L2, R2 = [], []
+        for q in range(len(Cp)):
+            if not _pt_in_poly(Cp[q][0], Cp[q][1], clip_poly):
+                L2.append(None); R2.append(None)   # trạm ngoài dải → bỏ hẳn
+                continue
+            L2.append(_pull_in(Cp[q], Lp[q]))
+            R2.append(_pull_in(Cp[q], Rp[q]))
+        Lp, Rp = L2, R2
+
     vx, vy, vz, ii, jj, kk = [], [], [], [], [], []
+    prev = None                       # chỉ nối 2 trạm LIỀN NHAU cùng trong dải
     for q in range(len(Lp)):
-        vx += [Lp[q][0], Rp[q][0]]
-        vy += [Lp[q][1], Rp[q][1]]
+        if Lp[q] is None or Rp[q] is None:
+            prev = None
+            continue
+        b = len(vx)
+        vx += [Lp[q][0] - x_org, Rp[q][0] - x_org]
+        vy += [Lp[q][1] - y_org, Rp[q][1] - y_org]
         vz += [z_w * hz, z_w * hz]
-        if q:
-            b = 2 * q
-            ii += [b - 2, b - 1]; jj += [b - 1, b + 1]; kk += [b, b]
+        if prev is not None:
+            ii += [prev, prev + 1]; jj += [prev + 1, b + 1]; kk += [b, b]
+        prev = b
+    if len(ii) < 1:
+        return None
     return go.Mesh3d(
         x=vx, y=vy, z=vz, i=ii, j=jj, k=kk, color=col, opacity=op,
         flatshading=True, name=name,
@@ -3772,7 +3842,12 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # Nguồn DXF bình đồ: mặt nước TRẢI DỌC TIM LUỒNG, bề rộng bám lòng
         # sông từng vị trí (profile nướng sẵn) — thay ô nước cục bộ tại tim.
         _tl_prof = d.get("_timluong_prof")
+        _wat_ok = False
         if _tl_prof:
+            try:
+                _clip = _terrain_strip_poly(df_geology)
+            except Exception:
+                _clip = None
             for z_w, lbl, clr, op in [
                 (MNCN, f"MNCN = {MNCN:.3f}m", "#2980b9", 0.50),
                 (MNTT, f"MNTT = {MNTT:.3f}m", "#3498db", 0.35),
@@ -3780,12 +3855,15 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             ]:
                 try:
                     _wm = _river_water_mesh(_tl_prof, x_org, y_org, hz,
-                                            z_w, clr, op, lbl)
+                                            z_w, clr, op, lbl,
+                                            clip_poly=_clip)
                     if _wm is not None:
-                        _ag(_wm)
+                        _ag(_wm); _wat_ok = True
                 except Exception as _we:
                     print(f"[add_all] nước tim luồng: {_we}")
-        else:
+        # Dựng theo tim luồng thất bại (thiếu profile/mesh suy biến) → KHÔNG
+        # để trống mặt nước: quay lại ô nước cục bộ tại tim cầu.
+        if not _wat_ok:
             for z_w, lbl, clr, op in [
                 (MNCN * hz, f"MNCN = {MNCN:.3f}m", "#2980b9", 0.50),
                 (MNTT * hz, f"MNTT = {MNTT:.3f}m", "#3498db", 0.35),
