@@ -37,6 +37,9 @@ TIM_LAYERS = {"tk": "timtuyentk", "ks": "timtuyenks", "luong": "timluong"}
 
 Z_TEXT_LAYERS = ["caodotn", "cao do binh do", "docao"]   # TEXT số = cao độ
 
+BANK_LAYERS = ["ta ly duoi", "ta ly", "taluy", "mep nuoc"]   # mép bờ sông
+
+
 FEATURE_LAYERS = [   # (category, [mẫu tên layer, chứa-chuỗi, chữ thường])
     # "dien" phải ĐỨNG TRƯỚC "nha": layer `dienhathe` CHỨA chuỗi "nha"
     # (die-NHA-the) — nếu xét "nha" trước, cột điện bị xếp nhầm thành nhà.
@@ -157,7 +160,7 @@ def parse_topo_dxf(data):
         doc = ezdxf.readfile(str(data))
     msp = doc.modelspace()
 
-    z_points, warnings = [], []
+    z_points, warnings, banks = [], [], []
     tims_raw = {k: [] for k in TIM_LAYERS}
     feats = {cat: {"segs": [], "pts": []} for cat, _ in FEATURE_LAYERS}
 
@@ -170,6 +173,12 @@ def parse_topo_dxf(data):
             pts = _poly_pts(e)
             if len(pts) >= 2:
                 tims_raw[hit_tim].append(pts)
+            continue
+        # ── MÉP BỜ SÔNG (ta luy dưới) — đường bao mặt nước thật ─────────
+        if _match(lay, BANK_LAYERS) and t in ("LINE", "LWPOLYLINE", "POLYLINE"):
+            pts_b = _poly_pts(e)
+            if len(pts_b) >= 2:
+                banks.append(pts_b)
             continue
         # ── ĐIỂM CAO ĐỘ ─────────────────────────────────────────────────
         if t in ("TEXT", "MTEXT") and _match(lay, Z_TEXT_LAYERS):
@@ -218,7 +227,7 @@ def parse_topo_dxf(data):
              "feat_counts": {c: len(d_["segs"]) + len(d_["pts"])
                              for c, d_ in feats.items() if d_["segs"] or d_["pts"]}}
     return {"z_points": z_points, "tims": tims, "features": feats,
-            "warnings": warnings, "stats": stats}
+            "banks": banks, "warnings": warnings, "stats": stats}
 
 
 # ── Hình học tim tuyến ───────────────────────────────────────────────────────
@@ -375,6 +384,12 @@ def bake_features(parsed, tin_fn, max_seg_per_cat=1500):
             for lp in loops[:800]:
                 o["loops"].append([(p[1], p[0], float(tin_fn(p[0], p[1])))
                                    for p in lp])
+        if cat == "cay" and pts:
+            # 1 ký hiệu cây khảo sát đại diện 1 KHÓM — rải thành cụm 5 cây
+            # (offset cố định, không random) trong phạm vi ký hiệu thể hiện.
+            _CLUST = ((0.0, 0.0), (5.5, 2.5), (-4.5, 4.0),
+                      (3.0, -5.0), (-5.0, -3.5))
+            pts = [(p[0] + dx, p[1] + dy) for p in pts for dx, dy in _CLUST]
         for (a, b) in segs[:max_seg_per_cat]:
             za = float(tin_fn(a[0], a[1])); zb = float(tin_fn(b[0], b[1]))
             o["segs"].append(((a[1], a[0], za), (b[1], b[0], zb)))
@@ -405,8 +420,39 @@ def bake_timluong(parsed, tin_fn, half=80.0, off_step=2.0, step=5.0):
         zs = np.asarray(tin_fn(cE + offs * pE, cN + offs * pN), float)
         sts.append({"c": (cN, cE), "per": (pN, pE),
                     "zs": [round(float(z), 2) for z in zs]})
-    return {"offs": [round(float(o), 2) for o in offs], "st": sts,
-            "L": round(float(L), 1)}
+    out = {"offs": [round(float(o), 2) for o in offs], "st": sts,
+           "L": round(float(L), 1)}
+
+    # ── 2 MÉP BỜ SÔNG thật (layer `ta ly duoi`) → đường bao mặt nước ────────
+    # Có bờ thì mặt nước vẽ ĐÚNG THEO ĐƯỜNG BAO SÔNG trong hồ sơ khảo sát,
+    # không dò bờ từ TIN (TIN thưa điểm → mép nước lởm chởm, lệch sông).
+    banks = [b for b in (parsed.get("banks") or []) if len(b) >= 2]
+    if len(banks) >= 2:
+        def _plen(pts_):
+            P = np.asarray(pts_, float)
+            return float(np.hypot(np.diff(P[:, 0]), np.diff(P[:, 1])).sum())
+
+        def _resamp(pts_, n=100):
+            P = np.asarray(pts_, float)
+            seg = np.hypot(np.diff(P[:, 0]), np.diff(P[:, 1]))
+            sv = np.concatenate([[0.0], np.cumsum(seg)])
+            sn = np.linspace(0.0, sv[-1], n)
+            return np.column_stack([np.interp(sn, sv, P[:, 0]),
+                                    np.interp(sn, sv, P[:, 1])])
+
+        b1, b2 = sorted(banks, key=_plen)[-2:]
+        A, B = _resamp(b1), _resamp(b2)
+        # Xoay chiều bờ 2 nếu 2 bờ chạy ngược nhau (ghép cặp chéo → mesh xoắn)
+        d_thuan = (float(np.hypot(*(A[0] - B[0])))
+                   + float(np.hypot(*(A[-1] - B[-1]))))
+        d_nguoc = (float(np.hypot(*(A[0] - B[-1])))
+                   + float(np.hypot(*(A[-1] - B[0]))))
+        if d_thuan > d_nguoc:
+            B = B[::-1]
+        # CAD (E,N) → hệ cột (Xc=Bắc, Yc=Đông)
+        out["bankL"] = [(float(p[1]), float(p[0])) for p in A]
+        out["bankR"] = [(float(p[1]), float(p[0])) for p in B]
+    return out
 
 
 def build_from_dxf(data, step=5.0, off_max=None, off_step=2.5):

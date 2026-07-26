@@ -3252,29 +3252,35 @@ _LSC_STYLE = {   # category → (tên legend, màu)
 
 
 def _river_water_mesh(tl, x_org, y_org, hz, z_w, col, op, name, w_min=6.0):
-    """DẢI MẶT NƯỚC trải DỌC TIM LUỒNG (profile từ 00-DXF_Topo.bake_timluong):
-    tại từng trạm lan nước từ tim ra 2 phía tới khi CHẠM BỜ (địa hình ≥ mực
-    nước) → bề rộng dải nước bám đúng lòng sông, không chỉ 1 ô tại tim cầu."""
-    offs = np.asarray(tl.get("offs") or [], float)
-    sts = tl.get("st") or []
-    if len(offs) < 2 or len(sts) < 2:
-        return None
-    i0 = int(np.argmin(np.abs(offs)))
-    Lp, Rp = [], []
-    for stn in sts:
-        zs = np.asarray(stn["zs"], float)
-        cX, cY = stn["c"]; pX, pY = stn["per"]
-        jL = i0
-        while jL - 1 >= 0 and zs[jL - 1] < z_w:
-            jL -= 1
-        jR = i0
-        while jR + 1 < len(zs) and zs[jR + 1] < z_w:
-            jR += 1
-        oL, oR = float(offs[jL]), float(offs[jR])
-        if oR - oL < w_min:            # mực nước dưới đáy/lệch tim → tối thiểu
-            oL, oR = -w_min / 2, w_min / 2
-        Lp.append((cX + oL * pX - x_org, cY + oL * pY - y_org))
-        Rp.append((cX + oR * pX - x_org, cY + oR * pY - y_org))
+    """DẢI MẶT NƯỚC trải DỌC TIM LUỒNG (profile từ 00-DXF_Topo.bake_timluong).
+    Ưu tiên 2 MÉP BỜ SÔNG thật (layer `ta ly duoi` — bankL/bankR): mặt nước
+    đúng theo ĐƯỜNG BAO SÔNG hồ sơ khảo sát. Không có bờ → lan nước từ tim
+    ra 2 phía trên profile TIN tới khi chạm bờ (địa hình ≥ mực nước)."""
+    bkL, bkR = tl.get("bankL"), tl.get("bankR")
+    if bkL and bkR and len(bkL) == len(bkR) >= 2:
+        Lp = [(p[0] - x_org, p[1] - y_org) for p in bkL]
+        Rp = [(p[0] - x_org, p[1] - y_org) for p in bkR]
+    else:
+        offs = np.asarray(tl.get("offs") or [], float)
+        sts = tl.get("st") or []
+        if len(offs) < 2 or len(sts) < 2:
+            return None
+        i0 = int(np.argmin(np.abs(offs)))
+        Lp, Rp = [], []
+        for stn in sts:
+            zs = np.asarray(stn["zs"], float)
+            cX, cY = stn["c"]; pX, pY = stn["per"]
+            jL = i0
+            while jL - 1 >= 0 and zs[jL - 1] < z_w:
+                jL -= 1
+            jR = i0
+            while jR + 1 < len(zs) and zs[jR + 1] < z_w:
+                jR += 1
+            oL, oR = float(offs[jL]), float(offs[jR])
+            if oR - oL < w_min:        # mực nước dưới đáy/lệch tim → tối thiểu
+                oL, oR = -w_min / 2, w_min / 2
+            Lp.append((cX + oL * pX - x_org, cY + oL * pY - y_org))
+            Rp.append((cX + oR * pX - x_org, cY + oR * pY - y_org))
     vx, vy, vz, ii, jj, kk = [], [], [], [], [], []
     for q in range(len(Lp)):
         vx += [Lp[q][0], Rp[q][0]]
@@ -3322,7 +3328,11 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
         pts = dd.get("pts") or []
         loops = dd.get("loops") or []
         if cat == "nha" and (segs or loops):
-            vx, vy, vz, ii, jj, kk = [], [], [], [], [], []
+            # KHỐI NHÀ 1 tầng thực tế: tường 3.2m + MÁI CHÓP ĐỎ chìa 0.4m,
+            # đỉnh mái +1.8m (tổng ~5m = chiều cao TB nhà thực).
+            H_WALL, H_ROOF, OV_MAI = 3.2, 1.8, 0.4
+            vx, vy, vz, ii, jj, kk = [], [], [], [], [], []       # tường
+            rx, ry, rz, ri, rj, rk = [], [], [], [], [], []       # mái đỏ
 
             def _wall(a, b, z0a, z0b, z1a, z1b):
                 base = len(vx)
@@ -3332,20 +3342,43 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
                 ii.extend([base, base]); jj.extend([base+1, base+2])
                 kk.extend([base+2, base+3])
 
-            for lp in loops:            # KHỐI NHÀ: tường quanh chu vi + mái
+            for lp in loops:            # tường quanh chu vi + mái chóp
                 zg = [p[2] for p in lp]
-                z_b, z_t = min(zg) - 0.2, max(zg) + H_NHA
+                z_b, z_t = min(zg) - 0.2, min(zg) + H_WALL
                 n0 = len(lp)
                 for q in range(n0):
                     _wall(lp[q], lp[(q + 1) % n0], z_b, z_b, z_t, z_t)
-                _fan_roof(vx, vy, vz, ii, jj, kk, lp, z_t)
+                cxm = sum(p[0] for p in lp) / n0
+                cym = sum(p[1] for p in lp) / n0
+                ov = []                 # chu vi mái = tường nở ra OV_MAI
+                for p in lp:
+                    dx_, dy_ = p[0] - cxm, p[1] - cym
+                    dd = (dx_*dx_ + dy_*dy_) ** 0.5 or 1.0
+                    f = (dd + OV_MAI) / dd
+                    ov.append((cxm + dx_*f, cym + dy_*f))
+                apex = len(rx)
+                rx.append(cxm - x_org); ry.append(cym - y_org)
+                rz.append((z_t + H_ROOF) * hz)
+                for q in range(n0):
+                    a, b = ov[q], ov[(q + 1) % n0]
+                    b0 = len(rx)
+                    rx.extend([a[0]-x_org, b[0]-x_org])
+                    ry.extend([a[1]-y_org, b[1]-y_org])
+                    rz.extend([z_t * hz, z_t * hz])
+                    ri.append(apex); rj.append(b0); rk.append(b0 + 1)
             for (a, b) in segs:         # đoạn rời (không khép) → tường đứng
-                _wall(a, b, a[2], b[2], a[2]+H_NHA, b[2]+H_NHA)
+                _wall(a, b, a[2], b[2], a[2]+H_WALL, b[2]+H_WALL)
             fig.add_trace(go.Mesh3d(
-                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk, color=col, opacity=0.9,
+                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk, color=col, opacity=0.95,
                 flatshading=True, name=ten, legendgroup=f"lsc_{cat}",
                 showlegend=True,
                 hovertemplate=f"<b>{ten}</b><extra></extra>"))
+            if rx:
+                fig.add_trace(go.Mesh3d(
+                    x=rx, y=ry, z=rz, i=ri, j=rj, k=rk, color="#b03a2e",
+                    opacity=0.98, flatshading=True, name=ten,
+                    legendgroup=f"lsc_{cat}", showlegend=False,
+                    hovertemplate=f"<b>{ten} — mái</b><extra></extra>"))
             continue
         if cat == "muong_ao" and (segs or loops):
             if loops:                   # AO khép kín → đa giác MẶT NƯỚC
@@ -3371,52 +3404,84 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
                     hovertemplate=f"<b>{ten}</b><extra></extra>"))
             continue
         if cat == "cay" and pts:
-            # CÂY: thân nâu (line) + tán NÓN 6 cạnh — gộp 1 Mesh3d cho nhẹ
-            R_TAN, H_THAN, H_TAN, NS = 1.8, 1.5, 3.5, 6
+            # CÂY MẪU cố định: thân TRỤ VUÔNG nâu 2m + tán 2 TẦNG NÓN xanh
+            # (dáng cây tràm) — mỗi loại 1 Mesh3d gộp cho nhẹ.
+            H_THAN, R_THAN, NS = 2.0, 0.28, 8
             ang = [2*np.pi*q/NS for q in range(NS)]
-            vx, vy, vz, ii, jj, kk = [], [], [], [], [], []
-            lx, ly, lz = [], [], []
-            for (X, Y, Z) in pts:
-                lx += [X-x_org, X-x_org, None]
-                ly += [Y-y_org, Y-y_org, None]
-                lz += [Z*hz, (Z+H_THAN)*hz, None]
-                apex = len(vx)
-                vx.append(X-x_org); vy.append(Y-y_org)
-                vz.append((Z+H_THAN+H_TAN)*hz)
-                ring = len(vx)
+            tx, ty, tz, ti, tj, tk = [], [], [], [], [], []   # thân nâu
+            gx, gy, gz, gi, gj, gk = [], [], [], [], [], []   # tán xanh
+
+            def _cone(X, Y, zb, r, h):
+                apex = len(gx)
+                gx.append(X-x_org); gy.append(Y-y_org); gz.append((zb+h)*hz)
+                ring = len(gx)
                 for aq in ang:
-                    vx.append(X-x_org + R_TAN*np.cos(aq))
-                    vy.append(Y-y_org + R_TAN*np.sin(aq))
-                    vz.append((Z+H_THAN)*hz)
+                    gx.append(X-x_org + r*np.cos(aq))
+                    gy.append(Y-y_org + r*np.sin(aq))
+                    gz.append(zb*hz)
                 for q in range(NS):
-                    ii.append(apex); jj.append(ring+q)
-                    kk.append(ring+(q+1) % NS)
+                    gi.append(apex); gj.append(ring+q)
+                    gk.append(ring+(q+1) % NS)
+
+            for (X, Y, Z) in pts:
+                base = len(tx)
+                for zq in (Z, Z + H_THAN):        # 4 đáy + 4 đỉnh thân
+                    for dx_, dy_ in ((-R_THAN, -R_THAN), (R_THAN, -R_THAN),
+                                     (R_THAN, R_THAN), (-R_THAN, R_THAN)):
+                        tx.append(X-x_org+dx_); ty.append(Y-y_org+dy_)
+                        tz.append(zq*hz)
+                for q in range(4):                # 4 mặt bên thân
+                    a0, a1 = base+q, base+(q+1) % 4
+                    b0, b1 = a0+4, a1+4
+                    ti += [a0, a0]; tj += [a1, b1]; tk += [b1, b0]
+                _cone(X, Y, Z + H_THAN - 0.3, 2.3, 2.6)   # tán dưới rộng
+                _cone(X, Y, Z + H_THAN + 1.5, 1.5, 2.2)   # tán trên nhọn
             fig.add_trace(go.Mesh3d(
-                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk, color=col,
+                x=gx, y=gy, z=gz, i=gi, j=gj, k=gk, color=col,
                 opacity=0.95, flatshading=True, name=ten,
                 legendgroup=f"lsc_{cat}", showlegend=True,
                 hovertemplate=f"<b>{ten}</b><extra></extra>"))
-            fig.add_trace(go.Scatter3d(
-                x=lx, y=ly, z=lz, mode="lines",
-                line=dict(color="#8e6e53", width=3),
-                legendgroup=f"lsc_{cat}", showlegend=False, hoverinfo="skip"))
+            fig.add_trace(go.Mesh3d(
+                x=tx, y=ty, z=tz, i=ti, j=tj, k=tk, color="#7a5230",
+                opacity=1.0, flatshading=True, legendgroup=f"lsc_{cat}",
+                showlegend=False, hoverinfo="skip"))
             continue
         if cat == "lua" and pts:
-            # RUỘNG LÚA: thảm ô vuông xanh mờ quanh mỗi điểm ký hiệu
-            RB = 2.0
-            vx, vy, vz, ii, jj, kk = [], [], [], [], [], []
+            # RUỘNG LÚA MẪU cố định: thảm 8×8m xanh mờ + 3×3 KHÓM lúa (nón
+            # nhỏ vàng-xanh) rải đều trong phạm vi ký hiệu khảo sát.
+            RB, SP, R_KH, H_KH, NS = 4.0, 2.6, 0.5, 0.9, 5
+            ang = [2*np.pi*q/NS for q in range(NS)]
+            vx, vy, vz, ii, jj, kk = [], [], [], [], [], []   # thảm
+            hx, hy, hzv, hi, hj, hk = [], [], [], [], [], []  # khóm
             for (X, Y, Z) in pts:
                 base = len(vx)
                 for dx_, dy_ in ((-RB, -RB), (RB, -RB), (RB, RB), (-RB, RB)):
                     vx.append(X-x_org+dx_); vy.append(Y-y_org+dy_)
-                    vz.append((Z+0.05)*hz)
+                    vz.append((Z+0.03)*hz)
                 ii += [base, base]; jj += [base+1, base+2]
                 kk += [base+2, base+3]
+                for ux in (-SP, 0.0, SP):
+                    for uy in (-SP, 0.0, SP):
+                        apex = len(hx)
+                        hx.append(X-x_org+ux); hy.append(Y-y_org+uy)
+                        hzv.append((Z+H_KH)*hz)
+                        ring = len(hx)
+                        for aq in ang:
+                            hx.append(X-x_org+ux + R_KH*np.cos(aq))
+                            hy.append(Y-y_org+uy + R_KH*np.sin(aq))
+                            hzv.append(Z*hz)
+                        for q in range(NS):
+                            hi.append(apex); hj.append(ring+q)
+                            hk.append(ring+(q+1) % NS)
             fig.add_trace(go.Mesh3d(
-                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk, color=col, opacity=0.45,
+                x=vx, y=vy, z=vz, i=ii, j=jj, k=kk, color=col, opacity=0.35,
                 flatshading=True, name=ten, legendgroup=f"lsc_{cat}",
                 showlegend=True,
                 hovertemplate=f"<b>{ten}</b><extra></extra>"))
+            fig.add_trace(go.Mesh3d(
+                x=hx, y=hy, z=hzv, i=hi, j=hj, k=hk, color="#8bc34a",
+                opacity=0.9, flatshading=True, legendgroup=f"lsc_{cat}",
+                showlegend=False, hoverinfo="skip"))
             continue
         if cat == "dien" and pts:
             lx, ly, lz = [], [], []
