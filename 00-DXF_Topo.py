@@ -408,6 +408,16 @@ def bake_timluong(parsed, tin_fn, half=80.0, off_step=2.0, step=5.0):
     tl = parsed["tims"].get("luong")
     if not tl:
         return None
+    # KÉO DÀI tim luồng 2 đầu: polyline khảo sát thường chỉ vẽ đoạn quanh cầu,
+    # trong khi mặt nước phải phủ HẾT bề rộng địa hình theo phương ngang cầu.
+    # Phần thừa bị cắt lại đúng biên địa hình lúc dựng mesh (clip_poly).
+    P0 = np.asarray(tl, float)
+    if len(P0) >= 2:
+        d_a = P0[0] - P0[1]; d_a = d_a / (float(np.hypot(*d_a)) or 1.0)
+        d_b = P0[-1] - P0[-2]; d_b = d_b / (float(np.hypot(*d_b)) or 1.0)
+        EXT = 500.0
+        tl = ([tuple(P0[0] + d_a * EXT)] + [tuple(p) for p in P0]
+              + [tuple(P0[-1] + d_b * EXT)])
     Ee, Nn, ss, L = _densify(tl, step=step)
     offs = np.arange(-half, half + 1e-6, off_step)
     sts = []

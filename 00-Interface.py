@@ -3880,6 +3880,17 @@ _TOPO_MOD_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                               "00-DXF_Topo.py")
 
 
+def _bvk_mod_ver() -> str:
+    """Phiên bản module 11-BanVe_KetCau (mtime+size) — vào KHÓA CACHE figure 3D
+    để sau khi sửa code dựng 3D, phiên đang mở không còn hiện figure CŨ."""
+    try:
+        _s = os.stat(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                  "11-BanVe_KetCau.py"))
+        return f"bvk{int(_s.st_mtime)}:{_s.st_size}"
+    except OSError:
+        return "bvk0"
+
+
 def _topo_mod_ver() -> str:
     """Phiên bản module 00-DXF_Topo (mtime+size) — THAM GIA KHÓA CACHE: sửa
     module thì cache cũ tự bỏ (Streamlit không thấy code nạp bằng importlib)."""
@@ -8428,9 +8439,11 @@ with _col_main:
                         _pct_ok = 100*(min(_lt_max2,_xmo_p)-max(_lt_min2,_xmo_t))/max(1,_xmo_p-_xmo_t)
                         st.success(f"✅ Cầu khớp địa hình ({_pct_ok:.0f}% chiều dài cầu nằm trong phạm vi địa hình)")
     
-                    _COMP_GROUPS3D = ["Địa hình", "Mặt cầu", "Dầm", "Lan can",
-                                      "Trụ", "Mố", "Bệ cọc", "Cọc",
-                                      "Đường đầu cầu", "Mặt nước", "Tĩnh không"]
+                    # Nhóm chú giải 3D (gộp gọn): tim tuyến · địa hình · hiện
+                    # trạng · KCPT (dầm, bản, lan can, mặt đường) · KCPD (mố,
+                    # trụ, bệ, cọc) · mặt nước · tĩnh không.
+                    _COMP_GROUPS3D = ["Tim tuyến", "Địa hình", "Hiện trạng",
+                                      "KCPT", "KCPD", "Mặt nước", "Tĩnh không"]
                     # Đã BỎ expander "Tùy chỉnh hiển thị 3D" → dùng mặc định; ẩn/hiện
                     # cấu kiện thao tác trực tiếp bằng CHÚ GIẢI (legend) của biểu đồ.
                     render_mode_3d = "Shaded"
@@ -8494,7 +8507,10 @@ with _col_main:
                     # thức mới (vd sửa datum VN2000→WGS84) phiên cũ vẫn hiện figure
                     # CŨ từ cache → "3D vẫn lệch dù 2D đã đúng". Đổi chuỗi này mỗi
                     # khi thay đổi cách dựng 3D/toạ độ.
-                    _SAT_CODE_VER = "satv6-flat-only"
+                    # Lấy TỰ ĐỘNG theo mtime+size của 11-BanVe (module dựng 3D,
+                    # nạp bằng importlib nên Streamlit không tự thấy đổi) — sửa
+                    # code là cache figure cũ tự bỏ, khỏi phải nhớ đổi tay.
+                    _SAT_CODE_VER = _bvk_mod_ver()
                     _k3d = (selected_ribbon, _spt_pfx, _terr_sig, _des_sig,
                             _sat_active, _sat_lon0, _SAT_CODE_VER)
                     _c3d = st.session_state.get(f"_fig3dcache_{selected_ribbon}")
@@ -8553,9 +8569,13 @@ with _col_main:
                                     try:
                                         _spt_t_traces = BBUI.get_beam_model_mesh_traces_vn2000(
                                             d, _df_geo, he_so_z, pfx=_spt_pfx)
-                                        for _i_b, _spt_t in enumerate(_spt_t_traces or []):
-                                            _spt_t.legendgroup = "Dầm"
-                                            try: _spt_t.showlegend = (_i_b == 0)
+                                        # Dầm thuộc KẾT CẤU PHẦN TRÊN → cùng nhóm
+                                        # chú giải KCPT (bản mặt cầu, lan can…);
+                                        # KCPT đã có dòng legend từ add_all nên
+                                        # dầm không hiện thêm dòng riêng.
+                                        for _spt_t in (_spt_t_traces or []):
+                                            _spt_t.legendgroup = "KCPT"
+                                            try: _spt_t.showlegend = False
                                             except Exception: pass
                                             _fig_t.add_trace(_spt_t)
                                     except Exception:

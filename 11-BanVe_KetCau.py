@@ -535,7 +535,8 @@ def _box3d(x0, y0, z0, x1, y1, z1, color="#bdc3c7", opacity=0.88, name="", sl=Tr
 # Nhóm cấu kiện ĐƯỢC vẽ đường bao (KHÔNG gồm mặt nước, tĩnh không, địa hình,
 # đường đầu cầu, lớp phủ). Khớp theo legendgroup/name của trace.
 _OUTLINE_GROUPS = ("Lan can", "Giải phân cách", "Mố", "Trụ", "Xà mũ",
-                   "Thân", "Bệ", "Cọc", "Dầm", "Mặt cầu", "Bản")
+                   "Thân", "Bệ", "Cọc", "Dầm", "Mặt cầu", "Bản",
+                   "KCPT", "KCPD")   # tên nhóm gộp trên chú giải 3D
 
 
 def _add_box_outlines(fig, color="#1b2631", width=2.0, name="Đường bao cấu kiện",
@@ -3280,7 +3281,7 @@ def _pt_in_poly(x, y, poly):
 
 
 def _river_water_mesh(tl, x_org, y_org, hz, z_w, col, op, name, w_min=6.0,
-                      clip_poly=None):
+                      clip_poly=None, half_w=None):
     """DẢI MẶT NƯỚC trải DỌC TIM LUỒNG (profile từ 00-DXF_Topo.bake_timluong).
     Ưu tiên 2 MÉP BỜ SÔNG thật (bankL/bankR khi bản vẽ có layer mép bờ hợp lệ);
     không có → lan nước từ tim ra 2 phía trên profile TIN tới khi chạm bờ
@@ -3288,11 +3289,23 @@ def _river_water_mesh(tl, x_org, y_org, hz, z_w, col, op, name, w_min=6.0,
 
     clip_poly: đa giác phạm vi ĐỊA HÌNH khảo sát (hệ cột, chưa trừ origin) —
     dải nước bị CẮT về trong đó. Không kẹp thì nước chìa ra ngoài dải địa hình
-    (dải chạy song song tim tuyến, nước cắt ngang) → nhìn tổng thể rất kỳ."""
+    (dải chạy song song tim tuyến, nước cắt ngang) → nhìn tổng thể rất kỳ.
+    half_w: nửa bề rộng dải nước CỐ ĐỊNH theo phương dọc cầu (= B tĩnh không/2
+    + lề). Có half_w thì bỏ qua dò bờ/mép bờ — dải nước chạy dọc tim luồng phủ
+    hết địa hình theo phương ngang cầu, bề dày đúng phạm vi tĩnh không."""
     bkL, bkR = tl.get("bankL"), tl.get("bankR")
     # Lp/Rp dựng ở TỌA ĐỘ TUYỆT ĐỐI (hệ cột) để kẹp được với clip_poly; trừ
     # origin ở bước phát mesh cuối cùng.
-    if bkL and bkR and len(bkL) == len(bkR) >= 2:
+    if half_w:
+        sts = tl.get("st") or []
+        if len(sts) < 2:
+            return None
+        Lp = [(s["c"][0] - half_w * s["per"][0],
+               s["c"][1] - half_w * s["per"][1]) for s in sts]
+        Rp = [(s["c"][0] + half_w * s["per"][0],
+               s["c"][1] + half_w * s["per"][1]) for s in sts]
+        Cp = [(s["c"][0], s["c"][1]) for s in sts]
+    elif bkL and bkR and len(bkL) == len(bkR) >= 2:
         Lp = [(float(p[0]), float(p[1])) for p in bkL]
         Rp = [(float(p[0]), float(p[1])) for p in bkR]
         Cp = [((a[0]+b[0])/2, (a[1]+b[1])/2) for a, b in zip(Lp, Rp)]
@@ -3372,7 +3385,30 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
       • mương/ao: vòng khép kín → MẶT NƯỚC đa giác; đoạn rời → nét nước rộng mờ
       • lúa: thảm ô vuông xanh mờ; cây: thân nâu + tán NÓN xanh (Mesh3d gộp)
       • đường, rào, cầu cống: nét màu bám mặt đất (+5cm); cột điện: cột 8m
-    Mỗi hạng mục 1 legendgroup riêng → ẩn/hiện độc lập trên legend."""
+    TẤT CẢ vào 1 nhóm chú giải "Hiện trạng" (1 dòng legend bật/tắt cả cụm) và
+    gắn cờ meta='lsc' → giữ nguyên màu thật, không bị xiên theo góc giao."""
+    _GRP = "Hiện trạng"
+    _seen_lsc = {"x": False}
+
+    def _add(tr):
+        """Mọi trace cảnh quan: cùng legendgroup, chỉ trace ĐẦU hiện chú giải."""
+        try:
+            tr.meta = "lsc"
+            tr.legendgroup = _GRP
+            tr.showlegend = not _seen_lsc["x"]
+            if not _seen_lsc["x"]:
+                tr.name = _GRP
+                _seen_lsc["x"] = True
+        except Exception:
+            pass
+        fig.add_trace(tr)
+
+    _add_landscape_3d_body(_add, feats, x_org, y_org, hz)
+
+
+def _add_landscape_3d_body(_add, feats, x_org, y_org, hz):
+    """Thân vẽ cảnh quan (xem _add_landscape_3d) — phát trace qua `_add` để
+    được gắn nhóm 'Hiện trạng' + cờ meta='lsc'."""
     H_NHA, H_DIEN = 3.5, 8.0
 
     def _fan_roof(vx, vy, vz, ii, jj, kk, lp, z_flat):
@@ -3438,13 +3474,13 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
                     ri.append(apex); rj.append(b0); rk.append(b0 + 1)
             for (a, b) in segs:         # đoạn rời (không khép) → tường đứng
                 _wall(a, b, a[2], b[2], a[2]+H_WALL, b[2]+H_WALL)
-            fig.add_trace(go.Mesh3d(
+            _add(go.Mesh3d(
                 x=vx, y=vy, z=vz, i=ii, j=jj, k=kk, color=col, opacity=0.95,
                 flatshading=True, name=ten, legendgroup=f"lsc_{cat}",
                 showlegend=True,
                 hovertemplate=f"<b>{ten}</b><extra></extra>"))
             if rx:
-                fig.add_trace(go.Mesh3d(
+                _add(go.Mesh3d(
                     x=rx, y=ry, z=rz, i=ri, j=rj, k=rk, color="#b03a2e",
                     opacity=0.98, flatshading=True, name=ten,
                     legendgroup=f"lsc_{cat}", showlegend=False,
@@ -3456,7 +3492,7 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
                 for lp in loops:
                     _fan_roof(vx, vy, vz, ii, jj, kk, lp,
                               min(p[2] for p in lp) - 0.05)
-                fig.add_trace(go.Mesh3d(
+                _add(go.Mesh3d(
                     x=vx, y=vy, z=vz, i=ii, j=jj, k=kk, color="#3aa7d9",
                     opacity=0.6, flatshading=True, name=ten,
                     legendgroup=f"lsc_{cat}", showlegend=True,
@@ -3467,7 +3503,7 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
                     lx += [a[0]-x_org, b[0]-x_org, None]
                     ly += [a[1]-y_org, b[1]-y_org, None]
                     lz += [(a[2]+0.03)*hz, (b[2]+0.03)*hz, None]
-                fig.add_trace(go.Scatter3d(
+                _add(go.Scatter3d(
                     x=lx, y=ly, z=lz, mode="lines",
                     line=dict(color="rgba(46,134,193,0.65)", width=7),
                     name=ten, legendgroup=f"lsc_{cat}", showlegend=not loops,
@@ -3506,12 +3542,12 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
                     ti += [a0, a0]; tj += [a1, b1]; tk += [b1, b0]
                 _cone(X, Y, Z + H_THAN - 0.3, 2.3, 2.6)   # tán dưới rộng
                 _cone(X, Y, Z + H_THAN + 1.5, 1.5, 2.2)   # tán trên nhọn
-            fig.add_trace(go.Mesh3d(
+            _add(go.Mesh3d(
                 x=gx, y=gy, z=gz, i=gi, j=gj, k=gk, color=col,
                 opacity=0.95, flatshading=True, name=ten,
                 legendgroup=f"lsc_{cat}", showlegend=True,
                 hovertemplate=f"<b>{ten}</b><extra></extra>"))
-            fig.add_trace(go.Mesh3d(
+            _add(go.Mesh3d(
                 x=tx, y=ty, z=tz, i=ti, j=tj, k=tk, color="#7a5230",
                 opacity=1.0, flatshading=True, legendgroup=f"lsc_{cat}",
                 showlegend=False, hoverinfo="skip"))
@@ -3543,12 +3579,12 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
                         for q in range(NS):
                             hi.append(apex); hj.append(ring+q)
                             hk.append(ring+(q+1) % NS)
-            fig.add_trace(go.Mesh3d(
+            _add(go.Mesh3d(
                 x=vx, y=vy, z=vz, i=ii, j=jj, k=kk, color=col, opacity=0.35,
                 flatshading=True, name=ten, legendgroup=f"lsc_{cat}",
                 showlegend=True,
                 hovertemplate=f"<b>{ten}</b><extra></extra>"))
-            fig.add_trace(go.Mesh3d(
+            _add(go.Mesh3d(
                 x=hx, y=hy, z=hzv, i=hi, j=hj, k=hk, color="#8bc34a",
                 opacity=0.9, flatshading=True, legendgroup=f"lsc_{cat}",
                 showlegend=False, hoverinfo="skip"))
@@ -3559,18 +3595,18 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
                 lx += [X-x_org, X-x_org, None]
                 ly += [Y-y_org, Y-y_org, None]
                 lz += [Z*hz, (Z+H_DIEN)*hz, None]
-            fig.add_trace(go.Scatter3d(
+            _add(go.Scatter3d(
                 x=lx, y=ly, z=lz, mode="lines",
                 line=dict(color=col, width=4), name=ten,
                 legendgroup=f"lsc_{cat}", showlegend=True))
-            fig.add_trace(go.Scatter3d(
+            _add(go.Scatter3d(
                 x=[p[0]-x_org for p in pts], y=[p[1]-y_org for p in pts],
                 z=[(p[2]+H_DIEN)*hz for p in pts], mode="markers",
                 marker=dict(size=3, color=col), legendgroup=f"lsc_{cat}",
                 showlegend=False, hoverinfo="skip"))
             continue
         if pts:                                     # lúa (và block điểm khác)
-            fig.add_trace(go.Scatter3d(
+            _add(go.Scatter3d(
                 x=[p[0]-x_org for p in pts], y=[p[1]-y_org for p in pts],
                 z=[(p[2]+0.1)*hz for p in pts], mode="markers",
                 marker=dict(size=4, color=col, symbol="diamond"),
@@ -3582,7 +3618,7 @@ def _add_landscape_3d(fig, feats, x_org, y_org, hz):
                 lx += [a[0]-x_org, b[0]-x_org, None]
                 ly += [a[1]-y_org, b[1]-y_org, None]
                 lz += [(a[2]+0.05)*hz, (b[2]+0.05)*hz, None]
-            fig.add_trace(go.Scatter3d(
+            _add(go.Scatter3d(
                 x=lx, y=ly, z=lz, mode="lines",
                 line=dict(color=col, width=3), name=ten,
                 legendgroup=f"lsc_{cat}",
@@ -3854,9 +3890,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 (MNTN, f"MNTN = {MNTN:.3f}m", "#1abc9c", 0.25),
             ]:
                 try:
+                    # Dọc cầu: dải nước = phạm vi TĨNH KHÔNG + 5m mỗi bên.
+                    # Ngang cầu: chạy hết tim luồng (đã kéo dài) rồi cắt đúng
+                    # biên địa hình → phủ trọn bề rộng khảo sát.
                     _wm = _river_water_mesh(_tl_prof, x_org, y_org, hz,
                                             z_w, clr, op, lbl,
-                                            clip_poly=_clip)
+                                            clip_poly=_clip,
+                                            half_w=B_tk / 2.0 + 5.0)
                     if _wm is not None:
                         _ag(_wm); _wat_ok = True
                 except Exception as _we:
@@ -3938,7 +3978,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             xc, yc = _vn(s, 0)
             XP.append(xc); YP.append(yc)
             ZP.append(float(np.interp(s, lt_v, vz_v)) * hz)
-        _grp_state["g"] = "Trắc dọc"
+        _grp_state["g"] = "Tim tuyến"
         _ag(go.Scatter3d(x=XP, y=YP, z=ZP, mode="lines",
                                    line=dict(color="#27ae60", width=4),
                                    name="Địa hình TN tim tuyến"))
@@ -3961,7 +4001,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # Bản mặt cầu (full bề rộng) + Lớp phủ BTN. Lớp phủ CHỈ phủ trong khoảng
         # mép TRONG lan can; nếu có dải phân cách giữa thì tách 2 dải (lan can &
         # dải PC đặt TRỰC TIẾP trên bản mặt cầu, lớp phủ ngừng tại đó).
-        _grp_state["g"] = "Mặt cầu"
+        _grp_state["g"] = "KCPT"
         # ĐỘ DỐC NGANG (đồng bộ MCN): crown tại tim, hạ ra mép. _dz = độ hạ cao độ
         # (đã ×hz) theo offset ngang. Bản & lớp phủ tách tại tim để tạo mái crown.
         _i_ng3d = float(d.get("i_doc_ngang", 2.0)) / 100.0
@@ -3994,7 +4034,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
         # Lan can / Giải phân cách — ĐẶT TRÊN BẢN MẶT CẦU (z_deck), không trên lớp
         # phủ. KÉO DÀI ra hết tường cánh mố 2 đầu (theo chiều dọc mố).
-        _grp_state["g"] = "Lan can"
+        _grp_state["g"] = "KCPT"
         _wd = _abut_long_depth_m(d.get("_mo_model"))
         _z_edge = z_deck + _dz(bc/2)          # mép bản đã hạ theo dốc ngang
         try:
@@ -4074,7 +4114,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                     fig.add_trace(_tr)
         else:
             # Fallback: KHỐI TRỤ CŨ (chỉ khi chưa resolve được trụ lắp ghép).
-            _grp_state["g"] = "Trụ"
+            _grp_state["g"] = "KCPD"
             for i_p, xt in enumerate(piers):
                 sl = (i_p == 0)
                 _ag(_abox(xt-cap_thick, xt+cap_thick, -cap_W, cap_W,
@@ -4101,13 +4141,13 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
             # Bệ cọc (hộp) — CHỈ vẽ khi KHÔNG dùng trụ lắp ghép (trụ lắp ghép đã
             # gồm bệ thật) → tránh vẽ trùng bệ.
             if not _pier_model:
-                _grp_state["g"] = "Bệ cọc"
+                _grp_state["g"] = "KCPD"
                 _ag(_abox(xt-be_long, xt+be_long, -be_W, be_W,
                                     z_beb, z_bet, "#aab7b8", 0.90,
                                     "Bệ cọc" if sl else "", sl=sl))
 
             # Cọc (line) — ĐỈNH CỌC bám ĐÁY BỆ theo địa hình từng trụ (khớp trắc dọc)
-            _grp_state["g"] = "Cọc"
+            _grp_state["g"] = "KCPD"
             if _pier_model:
                 _, _, _z_be_bot_p = _pier_found(xt)
                 _z_coc_top = _z_be_bot_p * hz
@@ -4149,7 +4189,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # MỐ LẮP GHÉP thật (mặc định "Mố chữ U" từ d["_mo_model"]) — thay khối mố
         # hộp cũ. Đáy mố chôn 0.5m dưới ĐTN tại mố; đỉnh = đáy dầm; out_dir=±1
         # để mặt trước quay vào nhịp. Nắn về hệ địa hình qua _vn + nhân hz.
-        _grp_state["g"] = "Mố"
+        _grp_state["g"] = "KCPD"
         _mo_model = d.get("_mo_model")
         _PBm2 = _get_PB()
         for xm, nm, sgn in [(x0, "Mố trái", 1), (x_end, "Mố phải", -1)]:
@@ -4200,7 +4240,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
                 # ── CỌC MỐ (3D) — LƯỚI LẤP ĐẦY BỆ MỐ THẬT (đồng bộ mọi view):
                 # ưu tiên sơ đồ DXF khai báo; auto = pile_grid_fit theo bệ mố.
                 try:
-                    _grp_state["g"] = "Mố"
+                    _grp_state["g"] = "KCPD"
                     _mkey = "mo_trai" if sgn > 0 else "mo_phai"
                     _pls_mo = _layout_piles(d, _mkey)
                     _xc_mo = _xf_mo3d + sgn * _PBm2.abut_footing_center_u_m(_mo_model)
@@ -4314,7 +4354,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
 
         # Cao độ mặt đường đầu cầu BÁM ĐƯỜNG ĐỎ (make_red_line) + lớp phủ → liền
         # mạch với mặt cầu, không chênh bậc tại khe nối.
-        _grp_state["g"] = "Đường đầu cầu"
+        _grp_state["g"] = "KCPT"
         _L_app_t = 50.0
         for _xm, _od in [(x0, -1.0), (x_end, 1.0)]:
             _s1 = _xm + _od * _L_app_t
@@ -4331,7 +4371,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # Đọc tru_result.ket_qua_mo.ban_qua_do: tấm BTCT nằm giữa tường đỉnh
         # mố và dầm kê trong nền đường, mặt bản dưới mặt đường ≥ 0.7m, dốc
         # dọc 10–15% hạ dần về phía nền đường.
-        _grp_state["g"] = "Bản quá độ"
+        _grp_state["g"] = "KCPT"
         _bqd = ((d.get("tru_result") or {}).get("ket_qua_mo") or {}
                 ).get("ban_qua_do") or {}
         _L_bqd   = float(_bqd.get("L_bqd", 5.0) or 5.0)
@@ -6550,10 +6590,17 @@ def _is_translucent(trace) -> bool:
     return any(k in nm for k in _TRANSLUCENT_KEYS)
 
 
+def _is_landscape(trace) -> bool:
+    """Khối CẢNH QUAN hiện trạng (nhà/cây/lúa/ao…) — gắn cờ meta='lsc' lúc vẽ.
+    Không phải cấu kiện cầu: GIỮ NGUYÊN màu thật (mái đỏ, cây/lúa xanh) và
+    KHÔNG bị biến dạng xiên theo góc giao."""
+    return str(getattr(trace, "meta", "") or "") == "lsc"
+
+
 def _to_concrete(trace) -> None:
     """Quy 1 khối về màu hạng mục chuẩn (BTXM xám / bê tông nhựa xám đậm);
-    giữ nền đắp/địa hình/khối trong suốt."""
-    if _is_translucent(trace):
+    giữ nền đắp/địa hình/khối trong suốt/cảnh quan hiện trạng."""
+    if _is_translucent(trace) or _is_landscape(trace):
         return
     try:
         if trace.opacity is not None and float(trace.opacity) < 0.5:
@@ -6596,6 +6643,8 @@ def apply_skew_3d(fig, d, start_index=0):
     for _i, tr in enumerate(fig.data):
         if _i < start_index:
             continue
+        if _is_landscape(tr):
+            continue            # cảnh quan = tọa độ thật, không xiên theo cầu
         _key = (str(getattr(tr, "legendgroup", "") or "") + " " +
                 str(getattr(tr, "name", "") or "")).lower()
         if any(k in _key for k in _SKEW_SKIP_KW):
@@ -6623,6 +6672,8 @@ def apply_render_mode(fig, mode="Shaded"):
     """
     for trace in fig.data:
         if isinstance(trace, go.Mesh3d):
+            if _is_landscape(trace):
+                continue        # cảnh quan: giữ nguyên màu + độ trong
             # Quy mọi khối BTCT về 1 màu bê tông đặc trước khi áp chế độ hiển thị
             _to_concrete(trace)
             if mode == "Wireframe":
