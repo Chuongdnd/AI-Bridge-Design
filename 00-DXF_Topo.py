@@ -38,14 +38,17 @@ TIM_LAYERS = {"tk": "timtuyentk", "ks": "timtuyenks", "luong": "timluong"}
 Z_TEXT_LAYERS = ["caodotn", "cao do binh do", "docao"]   # TEXT số = cao độ
 
 FEATURE_LAYERS = [   # (category, [mẫu tên layer, chứa-chuỗi, chữ thường])
+    # "dien" phải ĐỨNG TRƯỚC "nha": layer `dienhathe` CHỨA chuỗi "nha"
+    # (die-NHA-the) — nếu xét "nha" trước, cột điện bị xếp nhầm thành nhà.
+    ("dien",       ["dienhathe", "dien ha the"]),
     ("nha",        ["ks.nha", "nha"]),
     ("muong_ao",   ["muong ao", "ks_muong"]),
     ("lua",        ["lua-khks", "lua"]),
     ("duong_dat",  ["leduongdat"]),
     ("duong_nhua", ["leduongnhua"]),
     ("rao",        ["raoxay", "raokem", "rao"]),
+    ("cay",        ["caytram", "ks.cay", "cayxanh"]),
     ("cau_cong",   ["cau cong"]),
-    ("dien",       ["dienhathe", "dien ha the"]),
 ]
 _FEAT_EXCLUDE = ["text nha"]        # layer nhãn chữ — không phải hình
 
@@ -97,6 +100,45 @@ def _num(s):
         return float(str(s).strip().replace(",", "."))
     except (TypeError, ValueError):
         return None
+
+
+def _chain_loops(segs, tol=0.2):
+    """Nối các đoạn LINE rời thành CHUỖI liên tục; chuỗi khép kín → 'loop'
+    (đa giác — nhà, ao). Trả (loops, opens): loops = [[(x,y)…]] KHÔNG lặp điểm
+    cuối; opens = các đoạn còn lại (chuỗi hở tách về từng đoạn)."""
+    from collections import defaultdict
+
+    def _key(p):
+        return (round(p[0] / tol), round(p[1] / tol))
+
+    adj = defaultdict(list)                    # đầu-mút → [(idx đoạn, đầu 0/1)]
+    for i, (a, b) in enumerate(segs):
+        adj[_key(a)].append((i, 0))
+        adj[_key(b)].append((i, 1))
+    used = [False] * len(segs)
+    loops, opens = [], []
+    for i0 in range(len(segs)):
+        if used[i0]:
+            continue
+        used[i0] = True
+        chain = [segs[i0][0], segs[i0][1]]
+        for _fwd in (True, False):             # nối dài về 2 phía
+            while True:
+                p = chain[-1] if _fwd else chain[0]
+                cand = [(j, e) for (j, e) in adj[_key(p)] if not used[j]]
+                if not cand:
+                    break
+                j, e = cand[0]
+                used[j] = True
+                s_, t_ = segs[j]
+                nxt = t_ if e == 0 else s_
+                chain.append(nxt) if _fwd else chain.insert(0, nxt)
+        if len(chain) >= 4 and _key(chain[0]) == _key(chain[-1]):
+            loops.append(chain[:-1])
+        else:
+            opens.extend((chain[k], chain[k + 1])
+                         for k in range(len(chain) - 1))
+    return loops, opens
 
 
 def parse_topo_dxf(data):
@@ -233,12 +275,16 @@ def _coc_name(ly, moc=20.0):
 
 
 # ── Dựng bảng chuẩn ─────────────────────────────────────────────────────────
-def build_geology(parsed, step=5.0, off_max=40.0, off_step=2.5):
+def build_geology(parsed, step=5.0, off_max=None, off_step=2.5):
     """Sinh (df_geology, df_tim_line, tin_fn, info) từ kết quả parse.
 
     Trạm mỗi `step` m dọc timtuyenTK; tại mỗi trạm cắt ngang ±off_max bước
     off_step; Z nội suy TIN (LinearND) từ đám điểm đo thật, ngoài biên dùng
-    điểm gần nhất. Lý trình = s − s0 (0-0 tại giao tim luồng)."""
+    điểm gần nhất. Lý trình = s − s0 (0-0 tại giao tim luồng).
+
+    off_max=None (mặc định): TỰ LẤY THEO BỀ RỘNG dải điểm đo của file CAD
+    (bách phân vị 98 khoảng cách vuông góc điểm→tim, kẹp 40–300m) — địa hình
+    phủ hết phạm vi khảo sát chứ không bó ±40m quanh tim."""
     from scipy.interpolate import LinearNDInterpolator, NearestNDInterpolator
 
     zp = np.asarray(parsed["z_points"], float)
@@ -257,6 +303,17 @@ def build_geology(parsed, step=5.0, off_max=40.0, off_step=2.5):
         return z
 
     Ee, Nn, ss, L = _densify(tim, step=1.0)
+    if off_max is None:
+        # Bề rộng dải = phạm vi ĐÁM MÂY ĐIỂM ĐO thật (khoảng cách vuông góc
+        # từng điểm → tim, p98 chống điểm lạc), kẹp 40–300m; dải rộng thì bước
+        # offset thô hơn (5m) để số điểm lưới không phình.
+        from scipy.spatial import cKDTree
+        _tree = cKDTree(np.column_stack([Ee[::3], Nn[::3]]))
+        _dist, _ = _tree.query(zp[:, :2], k=1)
+        off_max = float(np.clip(np.ceil(np.percentile(_dist, 98.0) / 10) * 10,
+                                40.0, 300.0))
+        if off_max > 60.0:
+            off_step = max(float(off_step), 5.0)
     s0 = chainage_zero(tim, parsed["tims"].get("luong"))
     if s0 is None:
         s0 = 0.0
@@ -296,6 +353,7 @@ def build_geology(parsed, step=5.0, off_max=40.0, off_step=2.5):
               .drop_duplicates("Lý trình").sort_values("Lý trình")
               .reset_index(drop=True))
     info = {"L_tuyen": round(L, 1), "s0": round(s0, 2),
+            "off_max": round(float(off_max), 1),
             "n_tram": len(stations_ly), "n_diem": len(df),
             "z_min": float(df["Z"].min()), "z_max": float(df["Z"].max())}
     return df, df_tim, tin_fn, info
@@ -303,13 +361,20 @@ def build_geology(parsed, step=5.0, off_max=40.0, off_step=2.5):
 
 def bake_features(parsed, tin_fn, max_seg_per_cat=1500):
     """Cảnh quan sơ họa → HỆ CỘT (Xc=Bắc, Yc=Đông) + Z bám mặt địa hình:
-    {cat: {"segs": [((Xc,Yc,Z),(Xc,Yc,Z))…], "pts": [(Xc,Yc,Z)…]}}."""
+    {cat: {"segs": [((Xc,Yc,Z),(Xc,Yc,Z))…], "pts": [(Xc,Yc,Z)…],
+           "loops": [[(Xc,Yc,Z)…]…]}}.
+    'loops' = chuỗi đoạn KHÉP KÍN đã nối lại (nhà → khối nhà, ao → mặt nước)."""
     out = {}
     for cat, dd in parsed["features"].items():
         segs, pts = dd["segs"], dd["pts"]
         if not segs and not pts:
             continue
-        o = {"segs": [], "pts": []}
+        o = {"segs": [], "pts": [], "loops": []}
+        if cat in ("nha", "muong_ao") and segs:
+            loops, segs = _chain_loops(segs)
+            for lp in loops[:800]:
+                o["loops"].append([(p[1], p[0], float(tin_fn(p[0], p[1])))
+                                   for p in lp])
         for (a, b) in segs[:max_seg_per_cat]:
             za = float(tin_fn(a[0], a[1])); zb = float(tin_fn(b[0], b[1]))
             o["segs"].append(((a[1], a[0], za), (b[1], b[0], zb)))
@@ -319,12 +384,41 @@ def bake_features(parsed, tin_fn, max_seg_per_cat=1500):
     return out
 
 
-def build_from_dxf(data, step=5.0, off_max=40.0, off_step=2.5):
+def bake_timluong(parsed, tin_fn, half=80.0, off_step=2.0, step=5.0):
+    """MẶT NƯỚC dọc TIM LUỒNG: nướng sẵn MẶT CẮT NGANG ĐỊA HÌNH tại từng trạm
+    dọc polyline timluong (offset ±half). Mực nước (MNCN/MNTT/MNTN) chỉ biết
+    lúc vẽ → khi render mới lan nước từ tim ra 2 phía tới khi CHẠM BỜ, nên bề
+    rộng dải nước bám đúng lòng sông từng vị trí.
+    Hệ CỘT: c=(Xc=Bắc,Yc=Đông), per=vector vuông góc đơn vị (hệ cột)."""
+    tl = parsed["tims"].get("luong")
+    if not tl:
+        return None
+    Ee, Nn, ss, L = _densify(tl, step=step)
+    offs = np.arange(-half, half + 1e-6, off_step)
+    sts = []
+    for i in range(len(ss)):
+        cE, cN = float(Ee[i]), float(Nn[i])
+        i1, i2 = max(i - 1, 0), min(i + 1, len(ss) - 1)
+        tE, tN = float(Ee[i2] - Ee[i1]), float(Nn[i2] - Nn[i1])
+        nrm = float(np.hypot(tE, tN)) or 1.0
+        pE, pN = -tN / nrm, tE / nrm            # vuông góc (hệ CAD E,N)
+        zs = np.asarray(tin_fn(cE + offs * pE, cN + offs * pN), float)
+        sts.append({"c": (cN, cE), "per": (pN, pE),
+                    "zs": [round(float(z), 2) for z in zs]})
+    return {"offs": [round(float(o), 2) for o in offs], "st": sts,
+            "L": round(float(L), 1)}
+
+
+def build_from_dxf(data, step=5.0, off_max=None, off_step=2.5):
     """MỘT PHÁT ĂN NGAY: DXF → (df_geology, df_tim_line, features, info).
-    info gồm stats/warnings để UI hiển thị."""
+    info gồm stats/warnings để UI hiển thị. features có thêm khóa đặc biệt
+    `__timluong` (profile mặt nước dọc tim luồng — không phải hạng mục vẽ)."""
     parsed = parse_topo_dxf(data)
     df, df_tim, tin_fn, info = build_geology(parsed, step, off_max, off_step)
     feats = bake_features(parsed, tin_fn)
+    tl = bake_timluong(parsed, tin_fn)
+    if tl:
+        feats["__timluong"] = tl
     info.update(parsed["stats"])
     info["warnings"] = parsed["warnings"]
     return df, df_tim, feats, info

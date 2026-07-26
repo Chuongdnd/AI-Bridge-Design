@@ -8534,6 +8534,10 @@ with _col_main:
                                 # 🏘️ CẢNH QUAN từ DXF bình đồ (nhà, mương ao,
                                 # ruộng…) — nút ẩn/hiện tổng + legend từng nhóm.
                                 _lsc_feats = st.session_state.get("dxf_topo_features")
+                                # Mặt nước dọc TIM LUỒNG (thủy văn) — luôn
+                                # theo nguồn DXF, độc lập checkbox cảnh quan.
+                                d["_timluong_prof"] = (_lsc_feats or {}).get(
+                                    "__timluong")
                                 if _lsc_feats:
                                     _show_lsc = st.checkbox(
                                         "🏘️ Hiện cảnh quan địa hình khảo sát "
