@@ -595,6 +595,34 @@ def _add_box_outlines(fig, color="#1b2631", width=2.0, name="Đường bao cấu
         hoverinfo="skip"))
 
 
+def compact_3d_arrays(fig):
+    """NÉN dữ liệu figure 3D trước khi gửi sang trình duyệt: ép mảng toạ độ về
+    float32 và chỉ số tam giác về int32. Plotly mã hoá mảng numpy thành base64
+    NHỊ PHÂN thay vì danh sách số JSON → payload giảm ~38% (1,24 → 0,77 MB đo
+    trên mô hình 3D tổng) và trình duyệt parse nhanh hơn, tốn ~30ms để quy đổi.
+
+    An toàn: toạ độ đã trừ gốc VN-2000 nên chỉ còn hàng trăm mét — float32 (≈7
+    chữ số nghĩa) thừa chính xác để hiển thị. Trace có None (ngắt đoạn đường)
+    cho dtype=object → bỏ qua, giữ nguyên.
+    Gọi SAU khi đã dựng/đã hậu xử lý xong, ngay trước khi cache & vẽ."""
+    for tr in fig.data:
+        if getattr(tr, "type", "") not in ("mesh3d", "scatter3d", "surface"):
+            continue
+        for ax in ("x", "y", "z", "i", "j", "k"):
+            v = getattr(tr, ax, None)
+            if v is None:
+                continue
+            try:
+                a = np.asarray(v)
+                if a.dtype == object:          # có None ngắt đoạn → để nguyên
+                    continue
+                setattr(tr, ax, a.astype(np.float32) if ax in "xyz"
+                        else a.astype(np.int32))
+            except Exception:
+                continue
+    return fig
+
+
 def _hover3d(fig):
     """Hover mọi cấu kiện 3D → TÊN (legendgroup/name) + CAO ĐỘ z tại điểm di chuột."""
     for tr in fig.data:

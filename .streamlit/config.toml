@@ -7,3 +7,13 @@
 #
 # ĐỪNG đặt base = "dark" ở đây: nó ép widget gốc luôn tối, trong khi CSS chỉ lật
 # được nền/chữ → sinh ra chữ đậm trên nền đen, không đọc được.
+
+[runner]
+# TẮT "magic" của Streamlit: nó chạy một phép biến đổi AST trên TOÀN BỘ file
+# mỗi lần biên dịch script để tự render các biểu thức trần. 00-Interface.py dài
+# hơn 10.000 dòng → phép biến đổi này tốn ~635ms mỗi lần biên dịch (đo được),
+# trong khi app KHÔNG có biểu thức trần nào ngoài docstring (đã kiểm: 0 ở
+# 00-Interface, chỉ docstring ở 4 file pages/) → tắt là thuần lợi.
+# LƯU Ý: nếu sau này viết biến/biểu thức đứng một mình để hiển thị, phải đổi
+# thành st.write(...) tường minh.
+magicEnabled = false

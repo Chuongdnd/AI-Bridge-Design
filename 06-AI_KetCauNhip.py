@@ -22,9 +22,9 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor, GradientBoostingClassifier
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import cross_val_score
+# sklearn NẠP LƯỜI: ~1s + 82MB RAM lúc import, chỉ cần khi HUẤN LUYỆN
+# (train_kcn_ai). Module này được import lúc khởi động app → nạp ở mức module
+# là mọi phiên đều trả phí dù không train. Import đặt trong hàm train_*.
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -412,6 +412,12 @@ def train_kcn_ai(v3_path=None, **_):
         print(f"[KCN-AI] Chua du du lieu (v3={n_v3}, can >={MIN_ROWS}). Dung Rule-Based.")
         return None
     print(f"[KCN-AI] Dung v3: {n_v3} mau")
+
+    # Nạp sklearn TẠI ĐÂY — sau khi chắc chắn đủ dữ liệu để huấn luyện.
+    from sklearn.ensemble import (RandomForestClassifier,
+                                  RandomForestRegressor)
+    from sklearn.preprocessing import LabelEncoder
+    from sklearn.model_selection import cross_val_score
 
     try:
 

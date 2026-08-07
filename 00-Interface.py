@@ -8,8 +8,6 @@ import importlib
 import time
 import json
 import pathlib
-import google.generativeai as genai
-import fitz
 try:
     from streamlit_option_menu import option_menu
     _HAS_OPTION_MENU = True
@@ -820,25 +818,33 @@ elif not AUTH.is_authenticated():
 if 'messages' not in st.session_state:
     st.session_state.messages = []
 
-# --- CẤU HÌNH AI GEMINI ASSISTANT ---
-try:
-    if "GEMINI_API_KEY" in st.secrets:
-        api_key = st.secrets["GEMINI_API_KEY"]
-        genai.configure(api_key=api_key)
-        gemini_model = genai.GenerativeModel('gemini-2.5-flash')
-    else:
-        st.sidebar.error("🚨 Không tìm thấy mã GEMINI_API_KEY trong Secrets!")
-        gemini_model = None
-except Exception as e:
-    st.sidebar.error(f"Lỗi cấu hình AI: {e}")
-    gemini_model = None
+# --- CẤU HÌNH AI GEMINI ASSISTANT (NẠP LƯỜI) -------------------------------
+# `google.generativeai` tốn ~1.6s + 49MB RAM lúc import, nhưng CHỈ dùng khi
+# người dùng bấm "Hỏi AI". Nạp ngay lúc khởi động = mọi phiên đều trả phí đó.
+# → nạp trong hàm, cache_resource giữ 1 client dùng chung cho cả server.
+@st.cache_resource(show_spinner=False)
+def _get_gemini():
+    """Model Gemini dùng chung (None nếu chưa có khóa / lỗi cấu hình)."""
+    try:
+        if "GEMINI_API_KEY" not in st.secrets:
+            return None
+        import google.generativeai as genai
+        genai.configure(api_key=st.secrets["GEMINI_API_KEY"])
+        return genai.GenerativeModel('gemini-2.5-flash')
+    except Exception:
+        return None
 
+
+# Đọc PDF tiêu chuẩn: `fitz` tốn ~23MB RAM lúc import → chỉ nạp khi thật sự
+# đọc. @st.cache_data: đọc 1 lần cho CẢ SERVER thay vì mỗi phiên đọc lại.
+@st.cache_data(show_spinner=False)
 def load_all_standards(folder_name="Documents"):
     knowledge_text = ""
     current_dir = os.path.dirname(os.path.abspath(__file__))
     folder_path = os.path.join(current_dir, folder_name)
     if not os.path.exists(folder_path):
         return "Thư mục tài liệu không tồn tại."
+    import fitz
     for file_name in os.listdir(folder_path):
         if file_name.endswith(".pdf"):
             try:
@@ -846,14 +852,15 @@ def load_all_standards(folder_name="Documents"):
                 text = ""
                 for page in doc:
                     text += page.get_text()
+                doc.close()
                 knowledge_text += f"\n--- NGUỒN TÀI LIỆU: {file_name} ---\n{text}\n"
-            except:
+            except Exception:
                 pass
     return knowledge_text
 
-if 'bridge_library' not in st.session_state:
-    with st.spinner("📚 Đang nạp hệ thống tiêu chuẩn cầu đường..."):
-        st.session_state.bridge_library = load_all_standards()
+# KHÔNG đọc tiêu chuẩn lúc khởi động: nội dung này CHỈ dùng làm ngữ cảnh cho
+# câu hỏi gửi Gemini. Đọc ngay = mọi phiên trả phí import fitz (~23MB) dù không
+# bao giờ mở chat. Hàm đã @st.cache_data nên lần hỏi đầu đọc 1 lần cho cả server.
 
 # --- KẾT NỐI HỆ THỐNG MODULES THÀNH PHẦN ---
 try:
@@ -4861,9 +4868,13 @@ def _render_floating_chat():
             try:
                 _design_info = st.session_state.chatbot_context
                 _system_msg = (f"Bạn là chuyên gia thiết kế cầu UTH. "
-                               f"Tri thức: {st.session_state.bridge_library}. "
+                               f"Tri thức: {load_all_standards()}. "
                                f"Dữ liệu: {_design_info}")
-                _resp = gemini_model.generate_content(
+                _gm = _get_gemini()          # nạp Gemini ngay lúc cần
+                if _gm is None:
+                    raise RuntimeError(
+                        "Chưa cấu hình GEMINI_API_KEY trong Secrets")
+                _resp = _gm.generate_content(
                     f"{_system_msg}\n\nCâu hỏi: {_prompt}")
                 st.session_state.messages.append(
                     {"role": "assistant", "content": _resp.text})
@@ -8679,6 +8690,13 @@ with _col_main:
                                 except Exception:
                                     pass
 
+                                # Nén mảng toạ độ (float32/int32 → base64 nhị
+                                # phân) TRƯỚC khi cache: payload gửi trình
+                                # duyệt giảm ~38%, tải & xoay 3D nhẹ hơn.
+                                try:
+                                    BVK.compact_3d_arrays(_fig_t)
+                                except Exception:
+                                    pass
                                 st.session_state[f"_fig3dcache_{selected_ribbon}"] = (_k3d, _fig_t)
                             st.plotly_chart(_fig_t, use_container_width=True,
                                             config={"displayModeBar": True})

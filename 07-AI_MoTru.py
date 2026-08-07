@@ -20,9 +20,9 @@ import os
 import sys
 import numpy as np
 import pandas as pd
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import StratifiedKFold, cross_val_score
+# sklearn NẠP LƯỜI: ~1s + 82MB RAM lúc import, chỉ cần khi HUẤN LUYỆN
+# (train_pier_ai / load_pier_data_v3). Module này import lúc khởi động app →
+# nạp ở mức module là mọi phiên đều trả phí dù không train.
 import warnings
 warnings.filterwarnings("ignore")
 
@@ -368,6 +368,7 @@ def load_pier_data_v3(v3_path=None):
 
     le_dam = None
     if "Loai_dam" in df.columns:
+        from sklearn.preprocessing import LabelEncoder   # nạp lười
         le_dam = LabelEncoder()
         df["Loai_dam_enc"] = le_dam.fit_transform(df["Loai_dam"].astype(str).str.strip().fillna("Unknown"))
     else:
@@ -402,6 +403,11 @@ def train_pier_ai(v3_path=None, **_):
         print(f"[Pier-AI] Chưa đủ dữ liệu (v3={n_v3}, cần >={MIN_ROWS}). Dùng Rule-Based.")
         return None
     print(f"[Pier-AI] Dùng v3: {n_v3} mẫu")
+
+    # Nạp sklearn TẠI ĐÂY — sau khi chắc chắn đủ dữ liệu để huấn luyện.
+    from sklearn.ensemble import RandomForestClassifier
+    from sklearn.preprocessing import LabelEncoder
+    from sklearn.model_selection import StratifiedKFold, cross_val_score
 
     try:
         if "Loai_dam" in df.columns:
