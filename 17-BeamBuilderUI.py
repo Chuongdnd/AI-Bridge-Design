@@ -2681,7 +2681,12 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
         _off1 = _cap_inset_at(d, span_x1) if i_nhip < _ns - 1 else 0.0
         span_x0 = span_x0 + _off0
         span_x1 = span_x1 - _off1
-        scale   = (span_x1 - span_x0) / L_m
+        # CHUẨN HOÁ theo bề rộng THỰC của profil đang dùng, không mặc định
+        # bằng L_m: profil đầu khấc SPT (_notch_prof) dựng từ mô hình dầm nên
+        # gốc chiều dài có thể KHÁC L_m (spt_L_m) — chia cho L_m sẽ kéo/co dầm
+        # sai tỉ lệ, dầm không nằm đúng vai kê mố/trụ.
+        _plen   = max((p[0] for p in full_pts), default=0.0) or L_m
+        scale   = (span_x1 - span_x0) / _plen
 
         # ĐỈNH DẦM BÁM ĐÁY BẢN MẶT CẦU (đường đỏ − bề dày bản). Dầm THẲNG →
         # đỉnh dầm là dây cung nối đáy bản tại 2 đầu nhịp (span_x0, span_x1).
