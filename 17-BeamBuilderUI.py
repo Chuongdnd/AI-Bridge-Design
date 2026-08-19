@@ -1835,6 +1835,36 @@ def _beam_span_list(d: dict) -> list:
     return [(x0 + i * L_nhip, x0 + (i + 1) * L_nhip) for i in range(n_nhip)]
 
 
+def _cap_inset_at(d: dict, x_sup: float) -> float:
+    """KHOẢNG LÙI đầu dầm tại 1 GỐI = nửa bề rộng Ụ GIỮA xà mũ + 0,1m khe co
+    giãn. Ụ giữa TỪNG TRỤ có thể khác nhau: trụ hai bên nhịp vượt tĩnh không
+    được NỚI RỘNG (resolve_supports ghi bản đồ d['_pier_cap_widen'] = {lý
+    trình: bề rộng ụ}); dùng hằng số cap_gap_m cho mọi trụ sẽ khiến dầm chồm
+    lên ụ giữa ở đúng những trụ đó. Không tra được → về hằng số cap_gap_m/2."""
+    _w = (d or {}).get("_pier_cap_widen") or {}
+    for _k, _v in _w.items():
+        try:
+            if abs(float(_k) - float(x_sup)) < 0.05:
+                return float(_v) / 2.0 + 0.1
+        except (TypeError, ValueError):
+            continue
+    return float((d or {}).get("cap_gap_m", 0.0) or 0.0) / 2.0
+
+
+def _span_seats(d: dict, spans: list) -> list:
+    """Danh sách (x_đầu, x_cuối) MẶT KÊ DẦM từng nhịp = khoảng cách gối trừ đi
+    khe ụ giữa xà mũ ở hai đầu (tại MỐ — 2 gối ngoài cùng — không trừ).
+    DÙNG CHUNG cho trắc dọc 2D, 3D sơ đồ, 3D địa hình và bình đồ → dầm nằm
+    đúng vai kê ở MỌI view."""
+    _ns = len(spans)
+    out = []
+    for i, (a, b) in enumerate(spans):
+        a2 = a + (_cap_inset_at(d, a) if i > 0 else 0.0)
+        b2 = b - (_cap_inset_at(d, b) if i < _ns - 1 else 0.0)
+        out.append((a2, b2))
+    return out
+
+
 def _main_span_idx(d: dict, spans: list) -> int:
     """Chỉ số nhịp CHÍNH (chứa tim tĩnh không) trong danh sách spans."""
     if not spans:
@@ -2290,7 +2320,7 @@ def get_beam_model_traces(d: dict, pfx: str = "spt") -> list:
     x_first_dam  = -bc / 2 + oh        # vị trí Y dầm đầu tiên (m)
     z_beam_top   = cao_dd + H_dam       # cao độ đỉnh dầm = đáy bản mặt cầu (m)
     L_m          = float(st.session_state.get("spt_L_m", L_nhip))
-    _spans  = _beam_span_list(d)
+    _spans  = _span_seats(d, _beam_span_list(d))   # trừ khe ụ giữa xà mũ
     result  = []
     _legend = True   # legend only on the very first trace
 
@@ -2645,8 +2675,10 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
             _np = _notch_prof.get(_spt_support_notch(i_nhip, _ns))
             if _np:
                 full_pts = _np
-        _off0 = _cap_gap / 2.0 if i_nhip > 0 else 0.0          # gối trái là trụ?
-        _off1 = _cap_gap / 2.0 if i_nhip < _ns - 1 else 0.0    # gối phải là trụ?
+        # Ụ giữa xà mũ TỪNG TRỤ (trụ hai bên nhịp vượt tĩnh không rộng hơn
+        # hẳn) → tra theo lý trình gối, dùng chung _span_seats với 3D.
+        _off0 = _cap_inset_at(d, span_x0) if i_nhip > 0 else 0.0
+        _off1 = _cap_inset_at(d, span_x1) if i_nhip < _ns - 1 else 0.0
         span_x0 = span_x0 + _off0
         span_x1 = span_x1 - _off1
         scale   = (span_x1 - span_x0) / L_m
@@ -2693,8 +2725,17 @@ def get_plan_beam_traces(d: dict, pfx: str = "spt") -> list:
 
     kcn    = d.get("kcn_result") or d.get("ai_result", {})
     geo    = d.get("geo_logic", {})
-    x0     = float(geo.get("x_mo_trai", -60.0))
-    x_end  = float(geo.get("x_mo_phai", x0 + float(geo.get("L_cau", 120))))
+    # ĐẦU/CUỐI DẦM lấy theo BỐ TRÍ GỐI ĐÃ GIẢI (resolve_supports qua
+    # _beam_span_list) — KHÔNG lấy geo['x_mo_trai/phai'] thô. Bố trí gối snap
+    # theo chiều dài dầm catalog (và nới nhịp vượt tĩnh không) nên hai đầu cầu
+    # THẬT lệch khỏi điểm đầu/cuối dự kiến tới vài chục mét → nếu lấy geo thô,
+    # tim dầm trên bình đồ dừng giữa chừng, không tới mố/trụ như 3D.
+    _spans_pl = _beam_span_list(d)
+    if _spans_pl:
+        x0, x_end = float(_spans_pl[0][0]), float(_spans_pl[-1][1])
+    else:
+        x0    = float(geo.get("x_mo_trai", -60.0))
+        x_end = float(geo.get("x_mo_phai", x0 + float(geo.get("L_cau", 120))))
     n_dam  = int(kcn.get("so_luong_dam") or kcn.get("so_luong_dam_mcn", 5))
     kc_dam = float(kcn.get("khoang_cach_dam", 2.2))
     bc     = float(d.get("bc", 12.0))
@@ -2891,7 +2932,9 @@ def get_beam_model_mesh_traces(d: dict, pfx: str = "spt") -> list:
 
     z_top   = cao_dd + H_dam
     x_first = -bc / 2 + oh
-    _spans  = _beam_span_list(d)
+    # MẶT KÊ dầm = khoảng cách gối trừ khe ụ giữa xà mũ (2 đầu tại trụ) — nếu
+    # lấy nguyên khoảng cách gối, dầm dài quá và chồm lên ụ giữa của xà mũ.
+    _spans  = _span_seats(d, _beam_span_list(d))
     n_span  = len(_spans)
     main_idx = _main_span_idx(d, _spans)
     _notch = _spt_notch_ringmap(d, pfx, L_mm)   # SPT: đầu khấc theo gối (mố/trụ)
@@ -3656,7 +3699,8 @@ def get_beam_model_mesh_traces_vn2000(d: dict, df_geology, he_so_z: float = 1.0,
     xs_ctr = _fit_beam_centers(bc, n_dam, kc_dam, _bw_half, lan_can_w=_lcw)
     _clip  = _flange_clip_bounds(xs_ctr, bc / 2.0 - _lcw)  # cắt ngắn bản cánh
 
-    spans   = _beam_span_list(d)
+    # MẶT KÊ dầm (trừ khe ụ giữa xà mũ) — dùng chung với trắc dọc 2D & 3D sơ đồ
+    spans   = _span_seats(d, _beam_span_list(d))
     n_span  = len(spans)
     main_idx = _main_span_idx(d, spans)
     _notch = _spt_notch_ringmap(d, pfx, L_mm)   # SPT: đầu khấc theo gối (mố/trụ)

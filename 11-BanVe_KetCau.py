@@ -3657,7 +3657,7 @@ def _add_landscape_3d_body(_add, feats, x_org, y_org, hz):
 # ===========================================================================
 # 6. MÔI TRƯỜNG 3D TỔNG HỢP — Digital Twin (Mesh3d khối thực sự)
 # ===========================================================================
-def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
+def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0, df_route=None):
     """
     Phối hợp TẤT CẢ kết quả tính toán vào 1 môi trường 3D thống nhất.
     Tất cả cấu kiện dùng _abox() → Mesh3d 8 đỉnh 12 tam giác (KHỐI 3D thực),
@@ -3727,6 +3727,12 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         # thô ~600.000m thì auto-range nổ tung, không zoom vào được).
         _i0   = int(np.argmin(lt_v))
         x_org = float(vx_v[_i0]); y_org = float(vy_v[_i0])
+        # TIM CẦU bám TIM TUYẾN THIẾT KẾ (nếu có file tuyến) — PHẢI làm Y HỆT
+        # _ve_binh_do_cong: nếu không, bình đồ đặt cầu trên tim tuyến còn 3D
+        # đặt trên tim khảo sát → hai view lệch nhau. Giữ lt_v & gốc khảo sát
+        # để cầu vẫn chung hệ toạ độ với địa hình.
+        vx_v, vy_v, goc_v = _override_centerline_route(lt_v, vx_v, vy_v,
+                                                       goc_v, df_route)
 
         # ── Góc xiên (góc giao) → hệ số trượt theo lý trình ────────────────
         # Cắt xiên = TRƯỢT dọc tim tuyến: điểm ở offset `off` dịch lý trình một

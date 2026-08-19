@@ -8574,7 +8574,12 @@ with _col_main:
                                     d["_landscape"] = (_lsc_feats if _show_lsc
                                                        else None)
                                 try:
-                                    BVK.add_all_to_terrain_fig(_fig_t, d, _df_geo, he_so_z)
+                                    # df_route: 3D đặt cầu trên ĐÚNG tim tuyến
+                                    # thiết kế như bình đồ (nếu không, 2 view
+                                    # nằm trên 2 tim khác nhau → lệch).
+                                    BVK.add_all_to_terrain_fig(
+                                        _fig_t, d, _df_geo, he_so_z,
+                                        df_route=st.session_state.get("df_tim_tuyen"))
                                     # Chèn dầm thực tế từ thư viện (hệ VN-2000 trừ origin,
                                     # khớp địa hình). add_all_to_terrain_fig KHÔNG vẽ dầm.
                                     try:
@@ -9701,7 +9706,9 @@ with _col_main:
                         if _df_geo is not None and not getattr(_df_geo, "empty", True):
                             try:
                                 _tmp = go.Figure()
-                                BVK.add_all_to_terrain_fig(_tmp, d, _df_geo, he_so_z=1.0)
+                                BVK.add_all_to_terrain_fig(
+                                    _tmp, d, _df_geo, he_so_z=1.0,
+                                    df_route=st.session_state.get("df_tim_tuyen"))
                                 for _tb in (BBUI.get_beam_model_mesh_traces_vn2000(
                                         d, _df_geo, 1.0, pfx=_pfx3) or []):
                                     _tb.legendgroup = "Dầm"
