@@ -1820,8 +1820,14 @@ def _beam_span_list(d: dict) -> list:
     x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
     B_tk   = float(d.get("B", 20.0))
     bv = _get_banve()
+    if bv is not None and hasattr(bv, "_shared_supports"):
+        try:                              # DÙNG CHUNG supports với mặt bằng/trắc dọc
+            supports, _ = bv._shared_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+            return list(zip(supports[:-1], supports[1:]))
+        except Exception:
+            pass
     if bv is not None and hasattr(bv, "resolve_supports"):
-        try:                              # ĐỒNG BỘ bố trí 2 tầng (nhịp chính/dẫn)
+        try:                              # Tương thích module bản vẽ cũ
             supports, _ = bv.resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
             return list(zip(supports[:-1], supports[1:]))
         except Exception:
@@ -2654,7 +2660,9 @@ def get_elevation_profile_traces(d: dict, pfx: str = "spt") -> list:
     B_tk      = float(d.get("B", 20.0))
     x_end_geo = float(geo.get("x_mo_phai", x0 + max(1, n_nhip) * L_nhip))
     x_tim     = float(geo.get("x_tim_clearance", (x0 + x_end_geo) / 2))
-    if _bv is not None and hasattr(_bv, "resolve_supports"):
+    if _bv is not None and hasattr(_bv, "_shared_supports"):
+        supports, _ = _bv._shared_supports(d, x0, x_end_geo, x_tim, B_tk, L_nhip)
+    elif _bv is not None and hasattr(_bv, "resolve_supports"):
         supports, _ = _bv.resolve_supports(d, x0, x_end_geo, x_tim, B_tk, L_nhip)
     elif _bv is not None and hasattr(_bv, "calc_span_layout"):
         supports, _ = _bv.calc_span_layout(x0, x_end_geo, x_tim, B_tk, L_nhip)

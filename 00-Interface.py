@@ -8925,7 +8925,8 @@ with _col_main:
                             _xeb  = float(_geo_btc.get("x_mo_phai", 60))
                             _xtb  = float(_geo_btc.get("x_tim_clearance", (_x0b + _xeb) / 2))
                             _Btk  = float(d.get("B", 20.0))
-                            _sup, _Ldn = BVK.resolve_supports(d, _x0b, _xeb, _xtb, _Btk)
+                            _support_fn = getattr(BVK, "_shared_supports", BVK.resolve_supports)
+                            _sup, _Ldn = _support_fn(d, _x0b, _xeb, _xtb, _Btk)
                             _nsp = max(0, len(_sup) - 1)
                             _mid = BVK.main_span_index(_sup, _xtb)
                             if _nsp:

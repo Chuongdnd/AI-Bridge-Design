@@ -1243,6 +1243,36 @@ def resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
     return _avoid_extra_clearances(supports, d), L_dan
 
 
+def _shared_supports(d, x0, x_end, x_tim, B_tk, L_nhip=None):
+    """Trả về cùng một bộ supports cho mọi hình chiếu của một phương án.
+
+    Trắc dọc, bình đồ, 3D và các profil dầm đều phải dùng chung mốc tim tĩnh
+    không và cùng chiều dài nhịp. Cache theo đúng các tham số hình học để tránh
+    một lần vẽ tự suy ra bố trí khác lần vẽ trước; nếu đầu vào thay đổi, cache
+    tự vô hiệu hóa.
+    """
+    try:
+        _kcn = (d or {}).get("kcn_result") or (d or {}).get("ai_result") or {}
+        _sl = (d or {}).get("span_layout") or {}
+        _key = (round(float(x0), 6), round(float(x_end), 6),
+                round(float(x_tim), 6), round(float(B_tk), 6),
+                round(float(L_nhip if L_nhip is not None else
+                           (_kcn.get("chieu_dai") or 33.0)), 6),
+                repr(sorted(_sl.items())))
+        _cached = (d or {}).get("_shared_supports_cache")
+        if isinstance(_cached, dict) and _cached.get("key") == _key:
+            return list(_cached["supports"]), _cached["L_std"]
+        _supports, _L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+        if isinstance(d, dict):
+            d["_shared_supports_cache"] = {
+                "key": _key, "supports": list(_supports), "L_std": _L_std,
+            }
+        return _supports, _L_std
+    except Exception:
+        # Không để cơ chế cache làm thay đổi hành vi an toàn cũ.
+        return resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+
+
 def extra_clearance_intervals(d):
     """Vùng CẤM đặt trụ [a,b] (lý trình m) của các TĨNH KHÔNG PHỤ khai báo trong
     hộp thoại thủy văn. Mỗi tĩnh không: {x: lý trình, B: bề rộng, H, z}. Vùng cấm
@@ -1545,7 +1575,7 @@ def validate_span_layout(d, x0, x_end, x_tim, B_tk):
                 f"khoảng cách dầm / bề rộng cầu cho khớp.")
 
     # 2) Chiều dài DẦM có đủ vượt NHỊP bố trí?
-    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk)
+    supports, L_std = _shared_supports(d, x0, x_end, x_tim, B_tk)
     L_dam = float(kcn.get("chieu_dai", 0) or 0)
     if L_dam > 0 and L_std and L_dam + 0.5 < float(L_std):
         warns.append(
@@ -1866,7 +1896,7 @@ def ve_so_do_nhip_2d(d, df_tim_line=None, dia_chat_data=None,
     # ── Bố trí nhịp ĐỀU theo chiều dài định hình catalog, nhịp chính căng
     #    giữa tĩnh không (xem _calc_span_layout) ────────────────────────────
     L_nhip   = float(kcn.get("chieu_dai", 33.0) or 33.0)
-    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+    supports, L_std = _shared_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
     x0, x_end = supports[0], supports[-1]
     piers    = supports[1:-1]
     n_nhip   = len(supports) - 1
@@ -2825,7 +2855,7 @@ def ve_cau_3d(d, df_tim_line=None, beam_params=None,
     x_tim = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
 
     # Bố trí nhịp đều theo chiều dài định hình catalog, nhịp chính căng giữa tĩnh không
-    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+    supports, L_std = _shared_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
     x0, x_end = supports[0], supports[-1]
     piers    = supports[1:-1]
     n_nhip   = len(supports) - 1
@@ -3141,7 +3171,7 @@ def add_bridge_to_terrain_fig(fig, d, df_geology, he_so_z=1.0):
         H_tk   =  float(d.get("H", 3.0)) * hz
 
         L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
-        supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+        supports, L_std = _shared_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
         x0, x_end = supports[0], supports[-1]
         piers = supports[1:-1]
         n_nhip = len(supports) - 1
@@ -3807,7 +3837,7 @@ def add_all_to_terrain_fig(fig, d, df_geology, he_so_z=1.0, df_route=None):
         if float(mong_r.get("Be_doc") or 0) > 0:
             be_long = float(mong_r["Be_doc"]) / 2.0
 
-        supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+        supports, L_std = _shared_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
         x0, x_end = supports[0], supports[-1]
         piers    = supports[1:-1]
         n_nhip   = len(supports) - 1
@@ -4659,7 +4689,7 @@ def _ve_binh_do_cong(d, df_geology, df_route=None):
     x0    = float(geo.get("x_mo_trai", -L_cau0 / 2))
     x_end = float(geo.get("x_mo_phai", x0 + L_cau0))
     x_tim = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
-    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+    supports, L_std = _shared_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
     x0, x_end = supports[0], supports[-1]
     piers  = supports[1:-1]
     n_nhip = len(supports) - 1
@@ -5411,7 +5441,7 @@ def ve_binh_do_2d(d, df_tim_line=None, df_geology=None, df_route=None):
     x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
     x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
     L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
-    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+    supports, L_std = _shared_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
     x0, x_end = supports[0], supports[-1]
     piers  = supports[1:-1]
     n_nhip = len(supports) - 1
@@ -5634,7 +5664,7 @@ def ve_mcn_vi_tri(d, vi_tri='mo_trai', df_geology=None, pier_assembly=None,
     x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
     x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
     L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
-    supports, L_std = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+    supports, L_std = _shared_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
     x0, x_end = supports[0], supports[-1]
     piers  = supports[1:-1]
     n_nhip = len(supports) - 1
@@ -6114,7 +6144,7 @@ def _pos_geometry(d, vi_tri, pier_assembly=None, df_geology=None, df_tim_line=No
     x_end  = float(geo.get("x_mo_phai", x0 + L_cau))
     x_tim  = float(geo.get("x_tim_clearance", (x0 + x_end) / 2))
     L_nhip = float(kcn.get("chieu_dai", 33.0) or 33.0)
-    supports, _ = resolve_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
+    supports, _ = _shared_supports(d, x0, x_end, x_tim, B_tk, L_nhip)
     x0, x_end = supports[0], supports[-1]
     piers = supports[1:-1]
 
