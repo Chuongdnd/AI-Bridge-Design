@@ -4257,8 +4257,11 @@ def dialog_geo_data():
     # theo SUẤT ĐẦU TƯ vùng (design_data["dia_diem_xay_dung"] — module sau dùng).
     st.markdown("#### 📍 Địa điểm xây dựng")
     _dd_opts = ["— Chưa chọn —"] + sorted(BVK.VN2000_KTT_TINH.keys())
-    _dd_cur = st.session_state.design_data.get("dia_diem_xay_dung")
-    _dd_idx = _dd_opts.index(_dd_cur) if _dd_cur in _dd_opts else 0
+    # Mặc định cho dự án mới: Hồ Chí Minh; nếu người dùng đã chọn tỉnh khác
+    # thì giữ nguyên lựa chọn trong session hiện tại.
+    _dd_default = "Hồ Chí Minh"
+    _dd_cur = st.session_state.design_data.get("dia_diem_xay_dung", _dd_default)
+    _dd_idx = _dd_opts.index(_dd_cur) if _dd_cur in _dd_opts else _dd_opts.index(_dd_default)
     _dd_sel = st.selectbox(
         "Tỉnh/Thành nơi xây dựng công trình", _dd_opts, index=_dd_idx,
         key="dd_xd_sel",
